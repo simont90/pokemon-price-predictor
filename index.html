@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pokémon Card Price Predictor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-inner">
+        <div class="logo">
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Pokémon Price Predictor">
+            <circle cx="18" cy="18" r="17" stroke="currentColor" stroke-width="2"/>
+            <line x1="1" y1="18" x2="35" y2="18" stroke="currentColor" stroke-width="2"/>
+            <circle cx="18" cy="18" r="5" stroke="currentColor" stroke-width="2" fill="var(--bg)"/>
+            <circle cx="18" cy="18" r="2.5" fill="var(--accent)"/>
+          </svg>
+          <div>
+            <h1>Price Predictor</h1>
+            <p class="tagline">Pokémon TCG card valuation model</p>
+          </div>
+        </div>
+        <a href="https://youtu.be/Zml3jfSyPHI" target="_blank" rel="noopener" class="credit-link">
+          Based on PokeDataDadGuy's model
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+        </a>
+      </div>
+    </header>
+
+    <!-- Model Stats Bar -->
+    <div class="stats-bar">
+      <div class="stat">
+        <span class="stat-value">88%</span>
+        <span class="stat-label">R² Accuracy</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <span class="stat-value">+19%</span>
+        <span class="stat-label">Per Pull Cost Point</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <span class="stat-value">+41%</span>
+        <span class="stat-label">Per Desirability Point</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <span class="stat-value">2×</span>
+        <span class="stat-label">Demand vs Supply Impact</span>
+      </div>
+    </div>
+
+    <main class="main">
+      <!-- Left Column: Inputs -->
+      <div class="inputs-column">
+
+        <!-- Pull Cost Section -->
+        <section class="card">
+          <div class="card-header">
+            <div class="card-icon supply-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 8h20"/><path d="M10 3v5"/></svg>
+            </div>
+            <div>
+              <h2>Pull Cost <span class="badge supply-badge">Supply</span></h2>
+              <p class="card-desc">How hard is this card to pull from packs?</p>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label for="packRate">Packs per rarity tier hit</label>
+            <p class="input-hint">How many packs on average to hit the rarity tier once (e.g. 1 in 45 packs → enter 45)</p>
+            <input type="number" id="packRate" min="1" max="500" step="1" value="45" class="number-input">
+          </div>
+
+          <div class="input-group">
+            <label for="cardsInTier">Cards in rarity tier</label>
+            <p class="input-hint">Total number of different cards sharing this rarity slot</p>
+            <input type="number" id="cardsInTier" min="1" max="100" step="1" value="17" class="number-input">
+          </div>
+
+          <div class="pull-cost-result">
+            <div class="pull-cost-label">Pull Cost Score</div>
+            <div class="pull-cost-value" id="pullCostDisplay">7.65</div>
+            <div class="pull-cost-packs" id="packsNeeded">≈ 765 packs to pull this specific card</div>
+          </div>
+        </section>
+
+        <!-- Desirability Index Section -->
+        <section class="card">
+          <div class="card-header">
+            <div class="card-icon demand-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            </div>
+            <div>
+              <h2>Desirability Index <span class="badge demand-badge">Demand</span></h2>
+              <p class="card-desc">How much do collectors want this card?</p>
+            </div>
+          </div>
+
+          <!-- Character Premium -->
+          <div class="slider-group">
+            <div class="slider-header">
+              <label>Character Premium</label>
+              <span class="weight-badge">45%</span>
+            </div>
+            <p class="input-hint">Average rank of this Pokémon across all printings. Charizard ≈ 9.5, Umbreon ≈ 9.2, Dragonite ≈ 7.5, niche Pokémon ≈ 2-3</p>
+            <div class="slider-row">
+              <input type="range" id="characterPremium" min="1" max="10" step="0.1" value="7" class="slider">
+              <span class="slider-value" id="characterPremiumValue">7.0</span>
+            </div>
+            <div class="slider-labels">
+              <span>Obscure</span>
+              <span>Iconic</span>
+            </div>
+          </div>
+
+          <!-- Artwork / Hype -->
+          <div class="slider-group">
+            <div class="slider-header">
+              <label>Artwork / Hype / Card Features</label>
+              <span class="weight-badge">45%</span>
+            </div>
+            <p class="input-hint">Artwork quality, hype, collector consensus. 10 = Bubble Mew, Mega Charizard X. 1 = obscure, low-effort art</p>
+            <div class="slider-row">
+              <input type="range" id="artworkHype" min="1" max="10" step="0.1" value="7" class="slider">
+              <span class="slider-value" id="artworkHypeValue">7.0</span>
+            </div>
+            <div class="slider-labels">
+              <span>Forgettable</span>
+              <span>Iconic</span>
+            </div>
+          </div>
+
+          <!-- Universal Appeal -->
+          <div class="slider-group">
+            <div class="slider-header">
+              <label>Universal Appeal</label>
+              <span class="weight-badge">10%</span>
+            </div>
+            <p class="input-hint">Google Trends search volume. Charizard/Pikachu ≈ 9-10, popular Pokémon ≈ 6-7, niche ≈ 2-3</p>
+            <div class="slider-row">
+              <input type="range" id="universalAppeal" min="1" max="10" step="0.1" value="6" class="slider">
+              <span class="slider-value" id="universalAppealValue">6.0</span>
+            </div>
+            <div class="slider-labels">
+              <span>Niche</span>
+              <span>Universal</span>
+            </div>
+          </div>
+
+          <div class="desirability-result">
+            <div class="desirability-label">Desirability Score</div>
+            <div class="desirability-value" id="desirabilityDisplay">6.9</div>
+            <div class="desirability-bar-container">
+              <div class="desirability-bar" id="desirabilityBar" style="width: 69%"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Right Column: Output -->
+      <div class="output-column">
+        <!-- Prediction Card -->
+        <section class="card prediction-card">
+          <h2>Predicted Price</h2>
+          <div class="predicted-price" id="predictedPrice">$287</div>
+          <div class="price-breakdown">
+            <div class="breakdown-item">
+              <span class="breakdown-label">Supply factor</span>
+              <span class="breakdown-value" id="supplyFactor">×3.79</span>
+            </div>
+            <div class="breakdown-item">
+              <span class="breakdown-label">Demand factor</span>
+              <span class="breakdown-value" id="demandFactor">×13.67</span>
+            </div>
+            <div class="breakdown-item base-line">
+              <span class="breakdown-label">Base constant</span>
+              <span class="breakdown-value">$12.50</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Valuation Comparison -->
+        <section class="card valuation-card">
+          <h2>Valuation Check</h2>
+          <div class="input-group">
+            <label for="marketPrice">Current market price ($)</label>
+            <input type="number" id="marketPrice" min="0" step="1" value="" placeholder="Enter market price..." class="number-input market-input">
+          </div>
+          <div class="valuation-result" id="valuationResult">
+            <div class="valuation-placeholder">Enter a market price above to see if the card is overvalued or undervalued</div>
+          </div>
+        </section>
+
+        <!-- Quick Presets -->
+        <section class="card presets-card">
+          <h2>Example Cards</h2>
+          <p class="card-desc">Load example data from cards mentioned in the video</p>
+          <div class="presets-grid">
+            <button class="preset-btn" data-pack="7" data-tier="20" data-char="9.5" data-art="7.8" data-appeal="9.5" data-market="65" data-name="Charizard 223" data-set="Obsidian Flames">
+              <span class="preset-name">Charizard 223</span>
+              <span class="preset-set">Obsidian Flames</span>
+            </button>
+            <button class="preset-btn" data-pack="20" data-tier="20" data-char="5" data-art="4" data-appeal="3" data-market="65" data-name="Gardavore" data-set="SV Base">
+              <span class="preset-name">Gardavore</span>
+              <span class="preset-set">SV Base</span>
+            </button>
+            <button class="preset-btn" data-pack="14" data-tier="18" data-char="9.5" data-art="8.5" data-appeal="9.5" data-market="400" data-name="Charizard" data-set="151">
+              <span class="preset-name">Charizard</span>
+              <span class="preset-set">151</span>
+            </button>
+            <button class="preset-btn" data-pack="45" data-tier="17" data-char="9.2" data-art="9" data-appeal="8" data-market="" data-name="Umbreon" data-set="Prismatic Evolutions">
+              <span class="preset-name">Umbreon</span>
+              <span class="preset-set">Prismatic Evolutions</span>
+            </button>
+            <button class="preset-btn" data-pack="12" data-tier="17" data-char="9.5" data-art="10" data-appeal="9.5" data-market="800" data-name="Mega Charizard X" data-set="Destined Rivals">
+              <span class="preset-name">Mega Charizard X</span>
+              <span class="preset-set">Destined Rivals</span>
+            </button>
+            <button class="preset-btn" data-pack="45" data-tier="17" data-char="8.5" data-art="9.5" data-appeal="9" data-market="" data-name="Pikachu" data-set="Ascended Heroes">
+              <span class="preset-name">Pikachu</span>
+              <span class="preset-set">Ascended Heroes</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="card how-card">
+          <h2>How the Model Works</h2>
+          <div class="formula-box">
+            <code>Price = 12.50 × 1.19<sup>PullCost</sup> × 1.41<sup>Desirability</sup></code>
+          </div>
+          <div class="explanation">
+            <div class="explain-item">
+              <div class="explain-icon supply-icon-sm"></div>
+              <div>
+                <strong>Pull Cost (Supply)</strong>
+                <p>Measures scarcity. Calculated as packs-per-hit × cards-in-tier ÷ 100. Higher = harder to pull. Each +1 point raises predicted price by ~19%.</p>
+              </div>
+            </div>
+            <div class="explain-item">
+              <div class="explain-icon demand-icon-sm"></div>
+              <div>
+                <strong>Desirability (Demand)</strong>
+                <p>Weighted score: Character Premium (45%) + Artwork/Hype (45%) + Universal Appeal (10%). Each +1 point raises predicted price by ~41% — twice the impact of supply.</p>
+              </div>
+            </div>
+            <div class="explain-item">
+              <div class="explain-icon r2-icon-sm"></div>
+              <div>
+                <strong>R² = 0.88</strong>
+                <p>The model explains 88% of price variation in modern chase cards. Outliers exist due to hype cycles, new collector demand, and pack-opening aversion.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p>Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank" rel="noopener">PokeDataDadGuy</a> · Interactive tool built with data from the video · For modern Pokémon TCG chase cards</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
