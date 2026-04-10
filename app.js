@@ -1,6 +1,6 @@
 /* ========================================
-   Pokémon Card Price Predictor v6
-   20k+ cards · All eras + Japanese search
+   Pokémon Card Price Predictor v7
+   26k+ cards · EN + 6k JP cards from TCGdex
    Auto-calibrated desirability · 5-year forecast
    Live GBP conversion · eBay deal checker
    Portfolio tracker · HOLD/BUY/SELL signals
@@ -65,11 +65,15 @@ async function init() {
   if (setsR.status === 'fulfilled') setsData = setsR.value;
   if (fxR.status === 'fulfilled' && fxR.value.rates?.GBP) fxRate = fxR.value.rates.GBP;
 
-  // Build search index for fast filtering of 20k+ cards
+  // Build search index for 26k+ cards (EN + JP)
   if (cardData) buildSearchIndex(cardData.cards);
 
   $('fxValue').textContent = `£${fxRate.toFixed(4)}`;
-  if (cardData) $('searchCount').textContent = `${cardData.count.toLocaleString()} cards`;
+  if (cardData) {
+    const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
+    const enCount = cardData.count - jpCount;
+    $('searchCount').textContent = `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP)`;
+  }
   $('loadingOverlay').classList.add('hidden');
 
   setupSearch();
@@ -157,7 +161,7 @@ function autoFillDesirability(card, pullCost) {
 function buildSearchIndex(cards) {
   searchIndex = cards.map(c => ({
     ...c,
-    _search: `${c.n} ${c.s} ${c.cn || ''} ${c.ns || ''} ${c.r || ''} ${c.sr || ''}`.toLowerCase(),
+    _search: `${c.n} ${c.nj || ''} ${c.s} ${c.cn || ''} ${c.ns || ''} ${c.r || ''} ${c.sr || ''} ${c.lang || ''}`.toLowerCase(),
   }));
 }
 
@@ -196,8 +200,16 @@ function doSearch(query) {
 
   let matches = searchIndex.filter(c => c._search.includes(query));
 
-  // Card number exact match priority
-  if (/^\d+$/.test(query) || /^#\d+/.test(query)) {
+  // Card number exact match priority (supports "212", "#212", "212/172")
+  const numSlashMatch = query.match(/^#?(\d+)\/(\d+)$/);
+  if (numSlashMatch) {
+    const [, num, total] = numSlashMatch;
+    matches.sort((a, b) => {
+      const aExact = (String(a.cn) === num && String(a.ct) === total) ? 2 : String(a.cn) === num ? 1 : 0;
+      const bExact = (String(b.cn) === num && String(b.ct) === total) ? 2 : String(b.cn) === num ? 1 : 0;
+      return bExact - aExact;
+    });
+  } else if (/^\d+$/.test(query) || /^#\d+/.test(query)) {
     const num = query.replace('#', '');
     matches.sort((a, b) => {
       const aExact = String(a.cn) === num ? 1 : 0;
@@ -224,11 +236,17 @@ function doSearch(query) {
   results.innerHTML = matches.map(c => {
     const numLabel = c.cn && c.ct ? `#${c.cn}/${c.ct}` : c.cn ? `#${c.cn}` : '';
     const seriesLabel = c.sr && c.sr !== 'Scarlet & Violet' ? `<span class="meta-series">${esc(c.sr)}</span>` : '';
+    const isJP = c.lang === 'JP';
+    const langBadge = isJP ? '<span class="lang-badge jp">JP</span>' : '';
+    const jpNameLabel = isJP && c.nj ? `<span class="jp-name">${esc(c.nj)}</span>` : '';
+    const priceLabel = c.p > 0 ? `
+        <span class="gbp">${fmtGBP(c.p)}</span>
+        <span class="usd">${fmtUSD(c.p)}</span>` : '<span class="no-price">No price data</span>';
     return `
-    <div class="search-result-item" data-id="${c.i}">
+    <div class="search-result-item${isJP ? ' jp-card' : ''}" data-id="${c.i}">
       ${c.img ? `<img class="search-result-img" src="${c.img}" alt="" loading="lazy">` : `<div class="search-result-img no-img"></div>`}
       <div class="search-result-info">
-        <div class="search-result-name">${esc(c.n)}</div>
+        <div class="search-result-name">${langBadge}${esc(c.n)}${jpNameLabel}</div>
         <div class="search-result-meta">
           <span>${esc(c.s)}</span>
           ${numLabel ? `<span class="meta-num">${numLabel}</span>` : ''}
@@ -236,9 +254,7 @@ function doSearch(query) {
           ${seriesLabel}
         </div>
       </div>
-      <div class="search-result-price">
-        <span class="gbp">${fmtGBP(c.p)}</span>
-        <span class="usd">${fmtUSD(c.p)}</span>
+      <div class="search-result-price">${priceLabel}
       </div>
     </div>
   `}).join('');
@@ -267,15 +283,42 @@ function selectCard(id) {
 
   const section = $('selectedCardSection');
   section.style.display = 'block';
+  const isJP = card.lang === 'JP';
 
-  // English card image
-  if (card.img) { $('cardImage').src = card.img; $('cardImage').style.display = 'block'; }
-  else { $('cardImage').style.display = 'none'; }
+  // Card images — handle both EN and JP sources
+  if (isJP) {
+    // JP card: primary image is from TCGdex, show in JP slot; hide EN slot
+    if (card.img) {
+      $('cardImageJp').src = card.img;
+      $('cardImageJp').style.display = 'block';
+      $('cardImageJp').title = 'Japanese card';
+      $('cardImageJp').onclick = null;
+      $('cardImageJp').style.cursor = 'default';
+    } else {
+      $('cardImageJp').style.display = 'none';
+    }
+    $('cardImage').style.display = 'none';
+  } else {
+    // EN card: primary image from pokemontcg.io
+    if (card.img) { $('cardImage').src = card.img; $('cardImage').style.display = 'block'; }
+    else { $('cardImage').style.display = 'none'; }
+    // Also show JP version link
+    loadJapaneseImage(card);
+  }
 
-  // Japanese card image — build TCG Collector JP image URL
-  loadJapaneseImage(card);
-
-  $('cardName').textContent = card.n;
+  // Card name — show JP name underneath if available
+  const displayName = isJP && card.nj ? `${card.n}` : card.n;
+  $('cardName').textContent = displayName;
+  // Show JP name as subtitle
+  const jpSub = $('cardNameJp');
+  if (jpSub) {
+    if (isJP && card.nj) {
+      jpSub.textContent = card.nj;
+      jpSub.style.display = 'block';
+    } else {
+      jpSub.style.display = 'none';
+    }
+  }
   $('cardSet').textContent = card.s;
   $('cardNumber').textContent = card.cn && card.ct ? `#${card.cn}/${card.ct}` : card.cn ? `#${card.cn}` : '';
   $('cardNumber').style.display = card.cn ? '' : 'none';
