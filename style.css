@@ -96,6 +96,7 @@ body {
 .search-result-info { flex: 1; min-width: 0; }
 .search-result-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .search-result-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; }
+.meta-num { font-family: var(--mono); color: var(--text-faint); font-size: 10px; }
 .search-result-price { text-align: right; flex-shrink: 0; }
 .search-result-price .gbp { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent); }
 .search-result-price .usd { font-size: 11px; color: var(--text-faint); display: block; }
@@ -122,7 +123,8 @@ body {
 .selected-card-info { flex: 1; min-width: 0; }
 .selected-card-info h2 { font-size: 17px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.meta-set, .meta-rarity { font-size: 11px; color: var(--text-muted); padding: 2px 8px; background: var(--bg-raised); border-radius: 4px; }
+.meta-set, .meta-rarity, .meta-number { font-size: 11px; color: var(--text-muted); padding: 2px 8px; background: var(--bg-raised); border-radius: 4px; }
+.meta-number { font-family: var(--mono); color: var(--text-faint); font-size: 10px; }
 .meta-rarity { color: var(--accent); background: var(--accent-dim); }
 .card-links { display: flex; gap: 8px; }
 .card-link { font-size: 11px; color: var(--text-faint); text-decoration: none; display: inline-flex; align-items: center; gap: 3px; }
@@ -245,6 +247,60 @@ body {
 .footer p { font-size: 11px; color: var(--text-faint); }
 .footer a { color: var(--text-muted); text-decoration: none; }
 .footer a:hover { color: var(--accent); }
+
+/* Market Dynamics */
+.market-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.market-trend-badge { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; padding: 4px 10px; border-radius: 6px; text-transform: uppercase; }
+.market-trend-badge.trend-heating { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+.market-trend-badge.trend-cooling { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
+.market-trend-badge.trend-stable { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(232,182,52,0.25); }
+.market-trend-badge.trend-tightening { background: rgba(74,158,255,0.1); color: var(--supply); border: 1px solid var(--supply-border); }
+.market-trend-badge.trend-loosening { background: rgba(255,165,0,0.1); color: #ffa500; border: 1px solid rgba(255,165,0,0.25); }
+.market-loading { font-size: 12px; color: var(--text-faint); text-align: center; padding: 20px 0; }
+
+.market-gauges { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0 12px; }
+.gauge-block { background: var(--bg-raised); border-radius: var(--radius-sm); padding: 12px; }
+.gauge-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 8px; }
+.gauge-track { position: relative; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.gauge-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+.gauge-demand { background: linear-gradient(90deg, var(--green), var(--accent), var(--red)); }
+.gauge-supply { background: linear-gradient(90deg, var(--supply), var(--accent), var(--red)); }
+.gauge-midline { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; background: var(--text-faint); opacity: 0.4; }
+.gauge-row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 6px; }
+.gauge-value { font-family: var(--mono); font-size: 18px; font-weight: 700; color: var(--text); }
+.gauge-desc { font-size: 10px; color: var(--text-faint); }
+
+.market-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.mstat { text-align: center; padding: 8px 4px; background: var(--bg-raised); border-radius: var(--radius-sm); }
+.mstat-label { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.mstat-value { font-family: var(--mono); font-size: 16px; font-weight: 600; color: var(--text); margin-top: 2px; }
+.mstat-delta { font-size: 10px; font-family: var(--mono); margin-top: 1px; }
+.mstat-delta.up { color: var(--green); }
+.mstat-delta.down { color: var(--red); }
+.mstat-delta.flat { color: var(--text-faint); }
+
+#listingChart { margin: 4px 0 4px; border-radius: var(--radius-sm); background: var(--bg-raised); }
+.market-legend { display: flex; gap: 14px; justify-content: center; }
+.ml-item { font-size: 10px; color: var(--text-faint); display: flex; align-items: center; gap: 4px; }
+.ml-dot { width: 8px; height: 3px; border-radius: 2px; }
+
+/* Grading ROI */
+.grade-content { margin-top: 12px; }
+.grade-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.grade-row:last-child { border-bottom: none; }
+.grade-label { font-size: 12px; color: var(--text-muted); }
+.grade-val { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.grade-gain { color: var(--green); }
+.grade-loss { color: var(--red); }
+.grade-verdict { margin-top: 12px; padding: 12px; border-radius: var(--radius-sm); text-align: center; }
+.grade-verdict.grade-worth { background: var(--green-dim); border: 1px solid var(--green-border); }
+.grade-verdict.grade-skip { background: var(--red-dim); border: 1px solid var(--red-border); }
+.grade-verdict.grade-maybe { background: var(--accent-dim); border: 1px solid rgba(232,182,52,0.25); }
+.grade-verdict-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.grade-verdict.grade-worth .grade-verdict-title { color: var(--green); }
+.grade-verdict.grade-skip .grade-verdict-title { color: var(--red); }
+.grade-verdict.grade-maybe .grade-verdict-title { color: var(--accent); }
+.grade-verdict-detail { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
 /* Rip or Buy */
 .rip-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }

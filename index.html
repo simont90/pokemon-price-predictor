@@ -38,7 +38,7 @@
     <section class="search-section">
       <div class="search-container">
         <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-        <input type="text" id="searchInput" placeholder="Search any card... e.g. Umbreon ex, Charizard 151" autocomplete="off" spellcheck="false">
+        <input type="text" id="searchInput" placeholder="Search by name or card number... e.g. Umbreon ex, #125, PRE 161" autocomplete="off" spellcheck="false">
         <span class="search-count" id="searchCount"></span>
         <button class="search-clear" id="searchClear" style="display:none">✕</button>
       </div>
@@ -56,6 +56,7 @@
               <h2 id="cardName"></h2>
               <div class="card-meta">
                 <span class="meta-set" id="cardSet"></span>
+                <span class="meta-number" id="cardNumber"></span>
                 <span class="meta-rarity" id="cardRarity"></span>
               </div>
               <div class="card-links">
@@ -133,6 +134,44 @@
           <p class="card-desc">The most you should pay for this raw card</p>
           <div class="max-price" id="maxPriceGBP">—</div>
           <div class="max-price-logic" id="maxPriceLogic">Select a card to calculate</div>
+        </section>
+
+        <!-- Market Dynamics -->
+        <section class="card market-card" id="marketSection" style="display:none">
+          <div class="market-header">
+            <h2>Market Dynamics</h2>
+            <div class="market-trend-badge" id="marketTrend"></div>
+          </div>
+          <p class="card-desc">Live eBay supply/demand signals from <a href="https://mycollectrics.com" target="_blank" style="color:var(--accent)">collectrics</a></p>
+          <div class="market-loading" id="marketLoading">Loading market data...</div>
+          <div class="market-content" id="marketContent" style="display:none">
+            <div class="market-gauges">
+              <div class="gauge-block">
+                <div class="gauge-label">Demand Pressure</div>
+                <div class="gauge-track"><div class="gauge-fill gauge-demand" id="gaugeDemand" style="width:0%"></div></div>
+                <div class="gauge-row"><span class="gauge-value" id="demandValue">—</span><span class="gauge-desc">% of listings sold daily</span></div>
+              </div>
+              <div class="gauge-block">
+                <div class="gauge-label">Supply Saturation</div>
+                <div class="gauge-track"><div class="gauge-fill gauge-supply" id="gaugeSupply" style="width:50%"></div><div class="gauge-midline"></div></div>
+                <div class="gauge-row"><span class="gauge-value" id="supplyValue">—</span><span class="gauge-desc" id="supplyDesc">vs 30d baseline</span></div>
+              </div>
+            </div>
+            <div class="market-stats" id="marketStats"></div>
+            <canvas id="listingChart" width="500" height="140" style="width:100%;height:140px;"></canvas>
+            <div class="market-legend">
+              <span class="ml-item"><span class="ml-dot" style="background:var(--supply)"></span>Active</span>
+              <span class="ml-item"><span class="ml-dot" style="background:var(--green)"></span>Sold est</span>
+              <span class="ml-item"><span class="ml-dot" style="background:var(--text-faint)"></span>New</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Grading ROI -->
+        <section class="card grade-card" id="gradeSection" style="display:none">
+          <h2>Grading ROI</h2>
+          <p class="card-desc">Is it worth grading this card? PSA 10 vs raw value gain</p>
+          <div class="grade-content" id="gradeContent"></div>
         </section>
 
         <!-- Rip or Buy -->

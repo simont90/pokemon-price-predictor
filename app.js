@@ -174,13 +174,42 @@ function showResults(query) {
   const results = $('searchResults');
   const terms = query.split(/\s+/);
 
+  // Detect card number patterns: "#125", "125/295", "125" (pure number)
+  // Also detect set code + number: "PRE 161", "MEW #125"
+  const numPatterns = terms.map(t => {
+    const m = t.match(/^#?(\d+)(?:\/(\d+))?$/);
+    return m ? { num: parseInt(m[1]), total: m[2] ? parseInt(m[2]) : null } : null;
+  });
+  const hasNumberQuery = numPatterns.some(p => p !== null);
+  const textTerms = terms.filter((_, i) => !numPatterns[i]);
+  const numberTerms = numPatterns.filter(p => p !== null);
+
   let matches = cardData.cards.filter(c => {
-    const text = `${c.n} ${c.s} ${c.r}`.toLowerCase();
-    return terms.every(t => text.includes(t));
+    // Build searchable text: name, set, rarity, set code
+    const text = `${c.n} ${c.s} ${c.r} ${c.sc}`.toLowerCase();
+
+    // Text terms must all match against text fields
+    const textMatch = textTerms.every(t => text.includes(t));
+    if (!textMatch) return false;
+
+    // Number terms must match card number
+    if (numberTerms.length > 0) {
+      return numberTerms.every(nt => {
+        if (nt.total) return c.cn === nt.num && c.ct === nt.total;
+        return c.cn === nt.num;
+      });
+    }
+    return true;
   });
 
   const CHASE = ['SIR','HR','UR','IR','MAR','SHR','SHUR','MHR','BWR'];
   matches.sort((a, b) => {
+    // If searching by number, prioritise exact matches then chase rarities
+    if (hasNumberQuery) {
+      const ac = CHASE.includes(a.rc) ? 1 : 0;
+      const bc = CHASE.includes(b.rc) ? 1 : 0;
+      if (bc !== ac) return bc - ac;
+    }
     const ac = CHASE.includes(a.rc) ? 1 : 0;
     const bc = CHASE.includes(b.rc) ? 1 : 0;
     if (bc !== ac) return bc - ac;
@@ -194,13 +223,16 @@ function showResults(query) {
     return;
   }
 
-  results.innerHTML = matches.map(c => `
+  results.innerHTML = matches.map(c => {
+    const numLabel = c.cn && c.ct ? `#${c.cn}/${c.ct}` : c.cn ? `#${c.cn}` : '';
+    return `
     <div class="search-result-item" data-id="${c.i}">
       ${c.img ? `<img class="search-result-img" src="${c.img}" alt="" loading="lazy">` : `<div class="search-result-img no-img"></div>`}
       <div class="search-result-info">
         <div class="search-result-name">${esc(c.n)}</div>
         <div class="search-result-meta">
           <span>${esc(c.s)}</span>
+          ${numLabel ? `<span class="meta-num">${numLabel}</span>` : ''}
           ${c.r ? `<span style="color:var(--accent)">${esc(c.r)}</span>` : ''}
         </div>
       </div>
@@ -209,7 +241,7 @@ function showResults(query) {
         <span class="usd">${fmtUSD(c.p)}</span>
       </div>
     </div>
-  `).join('');
+  `}).join('');
 
   results.querySelectorAll('.search-result-item').forEach(el => {
     el.addEventListener('click', () => selectCard(el.dataset.id));
@@ -236,11 +268,15 @@ function selectCard(id) {
   else { $('cardImage').style.display = 'none'; }
   $('cardName').textContent = card.n;
   $('cardSet').textContent = card.s;
+  $('cardNumber').textContent = card.cn && card.ct ? `#${card.cn}/${card.ct}` : card.cn ? `#${card.cn}` : '';
+  $('cardNumber').style.display = card.cn ? '' : 'none';
   $('cardRarity').textContent = card.r || 'Unknown';
 
   $('linkCollectrics').href = `https://mycollectrics.com/card.html?id=${card.i}`;
   const tcgName = card.n.replace(/#\d+/, '').replace(/\s+/g, ' ').trim();
-  $('linkTcgCollector').href = `https://www.tcgcollector.com/cards/intl?cardName=${encodeURIComponent(tcgName)}`;
+  const tcgParams = new URLSearchParams({ cardName: tcgName });
+  if (card.cn) tcgParams.set('displayNumber', String(card.cn));
+  $('linkTcgCollector').href = `https://www.tcgcollector.com/cards/intl?${tcgParams.toString()}`;
 
   $('marketRawUSD').textContent = fmtUSD(card.p);
   $('marketRawGBP').textContent = fmtGBP(card.p);
@@ -276,6 +312,9 @@ function selectCard(id) {
   $('forecastSection').style.display = 'block';
   renderForecast(card, pullCost, des.total);
   updateRipOrBuy(card, pullCost);
+
+  // Fetch live market dynamics from collectrics API (async, populates when ready)
+  fetchMarketData(card.i);
 
   if (window.innerWidth < 820) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -336,28 +375,35 @@ function forecast(card, pullCost, desirability) {
     optimistic: [],
   };
 
+  // Market momentum adjusts year 1 rate (fades out over subsequent years)
+  const momentum = getMarketMomentum();
+
   years.forEach(y => {
     const ageMult = getAgeMultiplier(ageMonths, y);
     const annualRate = rarityRate * charMult * ageMult;
 
+    // Momentum fades: full effect year 1, half year 2, none after
+    const momFade = y === 1 ? momentum.mult : y === 2 ? (1 + (momentum.mult - 1) * 0.5) : 1.0;
+    const adjRate = annualRate * momFade;
+
     scenarios.conservative.push({
       year: y,
-      priceUSD: currentPriceUSD * Math.pow(1 + annualRate * 0.5, y),
-      rate: annualRate * 0.5,
+      priceUSD: currentPriceUSD * Math.pow(1 + adjRate * 0.5, y),
+      rate: adjRate * 0.5,
     });
     scenarios.expected.push({
       year: y,
-      priceUSD: currentPriceUSD * Math.pow(1 + annualRate, y),
-      rate: annualRate,
+      priceUSD: currentPriceUSD * Math.pow(1 + adjRate, y),
+      rate: adjRate,
     });
     scenarios.optimistic.push({
       year: y,
-      priceUSD: currentPriceUSD * Math.pow(1 + annualRate * 1.6, y),
-      rate: annualRate * 1.6,
+      priceUSD: currentPriceUSD * Math.pow(1 + adjRate * 1.6, y),
+      rate: adjRate * 1.6,
     });
   });
 
-  return { currentPriceUSD, scenarios, rarityRate, charMult, ageMonths };
+  return { currentPriceUSD, scenarios, rarityRate, charMult, ageMonths, momentum };
 }
 
 function renderForecast(card, pullCost, desirability) {
@@ -389,10 +435,12 @@ function renderForecast(card, pullCost, desirability) {
   const rateLabel = (RARITY_RATES[card.rc] || RARITY_RATES['']).label;
   const charMult = fc.charMult;
   const annualPct = (fc.scenarios.expected[0].rate * 100).toFixed(1);
+  const momLabel = fc.momentum?.label || '';
   $('forecastInfo').innerHTML = `
     <span>${rateLabel} base rate</span> ·
     <span>${charMult > 1 ? charMult.toFixed(1) + '× character premium' : 'Standard character'}</span> ·
     <span>${annualPct}% expected annual growth</span>
+    ${momLabel ? `· <span style="color:${fc.momentum.mult > 1 ? 'var(--green)' : fc.momentum.mult < 1 ? 'var(--red)' : 'var(--text-muted)'}">${momLabel}</span>` : ''}
   `;
 
   // Draw chart
@@ -633,6 +681,288 @@ function updateRipOrBuy(card, pullCost) {
     <div class="rip-luck-row"><span class="rip-luck-label">Median</span><span>${medianPacks.toLocaleString()} packs → net ${fmtGBP(medianNet)}</span></div>
     <div class="rip-luck-row"><span class="rip-luck-label">Unlucky (75th pct)</span><span>${unluckyPacks.toLocaleString()} packs → net ${fmtGBP(unluckyNet)}</span></div>
   `;
+}
+
+// ---- Market Dynamics (live from collectrics API) ----
+let marketData = null; // cached per card
+
+async function fetchMarketData(cardId) {
+  $('marketSection').style.display = 'block';
+  $('marketLoading').style.display = 'block';
+  $('marketContent').style.display = 'none';
+  $('marketTrend').textContent = '';
+  $('marketTrend').className = 'market-trend-badge';
+  marketData = null;
+
+  try {
+    // Use CORS proxy to bypass cross-origin restriction on collectrics API
+    const apiUrl = `https://mycollectrics.com/api/card/${cardId}?include=ebay`;
+    const proxyUrl = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(apiUrl)}`;
+    const r = await fetch(proxyUrl);
+    if (!r.ok) throw new Error('API error');
+    const d = await r.json();
+    marketData = d;
+
+    const mp = d.collectrics?.['market-pressure'];
+    const ebayHist = d['history-ebay-market'] || [];
+
+    if (!mp || ebayHist.length < 3) {
+      $('marketLoading').textContent = 'No market data available for this card';
+      return;
+    }
+
+    $('marketLoading').style.display = 'none';
+    $('marketContent').style.display = 'block';
+    renderMarketDynamics(mp, ebayHist);
+    renderGradingROI(d);
+
+    // Re-render forecast with market momentum now available
+    if (selectedCard) {
+      const { pullCost } = calcPullCost();
+      const des = calcDesirability();
+      renderForecast(selectedCard, pullCost, des);
+    }
+  } catch (e) {
+    $('marketLoading').textContent = 'Market data unavailable';
+    console.warn('Market fetch failed:', e);
+  }
+}
+
+function renderMarketDynamics(mp, ebayHist) {
+  // Use estimated data (more accurate per PokeDataDadGuy)
+  const est = mp.estimated || mp.observed;
+  const obs = mp.observed;
+  const d7 = est['7d'];
+  const d30 = est['30d'];
+  const baseline = est['baseline-comparison'] || obs?.['baseline-comparison'];
+
+  if (!d7 || !d30) return;
+
+  // Demand Pressure gauge (0-15% scale, higher = tighter market)
+  const dp = (d7.metrics['demand-pressure-est'] || d7.metrics['demand-pressure'] || 0) * 100;
+  const dpPct = Math.min(100, (dp / 15) * 100);
+  $('gaugeDemand').style.width = `${dpPct}%`;
+  $('demandValue').textContent = `${dp.toFixed(1)}%`;
+
+  // Supply Saturation Index (0-2 scale, 1.0 = neutral, >1 = loosening, <1 = tightening)
+  const ssi = baseline?.['supply-saturation-index'] ?? 1.0;
+  const ssiPct = Math.min(100, Math.max(0, (ssi / 2) * 100));
+  $('gaugeSupply').style.width = `${ssiPct}%`;
+  $('supplyValue').textContent = ssi.toFixed(2);
+  const ssiLabel = baseline?.['supply-saturation-label'] || (ssi < 0.8 ? 'tightening' : ssi > 1.2 ? 'loosening' : 'normal');
+  $('supplyDesc').textContent = ssiLabel === 'normal' ? 'Balanced vs 30d' : ssiLabel === 'tightening' ? 'Supply tightening' : 'Supply loosening';
+
+  // Trend badge
+  const trend = baseline?.trend || 'stable';
+  const badge = $('marketTrend');
+  const trendLabels = {
+    'heating': 'Heating Up', 'cooling': 'Cooling Off', 'stable': 'Stable',
+    'strongly_heating': 'Hot', 'strongly_cooling': 'Cold',
+    'tightening': 'Tightening', 'loosening': 'Loosening',
+    'strongly loosening': 'Loosening', 'strongly tightening': 'Tightening',
+  };
+  badge.textContent = trendLabels[trend] || trend.replace(/_/g, ' ');
+  if (trend.includes('heat') || trend.includes('hot') || trend.includes('tighten')) badge.className = 'market-trend-badge trend-heating';
+  else if (trend.includes('cool') || trend.includes('cold') || trend.includes('loosen')) badge.className = 'market-trend-badge trend-cooling';
+  else badge.className = 'market-trend-badge trend-stable';
+
+  // Market stats (7d averages)
+  const raw7 = d7.raw || {};
+  const raw30 = d30.raw || {};
+  const activeDelta = baseline?.['active-listings-delta-pct'] ?? 0;
+  const demandDelta = baseline?.['demand-delta-pct'] ?? 0;
+
+  function fmtDelta(pct) {
+    const p = (pct * 100).toFixed(0);
+    if (Math.abs(pct) < 0.01) return '<span class="mstat-delta flat">—</span>';
+    return pct > 0 ? `<span class="mstat-delta up">+${p}%</span>` : `<span class="mstat-delta down">${p}%</span>`;
+  }
+
+  $('marketStats').innerHTML = `
+    <div class="mstat"><div class="mstat-label">Active Listings</div><div class="mstat-value">${(raw7['avg-active'] || 0).toFixed(0)}</div>${fmtDelta(activeDelta)}</div>
+    <div class="mstat"><div class="mstat-label">Sold Est/Day</div><div class="mstat-value">${(raw7['avg-sold-est'] || raw7['avg-ended'] || 0).toFixed(1)}</div>${fmtDelta(demandDelta)}</div>
+    <div class="mstat"><div class="mstat-label">New/Day</div><div class="mstat-value">${(raw7['avg-new'] || 0).toFixed(1)}</div>${fmtDelta(baseline?.['supply-delta-pct'] ?? 0)}</div>
+  `;
+
+  // Draw listing volume chart
+  drawListingChart($('listingChart'), ebayHist);
+}
+
+function drawListingChart(canvas, history) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const data = history.slice(-30); // Last 30 days
+  if (data.length < 2) return;
+
+  const pad = { l: 36, r: 12, t: 10, b: 22 };
+  const cw = W - pad.l - pad.r;
+  const ch = H - pad.t - pad.b;
+
+  // Extract series
+  const active = data.map(d => d['active-to'] || 0);
+  const soldEst = data.map(d => d['sold-est'] || 0);
+  const newL = data.map(d => d['new'] || 0);
+  const maxVal = Math.max(...active, 1) * 1.15;
+  const maxBar = Math.max(...soldEst, ...newL, 1) * 1.15;
+
+  function x(i) { return pad.l + (i / (data.length - 1)) * cw; }
+  function yLine(v) { return pad.t + ch - (v / maxVal) * ch; }
+  function yBar(v) { return pad.t + ch - (v / maxVal) * ch; }
+
+  // Grid
+  ctx.strokeStyle = '#1e2030';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const gy = pad.t + (ch / 3) * i;
+    ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
+  }
+
+  // Y-axis labels
+  ctx.fillStyle = '#555768';
+  ctx.font = '9px JetBrains Mono, monospace';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 3; i++) {
+    const val = maxVal * (1 - i / 3);
+    ctx.fillText(Math.round(val).toString(), pad.l - 4, pad.t + (ch / 3) * i + 3);
+  }
+
+  // Bar width
+  const bw = Math.max(2, (cw / data.length) * 0.3);
+
+  // Sold bars (green)
+  ctx.fillStyle = 'rgba(61, 214, 140, 0.5)';
+  data.forEach((d, i) => {
+    const v = d['sold-est'] || 0;
+    const h = (v / maxVal) * ch;
+    ctx.fillRect(x(i) - bw - 1, pad.t + ch - h, bw, h);
+  });
+
+  // New bars (grey)
+  ctx.fillStyle = 'rgba(85, 87, 104, 0.5)';
+  data.forEach((d, i) => {
+    const v = d['new'] || 0;
+    const h = (v / maxVal) * ch;
+    ctx.fillRect(x(i) + 1, pad.t + ch - h, bw, h);
+  });
+
+  // Active line (blue)
+  ctx.strokeStyle = '#4a9eff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  active.forEach((v, i) => {
+    const px = x(i), py = yLine(v);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  // Date labels
+  ctx.fillStyle = '#555768';
+  ctx.font = '9px Space Grotesk, sans-serif';
+  ctx.textAlign = 'center';
+  [0, Math.floor(data.length / 2), data.length - 1].forEach(i => {
+    if (data[i]) {
+      const d = data[i].date || '';
+      const short = d.slice(5); // MM-DD
+      ctx.fillText(short, x(i), H - 4);
+    }
+  });
+}
+
+// ---- Grading ROI ----
+function renderGradingROI(apiData) {
+  const section = $('gradeSection');
+  const card = selectedCard;
+  if (!card || !card.p10 || card.p10 <= 0) { section.style.display = 'none'; return; }
+
+  section.style.display = 'block';
+  const rawPrice = card.p;
+  const psa10Price = card.p10;
+  const gemRate = card.g ? (card.g * 100).toFixed(1) : null;
+  const gradingFee = 20; // PSA economy service ~$20
+
+  const valueGain = psa10Price - rawPrice;
+  const roi = ((valueGain - gradingFee) / (rawPrice + gradingFee)) * 100;
+  const netProfit = valueGain - gradingFee;
+  const multiplier = psa10Price / rawPrice;
+
+  // Expected value accounting for gem rate
+  let evGrade = null, evNote = '';
+  if (gemRate !== null) {
+    const gemPct = card.g;
+    // If you get PSA 10: profit. If not (PSA 9 or lower): assume ~50% of raw as resale haircut
+    evGrade = (gemPct * (psa10Price - gradingFee)) + ((1 - gemPct) * (rawPrice * 0.85 - gradingFee));
+    const evRoi = ((evGrade - rawPrice) / rawPrice * 100).toFixed(0);
+    evNote = `Expected value: ${fmtGBP(evGrade)} (${evRoi > 0 ? '+' : ''}${evRoi}% ROI at ${gemRate}% gem rate)`;
+  }
+
+  let verdictClass, verdictTitle, verdictDetail;
+  if (roi > 100 && (gemRate === null || card.g > 0.3)) {
+    verdictClass = 'grade-worth';
+    verdictTitle = 'Worth Grading';
+    verdictDetail = `${multiplier.toFixed(1)}× raw-to-PSA 10 multiplier with ${netProfit > 0 ? fmtGBP(netProfit) : ''} potential profit`;
+  } else if (roi > 30) {
+    verdictClass = 'grade-maybe';
+    verdictTitle = 'Consider Grading';
+    verdictDetail = gemRate ? `${gemRate}% gem rate — profitable if it hits PSA 10` : `${multiplier.toFixed(1)}× multiplier but check gem rate first`;
+  } else {
+    verdictClass = 'grade-skip';
+    verdictTitle = 'Skip Grading';
+    verdictDetail = `Only ${multiplier.toFixed(1)}× multiplier — not enough margin after fees`;
+  }
+
+  $('gradeContent').innerHTML = `
+    <div class="grade-row"><span class="grade-label">Raw Price</span><span class="grade-val">${fmtGBP(rawPrice)}</span></div>
+    <div class="grade-row"><span class="grade-label">PSA 10 Price</span><span class="grade-val grade-gain">${fmtGBP(psa10Price)}</span></div>
+    <div class="grade-row"><span class="grade-label">Value Gain</span><span class="grade-val grade-gain">+${fmtGBP(valueGain)} (${multiplier.toFixed(1)}×)</span></div>
+    <div class="grade-row"><span class="grade-label">Grading Fee (~$20)</span><span class="grade-val grade-loss">-${fmtGBP(gradingFee)}</span></div>
+    <div class="grade-row"><span class="grade-label">Net Profit (if PSA 10)</span><span class="grade-val ${netProfit > 0 ? 'grade-gain' : 'grade-loss'}">${netProfit > 0 ? '+' : ''}${fmtGBP(netProfit)}</span></div>
+    ${gemRate !== null ? `<div class="grade-row"><span class="grade-label">Gem Rate</span><span class="grade-val">${gemRate}%</span></div>` : ''}
+    ${evNote ? `<div class="grade-row"><span class="grade-label">Expected Value</span><span class="grade-val">${fmtGBP(evGrade)}</span></div>` : ''}
+    <div class="grade-verdict ${verdictClass}">
+      <div class="grade-verdict-title">${verdictTitle}</div>
+      <div class="grade-verdict-detail">${verdictDetail}</div>
+    </div>
+  `;
+}
+
+// ---- Market-Adjusted Forecast ----
+function getMarketMomentum() {
+  // Returns a multiplier based on live market signals to adjust forecast
+  if (!marketData) return { mult: 1.0, label: '' };
+  const mp = marketData.collectrics?.['market-pressure'];
+  if (!mp) return { mult: 1.0, label: '' };
+
+  const est = mp.estimated || mp.observed;
+  const baseline = est?.['baseline-comparison'];
+  if (!baseline) return { mult: 1.0, label: '' };
+
+  const trend = baseline.trend || 'stable';
+  const ssi = baseline['supply-saturation-index'] ?? 1.0;
+  const dpDelta = baseline['demand-delta-pct'] ?? 0;
+
+  // Adjust year-1 forecast based on current market signals
+  let mult = 1.0;
+  let label = '';
+
+  if (trend.includes('heat') || trend.includes('hot') || trend.includes('tighten') || (ssi < 0.8 && dpDelta > 0.1)) {
+    mult = 1.25; label = 'Market heating — boosted near-term';
+  } else if (trend.includes('cool') || trend.includes('cold') || (ssi > 1.3 && dpDelta < -0.1)) {
+    mult = 0.7; label = 'Market cooling — dampened near-term';
+  } else if (trend.includes('loosen') || ssi > 1.15) {
+    mult = 0.85; label = 'Supply loosening — slightly dampened';
+  } else if (ssi < 0.9) {
+    mult = 1.1; label = 'Supply tightening slightly';
+  }
+
+  return { mult, label };
 }
 
 // ---- Events ----
