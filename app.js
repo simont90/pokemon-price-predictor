@@ -2,7 +2,7 @@
    Pokémon Card Price Predictor v9
    26k+ cards · EN + 6k JP cards
    LIVE market data — auto-updating prices
-   pokemontcg.io (EN) + PriceCharting (JP)
+   PriceCharting primary + pokemontcg.io fallback
    Auto-calibrated desirability · 5-year forecast
    Live GBP conversion · eBay deal checker
    Portfolio tracker · HOLD/BUY/SELL signals
@@ -66,7 +66,7 @@ function getCardImg(card) {
 
 // ---- Live Pricing Cache (localStorage with TTL) ----
 const PRICE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
-const PRICE_CACHE_KEY = 'pkm-live-prices-v3'; // v3: PriceCharting for JP cards (invalidates old TCGdex JP prices)
+const PRICE_CACHE_KEY = 'pkm-live-prices-v4'; // v4: PriceCharting primary for ALL cards
 
 function getPriceCache() {
   try {
@@ -260,9 +260,8 @@ function getCharacterMultiplier(cardName) {
 function getCurrentPrice(card) {
   // If we have live price data for the selected card, use it
   if (livePrice && selectedCard && card.i === selectedCard.i) {
-    // For PriceCharting source (JP cards), prefer pcUngraded
-    if (livePrice.source === 'pricecharting' && livePrice.pcUngraded > 0) return livePrice.pcUngraded;
-    if (livePrice.pcUngraded > 0 && card.lang === 'JP') return livePrice.pcUngraded;
+    // PriceCharting is always primary
+    if (livePrice.pcUngraded > 0) return livePrice.pcUngraded;
     if (livePrice.market > 0) return livePrice.market;
     if (livePrice.mid > 0) return livePrice.mid;
     if (livePrice.avg7 > 0) return livePrice.avg7;
@@ -270,8 +269,7 @@ function getCurrentPrice(card) {
   // Check cache
   const cached = getCachedPrice(card.i);
   if (cached) {
-    if (cached.source === 'pricecharting' && cached.pcUngraded > 0) return cached.pcUngraded;
-    if (cached.pcUngraded > 0 && card.lang === 'JP') return cached.pcUngraded;
+    if (cached.pcUngraded > 0) return cached.pcUngraded;
     if (cached.market > 0) return cached.market;
     if (cached.mid > 0) return cached.mid;
   }
@@ -542,7 +540,7 @@ async function fetchLivePriceJP(card) {
   return result;
 }
 
-// Master live price fetcher — routes to correct API based on card language
+// Master live price fetcher — PriceCharting is PRIMARY for all cards, TCGPlayer is secondary for EN
 async function fetchLivePrice(card) {
   const thisId = ++livePriceFetchId;
   livePrice = null;
@@ -569,30 +567,9 @@ async function fetchLivePrice(card) {
     return;
   }
 
-  // No cache — fetch fresh
+  // No cache — fetch fresh (PriceCharting first, then TCGPlayer fallback for EN)
   try {
-    let priceData;
-    if (card.lang === 'JP') {
-      priceData = await fetchLivePriceJP(card);
-    } else {
-      // EN cards: pokemontcg.io primary, PriceCharting supplementary
-      priceData = await fetchLivePriceEN(card.i);
-      // Also fetch PriceCharting in parallel for supplementary grading data
-      try {
-        const pc = await fetchPriceChartingData(card);
-        if (pc) {
-          priceData.pcUngraded = pc.pcUngraded;
-          priceData.pcPsa10 = pc.pcPsa10;
-          priceData.pcGrade9 = pc.pcGrade9;
-          priceData.pcName = pc.pcName;
-          priceData.pcConsole = pc.pcConsole;
-          priceData.pcId = pc.pcId;
-        }
-      } catch (pcErr) {
-        console.warn('PriceCharting supplementary fetch failed:', pcErr);
-      }
-    }
-
+    const priceData = await fetchFreshPriceData(card);
     if (thisId !== livePriceFetchId) return; // stale
     livePrice = priceData;
     setCachedPrice(card.i, priceData);
@@ -608,26 +585,78 @@ async function fetchLivePrice(card) {
   }
 }
 
+// Unified fetch: PriceCharting primary, TCGPlayer secondary for EN cards
+async function fetchFreshPriceData(card) {
+  let priceData = {
+    source: 'pricecharting',
+    market: 0, low: 0, mid: 0, high: 0, directLow: 0,
+    tcgUpdated: '', tcgUrl: '',
+    cmTrend: 0, cmAvg1: 0, cmAvg7: 0, cmAvg30: 0, cmLow: 0, cmSuggested: 0,
+    cmUpdated: '', cmUrl: '',
+    pcUngraded: 0, pcPsa10: 0, pcGrade9: 0, pcName: '', pcConsole: '', pcId: '',
+  };
+
+  // 1. PriceCharting — primary source for ALL cards
+  try {
+    const pc = await fetchPriceChartingData(card);
+    if (pc && pc.pcUngraded > 0) {
+      Object.assign(priceData, pc);
+      priceData.source = 'pricecharting';
+      priceData.market = pc.pcUngraded;
+      priceData.mid = pc.pcUngraded;
+    }
+  } catch (e) {
+    console.warn('PriceCharting fetch failed:', e);
+  }
+
+  // 2. For EN cards, also fetch TCGPlayer/Cardmarket as secondary data
+  if (card.lang !== 'JP') {
+    try {
+      const enData = await fetchLivePriceEN(card.i);
+      if (enData) {
+        // Merge TCGPlayer + Cardmarket data as secondary
+        priceData.tcgUpdated = enData.tcgUpdated;
+        priceData.tcgUrl = enData.tcgUrl;
+        priceData.cmTrend = enData.cmTrend;
+        priceData.cmAvg1 = enData.cmAvg1;
+        priceData.cmAvg7 = enData.cmAvg7;
+        priceData.cmAvg30 = enData.cmAvg30;
+        priceData.cmLow = enData.cmLow;
+        priceData.cmSuggested = enData.cmSuggested;
+        priceData.cmUpdated = enData.cmUpdated;
+        priceData.cmUrl = enData.cmUrl;
+        // Store TCGPlayer values for display but NOT as primary price
+        priceData.tcgMarket = enData.market;
+        priceData.tcgLow = enData.low;
+        priceData.tcgMid = enData.mid;
+        priceData.tcgHigh = enData.high;
+        priceData.directLow = enData.directLow;
+        // If PriceCharting failed, fall back to TCGPlayer as primary
+        if (priceData.pcUngraded <= 0 && enData.market > 0) {
+          priceData.source = 'pokemontcg.io';
+          priceData.market = enData.market;
+          priceData.low = enData.low;
+          priceData.mid = enData.mid;
+          priceData.high = enData.high;
+        }
+      }
+    } catch (e) {
+      console.warn('TCGPlayer secondary fetch failed:', e);
+      // If PriceCharting also failed, this is a total failure
+      if (priceData.pcUngraded <= 0) throw e;
+    }
+  } else if (priceData.pcUngraded <= 0) {
+    // JP card with no PriceCharting data — throw to show fallback
+    throw new Error('No pricing data available');
+  }
+
+  return priceData;
+}
+
 // Background refresh even when cache hit
 async function fetchAndCacheFresh(card, originalId) {
   try {
-    let priceData;
-    if (card.lang === 'JP') {
-      priceData = await fetchLivePriceJP(card);
-    } else {
-      priceData = await fetchLivePriceEN(card.i);
-      try {
-        const pc = await fetchPriceChartingData(card);
-        if (pc) {
-          priceData.pcUngraded = pc.pcUngraded;
-          priceData.pcPsa10 = pc.pcPsa10;
-          priceData.pcGrade9 = pc.pcGrade9;
-          priceData.pcName = pc.pcName;
-          priceData.pcConsole = pc.pcConsole;
-          priceData.pcId = pc.pcId;
-        }
-      } catch (e) { /* silent */ }
-    }
+    const priceData = await fetchFreshPriceData(card);
     setCachedPrice(card.i, priceData);
     // If still on same card, update
     if (originalId === livePriceFetchId && selectedCard && selectedCard.i === card.i) {
@@ -654,10 +683,10 @@ function renderLivePrice(data) {
   const hasCM = data.cmTrend > 0 || data.cmAvg7 > 0;
   const hasPC = data.pcUngraded > 0;
 
-  // Primary live price — prefer PriceCharting ungraded for JP cards, then TCGPlayer/Cardmarket for EN
-  const primaryPrice = (data.source === 'pricecharting' && data.pcUngraded > 0)
+  // Primary live price — PriceCharting is always primary when available
+  const primaryPrice = (data.pcUngraded > 0)
     ? data.pcUngraded
-    : (data.market || data.mid || data.pcUngraded || data.cmTrend || data.cmAvg7 || 0);
+    : (data.market || data.mid || data.cmTrend || data.cmAvg7 || 0);
   $('liveMainPrice').textContent = primaryPrice > 0 ? fmtGBP(primaryPrice) : '—';
   $('liveMainUSD').textContent = primaryPrice > 0 ? fmtUSD(primaryPrice) : '';
 
@@ -677,14 +706,19 @@ function renderLivePrice(data) {
     $('livePriceDelta').style.display = 'none';
   }
 
-  // TCGPlayer row (hide for JP/PriceCharting-only cards since data comes from PC not TCGPlayer)
+  // TCGPlayer row — shown as secondary source when we have TCGPlayer data
   const tcgRow = $('tcgPlayerRow');
-  if (hasMarket && data.source !== 'pricecharting') {
+  const hasTcg = (data.tcgMarket > 0) || (data.source === 'pokemontcg.io' && data.market > 0);
+  if (hasTcg) {
     tcgRow.style.display = '';
-    $('tcgMarket').textContent = fmtGBP(data.market);
-    $('tcgLow').textContent = data.low > 0 ? fmtGBP(data.low) : '—';
-    $('tcgMid').textContent = data.mid > 0 ? fmtGBP(data.mid) : '—';
-    $('tcgHigh').textContent = data.high > 0 ? fmtGBP(data.high) : '—';
+    const tm = data.tcgMarket || data.market || 0;
+    const tl = data.tcgLow || data.low || 0;
+    const tmd = data.tcgMid || data.mid || 0;
+    const th = data.tcgHigh || data.high || 0;
+    $('tcgMarket').textContent = tm > 0 ? fmtGBP(tm) : '—';
+    $('tcgLow').textContent = tl > 0 ? fmtGBP(tl) : '—';
+    $('tcgMid').textContent = tmd > 0 ? fmtGBP(tmd) : '—';
+    $('tcgHigh').textContent = th > 0 ? fmtGBP(th) : '—';
     const updatedEl = $('tcgUpdated');
     if (data.tcgUpdated) {
       const d = new Date(data.tcgUpdated);
@@ -783,12 +817,10 @@ function renderLivePrice(data) {
 // Recalculate model with live price
 function recalcWithLivePrice(card) {
   if (!card || !livePrice) return;
-  // Pick best live price — PriceCharting ungraded for JP, then TCGPlayer/Cardmarket
-  const lp = (livePrice.source === 'pricecharting' && livePrice.pcUngraded > 0)
+  // Pick best live price — PriceCharting is always primary
+  const lp = (livePrice.pcUngraded > 0)
     ? livePrice.pcUngraded
-    : (livePrice.pcUngraded > 0 && card.lang === 'JP')
-      ? livePrice.pcUngraded
-      : (livePrice.market || livePrice.mid || livePrice.pcUngraded || livePrice.cmTrend || 0);
+    : (livePrice.market || livePrice.mid || livePrice.cmTrend || 0);
   if (lp <= 0) return;
 
   // Update displayed market prices to live
