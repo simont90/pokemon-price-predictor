@@ -558,6 +558,20 @@ body {
 }
 .lp-market { color: var(--green); }
 
+/* PriceCharting row */
+.pc-source-row { border-top: 1px solid var(--accent); }
+.pc-source-row .live-source-label { color: var(--accent); }
+.pc-label-icon { font-size: 14px; }
+.pc-match-name {
+  font-size: 10px; color: var(--text-faint); font-weight: 400;
+  margin-left: auto; max-width: 180px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.pc-grading-roi { font-size: 12px; }
+.roi-good { color: var(--green); }
+.roi-ok { color: var(--orange, #da7101); }
+.roi-bad { color: var(--red, #e53e3e); }
+
 /* Live dot indicator in search results */
 .live-dot {
   display: inline-block; width: 5px; height: 5px; border-radius: 50%;

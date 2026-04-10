@@ -1,11 +1,12 @@
 /* ========================================
-   Pokémon Card Price Predictor v8
+   Pokémon Card Price Predictor v9
    26k+ cards · EN + 6k JP cards
    LIVE market data — auto-updating prices
-   pokemontcg.io (EN) + TCGdex (JP)
+   pokemontcg.io (EN) + PriceCharting (JP)
    Auto-calibrated desirability · 5-year forecast
    Live GBP conversion · eBay deal checker
    Portfolio tracker · HOLD/BUY/SELL signals
+   PriceCharting grading data + ROI
    ======================================== */
 
 // ---- Model Constants ----
@@ -51,7 +52,7 @@ const $ = id => document.getElementById(id);
 
 // ---- Live Pricing Cache (localStorage with TTL) ----
 const PRICE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
-const PRICE_CACHE_KEY = 'pkm-live-prices-v2';
+const PRICE_CACHE_KEY = 'pkm-live-prices-v3'; // v3: PriceCharting for JP cards (invalidates old TCGdex JP prices)
 
 function getPriceCache() {
   try {
@@ -166,6 +167,9 @@ function getCharacterMultiplier(cardName) {
 function getCurrentPrice(card) {
   // If we have live price data for the selected card, use it
   if (livePrice && selectedCard && card.i === selectedCard.i) {
+    // For PriceCharting source (JP cards), prefer pcUngraded
+    if (livePrice.source === 'pricecharting' && livePrice.pcUngraded > 0) return livePrice.pcUngraded;
+    if (livePrice.pcUngraded > 0 && card.lang === 'JP') return livePrice.pcUngraded;
     if (livePrice.market > 0) return livePrice.market;
     if (livePrice.mid > 0) return livePrice.mid;
     if (livePrice.avg7 > 0) return livePrice.avg7;
@@ -173,6 +177,8 @@ function getCurrentPrice(card) {
   // Check cache
   const cached = getCachedPrice(card.i);
   if (cached) {
+    if (cached.source === 'pricecharting' && cached.pcUngraded > 0) return cached.pcUngraded;
+    if (cached.pcUngraded > 0 && card.lang === 'JP') return cached.pcUngraded;
     if (cached.market > 0) return cached.market;
     if (cached.mid > 0) return cached.mid;
   }
@@ -366,37 +372,78 @@ async function fetchLivePriceEN(cardId) {
   return result;
 }
 
-// Fetch live pricing for JP cards from TCGdex (CORS-enabled, no proxy needed)
-async function fetchLivePriceJP(cardId) {
-  // JP card IDs in our DB are prefixed "jp-" — strip that and convert to TCGdex format
-  const tcgdexId = cardId.replace(/^jp-/, '');
-  const url = `https://api.tcgdex.net/v2/ja/cards/${tcgdexId}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`TCGdex ${r.status}`);
-  const d = await r.json();
+// Fetch live pricing from PriceCharting JSON search API (works for both EN and JP)
+// Returns { pcUngraded, pcPsa10, pcGrade9, pcName, pcConsole, pcId, pcImageUrl }
+async function fetchPriceChartingData(card) {
+  // Build search query: card name + card number + "japanese" for JP cards
+  const name = card.n.replace(/\s*\(JP\)/, '').replace(/\s*#\d+/, '').trim();
+  const num = card.cn ? ` ${card.cn}` : '';
+  const lang = card.lang === 'JP' ? ' japanese' : '';
+  const q = `${name}${num}${lang}`;
+  
+  const pcUrl = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(q)}&format=json`;
+  const proxyUrl = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(pcUrl)}`;
+  const r = await fetch(proxyUrl);
+  if (!r.ok) throw new Error(`PriceCharting ${r.status}`);
+  const data = await r.json();
+  
+  if (!data.products || data.products.length === 0) {
+    return null;
+  }
 
-  // TCGdex returns pricing under 'prices' with 'cardmarket' and 'tcgplayer' sub-objects
-  // Also try top-level 'variants' pricing
-  const cm = d.prices?.cardmarket || {};
-  const tcg = d.prices?.tcgplayer || {};
+  // Pick the best match — for JP cards, prefer results with "Japanese" in consoleName
+  let match = data.products[0];
+  if (card.lang === 'JP') {
+    const jpMatch = data.products.find(p => p.consoleName?.toLowerCase().includes('japanese'));
+    if (jpMatch) match = jpMatch;
+  }
 
+  // Parse dollar prices — price1=ungraded, price2=PSA10, price3=Grade9
+  const parsePrice = (s) => {
+    if (!s) return 0;
+    return parseFloat(s.replace(/[^0-9.]/g, '')) || 0;
+  };
+
+  return {
+    pcUngraded: parsePrice(match.price1),
+    pcPsa10: parsePrice(match.price2),
+    pcGrade9: parsePrice(match.price3),
+    pcName: match.productName || '',
+    pcConsole: match.consoleName || '',
+    pcId: match.id || '',
+    pcImageUrl: match.imageUri || '',
+  };
+}
+
+// Fetch live pricing for JP cards — PriceCharting is primary source
+async function fetchLivePriceJP(card) {
+  // Try PriceCharting first (accurate JP pricing with eBay sales data)
+  const pc = await fetchPriceChartingData(card);
+  
   const result = {
-    source: 'tcgdex',
-    market: tcg.market || 0,
-    low: tcg.low || cm.lowPrice || 0,
-    mid: tcg.mid || cm.avg7 || 0,
-    high: tcg.high || 0,
+    source: 'pricecharting',
+    market: pc ? pc.pcUngraded : 0,
+    low: 0,
+    mid: pc ? pc.pcUngraded : 0,
+    high: 0,
     directLow: 0,
     tcgUpdated: '',
     tcgUrl: '',
-    cmTrend: cm.trendPrice || cm.averageSellPrice || 0,
-    cmAvg1: cm.avg1 || 0,
-    cmAvg7: cm.avg7 || 0,
-    cmAvg30: cm.avg30 || 0,
-    cmLow: cm.lowPrice || 0,
-    cmSuggested: cm.suggestedPrice || 0,
+    cmTrend: 0,
+    cmAvg1: 0,
+    cmAvg7: 0,
+    cmAvg30: 0,
+    cmLow: 0,
+    cmSuggested: 0,
     cmUpdated: '',
     cmUrl: '',
+    // PriceCharting specific
+    pcUngraded: pc ? pc.pcUngraded : 0,
+    pcPsa10: pc ? pc.pcPsa10 : 0,
+    pcGrade9: pc ? pc.pcGrade9 : 0,
+    pcName: pc ? pc.pcName : '',
+    pcConsole: pc ? pc.pcConsole : '',
+    pcId: pc ? pc.pcId : '',
   };
 
   return result;
@@ -433,9 +480,24 @@ async function fetchLivePrice(card) {
   try {
     let priceData;
     if (card.lang === 'JP') {
-      priceData = await fetchLivePriceJP(card.i);
+      priceData = await fetchLivePriceJP(card);
     } else {
+      // EN cards: pokemontcg.io primary, PriceCharting supplementary
       priceData = await fetchLivePriceEN(card.i);
+      // Also fetch PriceCharting in parallel for supplementary grading data
+      try {
+        const pc = await fetchPriceChartingData(card);
+        if (pc) {
+          priceData.pcUngraded = pc.pcUngraded;
+          priceData.pcPsa10 = pc.pcPsa10;
+          priceData.pcGrade9 = pc.pcGrade9;
+          priceData.pcName = pc.pcName;
+          priceData.pcConsole = pc.pcConsole;
+          priceData.pcId = pc.pcId;
+        }
+      } catch (pcErr) {
+        console.warn('PriceCharting supplementary fetch failed:', pcErr);
+      }
     }
 
     if (thisId !== livePriceFetchId) return; // stale
@@ -458,9 +520,20 @@ async function fetchAndCacheFresh(card, originalId) {
   try {
     let priceData;
     if (card.lang === 'JP') {
-      priceData = await fetchLivePriceJP(card.i);
+      priceData = await fetchLivePriceJP(card);
     } else {
       priceData = await fetchLivePriceEN(card.i);
+      try {
+        const pc = await fetchPriceChartingData(card);
+        if (pc) {
+          priceData.pcUngraded = pc.pcUngraded;
+          priceData.pcPsa10 = pc.pcPsa10;
+          priceData.pcGrade9 = pc.pcGrade9;
+          priceData.pcName = pc.pcName;
+          priceData.pcConsole = pc.pcConsole;
+          priceData.pcId = pc.pcId;
+        }
+      } catch (e) { /* silent */ }
     }
     setCachedPrice(card.i, priceData);
     // If still on same card, update
@@ -486,9 +559,12 @@ function renderLivePrice(data) {
 
   const hasMarket = data.market > 0;
   const hasCM = data.cmTrend > 0 || data.cmAvg7 > 0;
+  const hasPC = data.pcUngraded > 0;
 
-  // Primary live price
-  const primaryPrice = data.market || data.mid || data.cmTrend || data.cmAvg7 || 0;
+  // Primary live price — prefer PriceCharting ungraded for JP cards, then TCGPlayer/Cardmarket for EN
+  const primaryPrice = (data.source === 'pricecharting' && data.pcUngraded > 0)
+    ? data.pcUngraded
+    : (data.market || data.mid || data.pcUngraded || data.cmTrend || data.cmAvg7 || 0);
   $('liveMainPrice').textContent = primaryPrice > 0 ? fmtGBP(primaryPrice) : '—';
   $('liveMainUSD').textContent = primaryPrice > 0 ? fmtUSD(primaryPrice) : '';
 
@@ -508,9 +584,9 @@ function renderLivePrice(data) {
     $('livePriceDelta').style.display = 'none';
   }
 
-  // TCGPlayer row
+  // TCGPlayer row (hide for JP/PriceCharting-only cards since data comes from PC not TCGPlayer)
   const tcgRow = $('tcgPlayerRow');
-  if (hasMarket) {
+  if (hasMarket && data.source !== 'pricecharting') {
     tcgRow.style.display = '';
     $('tcgMarket').textContent = fmtGBP(data.market);
     $('tcgLow').textContent = data.low > 0 ? fmtGBP(data.low) : '—';
@@ -561,6 +637,44 @@ function renderLivePrice(data) {
     cmRow.style.display = 'none';
   }
 
+  // PriceCharting row
+  const pcRow = $('priceChartingRow');
+  if (hasPC) {
+    pcRow.style.display = '';
+    $('pcUngraded').textContent = fmtGBP(data.pcUngraded);
+    $('pcPsa10').textContent = data.pcPsa10 > 0 ? fmtGBP(data.pcPsa10) : '—';
+    $('pcGrade9').textContent = data.pcGrade9 > 0 ? fmtGBP(data.pcGrade9) : '—';
+    // Grading ROI: (PSA10 price - Ungraded - ~£20 grading cost) / Ungraded
+    if (data.pcPsa10 > 0 && data.pcUngraded > 0) {
+      const gradingCostUSD = 25; // ~£20 grading cost in USD
+      const roi = ((data.pcPsa10 - data.pcUngraded - gradingCostUSD) / data.pcUngraded * 100).toFixed(0);
+      const roiEl = $('pcGradingRoi');
+      roiEl.textContent = `${roi > 0 ? '+' : ''}${roi}%`;
+      roiEl.className = `lp-val pc-grading-roi ${roi > 50 ? 'roi-good' : roi > 0 ? 'roi-ok' : 'roi-bad'}`;
+    } else {
+      $('pcGradingRoi').textContent = '—';
+      $('pcGradingRoi').className = 'lp-val pc-grading-roi';
+    }
+    // Match name shown as subtitle
+    const matchEl = $('pcMatchName');
+    if (data.pcName) {
+      matchEl.textContent = data.pcName;
+      matchEl.style.display = '';
+    } else {
+      matchEl.style.display = 'none';
+    }
+    // Link to PriceCharting product page
+    const pcLink = $('priceChartingLink');
+    if (data.pcId) {
+      pcLink.href = `https://www.pricecharting.com/game/pokemon-japanese-${data.pcConsole ? data.pcConsole.toLowerCase().replace(/\s+/g, '-') : 'cards'}/${data.pcId}`;
+      pcLink.style.display = '';
+    } else {
+      pcLink.style.display = 'none';
+    }
+  } else {
+    pcRow.style.display = 'none';
+  }
+
   // Cache timestamp
   const cacheTs = $('livePriceCache');
   if (data._ts) {
@@ -576,12 +690,23 @@ function renderLivePrice(data) {
 // Recalculate model with live price
 function recalcWithLivePrice(card) {
   if (!card || !livePrice) return;
-  const lp = livePrice.market || livePrice.mid || livePrice.cmTrend || 0;
+  // Pick best live price — PriceCharting ungraded for JP, then TCGPlayer/Cardmarket
+  const lp = (livePrice.source === 'pricecharting' && livePrice.pcUngraded > 0)
+    ? livePrice.pcUngraded
+    : (livePrice.pcUngraded > 0 && card.lang === 'JP')
+      ? livePrice.pcUngraded
+      : (livePrice.market || livePrice.mid || livePrice.pcUngraded || livePrice.cmTrend || 0);
   if (lp <= 0) return;
 
   // Update displayed market prices to live
   $('marketRawUSD').textContent = fmtUSD(lp);
   $('marketRawGBP').textContent = fmtGBP(lp);
+
+  // Update PSA 10 from PriceCharting if available and static data is missing
+  if (livePrice.pcPsa10 > 0 && (!card.p10 || card.p10 <= 0)) {
+    $('psa10USD').textContent = fmtUSD(livePrice.pcPsa10);
+    $('psa10GBP').textContent = fmtGBP(livePrice.pcPsa10);
+  }
 
   // Re-calculate pull cost
   let pullCost = 7.65;
@@ -603,6 +728,11 @@ function recalcWithLivePrice(card) {
 
   // Update all calculations
   updateAll();
+
+  // Re-render grading ROI with PriceCharting PSA 10 data
+  if (livePrice.pcPsa10 > 0) {
+    renderGradingROI(null);
+  }
 }
 
 // ================================================================
@@ -1373,11 +1503,15 @@ function drawListingChart(canvas, history) {
 function renderGradingROI(apiData) {
   const section = $('gradeSection');
   const card = selectedCard;
-  if (!card || !card.p10 || card.p10 <= 0) { section.style.display = 'none'; return; }
+  // Use PriceCharting PSA 10 data as fallback for JP cards (or any card with PC data)
+  const pcPsa10 = livePrice && livePrice.pcPsa10 > 0 ? livePrice.pcPsa10 : 0;
+  const staticPsa10 = card ? card.p10 : 0;
+  const hasPsa10 = (staticPsa10 && staticPsa10 > 0) || pcPsa10 > 0;
+  if (!card || !hasPsa10) { section.style.display = 'none'; return; }
 
   section.style.display = 'block';
   const rawPrice = getCurrentPrice(card);
-  const psa10Price = card.p10;
+  const psa10Price = (staticPsa10 && staticPsa10 > 0) ? staticPsa10 : pcPsa10;
   const gemRate = card.g ? (card.g * 100).toFixed(1) : null;
   const gradingFee = 20;
 
