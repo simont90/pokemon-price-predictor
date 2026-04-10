@@ -50,6 +50,20 @@ let selectedCard = null;
 let searchIndex = [];
 const $ = id => document.getElementById(id);
 
+// ---- Image URL Helper (reconstructed from card ID to save DB size) ----
+function getCardImg(card) {
+  if (card.img) return card.img;
+  if (card.lang === 'JP') {
+    // JP cards: tcgdex format — jp-{set}-{num} -> /ja/{era}/{set}/{num}/high.png
+    const parts = card.i.replace('jp-', '').split('-');
+    const setCode = parts[0];
+    const num = parts.slice(1).join('-');
+    return `https://assets.tcgdex.net/ja/S/${setCode}/${num}/high.png`;
+  }
+  // EN cards: pokemontcg.io format — {setCode}-{num} -> /images/{setCode}/{num}.png
+  return `https://images.pokemontcg.io/${card.sc}/${card.cn || card.ns || ''}.png`;
+}
+
 // ---- Live Pricing Cache (localStorage with TTL) ----
 const PRICE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 const PRICE_CACHE_KEY = 'pkm-live-prices-v3'; // v3: PriceCharting for JP cards (invalidates old TCGdex JP prices)
@@ -88,24 +102,49 @@ let livePriceFetchId = 0;
 let portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
 
 // ---- Init ----
+async function fetchWithRetry(url, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      if (i === retries) throw e;
+      await new Promise(res => setTimeout(res, 1000 * (i + 1))); // backoff
+    }
+  }
+}
+
 async function init() {
-  const [cardsR, setsR, fxR] = await Promise.allSettled([
-    fetch('data/cards-expanded.json').then(r => r.json()),
-    fetch('data/sets-expanded.json').then(r => r.json()),
-    fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json()),
-  ]);
+  const loadingText = document.querySelector('#loadingOverlay p');
+  try {
+    if (loadingText) loadingText.textContent = 'Loading card database...';
+    const [cardsR, setsR, fxR] = await Promise.allSettled([
+      fetchWithRetry('data/cards-expanded.json'),
+      fetchWithRetry('data/sets-expanded.json'),
+      fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json()),
+    ]);
 
-  if (cardsR.status === 'fulfilled') cardData = cardsR.value;
-  if (setsR.status === 'fulfilled') setsData = setsR.value;
-  if (fxR.status === 'fulfilled' && fxR.value.rates?.GBP) fxRate = fxR.value.rates.GBP;
+    if (cardsR.status === 'fulfilled') cardData = cardsR.value;
+    if (setsR.status === 'fulfilled') setsData = setsR.value;
+    if (fxR.status === 'fulfilled' && fxR.value.rates?.GBP) fxRate = fxR.value.rates.GBP;
 
-  if (cardData) buildSearchIndex(cardData.cards);
+    if (cardData) {
+      if (loadingText) loadingText.textContent = 'Building search index...';
+      buildSearchIndex(cardData.cards);
+    }
 
-  $('fxValue').textContent = `£${fxRate.toFixed(4)}`;
-  if (cardData) {
-    const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
-    const enCount = cardData.count - jpCount;
-    $('searchCount').textContent = `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP)`;
+    $('fxValue').textContent = `£${fxRate.toFixed(4)}`;
+    if (cardData) {
+      const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
+      const enCount = cardData.count - jpCount;
+      $('searchCount').textContent = `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP)`;
+    }
+  } catch (e) {
+    console.error('Init failed:', e);
+    if (loadingText) loadingText.textContent = 'Failed to load — tap to retry';
+    document.getElementById('loadingOverlay').onclick = () => { location.reload(); };
+    return;
   }
   $('loadingOverlay').classList.add('hidden');
 
@@ -297,7 +336,7 @@ function doSearch(query) {
         ${isLive ? '<span class="live-dot" title="Live price"></span>' : ''}` : '<span class="no-price">No price data</span>';
     return `
     <div class="search-result-item${isJP ? ' jp-card' : ''}" data-id="${c.i}">
-      ${c.img ? `<img class="search-result-img" src="${c.img}" alt="" loading="lazy">` : `<div class="search-result-img no-img"></div>`}
+      ${`<img class="search-result-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="this.style.display='none'">`}
       <div class="search-result-info">
         <div class="search-result-name">${langBadge}${esc(c.n)}${jpNameLabel}</div>
         <div class="search-result-meta">
@@ -759,19 +798,15 @@ function selectCard(id) {
 
   // Card images
   if (isJP) {
-    if (card.img) {
-      $('cardImageJp').src = card.img;
-      $('cardImageJp').style.display = 'block';
-      $('cardImageJp').title = 'Japanese card';
-      $('cardImageJp').onclick = null;
-      $('cardImageJp').style.cursor = 'default';
-    } else {
-      $('cardImageJp').style.display = 'none';
-    }
+    $('cardImageJp').src = getCardImg(card);
+    $('cardImageJp').style.display = 'block';
+    $('cardImageJp').title = 'Japanese card';
+    $('cardImageJp').onclick = null;
+    $('cardImageJp').style.cursor = 'default';
     $('cardImage').style.display = 'none';
   } else {
-    if (card.img) { $('cardImage').src = card.img; $('cardImage').style.display = 'block'; }
-    else { $('cardImage').style.display = 'none'; }
+    $('cardImage').src = getCardImg(card);
+    $('cardImage').style.display = 'block';
     loadJapaneseImage(card);
   }
 
@@ -888,15 +923,11 @@ function loadJapaneseImage(card) {
   const tcgName = card.n.replace(/#\d+/, '').replace(/\s+/g, ' ').trim();
   const jpSearchUrl = `https://www.tcgcollector.com/cards/jp?cardName=${encodeURIComponent(tcgName)}${card.cn ? '&displayNumber=' + card.cn : ''}`;
 
-  if (card.img) {
-    jpImg.src = card.img;
-    jpImg.style.display = 'block';
-    jpImg.title = 'Click to find Japanese version on TCG Collector';
-    jpImg.style.cursor = 'pointer';
-    jpImg.onclick = () => window.open(jpSearchUrl, '_blank');
-  } else {
-    jpImg.style.display = 'none';
-  }
+  jpImg.src = getCardImg(card);
+  jpImg.style.display = 'block';
+  jpImg.title = 'Click to find Japanese version on TCG Collector';
+  jpImg.style.cursor = 'pointer';
+  jpImg.onclick = () => window.open(jpSearchUrl, '_blank');
 }
 
 // ---- HOLD / BUY / SELL Signal ----
@@ -1611,7 +1642,7 @@ function toggleCardInPortfolio() {
       id: selectedCard.i,
       name: selectedCard.n,
       set: selectedCard.s,
-      img: selectedCard.img || '',
+      img: getCardImg(selectedCard),
       price: getCurrentPrice(selectedCard),
       addedDate: new Date().toISOString(),
       addedPriceGBP: usdToGbp(getCurrentPrice(selectedCard)),
@@ -1679,7 +1710,7 @@ function renderPortfolio() {
 
     return `
       <div class="portfolio-item" data-id="${p.id}">
-        ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="">` : '<div class="portfolio-item-img"></div>'}
+        ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="" onerror="this.style.display='none'">` : '<div class="portfolio-item-img"></div>'}
         <div class="portfolio-item-info">
           <div class="portfolio-item-name">${esc(p.name)}</div>
           <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}</div>
