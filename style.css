@@ -246,6 +246,45 @@ body {
 .footer a { color: var(--text-muted); text-decoration: none; }
 .footer a:hover { color: var(--accent); }
 
+/* Rip or Buy */
+.rip-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.rip-verdict-badge { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; padding: 4px 10px; border-radius: 6px; }
+.rip-buy { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+.rip-rip { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(232,182,52,0.25); }
+.rip-close { background: rgba(255,165,0,0.1); color: #ffa500; border: 1px solid rgba(255,165,0,0.25); }
+
+.rip-comparison { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; margin: 16px 0 12px; }
+.rip-option { background: var(--bg-raised); border-radius: var(--radius-sm); padding: 16px; text-align: center; }
+.rip-option-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); font-weight: 600; margin-bottom: 4px; }
+.rip-option-cost { font-family: var(--mono); font-size: 22px; font-weight: 700; line-height: 1.2; }
+.rip-packs .rip-option-cost { color: var(--red); }
+.rip-single .rip-option-cost { color: var(--green); }
+.rip-option-detail { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.rip-option-sub { font-size: 10px; color: var(--text-faint); margin-top: 2px; }
+.rip-vs { font-size: 12px; color: var(--text-faint); font-weight: 600; text-align: center; }
+.rip-savings { text-align: center; margin-bottom: 12px; }
+.rip-save-good { font-size: 14px; font-weight: 600; color: var(--green); }
+.rip-save-rip { font-size: 14px; font-weight: 600; color: var(--accent); }
+.rip-save-mult { font-size: 12px; color: var(--text-muted); }
+.rip-luck { border-top: 1px solid var(--border); padding-top: 10px; }
+.rip-luck-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; color: var(--text-muted); }
+.rip-luck-label { color: var(--text-faint); font-size: 11px; }
+
+/* Forecast */
+.forecast-card h2 { margin-bottom: 4px; }
+#forecastChart { margin: 12px 0 8px; border-radius: var(--radius-sm); background: var(--bg-raised); }
+.fc-info { font-size: 11px; color: var(--text-faint); margin-bottom: 12px; text-align: center; }
+.fc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.fc-table th { text-align: center; color: var(--text-faint); font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.fc-table th:first-child { text-align: left; }
+.fc-table td { padding: 7px 8px; text-align: center; border-bottom: 1px solid var(--border); }
+.fc-year { text-align: left; font-weight: 500; color: var(--text-muted); font-size: 12px; }
+.fc-con { color: var(--text-faint); font-family: var(--mono); }
+.fc-exp { color: var(--accent); font-family: var(--mono); font-weight: 600; }
+.fc-opt { color: var(--text-muted); font-family: var(--mono); }
+.fc-gain { font-size: 10px; color: var(--green); margin-left: 4px; }
+.fc-disclaimer { font-size: 10px; color: var(--text-faint); margin-top: 10px; line-height: 1.4; text-align: center; }
+
 /* Responsive */
 @media (max-width: 820px) {
   .main { grid-template-columns: 1fr; }

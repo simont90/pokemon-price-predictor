@@ -11,7 +11,6 @@
 </head>
 <body>
   <div class="app">
-    <!-- Header -->
     <header class="header">
       <div class="header-inner">
         <div class="logo">
@@ -27,19 +26,15 @@
           </div>
         </div>
         <div class="header-right">
-          <div class="fx-rate" id="fxRate">
-            <span class="fx-label">USD/GBP</span>
-            <span class="fx-value" id="fxValue">Loading...</span>
-          </div>
+          <div class="fx-rate"><span class="fx-label">USD/GBP</span><span class="fx-value" id="fxValue">...</span></div>
           <a href="https://youtu.be/Zml3jfSyPHI" target="_blank" rel="noopener" class="credit-link">
-            Model by PokeDataDadGuy
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+            Model: PokeDataDadGuy <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
           </a>
         </div>
       </div>
     </header>
 
-    <!-- Search Section -->
+    <!-- Search -->
     <section class="search-section">
       <div class="search-container">
         <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -53,7 +48,6 @@
     <main class="main">
       <!-- Left Column -->
       <div class="inputs-column">
-
         <!-- Selected Card -->
         <section class="card selected-card" id="selectedCardSection" style="display:none">
           <div class="selected-card-header">
@@ -65,146 +59,71 @@
                 <span class="meta-rarity" id="cardRarity"></span>
               </div>
               <div class="card-links">
-                <a id="linkCollectrics" href="#" target="_blank" rel="noopener" class="card-link">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
-                  mycollectrics
-                </a>
-                <a id="linkTcgCollector" href="#" target="_blank" rel="noopener" class="card-link">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
-                  tcgcollector
-                </a>
+                <a id="linkCollectrics" href="#" target="_blank" rel="noopener" class="card-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> mycollectrics</a>
+                <a id="linkTcgCollector" href="#" target="_blank" rel="noopener" class="card-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> tcgcollector</a>
               </div>
             </div>
           </div>
-
-          <!-- Price Grid -->
           <div class="price-grid">
-            <div class="price-tile">
-              <span class="price-tile-label">Market Raw</span>
-              <span class="price-tile-usd" id="marketRawUSD"></span>
-              <span class="price-tile-gbp" id="marketRawGBP"></span>
-            </div>
-            <div class="price-tile">
-              <span class="price-tile-label">PSA 10</span>
-              <span class="price-tile-usd" id="psa10USD"></span>
-              <span class="price-tile-gbp" id="psa10GBP"></span>
-            </div>
-            <div class="price-tile">
-              <span class="price-tile-label">PSA 10 Gem %</span>
-              <span class="price-tile-big" id="gemPct">—</span>
-            </div>
-            <div class="price-tile">
-              <span class="price-tile-label">Pull Cost</span>
-              <span class="price-tile-big" id="autoPullCost">—</span>
-              <span class="price-tile-sub" id="autoPullPacks"></span>
-            </div>
+            <div class="price-tile"><span class="price-tile-label">Market Raw</span><span class="price-tile-usd" id="marketRawUSD"></span><span class="price-tile-gbp" id="marketRawGBP"></span></div>
+            <div class="price-tile"><span class="price-tile-label">PSA 10</span><span class="price-tile-usd" id="psa10USD"></span><span class="price-tile-gbp" id="psa10GBP"></span></div>
+            <div class="price-tile"><span class="price-tile-label">PSA 10 Gem %</span><span class="price-tile-big" id="gemPct">—</span></div>
+            <div class="price-tile"><span class="price-tile-label">Pull Cost</span><span class="price-tile-big" id="autoPullCost">—</span><span class="price-tile-sub" id="autoPullPacks"></span></div>
           </div>
         </section>
 
-        <!-- Pull Cost Section -->
+        <!-- Pull Cost -->
         <section class="card">
           <div class="card-header">
-            <div class="card-icon supply-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 8h20"/><path d="M10 3v5"/></svg>
-            </div>
-            <div>
-              <h2>Pull Cost <span class="badge supply-badge">Supply</span></h2>
-              <p class="card-desc">Auto-filled from set data when you select a card</p>
-            </div>
+            <div class="card-icon supply-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 8h20"/><path d="M10 3v5"/></svg></div>
+            <div><h2>Pull Cost <span class="badge supply-badge">Supply</span></h2><p class="card-desc">Auto-filled from set data when you select a card</p></div>
           </div>
-
           <div class="input-row">
-            <div class="input-group">
-              <label for="packRate">Packs per rarity hit</label>
-              <input type="number" id="packRate" min="1" max="500" step="1" value="45" class="number-input">
-            </div>
-            <div class="input-group">
-              <label for="cardsInTier">Cards in tier</label>
-              <input type="number" id="cardsInTier" min="1" max="100" step="1" value="17" class="number-input">
-            </div>
+            <div class="input-group"><label for="packRate">Packs per rarity hit</label><input type="number" id="packRate" min="1" max="500" step="1" value="45" class="number-input"></div>
+            <div class="input-group"><label for="cardsInTier">Cards in tier</label><input type="number" id="cardsInTier" min="1" max="100" step="1" value="17" class="number-input"></div>
           </div>
-
-          <div class="pull-cost-result">
-            <div class="pull-cost-label">Pull Cost Score</div>
-            <div class="pull-cost-value" id="pullCostDisplay">7.65</div>
-            <div class="pull-cost-packs" id="packsNeeded">≈ 765 packs for this specific card</div>
-          </div>
+          <div class="pull-cost-result"><div class="pull-cost-label">Pull Cost Score</div><div class="pull-cost-value" id="pullCostDisplay">7.65</div><div class="pull-cost-packs" id="packsNeeded">≈ 765 packs for this specific card</div></div>
         </section>
 
-        <!-- Desirability Index Section -->
+        <!-- Desirability -->
         <section class="card">
           <div class="card-header">
-            <div class="card-icon demand-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-            </div>
-            <div>
-              <h2>Desirability <span class="badge demand-badge">Demand</span></h2>
-              <p class="card-desc">Rate the card's demand factors</p>
-            </div>
+            <div class="card-icon demand-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div>
+            <div><h2>Desirability <span class="badge demand-badge">Demand</span></h2><p class="card-desc">Auto-calibrated from market price — adjust to explore</p></div>
           </div>
-
           <div class="slider-group">
-            <div class="slider-header">
-              <label>Character Premium</label>
-              <span class="weight-badge">45%</span>
-            </div>
+            <div class="slider-header"><label>Character Premium</label><span class="weight-badge">45%</span></div>
             <p class="input-hint">Charizard ≈ 9.5, Umbreon ≈ 9.2, Dragonite ≈ 7.5, niche ≈ 2-3</p>
-            <div class="slider-row">
-              <input type="range" id="characterPremium" min="1" max="10" step="0.1" value="7" class="slider">
-              <span class="slider-value" id="characterPremiumValue">7.0</span>
-            </div>
+            <div class="slider-row"><input type="range" id="characterPremium" min="1" max="10" step="0.1" value="7" class="slider"><span class="slider-value" id="characterPremiumValue">7.0</span></div>
           </div>
-
           <div class="slider-group">
-            <div class="slider-header">
-              <label>Artwork / Hype</label>
-              <span class="weight-badge">45%</span>
-            </div>
-            <p class="input-hint">10 = Bubble Mew, Mega Charizard X artwork. 1 = forgettable</p>
-            <div class="slider-row">
-              <input type="range" id="artworkHype" min="1" max="10" step="0.1" value="7" class="slider">
-              <span class="slider-value" id="artworkHypeValue">7.0</span>
-            </div>
+            <div class="slider-header"><label>Artwork / Hype</label><span class="weight-badge">45%</span></div>
+            <p class="input-hint">Auto-set from market data. 10 = iconic artwork, 1 = forgettable</p>
+            <div class="slider-row"><input type="range" id="artworkHype" min="1" max="10" step="0.1" value="7" class="slider"><span class="slider-value" id="artworkHypeValue">7.0</span></div>
           </div>
-
           <div class="slider-group">
-            <div class="slider-header">
-              <label>Universal Appeal</label>
-              <span class="weight-badge">10%</span>
-            </div>
+            <div class="slider-header"><label>Universal Appeal</label><span class="weight-badge">10%</span></div>
             <p class="input-hint">Google Trends: Charizard/Pikachu ≈ 9-10, niche ≈ 2-3</p>
-            <div class="slider-row">
-              <input type="range" id="universalAppeal" min="1" max="10" step="0.1" value="6" class="slider">
-              <span class="slider-value" id="universalAppealValue">6.0</span>
-            </div>
+            <div class="slider-row"><input type="range" id="universalAppeal" min="1" max="10" step="0.1" value="6" class="slider"><span class="slider-value" id="universalAppealValue">6.0</span></div>
           </div>
-
           <div class="desirability-result">
             <span class="desirability-label">Desirability</span>
             <span class="desirability-value" id="desirabilityDisplay">6.9</span>
-            <div class="desirability-bar-container">
-              <div class="desirability-bar" id="desirabilityBar" style="width: 69%"></div>
-            </div>
+            <div class="desirability-bar-container"><div class="desirability-bar" id="desirabilityBar" style="width:69%"></div></div>
           </div>
         </section>
       </div>
 
-      <!-- Right Column: Output -->
+      <!-- Right Column -->
       <div class="output-column">
         <!-- Prediction -->
         <section class="card prediction-card">
           <h2>Model Prediction</h2>
           <div class="predicted-price" id="predictedPriceGBP">£228</div>
-          <div class="predicted-usd" id="predictedPriceUSD">≈ $287 USD</div>
+          <div class="predicted-usd" id="predictedPriceUSD">≈ $287</div>
           <div class="price-breakdown">
-            <div class="breakdown-item">
-              <span class="breakdown-label">Supply factor</span>
-              <span class="breakdown-value" id="supplyFactor">×3.79</span>
-            </div>
-            <div class="breakdown-item">
-              <span class="breakdown-label">Demand factor</span>
-              <span class="breakdown-value" id="demandFactor">×10.71</span>
-            </div>
+            <div class="breakdown-item"><span class="breakdown-label">Supply factor</span><span class="breakdown-value" id="supplyFactor">×3.79</span></div>
+            <div class="breakdown-item"><span class="breakdown-label">Demand factor</span><span class="breakdown-value" id="demandFactor">×10.71</span></div>
           </div>
         </section>
 
@@ -213,72 +132,75 @@
           <h2>Max Buy Price</h2>
           <p class="card-desc">The most you should pay for this raw card</p>
           <div class="max-price" id="maxPriceGBP">—</div>
-          <div class="max-price-logic" id="maxPriceLogic">Select a card or enter a market price to calculate</div>
+          <div class="max-price-logic" id="maxPriceLogic">Select a card to calculate</div>
+        </section>
+
+        <!-- Rip or Buy -->
+        <section class="card rip-card" id="ripSection" style="display:none">
+          <div class="rip-header">
+            <h2>Rip or Buy?</h2>
+            <div class="rip-verdict-badge" id="ripVerdict"></div>
+          </div>
+          <p class="card-desc">Should you open packs or just buy the single?</p>
+          <div class="rip-comparison">
+            <div class="rip-option rip-packs">
+              <div class="rip-option-label">Open Packs</div>
+              <div class="rip-option-cost" id="ripPackCost">—</div>
+              <div class="rip-option-detail" id="ripPackDetail"></div>
+              <div class="rip-option-sub" id="ripPackSub"></div>
+            </div>
+            <div class="rip-vs">vs</div>
+            <div class="rip-option rip-single">
+              <div class="rip-option-label">Buy Single</div>
+              <div class="rip-option-cost" id="ripSingleCost">—</div>
+              <div class="rip-option-detail" id="ripSingleDetail">Current market price</div>
+            </div>
+          </div>
+          <div class="rip-savings" id="ripSavings"></div>
+          <div class="rip-luck" id="ripLuck"></div>
         </section>
 
         <!-- eBay Deal Check -->
         <section class="card deal-card">
           <h2>eBay Deal Check</h2>
           <p class="card-desc">Enter a listing price to see if it's worth it</p>
-          <div class="input-group">
-            <label for="ebayPrice">eBay listing price (£)</label>
-            <input type="number" id="ebayPrice" min="0" step="0.01" value="" placeholder="e.g. 45.00" class="number-input ebay-input">
-          </div>
-          <div class="deal-result" id="dealResult">
-            <div class="deal-placeholder">Enter an eBay price to check</div>
-          </div>
+          <div class="input-group"><label for="ebayPrice">eBay listing price (£)</label><input type="number" id="ebayPrice" min="0" step="0.01" value="" placeholder="e.g. 45.00" class="number-input ebay-input"></div>
+          <div class="deal-result" id="dealResult"><div class="deal-placeholder">Enter an eBay price to check</div></div>
         </section>
 
-        <!-- How It Works (collapsed) -->
+        <!-- 5-Year Forecast -->
+        <section class="card forecast-card" id="forecastSection" style="display:none">
+          <h2>5-Year Price Forecast</h2>
+          <p class="card-desc">Projected appreciation based on rarity, character, and market trends</p>
+          <canvas id="forecastChart" width="500" height="220" style="width:100%;height:220px;"></canvas>
+          <div class="fc-info" id="forecastInfo"></div>
+          <table class="fc-table" id="forecastTable">
+            <thead><tr><th></th><th>Conservative</th><th>Expected</th><th>Optimistic</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="fc-disclaimer">Projections based on historical Pokémon TCG appreciation patterns. Not financial advice — actual results depend on market conditions, print runs, and collector demand.</p>
+        </section>
+
+        <!-- How It Works -->
         <details class="card how-card">
           <summary><h2>How the Model Works</h2></summary>
           <div class="how-content">
-            <div class="formula-box">
-              <code>Price = 12.50 × 1.19<sup>PullCost</sup> × 1.41<sup>Desirability</sup></code>
-            </div>
+            <div class="formula-box"><code>Price = 12.50 × 1.19<sup>PullCost</sup> × 1.41<sup>Desirability</sup></code></div>
             <div class="explanation">
-              <div class="explain-item">
-                <div class="explain-icon supply-icon-sm"></div>
-                <div>
-                  <strong>Pull Cost (Supply)</strong>
-                  <p>Packs-per-hit × cards-in-tier ÷ 100. Each +1 → +19% price.</p>
-                </div>
-              </div>
-              <div class="explain-item">
-                <div class="explain-icon demand-icon-sm"></div>
-                <div>
-                  <strong>Desirability (Demand)</strong>
-                  <p>Character (45%) + Artwork (45%) + Appeal (10%). Each +1 → +41% price. 2× supply impact.</p>
-                </div>
-              </div>
-              <div class="explain-item">
-                <div class="explain-icon r2-icon-sm"></div>
-                <div>
-                  <strong>R² = 0.88</strong>
-                  <p>Explains 88% of price variation in modern chase cards.</p>
-                </div>
-              </div>
+              <div class="explain-item"><div class="explain-icon supply-icon-sm"></div><div><strong>Pull Cost (Supply)</strong><p>Packs-per-hit × cards-in-tier ÷ 100. Each +1 → +19% price.</p></div></div>
+              <div class="explain-item"><div class="explain-icon demand-icon-sm"></div><div><strong>Desirability (Demand)</strong><p>Character (45%) + Artwork (45%) + Appeal (10%). Each +1 → +41% price. Auto-calibrated from market data.</p></div></div>
+              <div class="explain-item"><div class="explain-icon r2-icon-sm"></div><div><strong>R² = 0.88</strong><p>Explains 88% of price variation in modern chase cards.</p></div></div>
             </div>
-            <div class="data-sources">
-              <strong>Data Sources</strong>
-              <p>Card prices from <a href="https://mycollectrics.com" target="_blank">mycollectrics.com</a> (TCGPlayer data). Card database from <a href="https://www.tcgcollector.com" target="_blank">tcgcollector.com</a>. Exchange rates from Open Exchange Rates API.</p>
-            </div>
+            <div class="data-sources"><strong>Data Sources</strong><p>Prices: <a href="https://mycollectrics.com" target="_blank">mycollectrics.com</a> (TCGPlayer). Cards: <a href="https://www.tcgcollector.com" target="_blank">tcgcollector.com</a>. FX: Open Exchange Rates.</p></div>
           </div>
         </details>
       </div>
     </main>
 
-    <!-- Loading overlay -->
-    <div class="loading-overlay" id="loadingOverlay">
-      <div class="loading-spinner"></div>
-      <p>Loading card database (8,300+ cards)...</p>
-    </div>
+    <div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div><p>Loading card database...</p></div>
 
-    <footer class="footer">
-      <p>Prices via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · Cards via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p>
-    </footer>
+    <footer class="footer"><p>Prices via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · Cards via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
   </div>
-
   <script src="app.js"></script>
 </body>
 </html>
