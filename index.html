@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pokémon Card Price Predictor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-inner">
+        <div class="logo">
+          <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Pokémon Price Predictor">
+            <circle cx="18" cy="18" r="17" stroke="currentColor" stroke-width="2"/>
+            <line x1="1" y1="18" x2="35" y2="18" stroke="currentColor" stroke-width="2"/>
+            <circle cx="18" cy="18" r="5" stroke="currentColor" stroke-width="2" fill="var(--bg)"/>
+            <circle cx="18" cy="18" r="2.5" fill="var(--accent)"/>
+          </svg>
+          <div>
+            <h1>Price Predictor</h1>
+            <p class="tagline">Pokémon TCG · Live market data in GBP</p>
+          </div>
+        </div>
+        <div class="header-right">
+          <div class="fx-rate"><span class="fx-label">USD/GBP</span><span class="fx-value" id="fxValue">...</span></div>
+          <button class="portfolio-toggle" id="portfolioToggle" title="My Collection">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
+            <span class="portfolio-count" id="portfolioCount" style="display:none">0</span>
+          </button>
+          <a href="https://youtu.be/Zml3jfSyPHI" target="_blank" rel="noopener" class="credit-link">
+            Model: PokeDataDadGuy <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Portfolio Panel (slide-in) -->
+    <section class="portfolio-panel" id="portfolioPanel" style="display:none">
+      <div class="portfolio-header">
+        <h2>My Collection</h2>
+        <div class="portfolio-actions">
+          <span class="portfolio-total" id="portfolioTotal">Total: £0</span>
+          <button class="portfolio-close" id="portfolioClose">✕</button>
+        </div>
+      </div>
+      <div class="portfolio-list" id="portfolioList">
+        <div class="portfolio-empty">No cards yet. Search and add cards to track your collection.</div>
+      </div>
+    </section>
+
+    <!-- Search -->
+    <section class="search-section">
+      <div class="search-container">
+        <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="text" id="searchInput" placeholder="Search 26k+ cards (EN + JP) — name, number, set... e.g. Charizard VSTAR, 212/172, リザードン" autocomplete="off" spellcheck="false">
+        <span class="search-count" id="searchCount"></span>
+        <button class="search-clear" id="searchClear" style="display:none">✕</button>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+    </section>
+
+    <main class="main">
+      <!-- Left Column -->
+      <div class="inputs-column">
+        <!-- Selected Card -->
+        <section class="card selected-card" id="selectedCardSection" style="display:none">
+          <div class="selected-card-header">
+            <div class="card-images">
+              <img id="cardImage" src="" alt="" class="card-thumb" title="English version">
+              <img id="cardImageJp" src="" alt="" class="card-thumb card-thumb-jp" title="Japanese version" style="display:none">
+            </div>
+            <div class="selected-card-info">
+              <div class="card-name-row">
+                <h2 id="cardName"></h2>
+                <button class="add-portfolio-btn" id="addPortfolioBtn" title="Add to collection">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+              </div>
+              <div class="jp-name-subtitle" id="cardNameJp" style="display:none"></div>
+              <div class="card-meta">
+                <span class="meta-set" id="cardSet"></span>
+                <span class="meta-number" id="cardNumber"></span>
+                <span class="meta-rarity" id="cardRarity"></span>
+                <span class="meta-series-tag" id="cardSeries" style="display:none"></span>
+              </div>
+              <div class="card-links">
+                <a id="linkCollectrics" href="#" target="_blank" rel="noopener" class="card-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> mycollectrics</a>
+                <a id="linkTcgCollector" href="#" target="_blank" rel="noopener" class="card-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> tcgcollector</a>
+                <a id="linkTcgJp" href="#" target="_blank" rel="noopener" class="card-link jp-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> 🇯🇵 Japanese</a>
+                <a id="linkPriceCharting" href="#" target="_blank" rel="noopener" class="card-link pc-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> 📈 PriceCharting</a>
+              </div>
+              <!-- HOLD / BUY / SELL Signal -->
+              <div class="signal-badge-wrap" id="signalWrap" style="display:none">
+                <div class="signal-badge" id="signalBadge"></div>
+                <div class="signal-reason" id="signalReason"></div>
+              </div>
+            </div>
+          </div>
+          <div class="price-grid">
+            <div class="price-tile"><span class="price-tile-label">Market Raw</span><span class="price-tile-usd" id="marketRawUSD"></span><span class="price-tile-gbp" id="marketRawGBP"></span></div>
+            <div class="price-tile"><span class="price-tile-label">PSA 10</span><span class="price-tile-usd" id="psa10USD"></span><span class="price-tile-gbp" id="psa10GBP"></span></div>
+            <div class="price-tile"><span class="price-tile-label">PSA 10 Gem %</span><span class="price-tile-big" id="gemPct">—</span></div>
+            <div class="price-tile"><span class="price-tile-label">Pull Cost</span><span class="price-tile-big" id="autoPullCost">—</span><span class="price-tile-sub" id="autoPullPacks"></span></div>
+          </div>
+        </section>
+
+        <!-- Pull Cost -->
+        <section class="card">
+          <div class="card-header">
+            <div class="card-icon supply-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 8h20"/><path d="M10 3v5"/></svg></div>
+            <div><h2>Pull Cost <span class="badge supply-badge">Supply</span></h2><p class="card-desc">Auto-filled from set data when you select a card</p></div>
+          </div>
+          <div class="input-row">
+            <div class="input-group"><label for="packRate">Packs per rarity hit</label><input type="number" id="packRate" min="1" max="500" step="1" value="45" class="number-input"></div>
+            <div class="input-group"><label for="cardsInTier">Cards in tier</label><input type="number" id="cardsInTier" min="1" max="100" step="1" value="17" class="number-input"></div>
+          </div>
+          <div class="pull-cost-result"><div class="pull-cost-label">Pull Cost Score</div><div class="pull-cost-value" id="pullCostDisplay">7.65</div><div class="pull-cost-packs" id="packsNeeded">≈ 765 packs for this specific card</div></div>
+        </section>
+
+        <!-- Desirability -->
+        <section class="card">
+          <div class="card-header">
+            <div class="card-icon demand-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div>
+            <div><h2>Desirability <span class="badge demand-badge">Demand</span></h2><p class="card-desc">Auto-calibrated from market price — adjust to explore</p></div>
+          </div>
+          <div class="slider-group">
+            <div class="slider-header"><label>Character Premium</label><span class="weight-badge">45%</span></div>
+            <p class="input-hint">Charizard ≈ 9.5, Umbreon ≈ 9.2, Dragonite ≈ 7.5, niche ≈ 2-3</p>
+            <div class="slider-row"><input type="range" id="characterPremium" min="1" max="10" step="0.1" value="7" class="slider"><span class="slider-value" id="characterPremiumValue">7.0</span></div>
+          </div>
+          <div class="slider-group">
+            <div class="slider-header"><label>Artwork / Hype</label><span class="weight-badge">45%</span></div>
+            <p class="input-hint">Auto-set from market data. 10 = iconic artwork, 1 = forgettable</p>
+            <div class="slider-row"><input type="range" id="artworkHype" min="1" max="10" step="0.1" value="7" class="slider"><span class="slider-value" id="artworkHypeValue">7.0</span></div>
+          </div>
+          <div class="slider-group">
+            <div class="slider-header"><label>Universal Appeal</label><span class="weight-badge">10%</span></div>
+            <p class="input-hint">Google Trends: Charizard/Pikachu ≈ 9-10, niche ≈ 2-3</p>
+            <div class="slider-row"><input type="range" id="universalAppeal" min="1" max="10" step="0.1" value="6" class="slider"><span class="slider-value" id="universalAppealValue">6.0</span></div>
+          </div>
+          <div class="desirability-result">
+            <span class="desirability-label">Desirability</span>
+            <span class="desirability-value" id="desirabilityDisplay">6.9</span>
+            <div class="desirability-bar-container"><div class="desirability-bar" id="desirabilityBar" style="width:69%"></div></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Right Column -->
+      <div class="output-column">
+        <!-- Prediction -->
+        <section class="card prediction-card">
+          <h2>Model Prediction</h2>
+          <div class="predicted-price" id="predictedPriceGBP">£228</div>
+          <div class="predicted-usd" id="predictedPriceUSD">≈ $287</div>
+          <div class="price-breakdown">
+            <div class="breakdown-item"><span class="breakdown-label">Supply factor</span><span class="breakdown-value" id="supplyFactor">×3.79</span></div>
+            <div class="breakdown-item"><span class="breakdown-label">Demand factor</span><span class="breakdown-value" id="demandFactor">×10.71</span></div>
+          </div>
+        </section>
+
+        <!-- Max Buy Price -->
+        <section class="card max-price-card">
+          <h2>Max Buy Price</h2>
+          <p class="card-desc">The most you should pay for this raw card</p>
+          <div class="max-price" id="maxPriceGBP">—</div>
+          <div class="max-price-logic" id="maxPriceLogic">Select a card to calculate</div>
+        </section>
+
+        <!-- LIVE Pricing Panel (v8) -->
+        <section class="card live-price-card" id="livePricePanel" style="display:none">
+          <div class="live-price-header">
+            <h2>Live Market Price</h2>
+            <div class="live-price-badge">
+              <span class="live-pulse"></span>LIVE
+            </div>
+            <span class="live-price-cache" id="livePriceCache"></span>
+          </div>
+          <div class="live-price-loading" id="livePriceLoading" style="display:none">
+            <div class="live-spinner"></div>
+            <span>Fetching live prices...</span>
+          </div>
+          <div class="live-price-status" id="livePriceStatus" style="display:none"></div>
+          <div class="live-price-content" id="livePriceContent" style="display:none">
+            <div class="live-main-row">
+              <div class="live-main-price" id="liveMainPrice">—</div>
+              <div class="live-main-usd" id="liveMainUSD"></div>
+              <span class="live-price-delta" id="livePriceDelta" style="display:none"></span>
+            </div>
+            <!-- TCGPlayer -->
+            <div class="live-source-row" id="tcgPlayerRow" style="display:none">
+              <div class="live-source-label">
+                TCGPlayer
+                <a id="tcgPlayerLink" href="#" target="_blank" rel="noopener" class="live-source-link" style="display:none">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+                </a>
+                <span class="live-updated" id="tcgUpdated"></span>
+              </div>
+              <div class="live-prices-grid">
+                <div class="lp-cell"><span class="lp-label">Market</span><span class="lp-val lp-market" id="tcgMarket">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Low</span><span class="lp-val" id="tcgLow">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Mid</span><span class="lp-val" id="tcgMid">—</span></div>
+                <div class="lp-cell"><span class="lp-label">High</span><span class="lp-val" id="tcgHigh">—</span></div>
+              </div>
+            </div>
+            <!-- Cardmarket -->
+            <div class="live-source-row" id="cardmarketRow" style="display:none">
+              <div class="live-source-label">
+                Cardmarket
+                <a id="cardmarketLink" href="#" target="_blank" rel="noopener" class="live-source-link" style="display:none">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+                </a>
+                <span class="live-updated" id="cmUpdated"></span>
+              </div>
+              <div class="live-prices-grid">
+                <div class="lp-cell"><span class="lp-label">Trend</span><span class="lp-val lp-market" id="cmTrend">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Avg 7d</span><span class="lp-val" id="cmAvg7">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Avg 30d</span><span class="lp-val" id="cmAvg30">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Low</span><span class="lp-val" id="cmLow">—</span></div>
+              </div>
+            </div>
+            <!-- PriceCharting -->
+            <div class="live-source-row pc-source-row" id="priceChartingRow" style="display:none">
+              <div class="live-source-label">
+                <span class="pc-label-icon">📈</span> PriceCharting
+                <a id="priceChartingLink" href="#" target="_blank" rel="noopener" class="live-source-link" style="display:none">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+                </a>
+                <span class="live-updated pc-match-name" id="pcMatchName"></span>
+              </div>
+              <div class="live-prices-grid">
+                <div class="lp-cell"><span class="lp-label">Ungraded</span><span class="lp-val lp-market" id="pcUngraded">—</span></div>
+                <div class="lp-cell"><span class="lp-label">PSA 10</span><span class="lp-val" id="pcPsa10">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Grade 9</span><span class="lp-val" id="pcGrade9">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Grading ROI</span><span class="lp-val pc-grading-roi" id="pcGradingRoi">—</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Market Dynamics -->
+        <section class="card market-card" id="marketSection" style="display:none">
+          <div class="market-header">
+            <h2>Market Dynamics</h2>
+            <div class="market-trend-badge" id="marketTrend"></div>
+          </div>
+          <p class="card-desc">Live eBay supply/demand signals from <a href="https://mycollectrics.com" target="_blank" style="color:var(--accent)">collectrics</a></p>
+          <div class="market-loading" id="marketLoading">Loading market data...</div>
+          <div class="market-content" id="marketContent" style="display:none">
+            <div class="market-gauges">
+              <div class="gauge-block">
+                <div class="gauge-label">Demand Pressure</div>
+                <div class="gauge-track"><div class="gauge-fill gauge-demand" id="gaugeDemand" style="width:0%"></div></div>
+                <div class="gauge-row"><span class="gauge-value" id="demandValue">—</span><span class="gauge-desc">% of listings sold daily</span></div>
+              </div>
+              <div class="gauge-block">
+                <div class="gauge-label">Supply Saturation</div>
+                <div class="gauge-track"><div class="gauge-fill gauge-supply" id="gaugeSupply" style="width:50%"></div><div class="gauge-midline"></div></div>
+                <div class="gauge-row"><span class="gauge-value" id="supplyValue">—</span><span class="gauge-desc" id="supplyDesc">vs 30d baseline</span></div>
+              </div>
+            </div>
+            <div class="market-stats" id="marketStats"></div>
+            <canvas id="listingChart" width="500" height="140" style="width:100%;height:140px;"></canvas>
+            <div class="market-legend">
+              <span class="ml-item"><span class="ml-dot" style="background:var(--supply)"></span>Active</span>
+              <span class="ml-item"><span class="ml-dot" style="background:var(--green)"></span>Sold est</span>
+              <span class="ml-item"><span class="ml-dot" style="background:var(--text-faint)"></span>New</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Grading ROI -->
+        <section class="card grade-card" id="gradeSection" style="display:none">
+          <h2>Grading ROI</h2>
+          <p class="card-desc">Is it worth grading this card? PSA 10 vs raw value gain</p>
+          <div class="grade-content" id="gradeContent"></div>
+        </section>
+
+        <!-- Rip or Buy -->
+        <section class="card rip-card" id="ripSection" style="display:none">
+          <div class="rip-header">
+            <h2>Rip or Buy?</h2>
+            <div class="rip-verdict-badge" id="ripVerdict"></div>
+          </div>
+          <p class="card-desc">Should you open packs or just buy the single?</p>
+          <div class="rip-comparison">
+            <div class="rip-option rip-packs">
+              <div class="rip-option-label">Open Packs</div>
+              <div class="rip-option-cost" id="ripPackCost">—</div>
+              <div class="rip-option-detail" id="ripPackDetail"></div>
+              <div class="rip-option-sub" id="ripPackSub"></div>
+            </div>
+            <div class="rip-vs">vs</div>
+            <div class="rip-option rip-single">
+              <div class="rip-option-label">Buy Single</div>
+              <div class="rip-option-cost" id="ripSingleCost">—</div>
+              <div class="rip-option-detail" id="ripSingleDetail">Current market price</div>
+            </div>
+          </div>
+          <div class="rip-savings" id="ripSavings"></div>
+          <div class="rip-luck" id="ripLuck"></div>
+        </section>
+
+        <!-- eBay Deal Check -->
+        <section class="card deal-card">
+          <h2>eBay Deal Check</h2>
+          <p class="card-desc">Enter a listing price to see if it's worth it</p>
+          <div class="input-group"><label for="ebayPrice">eBay listing price (£)</label><input type="number" id="ebayPrice" min="0" step="0.01" value="" placeholder="e.g. 45.00" class="number-input ebay-input"></div>
+          <div class="deal-result" id="dealResult"><div class="deal-placeholder">Enter an eBay price to check</div></div>
+        </section>
+
+        <!-- 5-Year Forecast -->
+        <section class="card forecast-card" id="forecastSection" style="display:none">
+          <h2>5-Year Price Forecast</h2>
+          <p class="card-desc">Projected appreciation based on rarity, character, and market trends</p>
+          <canvas id="forecastChart" width="500" height="220" style="width:100%;height:220px;"></canvas>
+          <div class="fc-info" id="forecastInfo"></div>
+          <table class="fc-table" id="forecastTable">
+            <thead><tr><th></th><th>Conservative</th><th>Expected</th><th>Optimistic</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="fc-disclaimer">Projections based on historical Pokémon TCG appreciation patterns. Not financial advice — actual results depend on market conditions, print runs, and collector demand.</p>
+        </section>
+
+        <!-- How It Works -->
+        <details class="card how-card">
+          <summary><h2>How the Model Works</h2></summary>
+          <div class="how-content">
+            <div class="formula-box"><code>Price = 12.50 × 1.19<sup>PullCost</sup> × 1.41<sup>Desirability</sup></code></div>
+            <div class="explanation">
+              <div class="explain-item"><div class="explain-icon supply-icon-sm"></div><div><strong>Pull Cost (Supply)</strong><p>Packs-per-hit × cards-in-tier ÷ 100. Each +1 → +19% price.</p></div></div>
+              <div class="explain-item"><div class="explain-icon demand-icon-sm"></div><div><strong>Desirability (Demand)</strong><p>Character (45%) + Artwork (45%) + Appeal (10%). Each +1 → +41% price. Auto-calibrated from market data.</p></div></div>
+              <div class="explain-item"><div class="explain-icon r2-icon-sm"></div><div><strong>R² = 0.88</strong><p>Explains 88% of price variation in modern chase cards.</p></div></div>
+            </div>
+            <div class="data-sources"><strong>Data Sources</strong><p>Cards: <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> (20k+ cards, all eras). Market: <a href="https://mycollectrics.com" target="_blank">mycollectrics.com</a> (eBay live data). Japanese: <a href="https://www.tcgcollector.com" target="_blank">tcgcollector.com</a>. Prices: <a href="https://www.pricecharting.com" target="_blank">pricecharting.com</a>. FX: Open Exchange Rates.</p></div>
+          </div>
+        </details>
+      </div>
+    </main>
+
+    <div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div><p>Loading card database...</p></div>
+
+    <footer class="footer"><p>Live prices via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> + <a href="https://tcgdex.net" target="_blank">TCGdex</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
+  </div>
+  <script src="data/cards-db.js"></script>
+  <script src="data/sets-db.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
