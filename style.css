@@ -97,6 +97,7 @@ body {
 .search-result-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .search-result-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; }
 .meta-num { font-family: var(--mono); color: var(--text-faint); font-size: 10px; }
+.meta-series { font-size: 10px; color: var(--text-faint); font-style: italic; }
 .search-result-price { text-align: right; flex-shrink: 0; }
 .search-result-price .gbp { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent); }
 .search-result-price .usd { font-size: 11px; color: var(--text-faint); display: block; }
@@ -126,9 +127,12 @@ body {
 .meta-set, .meta-rarity, .meta-number { font-size: 11px; color: var(--text-muted); padding: 2px 8px; background: var(--bg-raised); border-radius: 4px; }
 .meta-number { font-family: var(--mono); color: var(--text-faint); font-size: 10px; }
 .meta-rarity { color: var(--accent); background: var(--accent-dim); }
+.meta-series-tag { font-size: 10px; color: var(--text-faint); padding: 2px 8px; background: var(--bg-raised); border-radius: 4px; font-style: italic; }
 .card-links { display: flex; gap: 8px; }
 .card-link { font-size: 11px; color: var(--text-faint); text-decoration: none; display: inline-flex; align-items: center; gap: 3px; }
 .card-link:hover { color: var(--accent); }
+.card-link.jp-link { color: var(--text-muted); }
+.card-link.jp-link:hover { color: var(--demand); }
 
 .price-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
 .price-tile { background: var(--bg-raised); border-radius: var(--radius-sm); padding: 12px; text-align: center; display: flex; flex-direction: column; gap: 2px; }

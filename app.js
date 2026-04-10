@@ -1,5 +1,6 @@
 /* ========================================
-   Pokémon Card Price Predictor v3
+   Pokémon Card Price Predictor v5
+   20k+ cards · All eras + Japanese search
    Auto-calibrated desirability · 5-year forecast
    Live GBP conversion · eBay deal checker
    ======================================== */
@@ -52,14 +53,17 @@ const $ = id => document.getElementById(id);
 // ---- Init ----
 async function init() {
   const [cardsR, setsR, fxR] = await Promise.allSettled([
-    fetch('data/cards.json').then(r => r.json()),
-    fetch('data/sets.json').then(r => r.json()),
+    fetch('data/cards-expanded.json').then(r => r.json()),
+    fetch('data/sets-expanded.json').then(r => r.json()),
     fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json()),
   ]);
 
   if (cardsR.status === 'fulfilled') cardData = cardsR.value;
   if (setsR.status === 'fulfilled') setsData = setsR.value;
   if (fxR.status === 'fulfilled' && fxR.value.rates?.GBP) fxRate = fxR.value.rates.GBP;
+
+  // Build search index for fast filtering of 20k+ cards
+  if (cardData) buildSearchIndex(cardData.cards);
 
   $('fxValue').textContent = `£${fxRate.toFixed(4)}`;
   if (cardData) $('searchCount').textContent = `${cardData.count.toLocaleString()} cards`;
@@ -142,6 +146,17 @@ function autoFillDesirability(card, pullCost) {
   return { char: charScore, art: Math.round(artScore * 10) / 10, appeal: appealScore, total: implied };
 }
 
+// ---- Search Index (for 20k+ cards) ----
+let searchIndex = []; // pre-computed lowercase searchable text per card
+
+function buildSearchIndex(cards) {
+  searchIndex = cards.map(c => ({
+    t: `${c.n} ${c.s} ${c.r} ${c.sc} ${c.sr || ''}`.toLowerCase(),
+    cn: c.cn || 0,
+    ct: c.ct || 0,
+  }));
+}
+
 // ---- Search ----
 function setupSearch() {
   const input = $('searchInput');
@@ -156,7 +171,7 @@ function setupSearch() {
       const q = input.value.trim().toLowerCase();
       if (q.length < 2) { results.classList.remove('open'); return; }
       showResults(q);
-    }, 150);
+    }, 180);
   });
   input.addEventListener('focus', () => {
     if (input.value.trim().length >= 2) showResults(input.value.trim().toLowerCase());
@@ -170,7 +185,7 @@ function setupSearch() {
 }
 
 function showResults(query) {
-  if (!cardData) return;
+  if (!cardData || !searchIndex.length) return;
   const results = $('searchResults');
   const terms = query.split(/\s+/);
 
@@ -184,32 +199,41 @@ function showResults(query) {
   const textTerms = terms.filter((_, i) => !numPatterns[i]);
   const numberTerms = numPatterns.filter(p => p !== null);
 
-  let matches = cardData.cards.filter(c => {
-    // Build searchable text: name, set, rarity, set code
-    const text = `${c.n} ${c.s} ${c.r} ${c.sc}`.toLowerCase();
+  // Use pre-computed search index for fast filtering
+  const matchIndices = [];
+  const cards = cardData.cards;
+  for (let idx = 0; idx < searchIndex.length; idx++) {
+    const si = searchIndex[idx];
 
-    // Text terms must all match against text fields
-    const textMatch = textTerms.every(t => text.includes(t));
-    if (!textMatch) return false;
+    // Text terms must all match
+    let textOk = true;
+    for (let j = 0; j < textTerms.length; j++) {
+      if (!si.t.includes(textTerms[j])) { textOk = false; break; }
+    }
+    if (!textOk) continue;
 
     // Number terms must match card number
     if (numberTerms.length > 0) {
-      return numberTerms.every(nt => {
-        if (nt.total) return c.cn === nt.num && c.ct === nt.total;
-        return c.cn === nt.num;
-      });
+      let numOk = true;
+      for (let j = 0; j < numberTerms.length; j++) {
+        const nt = numberTerms[j];
+        if (nt.total) {
+          if (si.cn !== nt.num || si.ct !== nt.total) { numOk = false; break; }
+        } else {
+          if (si.cn !== nt.num) { numOk = false; break; }
+        }
+      }
+      if (!numOk) continue;
     }
-    return true;
-  });
+
+    matchIndices.push(idx);
+    if (matchIndices.length > 200) break; // cap for perf
+  }
+
+  let matches = matchIndices.map(i => cards[i]);
 
   const CHASE = ['SIR','HR','UR','IR','MAR','SHR','SHUR','MHR','BWR'];
   matches.sort((a, b) => {
-    // If searching by number, prioritise exact matches then chase rarities
-    if (hasNumberQuery) {
-      const ac = CHASE.includes(a.rc) ? 1 : 0;
-      const bc = CHASE.includes(b.rc) ? 1 : 0;
-      if (bc !== ac) return bc - ac;
-    }
     const ac = CHASE.includes(a.rc) ? 1 : 0;
     const bc = CHASE.includes(b.rc) ? 1 : 0;
     if (bc !== ac) return bc - ac;
@@ -218,13 +242,14 @@ function showResults(query) {
   matches = matches.slice(0, 30);
 
   if (!matches.length) {
-    results.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-faint);font-size:13px;">No cards found</div>';
+    results.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-faint);font-size:13px;">No cards found — try a different name or card number</div>';
     results.classList.add('open');
     return;
   }
 
   results.innerHTML = matches.map(c => {
     const numLabel = c.cn && c.ct ? `#${c.cn}/${c.ct}` : c.cn ? `#${c.cn}` : '';
+    const seriesLabel = c.sr && c.sr !== 'Scarlet & Violet' ? `<span class="meta-series">${esc(c.sr)}</span>` : '';
     return `
     <div class="search-result-item" data-id="${c.i}">
       ${c.img ? `<img class="search-result-img" src="${c.img}" alt="" loading="lazy">` : `<div class="search-result-img no-img"></div>`}
@@ -234,6 +259,7 @@ function showResults(query) {
           <span>${esc(c.s)}</span>
           ${numLabel ? `<span class="meta-num">${numLabel}</span>` : ''}
           ${c.r ? `<span style="color:var(--accent)">${esc(c.r)}</span>` : ''}
+          ${seriesLabel}
         </div>
       </div>
       <div class="search-result-price">
@@ -271,12 +297,30 @@ function selectCard(id) {
   $('cardNumber').textContent = card.cn && card.ct ? `#${card.cn}/${card.ct}` : card.cn ? `#${card.cn}` : '';
   $('cardNumber').style.display = card.cn ? '' : 'none';
   $('cardRarity').textContent = card.r || 'Unknown';
+  if (card.sr) {
+    $('cardSeries').textContent = card.sr;
+    $('cardSeries').style.display = '';
+  } else {
+    $('cardSeries').style.display = 'none';
+  }
 
-  $('linkCollectrics').href = `https://mycollectrics.com/card.html?id=${card.i}`;
+  // Collectrics link: use mycollectrics ID if available, otherwise link to search
+  if (card.mi) {
+    $('linkCollectrics').href = `https://mycollectrics.com/card.html?id=${card.mi}`;
+    $('linkCollectrics').style.display = '';
+  } else {
+    $('linkCollectrics').href = `https://mycollectrics.com/search.html?q=${encodeURIComponent(card.n)}`;
+    $('linkCollectrics').style.display = '';
+  }
+  // TCG Collector link (international)
   const tcgName = card.n.replace(/#\d+/, '').replace(/\s+/g, ' ').trim();
   const tcgParams = new URLSearchParams({ cardName: tcgName });
   if (card.cn) tcgParams.set('displayNumber', String(card.cn));
   $('linkTcgCollector').href = `https://www.tcgcollector.com/cards/intl?${tcgParams.toString()}`;
+  // TCG Collector Japanese link
+  const jpParams = new URLSearchParams({ cardName: tcgName });
+  if (card.cn) jpParams.set('displayNumber', String(card.cn));
+  $('linkTcgJp').href = `https://www.tcgcollector.com/cards/jp?${jpParams.toString()}`;
 
   $('marketRawUSD').textContent = fmtUSD(card.p);
   $('marketRawGBP').textContent = fmtGBP(card.p);
@@ -286,9 +330,10 @@ function selectCard(id) {
 
   // Auto-fill pull cost from set data
   let pullCost = 7.65; // default
+  let pullCostFound = false;
   if (setsData && setsData[card.sc]) {
     const set = setsData[card.sc];
-    const rarity = set.rarities[card.rc];
+    const rarity = set.rarities?.[card.rc];
     if (rarity && rarity.pullRate > 0) {
       const packsPerHit = Math.round(1 / rarity.pullRate);
       $('packRate').value = packsPerHit;
@@ -297,7 +342,12 @@ function selectCard(id) {
       pullCost = totalPacks / 100;
       $('autoPullCost').textContent = pullCost.toFixed(2);
       $('autoPullPacks').textContent = `≈ ${totalPacks.toLocaleString()} packs`;
+      pullCostFound = true;
     }
+  }
+  if (!pullCostFound) {
+    $('autoPullCost').textContent = '—';
+    $('autoPullPacks').textContent = 'No pull rate data for this set';
   }
 
   // Auto-fill desirability from market price
@@ -313,8 +363,14 @@ function selectCard(id) {
   renderForecast(card, pullCost, des.total);
   updateRipOrBuy(card, pullCost);
 
-  // Fetch live market dynamics from collectrics API (async, populates when ready)
-  fetchMarketData(card.i);
+  // Fetch live market dynamics from collectrics API (only for cards with mycollectrics ID)
+  if (card.mi) {
+    fetchMarketData(card.mi);
+  } else {
+    marketFetchId++; // invalidate any pending fetch
+    $('marketSection').style.display = 'none';
+    marketData = null;
+  }
 
   if (window.innerWidth < 820) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -343,7 +399,7 @@ function predictPrice(pullCost, des) {
 // ---- Forecasting ----
 function getSetAgeMonths(setCode) {
   if (!setsData || !setsData[setCode]) return 12;
-  const released = setsData[setCode].released;
+  const released = setsData[setCode].releaseDate || setsData[setCode].released;
   if (!released) return 12;
   const releaseDate = new Date(released);
   const now = new Date();
@@ -627,7 +683,7 @@ function updateRipOrBuy(card, pullCost) {
   if (!card || !setsData || !setsData[card.sc]) { section.style.display = 'none'; return; }
 
   const set = setsData[card.sc];
-  const rarity = set.rarities[card.rc];
+  const rarity = set.rarities?.[card.rc];
   if (!rarity || rarity.pullRate <= 0) { section.style.display = 'none'; return; }
 
   section.style.display = 'block';
@@ -685,8 +741,10 @@ function updateRipOrBuy(card, pullCost) {
 
 // ---- Market Dynamics (live from collectrics API) ----
 let marketData = null; // cached per card
+let marketFetchId = 0; // guard against stale async results
 
 async function fetchMarketData(cardId) {
+  const thisId = ++marketFetchId;
   $('marketSection').style.display = 'block';
   $('marketLoading').style.display = 'block';
   $('marketContent').style.display = 'none';
@@ -701,6 +759,7 @@ async function fetchMarketData(cardId) {
     const r = await fetch(proxyUrl);
     if (!r.ok) throw new Error('API error');
     const d = await r.json();
+    if (thisId !== marketFetchId) return; // stale fetch, card changed
     marketData = d;
 
     const mp = d.collectrics?.['market-pressure'];

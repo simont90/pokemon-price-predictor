@@ -38,7 +38,7 @@
     <section class="search-section">
       <div class="search-container">
         <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-        <input type="text" id="searchInput" placeholder="Search by name or card number... e.g. Umbreon ex, #125, PRE 161" autocomplete="off" spellcheck="false">
+        <input type="text" id="searchInput" placeholder="Search 20k+ cards — name, number, set... e.g. Charizard VSTAR, #174, base set charizard" autocomplete="off" spellcheck="false">
         <span class="search-count" id="searchCount"></span>
         <button class="search-clear" id="searchClear" style="display:none">✕</button>
       </div>
@@ -58,10 +58,12 @@
                 <span class="meta-set" id="cardSet"></span>
                 <span class="meta-number" id="cardNumber"></span>
                 <span class="meta-rarity" id="cardRarity"></span>
+                <span class="meta-series-tag" id="cardSeries" style="display:none"></span>
               </div>
               <div class="card-links">
                 <a id="linkCollectrics" href="#" target="_blank" rel="noopener" class="card-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> mycollectrics</a>
                 <a id="linkTcgCollector" href="#" target="_blank" rel="noopener" class="card-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> tcgcollector</a>
+                <a id="linkTcgJp" href="#" target="_blank" rel="noopener" class="card-link jp-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> 🇯🇵 Japanese</a>
               </div>
             </div>
           </div>
@@ -230,7 +232,7 @@
               <div class="explain-item"><div class="explain-icon demand-icon-sm"></div><div><strong>Desirability (Demand)</strong><p>Character (45%) + Artwork (45%) + Appeal (10%). Each +1 → +41% price. Auto-calibrated from market data.</p></div></div>
               <div class="explain-item"><div class="explain-icon r2-icon-sm"></div><div><strong>R² = 0.88</strong><p>Explains 88% of price variation in modern chase cards.</p></div></div>
             </div>
-            <div class="data-sources"><strong>Data Sources</strong><p>Prices: <a href="https://mycollectrics.com" target="_blank">mycollectrics.com</a> (TCGPlayer). Cards: <a href="https://www.tcgcollector.com" target="_blank">tcgcollector.com</a>. FX: Open Exchange Rates.</p></div>
+            <div class="data-sources"><strong>Data Sources</strong><p>Cards: <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> (20k+ cards, all eras). Market: <a href="https://mycollectrics.com" target="_blank">mycollectrics.com</a> (eBay live data). Japanese: <a href="https://www.tcgcollector.com" target="_blank">tcgcollector.com</a>. FX: Open Exchange Rates.</p></div>
           </div>
         </details>
       </div>
@@ -238,7 +240,7 @@
 
     <div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div><p>Loading card database...</p></div>
 
-    <footer class="footer"><p>Prices via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · Cards via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
+    <footer class="footer"><p>Cards via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
   </div>
   <script src="app.js"></script>
 </body>
