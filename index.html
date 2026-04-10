@@ -27,12 +27,30 @@
         </div>
         <div class="header-right">
           <div class="fx-rate"><span class="fx-label">USD/GBP</span><span class="fx-value" id="fxValue">...</span></div>
+          <button class="portfolio-toggle" id="portfolioToggle" title="My Collection">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
+            <span class="portfolio-count" id="portfolioCount" style="display:none">0</span>
+          </button>
           <a href="https://youtu.be/Zml3jfSyPHI" target="_blank" rel="noopener" class="credit-link">
             Model: PokeDataDadGuy <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
           </a>
         </div>
       </div>
     </header>
+
+    <!-- Portfolio Panel (slide-in) -->
+    <section class="portfolio-panel" id="portfolioPanel" style="display:none">
+      <div class="portfolio-header">
+        <h2>My Collection</h2>
+        <div class="portfolio-actions">
+          <span class="portfolio-total" id="portfolioTotal">Total: £0</span>
+          <button class="portfolio-close" id="portfolioClose">✕</button>
+        </div>
+      </div>
+      <div class="portfolio-list" id="portfolioList">
+        <div class="portfolio-empty">No cards yet. Search and add cards to track your collection.</div>
+      </div>
+    </section>
 
     <!-- Search -->
     <section class="search-section">
@@ -51,9 +69,17 @@
         <!-- Selected Card -->
         <section class="card selected-card" id="selectedCardSection" style="display:none">
           <div class="selected-card-header">
-            <img id="cardImage" src="" alt="" class="card-thumb">
+            <div class="card-images">
+              <img id="cardImage" src="" alt="" class="card-thumb" title="English version">
+              <img id="cardImageJp" src="" alt="" class="card-thumb card-thumb-jp" title="Japanese version" style="display:none">
+            </div>
             <div class="selected-card-info">
-              <h2 id="cardName"></h2>
+              <div class="card-name-row">
+                <h2 id="cardName"></h2>
+                <button class="add-portfolio-btn" id="addPortfolioBtn" title="Add to collection">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+              </div>
               <div class="card-meta">
                 <span class="meta-set" id="cardSet"></span>
                 <span class="meta-number" id="cardNumber"></span>
@@ -65,6 +91,11 @@
                 <a id="linkTcgCollector" href="#" target="_blank" rel="noopener" class="card-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> tcgcollector</a>
                 <a id="linkTcgJp" href="#" target="_blank" rel="noopener" class="card-link jp-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> 🇯🇵 Japanese</a>
                 <a id="linkPriceCharting" href="#" target="_blank" rel="noopener" class="card-link pc-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> 📈 PriceCharting</a>
+              </div>
+              <!-- HOLD / BUY / SELL Signal -->
+              <div class="signal-badge-wrap" id="signalWrap" style="display:none">
+                <div class="signal-badge" id="signalBadge"></div>
+                <div class="signal-reason" id="signalReason"></div>
               </div>
             </div>
           </div>
@@ -233,7 +264,7 @@
               <div class="explain-item"><div class="explain-icon demand-icon-sm"></div><div><strong>Desirability (Demand)</strong><p>Character (45%) + Artwork (45%) + Appeal (10%). Each +1 → +41% price. Auto-calibrated from market data.</p></div></div>
               <div class="explain-item"><div class="explain-icon r2-icon-sm"></div><div><strong>R² = 0.88</strong><p>Explains 88% of price variation in modern chase cards.</p></div></div>
             </div>
-            <div class="data-sources"><strong>Data Sources</strong><p>Cards: <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> (20k+ cards, all eras). Market: <a href="https://mycollectrics.com" target="_blank">mycollectrics.com</a> (eBay live data). Japanese: <a href="https://www.tcgcollector.com" target="_blank">tcgcollector.com</a>. FX: Open Exchange Rates.</p></div>
+            <div class="data-sources"><strong>Data Sources</strong><p>Cards: <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> (20k+ cards, all eras). Market: <a href="https://mycollectrics.com" target="_blank">mycollectrics.com</a> (eBay live data). Japanese: <a href="https://www.tcgcollector.com" target="_blank">tcgcollector.com</a>. Prices: <a href="https://www.pricecharting.com" target="_blank">pricecharting.com</a>. FX: Open Exchange Rates.</p></div>
           </div>
         </details>
       </div>
@@ -241,7 +272,7 @@
 
     <div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div><p>Loading card database...</p></div>
 
-    <footer class="footer"><p>Cards via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
+    <footer class="footer"><p>Cards via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
   </div>
   <script src="app.js"></script>
 </body>

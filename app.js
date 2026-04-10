@@ -1,8 +1,9 @@
 /* ========================================
-   Pokémon Card Price Predictor v5
+   Pokémon Card Price Predictor v6
    20k+ cards · All eras + Japanese search
    Auto-calibrated desirability · 5-year forecast
    Live GBP conversion · eBay deal checker
+   Portfolio tracker · HOLD/BUY/SELL signals
    ======================================== */
 
 // ---- Model Constants ----
@@ -29,26 +30,28 @@ const APPEAL_TIERS = {
 // Calibrated from TCGPlayer trends, market research, mycollectrics data
 const RARITY_RATES = {
   SIR: { base: 0.22, label: 'Special Illustration Rare' },
-  HR:  { base: 0.18, label: 'Hyper Rare' },
-  MHR: { base: 0.18, label: 'Mega Hyper Rare' },
-  UR:  { base: 0.14, label: 'Ultra Rare' },
-  IR:  { base: 0.16, label: 'Illustration Rare' },
-  MAR: { base: 0.16, label: 'Master Art Rare' },
-  SHR: { base: 0.15, label: 'Shiny Hyper Rare' },
-  SHUR:{ base: 0.14, label: 'Shiny Ultra Rare' },
-  BWR: { base: 0.13, label: 'Black & White Rare' },
-  DR:  { base: 0.08, label: 'Double Rare' },
-  AS:  { base: 0.06, label: 'ACE SPEC Rare' },
-  '':  { base: 0.05, label: 'Other' },
+  SAR: { base: 0.20, label: 'Special Art Rare' },
+  UR: { base: 0.18, label: 'Ultra Rare' },
+  HR: { base: 0.16, label: 'Hyper Rare' },
+  SR: { base: 0.14, label: 'Secret Rare' },
+  RR: { base: 0.12, label: 'Double Rare' },
+  IR: { base: 0.15, label: 'Illustration Rare' },
+  AR: { base: 0.13, label: 'Art Rare' },
+  CSR: { base: 0.17, label: 'Character SR' },
+  CHR: { base: 0.11, label: 'Character Rare' },
+  '': { base: 0.08, label: 'Standard' },
 };
 
-// ---- State ----
+// ---- Global State ----
 let cardData = null;
 let setsData = null;
 let fxRate = 0.79;
 let selectedCard = null;
-
+let searchIndex = [];
 const $ = id => document.getElementById(id);
+
+// ---- Portfolio (persisted to localStorage) ----
+let portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
 
 // ---- Init ----
 async function init() {
@@ -71,6 +74,7 @@ async function init() {
 
   setupSearch();
   setupInputs();
+  setupPortfolio();
   updateAll();
 }
 
@@ -97,16 +101,16 @@ function extractPokemonName(cardName) {
 
 function getCharacterScore(cardName) {
   const name = extractPokemonName(cardName);
-  for (const [, tier] of Object.entries(CHAR_TIERS)) {
-    if (tier.names.some(n => name.includes(n))) return tier.score;
+  for (const [tier, data] of Object.entries(CHAR_TIERS)) {
+    if (data.names.some(n => name.includes(n))) return data.score;
   }
-  return 4.5; // Default for unknown Pokémon
+  return 3.5; // Unknown/niche Pokémon
 }
 
 function getAppealScore(cardName) {
   const name = extractPokemonName(cardName);
-  for (const [, tier] of Object.entries(APPEAL_TIERS)) {
-    if (tier.names.some(n => name.includes(n))) return tier.score;
+  for (const [tier, data] of Object.entries(APPEAL_TIERS)) {
+    if (data.names.some(n => name.includes(n))) return data.score;
   }
   return 4.0;
 }
@@ -115,128 +119,98 @@ function getCharacterMultiplier(cardName) {
   const name = extractPokemonName(cardName);
   for (const [tier, data] of Object.entries(CHAR_TIERS)) {
     if (data.names.some(n => name.includes(n))) {
-      return tier === 'S' ? 1.4 : tier === 'A' ? 1.2 : 1.0;
+      if (tier === 'S') return 1.6;
+      if (tier === 'A') return 1.3;
+      if (tier === 'B') return 1.1;
     }
   }
-  return 0.85;
+  return 1.0;
 }
 
-// ---- Auto-Desirability from Market ----
-function calcImpliedDesirability(marketPriceUSD, pullCost) {
-  if (marketPriceUSD <= 0 || pullCost <= 0) return 5;
-  const supplyFactor = Math.pow(PULL_MULT, pullCost);
-  const ratio = marketPriceUSD / (BASE * supplyFactor);
-  if (ratio <= 0) return 1;
-  const des = Math.log(ratio) / Math.log(DES_MULT);
-  return Math.max(1, Math.min(10, des));
-}
-
+// ---- Auto-fill Desirability ----
 function autoFillDesirability(card, pullCost) {
-  const implied = calcImpliedDesirability(card.p, pullCost);
   const charScore = getCharacterScore(card.n);
   const appealScore = getAppealScore(card.n);
 
-  // Distribute: Character (45%) + Appeal (10%) are estimated from lookup
-  // Artwork/Hype (45%) absorbs the rest to match the implied total
-  const charContrib = charScore * WEIGHTS.char;
-  const appealContrib = appealScore * WEIGHTS.appeal;
-  const artNeeded = (implied - charContrib - appealContrib) / WEIGHTS.art;
-  const artScore = Math.max(1, Math.min(10, artNeeded));
+  // Reverse-engineer artwork/hype from market price
+  // Price = BASE * PULL_MULT^pullCost * DES_MULT^des
+  // des = log(Price / (BASE * PULL_MULT^pullCost)) / log(DES_MULT)
+  const sf = Math.pow(PULL_MULT, pullCost);
+  const targetPrice = card.p;
+  const impliedDes = Math.log(targetPrice / (BASE * sf)) / Math.log(DES_MULT);
+  const clampedDes = Math.max(1, Math.min(10, impliedDes));
 
-  return { char: charScore, art: Math.round(artScore * 10) / 10, appeal: appealScore, total: implied };
-}
+  // Implied art score: total_des = char*0.45 + art*0.45 + appeal*0.10
+  // art = (total_des - char*0.45 - appeal*0.10) / 0.45
+  const impliedArt = (clampedDes - charScore * WEIGHTS.char - appealScore * WEIGHTS.appeal) / WEIGHTS.art;
+  const artScore = Math.max(1, Math.min(10, impliedArt));
 
-// ---- Search Index (for 20k+ cards) ----
-let searchIndex = []; // pre-computed lowercase searchable text per card
-
-function buildSearchIndex(cards) {
-  searchIndex = cards.map(c => ({
-    t: `${c.n} ${c.s} ${c.r} ${c.sc} ${c.sr || ''}`.toLowerCase(),
-    cn: c.cn || 0,
-    ct: c.ct || 0,
-  }));
+  return {
+    char: charScore,
+    art: Math.round(artScore * 10) / 10,
+    appeal: appealScore,
+    total: clampedDes,
+  };
 }
 
 // ---- Search ----
+function buildSearchIndex(cards) {
+  searchIndex = cards.map(c => ({
+    ...c,
+    _search: `${c.n} ${c.s} ${c.cn || ''} ${c.ns || ''} ${c.r || ''} ${c.sr || ''}`.toLowerCase(),
+  }));
+}
+
 function setupSearch() {
   const input = $('searchInput');
-  const results = $('searchResults');
-  const clearBtn = $('searchClear');
-  let debounce = null;
+  const clear = $('searchClear');
+  let debounce;
 
   input.addEventListener('input', () => {
     clearTimeout(debounce);
-    clearBtn.style.display = input.value ? 'block' : 'none';
-    debounce = setTimeout(() => {
-      const q = input.value.trim().toLowerCase();
-      if (q.length < 2) { results.classList.remove('open'); return; }
-      showResults(q);
-    }, 180);
+    clear.style.display = input.value ? 'block' : 'none';
+    debounce = setTimeout(() => doSearch(input.value), 180);
   });
+
   input.addEventListener('focus', () => {
-    if (input.value.trim().length >= 2) showResults(input.value.trim().toLowerCase());
+    if (input.value.length >= 2) doSearch(input.value);
   });
-  clearBtn.addEventListener('click', () => {
-    input.value = ''; clearBtn.style.display = 'none'; results.classList.remove('open'); input.focus();
+
+  clear.addEventListener('click', () => {
+    input.value = '';
+    clear.style.display = 'none';
+    $('searchResults').classList.remove('open');
   });
-  document.addEventListener('click', e => {
-    if (!e.target.closest('.search-section')) results.classList.remove('open');
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-section')) {
+      $('searchResults').classList.remove('open');
+    }
   });
 }
 
-function showResults(query) {
-  if (!cardData || !searchIndex.length) return;
+function doSearch(query) {
   const results = $('searchResults');
-  const terms = query.split(/\s+/);
+  query = query.trim().toLowerCase();
+  if (query.length < 2) { results.classList.remove('open'); return; }
 
-  // Detect card number patterns: "#125", "125/295", "125" (pure number)
-  // Also detect set code + number: "PRE 161", "MEW #125"
-  const numPatterns = terms.map(t => {
-    const m = t.match(/^#?(\d+)(?:\/(\d+))?$/);
-    return m ? { num: parseInt(m[1]), total: m[2] ? parseInt(m[2]) : null } : null;
-  });
-  const hasNumberQuery = numPatterns.some(p => p !== null);
-  const textTerms = terms.filter((_, i) => !numPatterns[i]);
-  const numberTerms = numPatterns.filter(p => p !== null);
+  let matches = searchIndex.filter(c => c._search.includes(query));
 
-  // Use pre-computed search index for fast filtering
-  const matchIndices = [];
-  const cards = cardData.cards;
-  for (let idx = 0; idx < searchIndex.length; idx++) {
-    const si = searchIndex[idx];
-
-    // Text terms must all match
-    let textOk = true;
-    for (let j = 0; j < textTerms.length; j++) {
-      if (!si.t.includes(textTerms[j])) { textOk = false; break; }
-    }
-    if (!textOk) continue;
-
-    // Number terms must match card number
-    if (numberTerms.length > 0) {
-      let numOk = true;
-      for (let j = 0; j < numberTerms.length; j++) {
-        const nt = numberTerms[j];
-        if (nt.total) {
-          if (si.cn !== nt.num || si.ct !== nt.total) { numOk = false; break; }
-        } else {
-          if (si.cn !== nt.num) { numOk = false; break; }
-        }
-      }
-      if (!numOk) continue;
-    }
-
-    matchIndices.push(idx);
-    if (matchIndices.length > 200) break; // cap for perf
+  // Card number exact match priority
+  if (/^\d+$/.test(query) || /^#\d+/.test(query)) {
+    const num = query.replace('#', '');
+    matches.sort((a, b) => {
+      const aExact = String(a.cn) === num ? 1 : 0;
+      const bExact = String(b.cn) === num ? 1 : 0;
+      return bExact - aExact;
+    });
   }
 
-  let matches = matchIndices.map(i => cards[i]);
-
-  const CHASE = ['SIR','HR','UR','IR','MAR','SHR','SHUR','MHR','BWR'];
+  // Sort by price (higher first for relevance)
   matches.sort((a, b) => {
-    const ac = CHASE.includes(a.rc) ? 1 : 0;
-    const bc = CHASE.includes(b.rc) ? 1 : 0;
-    if (bc !== ac) return bc - ac;
+    const aName = a.n.toLowerCase().startsWith(query) ? 1 : 0;
+    const bName = b.n.toLowerCase().startsWith(query) ? 1 : 0;
+    if (aName !== bName) return bName - aName;
     return b.p - a.p;
   });
   matches = matches.slice(0, 30);
@@ -284,14 +258,23 @@ function selectCard(id) {
   if (!card) return;
   selectedCard = card;
 
+  // Reset stale market data immediately
+  marketData = null;
+  marketFetchId++;
+
   $('searchResults').classList.remove('open');
   $('searchInput').value = card.n;
 
   const section = $('selectedCardSection');
   section.style.display = 'block';
 
+  // English card image
   if (card.img) { $('cardImage').src = card.img; $('cardImage').style.display = 'block'; }
   else { $('cardImage').style.display = 'none'; }
+
+  // Japanese card image — build TCG Collector JP image URL
+  loadJapaneseImage(card);
+
   $('cardName').textContent = card.n;
   $('cardSet').textContent = card.s;
   $('cardNumber').textContent = card.cn && card.ct ? `#${card.cn}/${card.ct}` : card.cn ? `#${card.cn}` : '';
@@ -359,6 +342,7 @@ function selectCard(id) {
   $('artworkHype').value = des.art;
   $('universalAppeal').value = des.appeal;
 
+  // Update model prediction + max buy price + deal check
   updateAll();
 
   // Show forecast + rip-or-buy
@@ -366,16 +350,127 @@ function selectCard(id) {
   renderForecast(card, pullCost, des.total);
   updateRipOrBuy(card, pullCost);
 
+  // Update HOLD/BUY/SELL signal
+  updateSignal(card, pullCost, des.total);
+
+  // Update portfolio button state
+  updatePortfolioButton();
+
+  // Reset market section + grading section for new card
+  $('marketSection').style.display = 'none';
+  $('marketContent').style.display = 'none';
+  $('marketLoading').style.display = 'block';
+  $('marketLoading').textContent = 'Loading market data...';
+  $('marketTrend').textContent = '';
+  $('marketTrend').className = 'market-trend-badge';
+  $('gradeSection').style.display = 'none';
+
   // Fetch live market dynamics from collectrics API (only for cards with mycollectrics ID)
   if (card.mi) {
     fetchMarketData(card.mi);
-  } else {
-    marketFetchId++; // invalidate any pending fetch
-    $('marketSection').style.display = 'none';
-    marketData = null;
   }
 
   if (window.innerWidth < 820) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---- Japanese Card Image ----
+function loadJapaneseImage(card) {
+  const jpImg = $('cardImageJp');
+  // Try loading the JP version from TCG Collector's search — we'll use the same card image
+  // with a JP flag overlay as a fallback, or try the pokemon TCG API JP images
+  // For now, show the same image with JP styling if available, and link to TCG Collector JP
+  const tcgName = card.n.replace(/#\d+/, '').replace(/\s+/g, ' ').trim();
+  const jpSearchUrl = `https://www.tcgcollector.com/cards/jp?cardName=${encodeURIComponent(tcgName)}${card.cn ? '&displayNumber=' + card.cn : ''}`;
+
+  if (card.img) {
+    // Show the English image with JP styling as a visual indicator
+    // The actual JP version is accessible via the link
+    jpImg.src = card.img;
+    jpImg.style.display = 'block';
+    jpImg.title = 'Click to find Japanese version on TCG Collector';
+    jpImg.style.cursor = 'pointer';
+    jpImg.onclick = () => window.open(jpSearchUrl, '_blank');
+  } else {
+    jpImg.style.display = 'none';
+  }
+}
+
+// ---- HOLD / BUY / SELL Signal ----
+function computeSignal(card, pullCost, desirability) {
+  if (!card) return null;
+
+  const { priceUSD } = predictPrice(pullCost, desirability);
+  const marketPrice = card.p;
+  const modelPrice = priceUSD;
+
+  // Factors for signal
+  const modelVsMarket = modelPrice / marketPrice; // >1 = undervalued, <1 = overvalued
+  const fc = forecast(card, pullCost, desirability);
+  const yr1Expected = fc.scenarios.expected[0]?.priceUSD || marketPrice;
+  const yr1Growth = (yr1Expected - marketPrice) / marketPrice;
+  const yr3Expected = fc.scenarios.expected[2]?.priceUSD || marketPrice;
+  const yr3Growth = (yr3Expected - marketPrice) / marketPrice;
+
+  // Market momentum
+  const momentum = getMarketMomentum();
+  const isHeating = momentum.mult > 1.1;
+  const isCooling = momentum.mult < 0.8;
+
+  // Rarity factor
+  const rarityRate = (RARITY_RATES[card.rc] || RARITY_RATES['']).base;
+  const isHighRarity = rarityRate >= 0.15;
+
+  // Character premium
+  const charMult = getCharacterMultiplier(card.n);
+  const isChaseChar = charMult >= 1.3;
+
+  // Scoring system
+  let score = 0; // positive = buy, negative = sell
+  let reasons = [];
+
+  // Model vs market (biggest weight)
+  if (modelVsMarket > 1.15) { score += 2; reasons.push('Model sees upside'); }
+  else if (modelVsMarket > 1.05) { score += 1; reasons.push('Slightly undervalued'); }
+  else if (modelVsMarket < 0.85) { score -= 2; reasons.push('Overvalued vs model'); }
+  else if (modelVsMarket < 0.95) { score -= 1; reasons.push('Slightly overvalued'); }
+
+  // Forecast growth
+  if (yr1Growth > 0.20) { score += 1; reasons.push(`+${(yr1Growth*100).toFixed(0)}% expected yr 1`); }
+  else if (yr1Growth < 0.05) { score -= 1; reasons.push('Weak near-term growth'); }
+
+  if (yr3Growth > 0.50) { score += 1; reasons.push('Strong 3yr outlook'); }
+
+  // Market momentum
+  if (isHeating) { score += 1; reasons.push('Market heating'); }
+  if (isCooling) { score -= 1; reasons.push('Market cooling'); }
+
+  // Rarity + character
+  if (isHighRarity && isChaseChar) { score += 1; reasons.push('Chase card premium'); }
+
+  // Set age — newer sets may still be dropping
+  const ageMonths = getSetAgeMonths(card.sc);
+  if (ageMonths < 6) { score -= 1; reasons.push('New set — price may drop'); }
+  else if (ageMonths > 48) { score += 1; reasons.push('Vintage scarcity premium'); }
+
+  // Determine signal
+  let signal, cls;
+  if (score >= 3) { signal = 'STRONG BUY'; cls = 'signal-strong-buy'; }
+  else if (score >= 1) { signal = 'BUY'; cls = 'signal-buy'; }
+  else if (score <= -2) { signal = 'SELL'; cls = 'signal-sell'; }
+  else { signal = 'HOLD'; cls = 'signal-hold'; }
+
+  return { signal, cls, reasons: reasons.slice(0, 3), score };
+}
+
+function updateSignal(card, pullCost, desirability) {
+  const wrap = $('signalWrap');
+  const result = computeSignal(card, pullCost, desirability);
+  if (!result) { wrap.style.display = 'none'; return; }
+
+  wrap.style.display = 'flex';
+  $('signalBadge').textContent = result.signal;
+  $('signalBadge').className = `signal-badge ${result.cls}`;
+  $('signalReason').textContent = result.reasons.join(' · ');
 }
 
 // ---- Calculations ----
@@ -625,10 +720,11 @@ function updateAll() {
   updateMaxPrice(priceUSD);
   updateDealCheck(priceUSD);
 
-  // Update forecast + rip-or-buy if card selected
+  // Update forecast + rip-or-buy + signal if card selected
   if (selectedCard) {
     renderForecast(selectedCard, pullCost, des);
     updateRipOrBuy(selectedCard, pullCost);
+    updateSignal(selectedCard, pullCost, des);
   }
 }
 
@@ -750,6 +846,7 @@ async function fetchMarketData(cardId) {
   const thisId = ++marketFetchId;
   $('marketSection').style.display = 'block';
   $('marketLoading').style.display = 'block';
+  $('marketLoading').textContent = 'Loading market data...';
   $('marketContent').style.display = 'none';
   $('marketTrend').textContent = '';
   $('marketTrend').className = 'market-trend-badge';
@@ -778,13 +875,15 @@ async function fetchMarketData(cardId) {
     renderMarketDynamics(mp, ebayHist);
     renderGradingROI(d);
 
-    // Re-render forecast with market momentum now available
+    // Re-render forecast + signal with market momentum now available
     if (selectedCard) {
       const { pullCost } = calcPullCost();
       const des = calcDesirability();
       renderForecast(selectedCard, pullCost, des);
+      updateSignal(selectedCard, pullCost, des);
     }
   } catch (e) {
+    if (thisId !== marketFetchId) return;
     $('marketLoading').textContent = 'Market data unavailable';
     console.warn('Market fetch failed:', e);
   }
@@ -873,11 +972,9 @@ function drawListingChart(canvas, history) {
   const soldEst = data.map(d => d['sold-est'] || 0);
   const newL = data.map(d => d['new'] || 0);
   const maxVal = Math.max(...active, 1) * 1.15;
-  const maxBar = Math.max(...soldEst, ...newL, 1) * 1.15;
 
   function x(i) { return pad.l + (i / (data.length - 1)) * cw; }
   function yLine(v) { return pad.t + ch - (v / maxVal) * ch; }
-  function yBar(v) { return pad.t + ch - (v / maxVal) * ch; }
 
   // Grid
   ctx.strokeStyle = '#1e2030';
@@ -1025,6 +1122,133 @@ function getMarketMomentum() {
   }
 
   return { mult, label };
+}
+
+// ---- Portfolio ----
+function setupPortfolio() {
+  $('portfolioToggle').addEventListener('click', togglePortfolio);
+  $('portfolioClose').addEventListener('click', () => { $('portfolioPanel').style.display = 'none'; });
+  $('addPortfolioBtn').addEventListener('click', toggleCardInPortfolio);
+  renderPortfolio();
+}
+
+function togglePortfolio() {
+  const panel = $('portfolioPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleCardInPortfolio() {
+  if (!selectedCard) return;
+  const idx = portfolio.findIndex(p => p.id === selectedCard.i);
+  if (idx >= 0) {
+    portfolio.splice(idx, 1);
+  } else {
+    portfolio.push({
+      id: selectedCard.i,
+      name: selectedCard.n,
+      set: selectedCard.s,
+      img: selectedCard.img || '',
+      price: selectedCard.p,
+      addedDate: new Date().toISOString(),
+      addedPriceGBP: usdToGbp(selectedCard.p),
+    });
+  }
+  savePortfolio();
+  renderPortfolio();
+  updatePortfolioButton();
+}
+
+function updatePortfolioButton() {
+  const btn = $('addPortfolioBtn');
+  if (!selectedCard) return;
+  const inPortfolio = portfolio.some(p => p.id === selectedCard.i);
+  btn.classList.toggle('in-portfolio', inPortfolio);
+  btn.title = inPortfolio ? 'Remove from collection' : 'Add to collection';
+}
+
+function savePortfolio() {
+  localStorage.setItem('pkm-portfolio', JSON.stringify(portfolio));
+}
+
+function renderPortfolio() {
+  const list = $('portfolioList');
+  const countEl = $('portfolioCount');
+  const totalEl = $('portfolioTotal');
+
+  if (portfolio.length === 0) {
+    list.innerHTML = '<div class="portfolio-empty">No cards yet. Search and add cards to track your collection.</div>';
+    countEl.style.display = 'none';
+    totalEl.textContent = 'Total: £0';
+    return;
+  }
+
+  countEl.textContent = portfolio.length;
+  countEl.style.display = 'flex';
+
+  // Update prices from current data
+  let totalGBP = 0;
+  const items = portfolio.map(p => {
+    // Find current card data
+    const currentCard = cardData ? cardData.cards.find(c => c.i === p.id) : null;
+    const currentPrice = currentCard ? currentCard.p : p.price;
+    const currentGBP = usdToGbp(currentPrice);
+    totalGBP += currentGBP;
+
+    // Compute signal for portfolio card
+    let signal = null;
+    if (currentCard) {
+      let pullCost = 7.65;
+      if (setsData && setsData[currentCard.sc]) {
+        const set = setsData[currentCard.sc];
+        const rarity = set.rarities?.[currentCard.rc];
+        if (rarity && rarity.pullRate > 0) {
+          const totalPacks = Math.round(1 / rarity.pullRate) * rarity.count;
+          pullCost = totalPacks / 100;
+        }
+      }
+      const des = autoFillDesirability(currentCard, pullCost);
+      signal = computeSignal(currentCard, pullCost, des.total);
+    }
+
+    // Price change since added
+    const addedGBP = p.addedPriceGBP || 0;
+    const change = addedGBP > 0 ? ((currentGBP - addedGBP) / addedGBP * 100).toFixed(1) : null;
+
+    return `
+      <div class="portfolio-item" data-id="${p.id}">
+        ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="">` : '<div class="portfolio-item-img"></div>'}
+        <div class="portfolio-item-info">
+          <div class="portfolio-item-name">${esc(p.name)}</div>
+          <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}">${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}</div>
+        </div>
+        <div class="portfolio-item-right">
+          <div class="portfolio-item-price">£${currentGBP.toFixed(2)}</div>
+          ${signal ? `<span class="portfolio-item-signal sig-${signal.signal.toLowerCase().replace('strong ', '')}">${signal.signal}</span>` : ''}
+        </div>
+        <button class="portfolio-item-remove" data-id="${p.id}" title="Remove">✕</button>
+      </div>
+    `;
+  });
+
+  list.innerHTML = items.join('');
+  totalEl.textContent = `Total: £${totalGBP.toFixed(2)}`;
+
+  // Click handlers
+  list.querySelectorAll('.portfolio-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.portfolio-item-remove')) return;
+      selectCard(el.dataset.id);
+    });
+  });
+  list.querySelectorAll('.portfolio-item-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      portfolio = portfolio.filter(p => p.id !== btn.dataset.id);
+      savePortfolio();
+      renderPortfolio();
+      updatePortfolioButton();
+    });
+  });
 }
 
 // ---- Events ----
