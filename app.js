@@ -115,6 +115,29 @@ async function fetchWithRetry(url, retries = 2) {
   }
 }
 
+// Decode compact v2 card format back to objects
+function decodeCardDB(raw) {
+  if (!raw.v || raw.v < 2) return raw; // legacy format, pass through
+  const sets = raw.sets, codes = raw.codes, rars = raw.rars, rcodes = raw.rcodes;
+  const cards = new Array(raw.d.length);
+  for (let i = 0; i < raw.d.length; i++) {
+    const d = raw.d[i];
+    const extra = d.length > 9 ? d[9] : null;
+    cards[i] = {
+      i: d[0], n: d[1], s: sets[d[2]], sc: codes[d[3]],
+      r: rars[d[4]], rc: rcodes[d[5]], cn: d[6], ns: d[7], p: d[8],
+    };
+    if (extra) {
+      if (extra.j) cards[i].nj = extra.j;
+      if (extra.l) cards[i].lang = extra.l;
+      if (extra.t) cards[i].p10 = extra.t;
+      if (extra.g) cards[i].g = extra.g;
+      if (extra.c) cards[i].ct = extra.c;
+    }
+  }
+  return { count: raw.count, cards };
+}
+
 async function init() {
   const loadingText = document.querySelector('#loadingOverlay p');
   try {
@@ -125,7 +148,7 @@ async function init() {
       fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json()),
     ]);
 
-    if (cardsR.status === 'fulfilled') cardData = cardsR.value;
+    if (cardsR.status === 'fulfilled') cardData = decodeCardDB(cardsR.value);
     if (setsR.status === 'fulfilled') setsData = setsR.value;
     if (fxR.status === 'fulfilled' && fxR.value.rates?.GBP) fxRate = fxR.value.rates.GBP;
 
