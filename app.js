@@ -160,16 +160,28 @@ function decodeCardDB(raw) {
 async function init() {
   const loadingText = document.querySelector('#loadingOverlay p');
   try {
-    if (loadingText) loadingText.textContent = 'Loading card database...';
-    const [cardsR, setsR, fxR] = await Promise.allSettled([
-      fetchWithRetry('data/cards-expanded.json'),
-      fetchWithRetry('data/sets-expanded.json'),
-      fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json()),
-    ]);
+    // Card and set data loaded via <script> tags (no fetch needed — works on all browsers)
+    if (typeof CARD_DB_RAW !== 'undefined') {
+      if (loadingText) loadingText.textContent = 'Decoding card database...';
+      cardData = decodeCardDB(CARD_DB_RAW);
+    } else {
+      // Fallback: fetch if script tags didn't load
+      if (loadingText) loadingText.textContent = 'Loading card database...';
+      const raw = await fetchWithRetry('data/cards-expanded.json');
+      cardData = decodeCardDB(raw);
+    }
 
-    if (cardsR.status === 'fulfilled') cardData = decodeCardDB(cardsR.value);
-    if (setsR.status === 'fulfilled') setsData = setsR.value;
-    if (fxR.status === 'fulfilled' && fxR.value.rates?.GBP) fxRate = fxR.value.rates.GBP;
+    if (typeof SETS_DB_RAW !== 'undefined') {
+      setsData = SETS_DB_RAW;
+    } else {
+      setsData = await fetchWithRetry('data/sets-expanded.json');
+    }
+
+    // Fetch exchange rate (small, non-blocking)
+    try {
+      const fxR = await fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json());
+      if (fxR.rates?.GBP) fxRate = fxR.rates.GBP;
+    } catch (e) { /* use default */ }
 
     if (cardData) {
       if (loadingText) loadingText.textContent = 'Building search index...';
