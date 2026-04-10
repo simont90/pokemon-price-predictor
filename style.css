@@ -477,3 +477,93 @@ body {
   .signal-badge-wrap { justify-content: center; flex-wrap: wrap; }
   .selected-card-info h2 { white-space: normal; }
 }
+
+/* ---- Live Pricing Panel (v8) ---- */
+.live-price-card { border: 1px solid var(--accent); }
+.live-price-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.live-price-header h2 { margin: 0; font-size: 16px; }
+.live-price-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(61, 214, 140, 0.12); color: var(--green);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  padding: 3px 8px; border-radius: 4px;
+}
+.live-pulse {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+  animation: pulse-live 2s ease-in-out infinite;
+}
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+.live-price-cache {
+  margin-left: auto; font-size: 11px; color: var(--text-faint);
+}
+.live-price-loading {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 0; color: var(--text-muted); font-size: 13px;
+}
+.live-spinner {
+  width: 16px; height: 16px; border: 2px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.live-price-status {
+  padding: 10px 0; color: var(--text-muted); font-size: 12px;
+}
+.live-main-row {
+  display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px;
+}
+.live-main-price {
+  font-size: 32px; font-weight: 700; color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+}
+.live-main-usd {
+  font-size: 14px; color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+.live-price-delta {
+  font-size: 12px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+}
+.live-price-delta.delta-up {
+  color: var(--green); background: rgba(61, 214, 140, 0.1);
+}
+.live-price-delta.delta-down {
+  color: var(--red); background: rgba(255, 100, 100, 0.1);
+}
+.live-source-row {
+  padding: 10px 0; border-top: 1px solid var(--border);
+}
+.live-source-label {
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+}
+.live-source-link { color: var(--accent); }
+.live-updated { font-weight: 400; color: var(--text-faint); font-size: 10px; margin-left: auto; }
+.live-prices-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+}
+.lp-cell {
+  text-align: center; padding: 6px 4px;
+  background: var(--surface-alt); border-radius: 6px;
+}
+.lp-label {
+  display: block; font-size: 10px; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 3px;
+}
+.lp-val {
+  display: block; font-size: 13px; font-weight: 600;
+  font-family: 'JetBrains Mono', monospace; color: var(--text);
+}
+.lp-market { color: var(--green); }
+
+/* Live dot indicator in search results */
+.live-dot {
+  display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--green); margin-left: 4px; vertical-align: middle;
+}
+.live-dot-inline {
+  display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--green); vertical-align: middle;
+}

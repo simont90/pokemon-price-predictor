@@ -22,7 +22,7 @@
           </svg>
           <div>
             <h1>Price Predictor</h1>
-            <p class="tagline">Pokémon TCG · Live prices in GBP</p>
+            <p class="tagline">Pokémon TCG · Live market data in GBP</p>
           </div>
         </div>
         <div class="header-right">
@@ -171,6 +171,61 @@
           <div class="max-price-logic" id="maxPriceLogic">Select a card to calculate</div>
         </section>
 
+        <!-- LIVE Pricing Panel (v8) -->
+        <section class="card live-price-card" id="livePricePanel" style="display:none">
+          <div class="live-price-header">
+            <h2>Live Market Price</h2>
+            <div class="live-price-badge">
+              <span class="live-pulse"></span>LIVE
+            </div>
+            <span class="live-price-cache" id="livePriceCache"></span>
+          </div>
+          <div class="live-price-loading" id="livePriceLoading" style="display:none">
+            <div class="live-spinner"></div>
+            <span>Fetching live prices...</span>
+          </div>
+          <div class="live-price-status" id="livePriceStatus" style="display:none"></div>
+          <div class="live-price-content" id="livePriceContent" style="display:none">
+            <div class="live-main-row">
+              <div class="live-main-price" id="liveMainPrice">—</div>
+              <div class="live-main-usd" id="liveMainUSD"></div>
+              <span class="live-price-delta" id="livePriceDelta" style="display:none"></span>
+            </div>
+            <!-- TCGPlayer -->
+            <div class="live-source-row" id="tcgPlayerRow" style="display:none">
+              <div class="live-source-label">
+                TCGPlayer
+                <a id="tcgPlayerLink" href="#" target="_blank" rel="noopener" class="live-source-link" style="display:none">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+                </a>
+                <span class="live-updated" id="tcgUpdated"></span>
+              </div>
+              <div class="live-prices-grid">
+                <div class="lp-cell"><span class="lp-label">Market</span><span class="lp-val lp-market" id="tcgMarket">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Low</span><span class="lp-val" id="tcgLow">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Mid</span><span class="lp-val" id="tcgMid">—</span></div>
+                <div class="lp-cell"><span class="lp-label">High</span><span class="lp-val" id="tcgHigh">—</span></div>
+              </div>
+            </div>
+            <!-- Cardmarket -->
+            <div class="live-source-row" id="cardmarketRow" style="display:none">
+              <div class="live-source-label">
+                Cardmarket
+                <a id="cardmarketLink" href="#" target="_blank" rel="noopener" class="live-source-link" style="display:none">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+                </a>
+                <span class="live-updated" id="cmUpdated"></span>
+              </div>
+              <div class="live-prices-grid">
+                <div class="lp-cell"><span class="lp-label">Trend</span><span class="lp-val lp-market" id="cmTrend">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Avg 7d</span><span class="lp-val" id="cmAvg7">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Avg 30d</span><span class="lp-val" id="cmAvg30">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Low</span><span class="lp-val" id="cmLow">—</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- Market Dynamics -->
         <section class="card market-card" id="marketSection" style="display:none">
           <div class="market-header">
@@ -273,7 +328,7 @@
 
     <div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div><p>Loading card database...</p></div>
 
-    <footer class="footer"><p>Cards via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
+    <footer class="footer"><p>Live prices via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> + <a href="https://tcgdex.net" target="_blank">TCGdex</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
   </div>
   <script src="app.js"></script>
 </body>

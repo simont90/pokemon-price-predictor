@@ -1,6 +1,8 @@
 /* ========================================
-   Pokémon Card Price Predictor v7
-   26k+ cards · EN + 6k JP cards from TCGdex
+   Pokémon Card Price Predictor v8
+   26k+ cards · EN + 6k JP cards
+   LIVE market data — auto-updating prices
+   pokemontcg.io (EN) + TCGdex (JP)
    Auto-calibrated desirability · 5-year forecast
    Live GBP conversion · eBay deal checker
    Portfolio tracker · HOLD/BUY/SELL signals
@@ -13,21 +15,18 @@ const DES_MULT = 1.41;
 const WEIGHTS = { char: 0.45, art: 0.45, appeal: 0.10 };
 
 // ---- Pokémon Popularity Tiers ----
-// Based on market data, search trends, and historical card prices
 const CHAR_TIERS = {
   S: { score: 9.5, names: ['charizard','pikachu','mewtwo','umbreon','mew','eevee'] },
   A: { score: 8.2, names: ['dragonite','gyarados','gengar','lugia','rayquaza','gardevoir','lucario','greninja','sylveon','magikarp','espeon','vaporeon','leafeon','flareon','jolteon','glaceon','meowth','snorlax','blastoise','venusaur'] },
   B: { score: 6.5, names: ['arcanine','ninetales','alakazam','machamp','lapras','tyranitar','celebi','suicune','entei','raikou','ho-oh','latios','latias','deoxys','dialga','palkia','giratina','darkrai','arceus','reshiram','zekrom','kyurem','xerneas','yveltal','zygarde','lunala','solgaleo','necrozma','zacian','zamazenta','calyrex','miraidon','koraidon','terapagos'] },
 };
 
-// Universal appeal tiers (Google Trends-based)
 const APPEAL_TIERS = {
   S: { score: 9.5, names: ['charizard','pikachu','mewtwo','eevee','mew'] },
   A: { score: 7.5, names: ['gengar','umbreon','snorlax','gyarados','dragonite','gardevoir','lucario','greninja','blastoise','venusaur','magikarp','sylveon','arcanine'] },
 };
 
-// ---- Rarity Appreciation Rates (annual, post-stabilization) ----
-// Calibrated from TCGPlayer trends, market research, mycollectrics data
+// ---- Rarity Appreciation Rates ----
 const RARITY_RATES = {
   SIR: { base: 0.22, label: 'Special Illustration Rare' },
   SAR: { base: 0.20, label: 'Special Art Rare' },
@@ -50,6 +49,40 @@ let selectedCard = null;
 let searchIndex = [];
 const $ = id => document.getElementById(id);
 
+// ---- Live Pricing Cache (localStorage with TTL) ----
+const PRICE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const PRICE_CACHE_KEY = 'pkm-live-prices-v2';
+
+function getPriceCache() {
+  try {
+    return JSON.parse(localStorage.getItem(PRICE_CACHE_KEY) || '{}');
+  } catch { return {}; }
+}
+
+function setCachedPrice(cardId, data) {
+  const cache = getPriceCache();
+  cache[cardId] = { ...data, _ts: Date.now() };
+  // Prune old entries (keep max 500)
+  const keys = Object.keys(cache);
+  if (keys.length > 500) {
+    const sorted = keys.sort((a, b) => (cache[a]._ts || 0) - (cache[b]._ts || 0));
+    sorted.slice(0, keys.length - 500).forEach(k => delete cache[k]);
+  }
+  try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache)); } catch {}
+}
+
+function getCachedPrice(cardId) {
+  const cache = getPriceCache();
+  const entry = cache[cardId];
+  if (!entry) return null;
+  if (Date.now() - (entry._ts || 0) > PRICE_CACHE_TTL) return null;
+  return entry;
+}
+
+// ---- Live Price State ----
+let livePrice = null; // Current card's live pricing data
+let livePriceFetchId = 0;
+
 // ---- Portfolio (persisted to localStorage) ----
 let portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
 
@@ -65,7 +98,6 @@ async function init() {
   if (setsR.status === 'fulfilled') setsData = setsR.value;
   if (fxR.status === 'fulfilled' && fxR.value.rates?.GBP) fxRate = fxR.value.rates.GBP;
 
-  // Build search index for 26k+ cards (EN + JP)
   if (cardData) buildSearchIndex(cardData.cards);
 
   $('fxValue').textContent = `£${fxRate.toFixed(4)}`;
@@ -89,7 +121,6 @@ function fmtUSD(usd) { return `$${usd.toLocaleString('en-US', { minimumFractionD
 
 // ---- Character Analysis ----
 function extractPokemonName(cardName) {
-  // Remove suffixes like "ex", "VMAX", "V", "#123", etc.
   let name = cardName.toLowerCase()
     .replace(/\s*\[.*?\]/g, '')
     .replace(/\s*#\d+/g, '')
@@ -108,7 +139,7 @@ function getCharacterScore(cardName) {
   for (const [tier, data] of Object.entries(CHAR_TIERS)) {
     if (data.names.some(n => name.includes(n))) return data.score;
   }
-  return 3.5; // Unknown/niche Pokémon
+  return 3.5;
 }
 
 function getAppealScore(cardName) {
@@ -131,21 +162,34 @@ function getCharacterMultiplier(cardName) {
   return 1.0;
 }
 
+// ---- Get Current Price (live or fallback to static) ----
+function getCurrentPrice(card) {
+  // If we have live price data for the selected card, use it
+  if (livePrice && selectedCard && card.i === selectedCard.i) {
+    if (livePrice.market > 0) return livePrice.market;
+    if (livePrice.mid > 0) return livePrice.mid;
+    if (livePrice.avg7 > 0) return livePrice.avg7;
+  }
+  // Check cache
+  const cached = getCachedPrice(card.i);
+  if (cached) {
+    if (cached.market > 0) return cached.market;
+    if (cached.mid > 0) return cached.mid;
+  }
+  // Fallback to static
+  return card.p;
+}
+
 // ---- Auto-fill Desirability ----
 function autoFillDesirability(card, pullCost) {
   const charScore = getCharacterScore(card.n);
   const appealScore = getAppealScore(card.n);
 
-  // Reverse-engineer artwork/hype from market price
-  // Price = BASE * PULL_MULT^pullCost * DES_MULT^des
-  // des = log(Price / (BASE * PULL_MULT^pullCost)) / log(DES_MULT)
   const sf = Math.pow(PULL_MULT, pullCost);
-  const targetPrice = card.p;
+  const targetPrice = getCurrentPrice(card);
   const impliedDes = Math.log(targetPrice / (BASE * sf)) / Math.log(DES_MULT);
   const clampedDes = Math.max(1, Math.min(10, impliedDes));
 
-  // Implied art score: total_des = char*0.45 + art*0.45 + appeal*0.10
-  // art = (total_des - char*0.45 - appeal*0.10) / 0.45
   const impliedArt = (clampedDes - charScore * WEIGHTS.char - appealScore * WEIGHTS.appeal) / WEIGHTS.art;
   const artScore = Math.max(1, Math.min(10, impliedArt));
 
@@ -200,7 +244,6 @@ function doSearch(query) {
 
   let matches = searchIndex.filter(c => c._search.includes(query));
 
-  // Card number exact match priority (supports "212", "#212", "212/172")
   const numSlashMatch = query.match(/^#?(\d+)\/(\d+)$/);
   if (numSlashMatch) {
     const [, num, total] = numSlashMatch;
@@ -218,7 +261,6 @@ function doSearch(query) {
     });
   }
 
-  // Sort by price (higher first for relevance)
   matches.sort((a, b) => {
     const aName = a.n.toLowerCase().startsWith(query) ? 1 : 0;
     const bName = b.n.toLowerCase().startsWith(query) ? 1 : 0;
@@ -239,9 +281,14 @@ function doSearch(query) {
     const isJP = c.lang === 'JP';
     const langBadge = isJP ? '<span class="lang-badge jp">JP</span>' : '';
     const jpNameLabel = isJP && c.nj ? `<span class="jp-name">${esc(c.nj)}</span>` : '';
-    const priceLabel = c.p > 0 ? `
-        <span class="gbp">${fmtGBP(c.p)}</span>
-        <span class="usd">${fmtUSD(c.p)}</span>` : '<span class="no-price">No price data</span>';
+    // Show cached live price if available, else static
+    const cached = getCachedPrice(c.i);
+    const displayPrice = cached ? (cached.market || cached.mid || c.p) : c.p;
+    const isLive = !!cached;
+    const priceLabel = displayPrice > 0 ? `
+        <span class="gbp">${fmtGBP(displayPrice)}</span>
+        <span class="usd">${fmtUSD(displayPrice)}</span>
+        ${isLive ? '<span class="live-dot" title="Live price"></span>' : ''}` : '<span class="no-price">No price data</span>';
     return `
     <div class="search-result-item${isJP ? ' jp-card' : ''}" data-id="${c.i}">
       ${c.img ? `<img class="search-result-img" src="${c.img}" alt="" loading="lazy">` : `<div class="search-result-img no-img"></div>`}
@@ -267,16 +314,311 @@ function doSearch(query) {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+// ================================================================
+// ---- LIVE PRICING ENGINE ----
+// ================================================================
+
+// Fetch live pricing for EN cards from pokemontcg.io (CORS-enabled, no proxy needed)
+async function fetchLivePriceEN(cardId) {
+  const url = `https://api.pokemontcg.io/v2/cards/${cardId}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`pokemontcg.io ${r.status}`);
+  const json = await r.json();
+  const d = json.data;
+  if (!d) throw new Error('No data');
+
+  const tcg = d.tcgplayer?.prices || {};
+  const cm = d.cardmarket?.prices || {};
+
+  // TCGPlayer: pick the best sub-type (holofoil > reverseHolofoil > normal > 1stEditionHolofoil > etc)
+  const tcgTypes = ['holofoil', 'reverseHolofoil', 'normal', '1stEditionHolofoil', 'unlimitedHolofoil', '1stEditionNormal', 'unlimited'];
+  let tcgPrices = null;
+  for (const t of tcgTypes) {
+    if (tcg[t]) { tcgPrices = tcg[t]; break; }
+  }
+  // Fallback: first available
+  if (!tcgPrices) {
+    const firstKey = Object.keys(tcg)[0];
+    if (firstKey) tcgPrices = tcg[firstKey];
+  }
+
+  const result = {
+    source: 'pokemontcg.io',
+    // TCGPlayer prices
+    market: tcgPrices?.market || 0,
+    low: tcgPrices?.low || 0,
+    mid: tcgPrices?.mid || 0,
+    high: tcgPrices?.high || 0,
+    directLow: tcgPrices?.directLow || 0,
+    tcgUpdated: d.tcgplayer?.updatedAt || '',
+    tcgUrl: d.tcgplayer?.url || '',
+    // Cardmarket prices
+    cmTrend: cm.trendPrice || 0,
+    cmAvg1: cm.avg1 || 0,
+    cmAvg7: cm.avg7 || 0,
+    cmAvg30: cm.avg30 || 0,
+    cmLow: cm.lowPrice || 0,
+    cmSuggested: cm.suggestedPrice || 0,
+    cmUpdated: d.cardmarket?.updatedAt || '',
+    cmUrl: d.cardmarket?.url || '',
+  };
+
+  return result;
+}
+
+// Fetch live pricing for JP cards from TCGdex (CORS-enabled, no proxy needed)
+async function fetchLivePriceJP(cardId) {
+  // JP card IDs in our DB are prefixed "jp-" — strip that and convert to TCGdex format
+  const tcgdexId = cardId.replace(/^jp-/, '');
+  const url = `https://api.tcgdex.net/v2/ja/cards/${tcgdexId}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`TCGdex ${r.status}`);
+  const d = await r.json();
+
+  // TCGdex returns pricing under 'prices' with 'cardmarket' and 'tcgplayer' sub-objects
+  // Also try top-level 'variants' pricing
+  const cm = d.prices?.cardmarket || {};
+  const tcg = d.prices?.tcgplayer || {};
+
+  const result = {
+    source: 'tcgdex',
+    market: tcg.market || 0,
+    low: tcg.low || cm.lowPrice || 0,
+    mid: tcg.mid || cm.avg7 || 0,
+    high: tcg.high || 0,
+    directLow: 0,
+    tcgUpdated: '',
+    tcgUrl: '',
+    cmTrend: cm.trendPrice || cm.averageSellPrice || 0,
+    cmAvg1: cm.avg1 || 0,
+    cmAvg7: cm.avg7 || 0,
+    cmAvg30: cm.avg30 || 0,
+    cmLow: cm.lowPrice || 0,
+    cmSuggested: cm.suggestedPrice || 0,
+    cmUpdated: '',
+    cmUrl: '',
+  };
+
+  return result;
+}
+
+// Master live price fetcher — routes to correct API based on card language
+async function fetchLivePrice(card) {
+  const thisId = ++livePriceFetchId;
+  livePrice = null;
+
+  // Show loading state in live pricing panel
+  const panel = $('livePricePanel');
+  const loading = $('livePriceLoading');
+  const content = $('livePriceContent');
+  const status = $('livePriceStatus');
+
+  panel.style.display = 'block';
+  loading.style.display = 'flex';
+  content.style.display = 'none';
+
+  // Check cache first
+  const cached = getCachedPrice(card.i);
+  if (cached) {
+    if (thisId !== livePriceFetchId) return;
+    livePrice = cached;
+    renderLivePrice(cached);
+    recalcWithLivePrice(card);
+    // Still fetch fresh in background to update cache
+    fetchAndCacheFresh(card, thisId);
+    return;
+  }
+
+  // No cache — fetch fresh
+  try {
+    let priceData;
+    if (card.lang === 'JP') {
+      priceData = await fetchLivePriceJP(card.i);
+    } else {
+      priceData = await fetchLivePriceEN(card.i);
+    }
+
+    if (thisId !== livePriceFetchId) return; // stale
+    livePrice = priceData;
+    setCachedPrice(card.i, priceData);
+    renderLivePrice(priceData);
+    recalcWithLivePrice(card);
+  } catch (e) {
+    if (thisId !== livePriceFetchId) return;
+    console.warn('Live price fetch failed:', e);
+    loading.style.display = 'none';
+    content.style.display = 'none';
+    status.textContent = 'Live pricing unavailable — using static data';
+    status.style.display = 'block';
+  }
+}
+
+// Background refresh even when cache hit
+async function fetchAndCacheFresh(card, originalId) {
+  try {
+    let priceData;
+    if (card.lang === 'JP') {
+      priceData = await fetchLivePriceJP(card.i);
+    } else {
+      priceData = await fetchLivePriceEN(card.i);
+    }
+    setCachedPrice(card.i, priceData);
+    // If still on same card, update
+    if (originalId === livePriceFetchId && selectedCard && selectedCard.i === card.i) {
+      livePrice = priceData;
+      renderLivePrice(priceData);
+      recalcWithLivePrice(card);
+    }
+  } catch (e) {
+    // Silent — cached data is still shown
+  }
+}
+
+// Render live pricing panel
+function renderLivePrice(data) {
+  const loading = $('livePriceLoading');
+  const content = $('livePriceContent');
+  const status = $('livePriceStatus');
+
+  loading.style.display = 'none';
+  status.style.display = 'none';
+  content.style.display = 'block';
+
+  const hasMarket = data.market > 0;
+  const hasCM = data.cmTrend > 0 || data.cmAvg7 > 0;
+
+  // Primary live price
+  const primaryPrice = data.market || data.mid || data.cmTrend || data.cmAvg7 || 0;
+  $('liveMainPrice').textContent = primaryPrice > 0 ? fmtGBP(primaryPrice) : '—';
+  $('liveMainUSD').textContent = primaryPrice > 0 ? fmtUSD(primaryPrice) : '';
+
+  // Comparison to static price
+  if (selectedCard && selectedCard.p > 0 && primaryPrice > 0) {
+    const diff = primaryPrice - selectedCard.p;
+    const pct = ((diff / selectedCard.p) * 100).toFixed(1);
+    const el = $('livePriceDelta');
+    if (Math.abs(diff) > selectedCard.p * 0.01) {
+      el.textContent = `${diff > 0 ? '+' : ''}${pct}% vs build-time`;
+      el.className = `live-price-delta ${diff > 0 ? 'delta-up' : 'delta-down'}`;
+      el.style.display = 'inline-block';
+    } else {
+      el.style.display = 'none';
+    }
+  } else {
+    $('livePriceDelta').style.display = 'none';
+  }
+
+  // TCGPlayer row
+  const tcgRow = $('tcgPlayerRow');
+  if (hasMarket) {
+    tcgRow.style.display = '';
+    $('tcgMarket').textContent = fmtGBP(data.market);
+    $('tcgLow').textContent = data.low > 0 ? fmtGBP(data.low) : '—';
+    $('tcgMid').textContent = data.mid > 0 ? fmtGBP(data.mid) : '—';
+    $('tcgHigh').textContent = data.high > 0 ? fmtGBP(data.high) : '—';
+    const updatedEl = $('tcgUpdated');
+    if (data.tcgUpdated) {
+      const d = new Date(data.tcgUpdated);
+      updatedEl.textContent = `Updated ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+    } else {
+      updatedEl.textContent = '';
+    }
+    // TCGPlayer link
+    const tcgLink = $('tcgPlayerLink');
+    if (data.tcgUrl) {
+      tcgLink.href = data.tcgUrl;
+      tcgLink.style.display = '';
+    } else {
+      tcgLink.style.display = 'none';
+    }
+  } else {
+    tcgRow.style.display = 'none';
+  }
+
+  // Cardmarket row
+  const cmRow = $('cardmarketRow');
+  if (hasCM) {
+    cmRow.style.display = '';
+    $('cmTrend').textContent = data.cmTrend > 0 ? fmtGBP(data.cmTrend) : '—';
+    $('cmAvg7').textContent = data.cmAvg7 > 0 ? fmtGBP(data.cmAvg7) : '—';
+    $('cmAvg30').textContent = data.cmAvg30 > 0 ? fmtGBP(data.cmAvg30) : '—';
+    $('cmLow').textContent = data.cmLow > 0 ? fmtGBP(data.cmLow) : '—';
+    const updatedEl = $('cmUpdated');
+    if (data.cmUpdated) {
+      const d = new Date(data.cmUpdated);
+      updatedEl.textContent = `Updated ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+    } else {
+      updatedEl.textContent = '';
+    }
+    const cmLink = $('cardmarketLink');
+    if (data.cmUrl) {
+      cmLink.href = data.cmUrl;
+      cmLink.style.display = '';
+    } else {
+      cmLink.style.display = 'none';
+    }
+  } else {
+    cmRow.style.display = 'none';
+  }
+
+  // Cache timestamp
+  const cacheTs = $('livePriceCache');
+  if (data._ts) {
+    const ago = Math.round((Date.now() - data._ts) / 60000);
+    cacheTs.textContent = ago < 1 ? 'just now' : ago < 60 ? `${ago}m ago` : `${Math.round(ago/60)}h ago`;
+    cacheTs.style.display = '';
+  } else {
+    cacheTs.textContent = 'just now';
+    cacheTs.style.display = '';
+  }
+}
+
+// Recalculate model with live price
+function recalcWithLivePrice(card) {
+  if (!card || !livePrice) return;
+  const lp = livePrice.market || livePrice.mid || livePrice.cmTrend || 0;
+  if (lp <= 0) return;
+
+  // Update displayed market prices to live
+  $('marketRawUSD').textContent = fmtUSD(lp);
+  $('marketRawGBP').textContent = fmtGBP(lp);
+
+  // Re-calculate pull cost
+  let pullCost = 7.65;
+  if (setsData && setsData[card.sc]) {
+    const set = setsData[card.sc];
+    const rarity = set.rarities?.[card.rc];
+    if (rarity && rarity.pullRate > 0) {
+      const packsPerHit = Math.round(1 / rarity.pullRate);
+      const totalPacks = packsPerHit * rarity.count;
+      pullCost = totalPacks / 100;
+    }
+  }
+
+  // Re-calibrate desirability from live price
+  const des = autoFillDesirability(card, pullCost);
+  $('characterPremium').value = des.char;
+  $('artworkHype').value = des.art;
+  $('universalAppeal').value = des.appeal;
+
+  // Update all calculations
+  updateAll();
+}
+
+// ================================================================
 // ---- Card Selection ----
+// ================================================================
 function selectCard(id) {
   if (!cardData) return;
   const card = cardData.cards.find(c => c.i === id);
   if (!card) return;
   selectedCard = card;
 
-  // Reset stale market data immediately
+  // Reset stale data immediately
   marketData = null;
   marketFetchId++;
+  livePrice = null;
+  livePriceFetchId++;
 
   $('searchResults').classList.remove('open');
   $('searchInput').value = card.n;
@@ -285,9 +627,8 @@ function selectCard(id) {
   section.style.display = 'block';
   const isJP = card.lang === 'JP';
 
-  // Card images — handle both EN and JP sources
+  // Card images
   if (isJP) {
-    // JP card: primary image is from TCGdex, show in JP slot; hide EN slot
     if (card.img) {
       $('cardImageJp').src = card.img;
       $('cardImageJp').style.display = 'block';
@@ -299,17 +640,13 @@ function selectCard(id) {
     }
     $('cardImage').style.display = 'none';
   } else {
-    // EN card: primary image from pokemontcg.io
     if (card.img) { $('cardImage').src = card.img; $('cardImage').style.display = 'block'; }
     else { $('cardImage').style.display = 'none'; }
-    // Also show JP version link
     loadJapaneseImage(card);
   }
 
-  // Card name — show JP name underneath if available
-  const displayName = isJP && card.nj ? `${card.n}` : card.n;
-  $('cardName').textContent = displayName;
-  // Show JP name as subtitle
+  // Card name
+  $('cardName').textContent = card.n;
   const jpSub = $('cardNameJp');
   if (jpSub) {
     if (isJP && card.nj) {
@@ -330,27 +667,25 @@ function selectCard(id) {
     $('cardSeries').style.display = 'none';
   }
 
-  // Collectrics link: use mycollectrics ID if available, otherwise link to search
+  // Links
   if (card.mi) {
     $('linkCollectrics').href = `https://mycollectrics.com/card.html?id=${card.mi}`;
-    $('linkCollectrics').style.display = '';
   } else {
     $('linkCollectrics').href = `https://mycollectrics.com/search.html?q=${encodeURIComponent(card.n)}`;
-    $('linkCollectrics').style.display = '';
   }
-  // TCG Collector link (international)
+  $('linkCollectrics').style.display = '';
+
   const tcgName = card.n.replace(/#\d+/, '').replace(/\s+/g, ' ').trim();
   const tcgParams = new URLSearchParams({ cardName: tcgName });
   if (card.cn) tcgParams.set('displayNumber', String(card.cn));
   $('linkTcgCollector').href = `https://www.tcgcollector.com/cards/intl?${tcgParams.toString()}`;
-  // TCG Collector Japanese link
   const jpParams = new URLSearchParams({ cardName: tcgName });
   if (card.cn) jpParams.set('displayNumber', String(card.cn));
   $('linkTcgJp').href = `https://www.tcgcollector.com/cards/jp?${jpParams.toString()}`;
-  // PriceCharting link — search by card name + number
   const pcQuery = card.cn ? `${card.n} ${card.cn}` : card.n;
   $('linkPriceCharting').href = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(pcQuery)}`;
 
+  // Static prices (will be overwritten by live)
   $('marketRawUSD').textContent = fmtUSD(card.p);
   $('marketRawGBP').textContent = fmtGBP(card.p);
   $('psa10USD').textContent = card.p10 > 0 ? fmtUSD(card.p10) : '—';
@@ -358,7 +693,7 @@ function selectCard(id) {
   $('gemPct').textContent = card.g ? `${(card.g * 100).toFixed(1)}%` : '—';
 
   // Auto-fill pull cost from set data
-  let pullCost = 7.65; // default
+  let pullCost = 7.65;
   let pullCostFound = false;
   if (setsData && setsData[card.sc]) {
     const set = setsData[card.sc];
@@ -379,27 +714,21 @@ function selectCard(id) {
     $('autoPullPacks').textContent = 'No pull rate data for this set';
   }
 
-  // Auto-fill desirability from market price
+  // Auto-fill desirability from static price initially
   const des = autoFillDesirability(card, pullCost);
   $('characterPremium').value = des.char;
   $('artworkHype').value = des.art;
   $('universalAppeal').value = des.appeal;
 
-  // Update model prediction + max buy price + deal check
   updateAll();
 
-  // Show forecast + rip-or-buy
   $('forecastSection').style.display = 'block';
   renderForecast(card, pullCost, des.total);
   updateRipOrBuy(card, pullCost);
-
-  // Update HOLD/BUY/SELL signal
   updateSignal(card, pullCost, des.total);
-
-  // Update portfolio button state
   updatePortfolioButton();
 
-  // Reset market section + grading section for new card
+  // Reset market dynamics section
   $('marketSection').style.display = 'none';
   $('marketContent').style.display = 'none';
   $('marketLoading').style.display = 'block';
@@ -408,7 +737,14 @@ function selectCard(id) {
   $('marketTrend').className = 'market-trend-badge';
   $('gradeSection').style.display = 'none';
 
-  // Fetch live market dynamics from collectrics API (only for cards with mycollectrics ID)
+  // Reset live price panel
+  $('livePricePanel').style.display = 'none';
+  $('livePriceStatus').style.display = 'none';
+
+  // Fetch LIVE pricing (this is the new v8 feature)
+  fetchLivePrice(card);
+
+  // Fetch market dynamics from collectrics API (EN cards with mycollectrics ID)
   if (card.mi) {
     fetchMarketData(card.mi);
   }
@@ -419,15 +755,10 @@ function selectCard(id) {
 // ---- Japanese Card Image ----
 function loadJapaneseImage(card) {
   const jpImg = $('cardImageJp');
-  // Try loading the JP version from TCG Collector's search — we'll use the same card image
-  // with a JP flag overlay as a fallback, or try the pokemon TCG API JP images
-  // For now, show the same image with JP styling if available, and link to TCG Collector JP
   const tcgName = card.n.replace(/#\d+/, '').replace(/\s+/g, ' ').trim();
   const jpSearchUrl = `https://www.tcgcollector.com/cards/jp?cardName=${encodeURIComponent(tcgName)}${card.cn ? '&displayNumber=' + card.cn : ''}`;
 
   if (card.img) {
-    // Show the English image with JP styling as a visual indicator
-    // The actual JP version is accessible via the link
     jpImg.src = card.img;
     jpImg.style.display = 'block';
     jpImg.title = 'Click to find Japanese version on TCG Collector';
@@ -443,59 +774,48 @@ function computeSignal(card, pullCost, desirability) {
   if (!card) return null;
 
   const { priceUSD } = predictPrice(pullCost, desirability);
-  const marketPrice = card.p;
+  const marketPrice = getCurrentPrice(card);
   const modelPrice = priceUSD;
 
-  // Factors for signal
-  const modelVsMarket = modelPrice / marketPrice; // >1 = undervalued, <1 = overvalued
+  const modelVsMarket = modelPrice / marketPrice;
   const fc = forecast(card, pullCost, desirability);
   const yr1Expected = fc.scenarios.expected[0]?.priceUSD || marketPrice;
   const yr1Growth = (yr1Expected - marketPrice) / marketPrice;
   const yr3Expected = fc.scenarios.expected[2]?.priceUSD || marketPrice;
   const yr3Growth = (yr3Expected - marketPrice) / marketPrice;
 
-  // Market momentum
   const momentum = getMarketMomentum();
   const isHeating = momentum.mult > 1.1;
   const isCooling = momentum.mult < 0.8;
 
-  // Rarity factor
   const rarityRate = (RARITY_RATES[card.rc] || RARITY_RATES['']).base;
   const isHighRarity = rarityRate >= 0.15;
 
-  // Character premium
   const charMult = getCharacterMultiplier(card.n);
   const isChaseChar = charMult >= 1.3;
 
-  // Scoring system
-  let score = 0; // positive = buy, negative = sell
+  let score = 0;
   let reasons = [];
 
-  // Model vs market (biggest weight)
   if (modelVsMarket > 1.15) { score += 2; reasons.push('Model sees upside'); }
   else if (modelVsMarket > 1.05) { score += 1; reasons.push('Slightly undervalued'); }
   else if (modelVsMarket < 0.85) { score -= 2; reasons.push('Overvalued vs model'); }
   else if (modelVsMarket < 0.95) { score -= 1; reasons.push('Slightly overvalued'); }
 
-  // Forecast growth
   if (yr1Growth > 0.20) { score += 1; reasons.push(`+${(yr1Growth*100).toFixed(0)}% expected yr 1`); }
   else if (yr1Growth < 0.05) { score -= 1; reasons.push('Weak near-term growth'); }
 
   if (yr3Growth > 0.50) { score += 1; reasons.push('Strong 3yr outlook'); }
 
-  // Market momentum
   if (isHeating) { score += 1; reasons.push('Market heating'); }
   if (isCooling) { score -= 1; reasons.push('Market cooling'); }
 
-  // Rarity + character
   if (isHighRarity && isChaseChar) { score += 1; reasons.push('Chase card premium'); }
 
-  // Set age — newer sets may still be dropping
   const ageMonths = getSetAgeMonths(card.sc);
   if (ageMonths < 6) { score -= 1; reasons.push('New set — price may drop'); }
   else if (ageMonths > 48) { score += 1; reasons.push('Vintage scarcity premium'); }
 
-  // Determine signal
   let signal, cls;
   if (score >= 3) { signal = 'STRONG BUY'; cls = 'signal-strong-buy'; }
   else if (score >= 1) { signal = 'BUY'; cls = 'signal-buy'; }
@@ -548,14 +868,13 @@ function getSetAgeMonths(setCode) {
 }
 
 function getAgeMultiplier(monthsOld, yearsForward) {
-  // Cards in early lifecycle may still be correcting
   const futureMonths = monthsOld + (yearsForward * 12);
   if (futureMonths < 6) return 0.6;
   if (futureMonths < 12) return 0.85;
   if (futureMonths < 24) return 1.0;
   if (futureMonths < 36) return 1.05;
   if (futureMonths < 48) return 1.1;
-  return 1.15; // Scarcity premium kicks in for 4+ year old cards
+  return 1.15;
 }
 
 function forecast(card, pullCost, desirability) {
@@ -563,7 +882,7 @@ function forecast(card, pullCost, desirability) {
   const charMult = getCharacterMultiplier(card.n);
   const ageMonths = getSetAgeMonths(card.sc);
 
-  const currentPriceUSD = card.p;
+  const currentPriceUSD = getCurrentPrice(card);
   const years = [1, 2, 3, 4, 5];
 
   const scenarios = {
@@ -572,14 +891,12 @@ function forecast(card, pullCost, desirability) {
     optimistic: [],
   };
 
-  // Market momentum adjusts year 1 rate (fades out over subsequent years)
   const momentum = getMarketMomentum();
 
   years.forEach(y => {
     const ageMult = getAgeMultiplier(ageMonths, y);
     const annualRate = rarityRate * charMult * ageMult;
 
-    // Momentum fades: full effect year 1, half year 2, none after
     const momFade = y === 1 ? momentum.mult : y === 2 ? (1 + (momentum.mult - 1) * 0.5) : 1.0;
     const adjRate = annualRate * momFade;
 
@@ -608,7 +925,6 @@ function renderForecast(card, pullCost, desirability) {
   const table = $('forecastTable');
   const canvas = $('forecastChart');
 
-  // Render table
   let html = '';
   for (let i = 0; i < 5; i++) {
     const con = fc.scenarios.conservative[i];
@@ -628,19 +944,19 @@ function renderForecast(card, pullCost, desirability) {
   }
   table.querySelector('tbody').innerHTML = html;
 
-  // Render forecast info
   const rateLabel = (RARITY_RATES[card.rc] || RARITY_RATES['']).label;
   const charMult = fc.charMult;
   const annualPct = (fc.scenarios.expected[0].rate * 100).toFixed(1);
   const momLabel = fc.momentum?.label || '';
+  const priceSource = livePrice ? 'Live price' : 'Static price';
   $('forecastInfo').innerHTML = `
     <span>${rateLabel} base rate</span> ·
     <span>${charMult > 1 ? charMult.toFixed(1) + '× character premium' : 'Standard character'}</span> ·
     <span>${annualPct}% expected annual growth</span>
     ${momLabel ? `· <span style="color:${fc.momentum.mult > 1 ? 'var(--green)' : fc.momentum.mult < 1 ? 'var(--red)' : 'var(--text-muted)'}">${momLabel}</span>` : ''}
+    · <span style="color:var(--text-faint);font-size:11px">${priceSource}</span>
   `;
 
-  // Draw chart
   drawForecastChart(canvas, fc);
 }
 
@@ -656,7 +972,6 @@ function drawForecastChart(canvas, fc) {
 
   ctx.clearRect(0, 0, W, H);
 
-  // Data
   const current = usdToGbp(fc.currentPriceUSD);
   const allPrices = [current, ...fc.scenarios.optimistic.map(s => usdToGbp(s.priceUSD))];
   const maxP = Math.max(...allPrices) * 1.1;
@@ -669,7 +984,6 @@ function drawForecastChart(canvas, fc) {
   function x(year) { return pad.l + (year / 5) * cw; }
   function y(price) { return pad.t + ch - ((price - minP) / (maxP - minP)) * ch; }
 
-  // Grid lines
   ctx.strokeStyle = '#2a2d3a';
   ctx.lineWidth = 1;
   const gridCount = 4;
@@ -683,7 +997,6 @@ function drawForecastChart(canvas, fc) {
     ctx.fillText(`£${Math.round(gp).toLocaleString()}`, pad.l - 8, gy + 4);
   }
 
-  // Year labels
   ctx.textAlign = 'center';
   ctx.fillStyle = '#555768';
   ctx.font = '11px Space Grotesk, sans-serif';
@@ -691,7 +1004,6 @@ function drawForecastChart(canvas, fc) {
     ctx.fillText(yr === 0 ? 'Now' : `${yr}yr`, x(yr), H - 8);
   }
 
-  // Confidence band (conservative to optimistic)
   ctx.fillStyle = 'rgba(232, 182, 52, 0.06)';
   ctx.beginPath();
   ctx.moveTo(x(0), y(current));
@@ -700,7 +1012,6 @@ function drawForecastChart(canvas, fc) {
   ctx.lineTo(x(0), y(current));
   ctx.fill();
 
-  // Conservative line (dashed)
   ctx.strokeStyle = 'rgba(138, 138, 138, 0.4)';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([4, 4]);
@@ -709,7 +1020,6 @@ function drawForecastChart(canvas, fc) {
   fc.scenarios.conservative.forEach((s, i) => ctx.lineTo(x(i + 1), y(usdToGbp(s.priceUSD))));
   ctx.stroke();
 
-  // Optimistic line (dashed)
   ctx.strokeStyle = 'rgba(232, 182, 52, 0.35)';
   ctx.beginPath();
   ctx.moveTo(x(0), y(current));
@@ -717,7 +1027,6 @@ function drawForecastChart(canvas, fc) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Expected line (solid, bold)
   ctx.strokeStyle = '#e8b634';
   ctx.lineWidth = 2.5;
   ctx.beginPath();
@@ -725,13 +1034,11 @@ function drawForecastChart(canvas, fc) {
   fc.scenarios.expected.forEach((s, i) => ctx.lineTo(x(i + 1), y(usdToGbp(s.priceUSD))));
   ctx.stroke();
 
-  // Current price dot
   ctx.fillStyle = '#fff';
   ctx.beginPath(); ctx.arc(x(0), y(current), 5, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#e8b634';
   ctx.beginPath(); ctx.arc(x(0), y(current), 3, 0, Math.PI * 2); ctx.fill();
 
-  // 5-year expected dot + label
   const finalGBP = usdToGbp(fc.scenarios.expected[4].priceUSD);
   ctx.fillStyle = '#e8b634';
   ctx.beginPath(); ctx.arc(x(5), y(finalGBP), 5, 0, Math.PI * 2); ctx.fill();
@@ -763,7 +1070,6 @@ function updateAll() {
   updateMaxPrice(priceUSD);
   updateDealCheck(priceUSD);
 
-  // Update forecast + rip-or-buy + signal if card selected
   if (selectedCard) {
     renderForecast(selectedCard, pullCost, des);
     updateRipOrBuy(selectedCard, pullCost);
@@ -774,11 +1080,13 @@ function updateAll() {
 function updateMaxPrice(modelPriceUSD) {
   let maxUSD, logic;
   if (selectedCard) {
-    const mkt = selectedCard.p;
+    const mkt = getCurrentPrice(selectedCard);
+    const isLive = livePrice && (livePrice.market > 0 || livePrice.mid > 0);
+    const priceTag = isLive ? 'Live market' : 'Market';
     maxUSD = Math.min(modelPriceUSD, mkt);
-    if (modelPriceUSD < mkt) logic = `Model says ${fmtGBP(modelPriceUSD)} — card appears overvalued vs market (${fmtGBP(mkt)})`;
-    else if (modelPriceUSD > mkt * 1.1) logic = `Market price (${fmtGBP(mkt)}) — model sees upside to ${fmtGBP(modelPriceUSD)}`;
-    else logic = `Market (${fmtGBP(mkt)}) and model (${fmtGBP(modelPriceUSD)}) agree — fairly valued`;
+    if (modelPriceUSD < mkt) logic = `Model says ${fmtGBP(modelPriceUSD)} — card appears overvalued vs ${priceTag.toLowerCase()} (${fmtGBP(mkt)})`;
+    else if (modelPriceUSD > mkt * 1.1) logic = `${priceTag} price (${fmtGBP(mkt)}) — model sees upside to ${fmtGBP(modelPriceUSD)}`;
+    else logic = `${priceTag} (${fmtGBP(mkt)}) and model (${fmtGBP(modelPriceUSD)}) agree — fairly valued`;
   } else {
     maxUSD = modelPriceUSD;
     logic = 'Based on model only. Select a card for market comparison.';
@@ -794,7 +1102,7 @@ function updateDealCheck(modelPriceUSD) {
     $('dealResult').className = 'deal-result';
     return;
   }
-  const refUSD = selectedCard ? Math.min(modelPriceUSD, selectedCard.p) : modelPriceUSD;
+  const refUSD = selectedCard ? Math.min(modelPriceUSD, getCurrentPrice(selectedCard)) : modelPriceUSD;
   const refGBP = usdToGbp(refUSD);
   const diff = refGBP - ebayGBP;
   const pct = ((diff / ebayGBP) * 100).toFixed(0);
@@ -838,9 +1146,8 @@ function updateRipOrBuy(card, pullCost) {
   const totalRipCost = packsNeeded * packCost;
   const evRecovered = packsNeeded * evPerPack;
   const netRipCost = totalRipCost - evRecovered;
-  const singleCost = card.p;
+  const singleCost = getCurrentPrice(card);
 
-  // Luck scenarios (geometric distribution)
   const prob = 1 / packsNeeded;
   const luckyPacks = Math.ceil(Math.log(0.75) / Math.log(1 - prob));
   const unluckyPacks = Math.ceil(Math.log(0.25) / Math.log(1 - prob));
@@ -850,7 +1157,7 @@ function updateRipOrBuy(card, pullCost) {
   $('ripPackDetail').textContent = `${packsNeeded.toLocaleString()} packs × ${fmtGBP(packCost)}/pack`;
   $('ripPackSub').textContent = `Net after selling pulls (EV ${fmtGBP(evPerPack)}/pack)`;
   $('ripSingleCost').textContent = fmtGBP(singleCost);
-  $('ripSingleDetail').textContent = 'Current market price';
+  $('ripSingleDetail').textContent = livePrice ? 'Live market price' : 'Current market price';
 
   const savings = netRipCost - singleCost;
   const savingsGBP = usdToGbp(Math.abs(savings));
@@ -882,8 +1189,8 @@ function updateRipOrBuy(card, pullCost) {
 }
 
 // ---- Market Dynamics (live from collectrics API) ----
-let marketData = null; // cached per card
-let marketFetchId = 0; // guard against stale async results
+let marketData = null;
+let marketFetchId = 0;
 
 async function fetchMarketData(cardId) {
   const thisId = ++marketFetchId;
@@ -896,13 +1203,12 @@ async function fetchMarketData(cardId) {
   marketData = null;
 
   try {
-    // Use CORS proxy to bypass cross-origin restriction on collectrics API
     const apiUrl = `https://mycollectrics.com/api/card/${cardId}?include=ebay`;
     const proxyUrl = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(apiUrl)}`;
     const r = await fetch(proxyUrl);
     if (!r.ok) throw new Error('API error');
     const d = await r.json();
-    if (thisId !== marketFetchId) return; // stale fetch, card changed
+    if (thisId !== marketFetchId) return;
     marketData = d;
 
     const mp = d.collectrics?.['market-pressure'];
@@ -918,7 +1224,6 @@ async function fetchMarketData(cardId) {
     renderMarketDynamics(mp, ebayHist);
     renderGradingROI(d);
 
-    // Re-render forecast + signal with market momentum now available
     if (selectedCard) {
       const { pullCost } = calcPullCost();
       const des = calcDesirability();
@@ -933,7 +1238,6 @@ async function fetchMarketData(cardId) {
 }
 
 function renderMarketDynamics(mp, ebayHist) {
-  // Use estimated data (more accurate per PokeDataDadGuy)
   const est = mp.estimated || mp.observed;
   const obs = mp.observed;
   const d7 = est['7d'];
@@ -942,13 +1246,11 @@ function renderMarketDynamics(mp, ebayHist) {
 
   if (!d7 || !d30) return;
 
-  // Demand Pressure gauge (0-15% scale, higher = tighter market)
   const dp = (d7.metrics['demand-pressure-est'] || d7.metrics['demand-pressure'] || 0) * 100;
   const dpPct = Math.min(100, (dp / 15) * 100);
   $('gaugeDemand').style.width = `${dpPct}%`;
   $('demandValue').textContent = `${dp.toFixed(1)}%`;
 
-  // Supply Saturation Index (0-2 scale, 1.0 = neutral, >1 = loosening, <1 = tightening)
   const ssi = baseline?.['supply-saturation-index'] ?? 1.0;
   const ssiPct = Math.min(100, Math.max(0, (ssi / 2) * 100));
   $('gaugeSupply').style.width = `${ssiPct}%`;
@@ -956,7 +1258,6 @@ function renderMarketDynamics(mp, ebayHist) {
   const ssiLabel = baseline?.['supply-saturation-label'] || (ssi < 0.8 ? 'tightening' : ssi > 1.2 ? 'loosening' : 'normal');
   $('supplyDesc').textContent = ssiLabel === 'normal' ? 'Balanced vs 30d' : ssiLabel === 'tightening' ? 'Supply tightening' : 'Supply loosening';
 
-  // Trend badge
   const trend = baseline?.trend || 'stable';
   const badge = $('marketTrend');
   const trendLabels = {
@@ -970,7 +1271,6 @@ function renderMarketDynamics(mp, ebayHist) {
   else if (trend.includes('cool') || trend.includes('cold') || trend.includes('loosen')) badge.className = 'market-trend-badge trend-cooling';
   else badge.className = 'market-trend-badge trend-stable';
 
-  // Market stats (7d averages)
   const raw7 = d7.raw || {};
   const raw30 = d30.raw || {};
   const activeDelta = baseline?.['active-listings-delta-pct'] ?? 0;
@@ -988,7 +1288,6 @@ function renderMarketDynamics(mp, ebayHist) {
     <div class="mstat"><div class="mstat-label">New/Day</div><div class="mstat-value">${(raw7['avg-new'] || 0).toFixed(1)}</div>${fmtDelta(baseline?.['supply-delta-pct'] ?? 0)}</div>
   `;
 
-  // Draw listing volume chart
   drawListingChart($('listingChart'), ebayHist);
 }
 
@@ -1003,14 +1302,13 @@ function drawListingChart(canvas, history) {
   const H = rect.height;
   ctx.clearRect(0, 0, W, H);
 
-  const data = history.slice(-30); // Last 30 days
+  const data = history.slice(-30);
   if (data.length < 2) return;
 
   const pad = { l: 36, r: 12, t: 10, b: 22 };
   const cw = W - pad.l - pad.r;
   const ch = H - pad.t - pad.b;
 
-  // Extract series
   const active = data.map(d => d['active-to'] || 0);
   const soldEst = data.map(d => d['sold-est'] || 0);
   const newL = data.map(d => d['new'] || 0);
@@ -1019,7 +1317,6 @@ function drawListingChart(canvas, history) {
   function x(i) { return pad.l + (i / (data.length - 1)) * cw; }
   function yLine(v) { return pad.t + ch - (v / maxVal) * ch; }
 
-  // Grid
   ctx.strokeStyle = '#1e2030';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 3; i++) {
@@ -1027,7 +1324,6 @@ function drawListingChart(canvas, history) {
     ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
   }
 
-  // Y-axis labels
   ctx.fillStyle = '#555768';
   ctx.font = '9px JetBrains Mono, monospace';
   ctx.textAlign = 'right';
@@ -1036,10 +1332,8 @@ function drawListingChart(canvas, history) {
     ctx.fillText(Math.round(val).toString(), pad.l - 4, pad.t + (ch / 3) * i + 3);
   }
 
-  // Bar width
   const bw = Math.max(2, (cw / data.length) * 0.3);
 
-  // Sold bars (green)
   ctx.fillStyle = 'rgba(61, 214, 140, 0.5)';
   data.forEach((d, i) => {
     const v = d['sold-est'] || 0;
@@ -1047,7 +1341,6 @@ function drawListingChart(canvas, history) {
     ctx.fillRect(x(i) - bw - 1, pad.t + ch - h, bw, h);
   });
 
-  // New bars (grey)
   ctx.fillStyle = 'rgba(85, 87, 104, 0.5)';
   data.forEach((d, i) => {
     const v = d['new'] || 0;
@@ -1055,7 +1348,6 @@ function drawListingChart(canvas, history) {
     ctx.fillRect(x(i) + 1, pad.t + ch - h, bw, h);
   });
 
-  // Active line (blue)
   ctx.strokeStyle = '#4a9eff';
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -1065,14 +1357,13 @@ function drawListingChart(canvas, history) {
   });
   ctx.stroke();
 
-  // Date labels
   ctx.fillStyle = '#555768';
   ctx.font = '9px Space Grotesk, sans-serif';
   ctx.textAlign = 'center';
   [0, Math.floor(data.length / 2), data.length - 1].forEach(i => {
     if (data[i]) {
       const d = data[i].date || '';
-      const short = d.slice(5); // MM-DD
+      const short = d.slice(5);
       ctx.fillText(short, x(i), H - 4);
     }
   });
@@ -1085,21 +1376,19 @@ function renderGradingROI(apiData) {
   if (!card || !card.p10 || card.p10 <= 0) { section.style.display = 'none'; return; }
 
   section.style.display = 'block';
-  const rawPrice = card.p;
+  const rawPrice = getCurrentPrice(card);
   const psa10Price = card.p10;
   const gemRate = card.g ? (card.g * 100).toFixed(1) : null;
-  const gradingFee = 20; // PSA economy service ~$20
+  const gradingFee = 20;
 
   const valueGain = psa10Price - rawPrice;
   const roi = ((valueGain - gradingFee) / (rawPrice + gradingFee)) * 100;
   const netProfit = valueGain - gradingFee;
   const multiplier = psa10Price / rawPrice;
 
-  // Expected value accounting for gem rate
   let evGrade = null, evNote = '';
   if (gemRate !== null) {
     const gemPct = card.g;
-    // If you get PSA 10: profit. If not (PSA 9 or lower): assume ~50% of raw as resale haircut
     evGrade = (gemPct * (psa10Price - gradingFee)) + ((1 - gemPct) * (rawPrice * 0.85 - gradingFee));
     const evRoi = ((evGrade - rawPrice) / rawPrice * 100).toFixed(0);
     evNote = `Expected value: ${fmtGBP(evGrade)} (${evRoi > 0 ? '+' : ''}${evRoi}% ROI at ${gemRate}% gem rate)`;
@@ -1137,7 +1426,6 @@ function renderGradingROI(apiData) {
 
 // ---- Market-Adjusted Forecast ----
 function getMarketMomentum() {
-  // Returns a multiplier based on live market signals to adjust forecast
   if (!marketData) return { mult: 1.0, label: '' };
   const mp = marketData.collectrics?.['market-pressure'];
   if (!mp) return { mult: 1.0, label: '' };
@@ -1150,7 +1438,6 @@ function getMarketMomentum() {
   const ssi = baseline['supply-saturation-index'] ?? 1.0;
   const dpDelta = baseline['demand-delta-pct'] ?? 0;
 
-  // Adjust year-1 forecast based on current market signals
   let mult = 1.0;
   let label = '';
 
@@ -1191,9 +1478,9 @@ function toggleCardInPortfolio() {
       name: selectedCard.n,
       set: selectedCard.s,
       img: selectedCard.img || '',
-      price: selectedCard.p,
+      price: getCurrentPrice(selectedCard),
       addedDate: new Date().toISOString(),
-      addedPriceGBP: usdToGbp(selectedCard.p),
+      addedPriceGBP: usdToGbp(getCurrentPrice(selectedCard)),
     });
   }
   savePortfolio();
@@ -1228,16 +1515,16 @@ function renderPortfolio() {
   countEl.textContent = portfolio.length;
   countEl.style.display = 'flex';
 
-  // Update prices from current data
   let totalGBP = 0;
   const items = portfolio.map(p => {
-    // Find current card data
     const currentCard = cardData ? cardData.cards.find(c => c.i === p.id) : null;
-    const currentPrice = currentCard ? currentCard.p : p.price;
+    // Try cached live price first
+    const cached = getCachedPrice(p.id);
+    const currentPrice = cached ? (cached.market || cached.mid || (currentCard ? currentCard.p : p.price)) : (currentCard ? currentCard.p : p.price);
     const currentGBP = usdToGbp(currentPrice);
+    const isLive = !!cached;
     totalGBP += currentGBP;
 
-    // Compute signal for portfolio card
     let signal = null;
     if (currentCard) {
       let pullCost = 7.65;
@@ -1253,7 +1540,6 @@ function renderPortfolio() {
       signal = computeSignal(currentCard, pullCost, des.total);
     }
 
-    // Price change since added
     const addedGBP = p.addedPriceGBP || 0;
     const change = addedGBP > 0 ? ((currentGBP - addedGBP) / addedGBP * 100).toFixed(1) : null;
 
@@ -1262,11 +1548,11 @@ function renderPortfolio() {
         ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="">` : '<div class="portfolio-item-img"></div>'}
         <div class="portfolio-item-info">
           <div class="portfolio-item-name">${esc(p.name)}</div>
-          <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}">${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}</div>
+          <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}</div>
         </div>
         <div class="portfolio-item-right">
           <div class="portfolio-item-price">£${currentGBP.toFixed(2)}</div>
-          ${signal ? `<span class="portfolio-item-signal sig-${signal.signal.toLowerCase().replace('strong ', '')}">${signal.signal}</span>` : ''}
+          ${signal ? `<span class="portfolio-item-signal sig-${signal.signal.toLowerCase().replace('strong ', '')}"> ${signal.signal}</span>` : ''}
         </div>
         <button class="portfolio-item-remove" data-id="${p.id}" title="Remove">✕</button>
       </div>
@@ -1276,7 +1562,6 @@ function renderPortfolio() {
   list.innerHTML = items.join('');
   totalEl.textContent = `Total: £${totalGBP.toFixed(2)}`;
 
-  // Click handlers
   list.querySelectorAll('.portfolio-item').forEach(el => {
     el.addEventListener('click', (e) => {
       if (e.target.closest('.portfolio-item-remove')) return;
