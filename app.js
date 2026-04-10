@@ -321,6 +321,9 @@ function selectCard(id) {
   const jpParams = new URLSearchParams({ cardName: tcgName });
   if (card.cn) jpParams.set('displayNumber', String(card.cn));
   $('linkTcgJp').href = `https://www.tcgcollector.com/cards/jp?${jpParams.toString()}`;
+  // PriceCharting link — search by card name + number
+  const pcQuery = card.cn ? `${card.n} ${card.cn}` : card.n;
+  $('linkPriceCharting').href = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(pcQuery)}`;
 
   $('marketRawUSD').textContent = fmtUSD(card.p);
   $('marketRawGBP').textContent = fmtGBP(card.p);
