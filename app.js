@@ -595,6 +595,7 @@ async function fetchFreshPriceData(card) {
     cmTrend: 0, cmAvg1: 0, cmAvg7: 0, cmAvg30: 0, cmLow: 0, cmSuggested: 0,
     cmUpdated: '', cmUrl: '',
     pcUngraded: 0, pcPsa10: 0, pcGrade9: 0, pcName: '', pcConsole: '', pcId: '',
+    crRaw: 0, crPsa10: 0, crGemRate: 0, crName: '', crUrl: '', crPsa10VsRaw: 0,
   };
 
   // 1. PriceCharting — primary source for ALL cards
@@ -651,7 +652,53 @@ async function fetchFreshPriceData(card) {
     throw new Error('No pricing data available');
   }
 
+  // 3. Collectrics — additional grading data source for all cards
+  try {
+    const cr = await fetchCollectricsSearchData(card);
+    if (cr) Object.assign(priceData, cr);
+  } catch (e) {
+    // Silent — Collectrics is supplementary
+  }
+
   return priceData;
+}
+
+// Fetch Collectrics data via search API
+async function fetchCollectricsSearchData(card) {
+  const proxyBase = 'https://api.codetabs.com/v1/proxy/?quest=';
+  const searchName = card.n.replace(/ \(JP\)$/i, '').trim();
+  const q = card.cn ? `${searchName} #${card.cn}` : searchName;
+  const apiUrl = `https://mycollectrics.com/api/search/cards?sort=raw_desc&limit=5&offset=0&q=${encodeURIComponent(q)}`;
+  const proxyUrl = proxyBase + encodeURIComponent(apiUrl);
+
+  const r = await fetch(proxyUrl);
+  if (!r.ok) return null;
+  const text = await r.text();
+  let d;
+  try { d = JSON.parse(text); } catch(e) { return null; }
+  if (!d.results || d.results.length === 0) return null;
+
+  // Match: find result that best matches our card
+  const nameLower = searchName.toLowerCase().split(' ')[0];
+  const match = d.results.find(res => {
+    return res['product-name']?.toLowerCase().includes(nameLower);
+  }) || d.results[0];
+  if (!match) return null;
+
+  const rawPrice = match['raw-price'] || match['collectrics-raw-price'] || 0;
+  const psa10Price = match['psa-10-price'] || 0;
+  const gemPct = match['psa-gem-pct'] || 0;
+  const psa10VsRaw = match['psa-10-vs-raw-pct'] || 0;
+  const cardId = match['id'] || '';
+
+  return {
+    crRaw: rawPrice,
+    crPsa10: psa10Price,
+    crGemRate: gemPct,
+    crPsa10VsRaw: psa10VsRaw,
+    crName: match['product-name'] || '',
+    crUrl: cardId ? `https://mycollectrics.com/card.html?id=${cardId}` : '',
+  };
 }
 
 // Background refresh even when cache hit
@@ -801,6 +848,45 @@ function renderLivePrice(data) {
     }
   } else {
     pcRow.style.display = 'none';
+  }
+
+  // Collectrics row
+  const crRow = $('collectricsRow');
+  const hasCR = data.crRaw > 0 || data.crPsa10 > 0;
+  if (hasCR) {
+    crRow.style.display = '';
+    $('crRaw').textContent = data.crRaw > 0 ? fmtGBP(data.crRaw) : '—';
+    $('crPsa10').textContent = data.crPsa10 > 0 ? fmtGBP(data.crPsa10) : '—';
+    $('crGemRate').textContent = data.crGemRate > 0 ? data.crGemRate.toFixed(1) + '%' : '—';
+    // Grading ROI from Collectrics data
+    if (data.crPsa10 > 0 && data.crRaw > 0) {
+      const gradingCostUSD = 25;
+      const crROI = ((data.crPsa10 - data.crRaw - gradingCostUSD) / data.crRaw * 100).toFixed(0);
+      const crROIel = $('crGradingRoi');
+      crROIel.textContent = `${crROI > 0 ? '+' : ''}${crROI}%`;
+      crROIel.className = `lp-val collectrics-grading-roi ${crROI > 50 ? 'roi-good' : crROI > 0 ? 'roi-ok' : 'roi-bad'}`;
+    } else {
+      $('crGradingRoi').textContent = '—';
+      $('crGradingRoi').className = 'lp-val collectrics-grading-roi';
+    }
+    // Match name
+    const crMatchEl = $('collectricsMatchName');
+    if (data.crName) {
+      crMatchEl.textContent = data.crName;
+      crMatchEl.style.display = '';
+    } else {
+      crMatchEl.style.display = 'none';
+    }
+    // Link
+    const crLink = $('collectricsLink');
+    if (data.crUrl) {
+      crLink.href = data.crUrl;
+      crLink.style.display = '';
+    } else {
+      crLink.style.display = 'none';
+    }
+  } else {
+    crRow.style.display = 'none';
   }
 
   // Cache timestamp
