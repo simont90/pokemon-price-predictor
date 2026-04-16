@@ -205,6 +205,7 @@ async function init() {
   setupSearch();
   setupInputs();
   setupPortfolio();
+  setupValuePicks();
   updateAll();
 }
 
@@ -1834,6 +1835,182 @@ function renderPortfolio() {
 function setupInputs() {
   ['packRate','cardsInTier','characterPremium','artworkHype','universalAppeal','ebayPrice']
     .forEach(id => $(id).addEventListener('input', updateAll));
+}
+
+// ---- Value Picks ----
+let vpFilter = 'all';
+
+function scanValuePicks(filter) {
+  if (!cardData || !cardData.cards) return [];
+
+  const cards = cardData.cards;
+  const GRADING_COST_USD = 30; // ~£25 PSA grading cost
+
+  const scored = [];
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i];
+    if (c.p < 5) continue; // only cards with meaningful market value
+    if (filter === 'EN' && c.lang === 'JP') continue;
+    if (filter === 'JP' && c.lang !== 'JP') continue;
+
+    const charMult = getCharacterMultiplier(c.n);
+    if (charMult < 1.1) continue;
+
+    const rarityInfo = RARITY_RATES[c.rc] || RARITY_RATES[''];
+    const rarityRate = rarityInfo.base;
+    if (rarityRate < 0.10) continue;
+
+    const marketPrice = c.p;
+
+    // ---- Grading arbitrage (primary value signal) ----
+    const psa10 = (c.p10 && c.p10 > 0) ? c.p10 : 0;
+    const gradingRatio = psa10 > 0 ? psa10 / marketPrice : 0;
+    const gradingProfit = psa10 > 0 ? psa10 - marketPrice - GRADING_COST_USD : 0;
+    const gradingROI = psa10 > 0 ? gradingProfit / (marketPrice + GRADING_COST_USD) : 0;
+
+    // Need either good grading potential OR strong character at reasonable price
+    if (gradingROI < 0.3 && charMult < 1.3) continue;
+
+    // ---- Pull cost (supply) ----
+    let pullCost = 7.65;
+    if (setsData && setsData[c.sc]) {
+      const set = setsData[c.sc];
+      const rarity = set.rarities && set.rarities[c.rc];
+      if (rarity && rarity.pullRate > 0) {
+        const packsPerHit = Math.round(1 / rarity.pullRate);
+        const totalPacks = packsPerHit * rarity.count;
+        pullCost = totalPacks / 100;
+      }
+    }
+
+    // ---- Model price (character premium on top of market) ----
+    const sf = Math.pow(PULL_MULT, pullCost);
+    const impliedDes = Math.log(marketPrice / (BASE * sf)) / Math.log(DES_MULT);
+    if (impliedDes < 1) continue; // market must show this is above bulk
+    const charBoost = Math.min(0.8, (charMult - 1) * 1.2);
+    const modelDes = Math.min(10, impliedDes + charBoost);
+    const { priceUSD: modelPrice } = predictPrice(pullCost, modelDes);
+
+    // ---- Set age (supply tightening) ----
+    const ageMonths = getSetAgeMonths(c.sc);
+    const ageFactor = ageMonths > 48 ? 1.35 : ageMonths > 24 ? 1.15 : ageMonths < 6 ? 0.8 : 1.0;
+
+    // ---- Composite value score ----
+    const gradingScore = gradingROI > 0 ? (1 + Math.min(gradingROI, 3)) : 1;
+    const valueScore = gradingScore * charMult * ageFactor * (1 + rarityRate) * (modelPrice / marketPrice);
+
+    // ---- Reasons ----
+    const reasons = [];
+    if (charMult >= 1.4) reasons.push('Fan favourite');
+    else if (charMult >= 1.2) reasons.push('Popular character');
+    if (gradingROI > 0.5) reasons.push('PSA 10: ' + gradingRatio.toFixed(1) + '× raw');
+    if (ageMonths > 36) reasons.push('Proven set');
+    if (rarityRate >= 0.20) reasons.push('Chase pull');
+
+    // Target price: best realistic outcome (model or PSA 10)
+    const targetPrice = psa10 > modelPrice ? psa10 : modelPrice;
+    const upside = ((targetPrice / marketPrice - 1) * 100).toFixed(0);
+
+    scored.push({
+      card: c,
+      marketPrice,
+      modelPrice,
+      targetPrice,
+      psa10,
+      ratio: targetPrice / marketPrice,
+      upside,
+      rarity: rarityInfo.label,
+      pullCost,
+      des: modelDes,
+      valueScore,
+      reasons: reasons.join(' · ') || 'Character premium',
+      signal: targetPrice / marketPrice > 2 ? 'STRONG BUY' : 'BUY',
+      signalCls: targetPrice / marketPrice > 2 ? 'signal-strong-buy' : 'signal-buy',
+    });
+  }
+
+  scored.sort((a, b) => b.valueScore - a.valueScore);
+  // Diversify: max 2 cards per character name
+  const result = [];
+  const charCount = {};
+  for (const pick of scored) {
+    const baseName = pick.card.n.replace(/ ex$/i, '').replace(/ V$/i, '').replace(/ VMAX$/i, '').replace(/ VSTAR$/i, '').replace(/ GX$/i, '').replace(/ EX$/i, '').replace(/ \(JP\)$/i, '').trim();
+    charCount[baseName] = (charCount[baseName] || 0) + 1;
+    if (charCount[baseName] <= 2) result.push(pick);
+    if (result.length >= 10) break;
+  }
+  return result;
+}
+
+function renderValuePicks(filter) {
+  const list = $('valuePicksList');
+  const picks = scanValuePicks(filter || vpFilter);
+
+  if (picks.length === 0) {
+    list.innerHTML = '<div class="vp-loading">No standout value picks found for this filter</div>';
+    return;
+  }
+
+  list.innerHTML = picks.map((p, i) => {
+    const c = p.card;
+    const isJP = c.lang === 'JP';
+    const langBadge = isJP
+      ? '<span class="vp-lang vp-jp">🇯🇵</span> '
+      : '<span class="vp-lang vp-en">EN</span> ';
+    const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+    const upsideClass = p.ratio > 1.5 ? 'big-upside' : 'med-upside';
+
+    return `
+      <div class="vp-item" data-id="${c.i}">
+        <div class="vp-rank ${rankClass}">${i + 1}</div>
+        <img class="vp-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="this.style.display='none'">
+        <div class="vp-info">
+          <div class="vp-name">${esc(c.n)}</div>
+          <div class="vp-meta">${langBadge}${esc(c.s)} · ${p.rarity}</div>
+        </div>
+        <div class="vp-values">
+          <div class="vp-market">Raw: ${fmtGBP(p.marketPrice)}</div>
+          ${p.psa10 > 0 ? `<div class="vp-psa10">PSA 10: ${fmtGBP(p.psa10)}</div>` : `<div class="vp-model">Model: ${fmtGBP(p.modelPrice)}</div>`}
+          <div class="vp-upside ${upsideClass}">↑${p.upside}%</div>
+          <div class="vp-reasons">${p.reasons}</div>
+          <span class="vp-signal ${p.signalCls}">${p.signal}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Click handler — select the card
+  list.querySelectorAll('.vp-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const cardId = el.dataset.id;
+      if (cardId) {
+        selectCard(cardId);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+  });
+}
+
+function setupValuePicks() {
+  // Filter buttons
+  document.querySelectorAll('.vp-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.vp-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      vpFilter = btn.dataset.filter;
+      renderValuePicks(vpFilter);
+    });
+  });
+
+  // Refresh button
+  $('vpRefreshBtn').addEventListener('click', () => {
+    const btn = $('vpRefreshBtn');
+    btn.classList.add('spinning');
+    setTimeout(() => btn.classList.remove('spinning'), 600);
+    renderValuePicks(vpFilter);
+  });
+
+  // Initial render (deferred so it doesn't block page load)
+  setTimeout(() => renderValuePicks(vpFilter), 500);
 }
 
 // ---- Boot ----
