@@ -558,6 +558,13 @@ body {
 }
 .lp-market { color: var(--green); }
 
+/* Cardmarket language tag */
+.cm-lang-tag {
+  display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
+  padding: 1px 5px; border-radius: 3px; vertical-align: middle; margin-left: 4px;
+  background: rgba(255,255,255,0.08); color: var(--text-faint);
+}
+
 /* PriceCharting row */
 .pc-source-row { border-top: 1px solid var(--accent); }
 .pc-source-row .live-source-label { color: var(--accent); }

@@ -593,7 +593,7 @@ async function fetchFreshPriceData(card) {
     market: 0, low: 0, mid: 0, high: 0, directLow: 0,
     tcgUpdated: '', tcgUrl: '',
     cmTrend: 0, cmAvg1: 0, cmAvg7: 0, cmAvg30: 0, cmLow: 0, cmSuggested: 0,
-    cmUpdated: '', cmUrl: '',
+    cmUpdated: '', cmUrl: '', cmLang: card.lang || 'EN',
     pcUngraded: 0, pcPsa10: 0, pcGrade9: 0, pcName: '', pcConsole: '', pcId: '',
     crRaw: 0, crPsa10: 0, crGemRate: 0, crName: '', crUrl: '', crPsa10VsRaw: 0,
   };
@@ -803,11 +803,17 @@ function renderLivePrice(data) {
     }
     const cmLink = $('cardmarketLink');
     if (data.cmUrl) {
-      cmLink.href = data.cmUrl;
+      // Append language filter — 1 = English, 10 = Japanese
+      const langId = data.cmLang === 'JP' ? 10 : 1;
+      const sep = data.cmUrl.includes('?') ? '&' : '?';
+      cmLink.href = data.cmUrl + sep + 'language=' + langId;
       cmLink.style.display = '';
     } else {
       cmLink.style.display = 'none';
     }
+    // Language tag
+    const cmLangTag = $('cmLangTag');
+    if (cmLangTag) cmLangTag.textContent = data.cmLang === 'JP' ? 'JP' : 'EN';
   } else {
     cmRow.style.display = 'none';
   }
