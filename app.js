@@ -1988,6 +1988,108 @@ function renderValuePicks(filter) {
       }
     });
   });
+
+  // Enrich with live Collectrics data
+  enrichValuePicksFromCollectrics(picks);
+}
+
+// ---- Live Collectrics enrichment for value picks ----
+async function enrichValuePicksFromCollectrics(picks) {
+  const proxyBase = 'https://api.codetabs.com/v1/proxy/?quest=';
+  const items = document.querySelectorAll('.vp-item');
+
+  for (let i = 0; i < picks.length; i++) {
+    const p = picks[i];
+    const c = p.card;
+    const el = items[i];
+    if (!el) continue;
+
+    try {
+      // Build search query: card name + card number if available
+      const searchName = c.n.replace(/ \(JP\)$/i, '').trim();
+      const q = c.cn ? `${searchName} #${c.cn}` : searchName;
+      const apiUrl = `https://mycollectrics.com/api/search/cards?sort=raw_desc&limit=5&offset=0&q=${encodeURIComponent(q)}`;
+      const proxyUrl = proxyBase + encodeURIComponent(apiUrl);
+
+      const r = await fetch(proxyUrl);
+      if (!r.ok) continue;
+      const text = await r.text();
+      let d;
+      try { d = JSON.parse(text); } catch(pe) { continue; }
+      
+      if (!d.results || d.results.length === 0) continue;
+
+      // Match: find the result that best matches our card
+      const match = d.results.find(res => {
+        const nameMatch = res['product-name']?.toLowerCase().includes(searchName.toLowerCase().split(' ')[0]);
+        return nameMatch;
+      }) || d.results[0];
+
+      if (!match) continue;
+
+      // Extract live data
+      const liveRaw = match['raw-price'] || match['collectrics-raw-price'];
+      const livePsa10 = match['psa-10-price'];
+      const gemPct = match['psa-gem-pct'];
+      const liveRatio = livePsa10 > 0 && liveRaw > 0 ? livePsa10 / liveRaw : 0;
+
+      // Update the DOM with live Collectrics data
+      const valuesDiv = el.querySelector('.vp-values');
+      if (!valuesDiv) continue;
+
+      // Update raw price
+      const marketEl = valuesDiv.querySelector('.vp-market');
+      if (marketEl && liveRaw > 0) {
+        marketEl.innerHTML = `Raw: ${fmtGBP(liveRaw)} <span class="vp-live-tag">LIVE</span>`;
+      }
+
+      // Update PSA 10 price
+      const psa10El = valuesDiv.querySelector('.vp-psa10') || valuesDiv.querySelector('.vp-model');
+      if (psa10El && livePsa10 > 0) {
+        psa10El.className = 'vp-psa10';
+        psa10El.textContent = `PSA 10: ${fmtGBP(livePsa10)}`;
+      }
+
+      // Update upside %
+      const upsideEl = valuesDiv.querySelector('.vp-upside');
+      if (upsideEl && liveRatio > 1) {
+        const liveUpside = ((liveRatio - 1) * 100).toFixed(0);
+        upsideEl.textContent = `\u2191${liveUpside}%`;
+        upsideEl.className = 'vp-upside ' + (liveRatio > 2 ? 'big-upside' : 'med-upside');
+      }
+
+      // Add gem rate if available
+      if (gemPct && gemPct > 0) {
+        const reasonsEl = valuesDiv.querySelector('.vp-reasons');
+        if (reasonsEl) {
+          const gemStr = `Gem rate ${(gemPct * 100).toFixed(0)}%`;
+          const existing = reasonsEl.textContent;
+          if (!existing.includes('Gem rate')) {
+            reasonsEl.textContent = existing ? existing + ' \u00b7 ' + gemStr : gemStr;
+          }
+        }
+      }
+
+      // Update signal based on live ratio
+      const signalEl = valuesDiv.querySelector('.vp-signal');
+      if (signalEl && liveRatio > 0) {
+        if (liveRatio > 2) {
+          signalEl.textContent = 'STRONG BUY';
+          signalEl.className = 'vp-signal signal-strong-buy';
+        } else if (liveRatio > 1.3) {
+          signalEl.textContent = 'BUY';
+          signalEl.className = 'vp-signal signal-buy';
+        }
+      }
+
+    } catch (e) {
+      // Silently skip on error — static data remains
+      console.warn('Collectrics enrichment failed for', c.n, e.message);
+    }
+
+    // Small delay between requests to avoid rate limiting
+    await new Promise(r => setTimeout(r, 350));
+  }
 }
 
 function setupValuePicks() {
