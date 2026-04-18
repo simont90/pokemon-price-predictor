@@ -1976,25 +1976,39 @@ function runScreener() {
   $('screenerStatus').textContent = 'Scanning 26k+ cards...';
   $('screenerResults').style.display = 'none';
 
+  // Helper: read slider range (returns null if at default extreme)
+  function sliderVal(id) {
+    const el = $(id);
+    const v = parseFloat(el.value);
+    const isLo = el.classList.contains('sf-thumb-lo');
+    if (isLo && v <= parseFloat(el.min)) return null;
+    if (!isLo && v >= parseFloat(el.max)) return null;
+    return v;
+  }
+  // Helper: parse price dropdown "lo,hi" value
+  function priceRange(id) {
+    const v = $(id).value;
+    if (!v) return { min: null, max: null };
+    const parts = v.split(',');
+    return { min: parts[0] ? parseFloat(parts[0]) : null, max: parts[1] ? parseFloat(parts[1]) : null };
+  }
+  const modelP = priceRange('sfModelRange');
+  const buyP = priceRange('sfBuyRange');
+  const rawP = priceRange('sfRawRange');
+  const psa10P = priceRange('sfPsa10Range');
+
   // Read filters
   const f = {
-    charMin: parseFloat($('sfCharMin').value) || null,
-    charMax: parseFloat($('sfCharMax').value) || null,
-    artMin: parseFloat($('sfArtMin').value) || null,
-    artMax: parseFloat($('sfArtMax').value) || null,
-    appealMin: parseFloat($('sfAppealMin').value) || null,
-    appealMax: parseFloat($('sfAppealMax').value) || null,
-    pullMin: parseFloat($('sfPullMin').value) || null,
-    pullMax: parseFloat($('sfPullMax').value) || null,
-    modelMin: parseFloat($('sfModelMin').value) || null,
-    modelMax: parseFloat($('sfModelMax').value) || null,
-    buyMin: parseFloat($('sfBuyMin').value) || null,
-    buyMax: parseFloat($('sfBuyMax').value) || null,
-    rawMin: parseFloat($('sfRawMin').value) || null,
-    rawMax: parseFloat($('sfRawMax').value) || null,
-    psa10Min: parseFloat($('sfPsa10Min').value) || null,
-    psa10Max: parseFloat($('sfPsa10Max').value) || null,
+    charMin: sliderVal('sfCharMin'), charMax: sliderVal('sfCharMax'),
+    artMin: sliderVal('sfArtMin'), artMax: sliderVal('sfArtMax'),
+    appealMin: sliderVal('sfAppealMin'), appealMax: sliderVal('sfAppealMax'),
+    pullMin: sliderVal('sfPullMin'), pullMax: sliderVal('sfPullMax'),
+    modelMin: modelP.min, modelMax: modelP.max,
+    buyMin: buyP.min, buyMax: buyP.max,
+    rawMin: rawP.min, rawMax: rawP.max,
+    psa10Min: psa10P.min, psa10Max: psa10P.max,
     signal: $('sfSignal').value || null,
+    rarity: $('sfRarity').value || null,
     lang: screenerLang,
   };
 
@@ -2019,6 +2033,12 @@ function runScreener() {
       // Language filter
       const cLang = c.lang || 'EN';
       if (f.lang !== 'all' && cLang !== f.lang) continue;
+
+      // Rarity filter (before expensive computeCardRow)
+      if (f.rarity) {
+        const allowed = f.rarity.split(',');
+        if (!allowed.includes(c.rc)) continue;
+      }
 
       const row = computeCardRow(c);
 
@@ -2130,12 +2150,50 @@ function setupScreener() {
   // Scan button
   $('sfScanBtn').addEventListener('click', runScreener);
 
+  // --- Dual-range slider init ---
+  function initDualRange(group) {
+    const lo = group.querySelector('.sf-thumb-lo');
+    const hi = group.querySelector('.sf-thumb-hi');
+    const fill = group.querySelector('.sf-fill');
+    const valsEl = group.querySelector('.sf-slider-vals');
+    function update() {
+      const min = parseFloat(lo.min), max = parseFloat(lo.max);
+      let loV = parseFloat(lo.value), hiV = parseFloat(hi.value);
+      if (loV > hiV) { // clamp
+        if (document.activeElement === lo) { lo.value = hiV; loV = hiV; }
+        else { hi.value = loV; hiV = loV; }
+      }
+      const loPct = ((loV - min) / (max - min)) * 100;
+      const hiPct = ((hiV - min) / (max - min)) * 100;
+      fill.style.left = loPct + '%';
+      fill.style.width = (hiPct - loPct) + '%';
+      const isDefault = loV <= min && hiV >= max;
+      if (valsEl) {
+        valsEl.textContent = isDefault ? 'Any' : loV.toFixed(1) + ' – ' + hiV.toFixed(1);
+        valsEl.classList.toggle('sf-active', !isDefault);
+      }
+    }
+    lo.addEventListener('input', update);
+    hi.addEventListener('input', update);
+    update();
+  }
+  document.querySelectorAll('.sf-slider-group').forEach(initDualRange);
+
   // Clear button
   $('sfClearBtn').addEventListener('click', () => {
-    ['sfCharMin','sfCharMax','sfArtMin','sfArtMax','sfAppealMin','sfAppealMax',
-     'sfPullMin','sfPullMax','sfModelMin','sfModelMax','sfBuyMin','sfBuyMax',
-     'sfRawMin','sfRawMax','sfPsa10Min','sfPsa10Max'].forEach(id => $(id).value = '');
-    $('sfSignal').value = '';
+    // Reset sliders to defaults
+    document.querySelectorAll('.sf-thumb').forEach(el => {
+      el.value = el.classList.contains('sf-thumb-lo') ? el.min : el.max;
+    });
+    // Re-run slider visuals
+    document.querySelectorAll('.sf-slider-group').forEach(g => {
+      const fill = g.querySelector('.sf-fill');
+      fill.style.left = '0%'; fill.style.width = '100%';
+      const vals = g.querySelector('.sf-slider-vals');
+      if (vals) { vals.textContent = 'Any'; vals.classList.remove('sf-active'); }
+    });
+    // Reset dropdowns
+    ['sfModelRange','sfBuyRange','sfRawRange','sfPsa10Range','sfSignal','sfRarity'].forEach(id => $(id).value = '');
     screenerData = [];
     $('screenerResults').style.display = 'none';
     $('screenerStatus').textContent = '';

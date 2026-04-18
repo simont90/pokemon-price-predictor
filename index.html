@@ -396,46 +396,115 @@
     </div>
     <div class="sp-body">
       <div class="screener-filters" id="screenerFilters">
-        <div class="sf-row">
-          <div class="sf-group">
-            <label>Character Premium</label>
-            <div class="sf-range"><input type="number" id="sfCharMin" placeholder="Min" min="1" max="10" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfCharMax" placeholder="Max" min="1" max="10" step="0.1"></div>
+        <!-- Dual-range sliders -->
+        <div class="sf-slider-group">
+          <div class="sf-slider-header">
+            <span class="sf-slider-label">Character Premium</span>
+            <span class="sf-slider-vals" id="sfCharVals">Any</span>
           </div>
-          <div class="sf-group">
-            <label>Artwork / Hype</label>
-            <div class="sf-range"><input type="number" id="sfArtMin" placeholder="Min" min="1" max="10" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfArtMax" placeholder="Max" min="1" max="10" step="0.1"></div>
-          </div>
-          <div class="sf-group">
-            <label>Universal Appeal</label>
-            <div class="sf-range"><input type="number" id="sfAppealMin" placeholder="Min" min="1" max="10" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfAppealMax" placeholder="Max" min="1" max="10" step="0.1"></div>
+          <div class="sf-dual-range">
+            <div class="sf-track"><div class="sf-fill"></div></div>
+            <input type="range" class="sf-thumb sf-thumb-lo" id="sfCharMin" min="1" max="10" step="0.5" value="1">
+            <input type="range" class="sf-thumb sf-thumb-hi" id="sfCharMax" min="1" max="10" step="0.5" value="10">
           </div>
         </div>
-        <div class="sf-row">
-          <div class="sf-group">
-            <label>Pull Cost Score</label>
-            <div class="sf-range"><input type="number" id="sfPullMin" placeholder="Min" min="0" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfPullMax" placeholder="Max" step="0.1"></div>
+        <div class="sf-slider-group">
+          <div class="sf-slider-header">
+            <span class="sf-slider-label">Artwork / Hype</span>
+            <span class="sf-slider-vals" id="sfArtVals">Any</span>
           </div>
-          <div class="sf-group">
-            <label>Model Price ($)</label>
-            <div class="sf-range"><input type="number" id="sfModelMin" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfModelMax" placeholder="Max" step="1"></div>
-          </div>
-          <div class="sf-group">
-            <label>Max Buy Price ($)</label>
-            <div class="sf-range"><input type="number" id="sfBuyMin" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfBuyMax" placeholder="Max" step="1"></div>
+          <div class="sf-dual-range">
+            <div class="sf-track"><div class="sf-fill"></div></div>
+            <input type="range" class="sf-thumb sf-thumb-lo" id="sfArtMin" min="1" max="10" step="0.5" value="1">
+            <input type="range" class="sf-thumb sf-thumb-hi" id="sfArtMax" min="1" max="10" step="0.5" value="10">
           </div>
         </div>
-        <div class="sf-row">
-          <div class="sf-group">
-            <label>Market Raw ($)</label>
-            <div class="sf-range"><input type="number" id="sfRawMin" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfRawMax" placeholder="Max" step="1"></div>
+        <div class="sf-slider-group">
+          <div class="sf-slider-header">
+            <span class="sf-slider-label">Universal Appeal</span>
+            <span class="sf-slider-vals" id="sfAppealVals">Any</span>
           </div>
-          <div class="sf-group">
-            <label>PSA 10 Price ($)</label>
-            <div class="sf-range"><input type="number" id="sfPsa10Min" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfPsa10Max" placeholder="Max" step="1"></div>
+          <div class="sf-dual-range">
+            <div class="sf-track"><div class="sf-fill"></div></div>
+            <input type="range" class="sf-thumb sf-thumb-lo" id="sfAppealMin" min="1" max="10" step="0.5" value="1">
+            <input type="range" class="sf-thumb sf-thumb-hi" id="sfAppealMax" min="1" max="10" step="0.5" value="10">
           </div>
-          <div class="sf-group">
+        </div>
+        <div class="sf-slider-group">
+          <div class="sf-slider-header">
+            <span class="sf-slider-label">Pull Cost Score</span>
+            <span class="sf-slider-vals" id="sfPullVals">Any</span>
+          </div>
+          <div class="sf-dual-range">
+            <div class="sf-track"><div class="sf-fill"></div></div>
+            <input type="range" class="sf-thumb sf-thumb-lo" id="sfPullMin" min="0" max="20" step="0.5" value="0">
+            <input type="range" class="sf-thumb sf-thumb-hi" id="sfPullMax" min="0" max="20" step="0.5" value="20">
+          </div>
+        </div>
+
+        <!-- Price dropdowns -->
+        <div class="sf-select-row">
+          <div class="sf-select-group">
+            <label>Model Price</label>
+            <select id="sfModelRange" class="sf-select">
+              <option value="">Any</option>
+              <option value="0,10">Under $10</option>
+              <option value="10,50">$10 – $50</option>
+              <option value="50,100">$50 – $100</option>
+              <option value="100,500">$100 – $500</option>
+              <option value="500,1000">$500 – $1k</option>
+              <option value="1000,5000">$1k – $5k</option>
+              <option value="5000,">$5k+</option>
+            </select>
+          </div>
+          <div class="sf-select-group">
+            <label>Max Buy Price</label>
+            <select id="sfBuyRange" class="sf-select">
+              <option value="">Any</option>
+              <option value="0,10">Under $10</option>
+              <option value="10,50">$10 – $50</option>
+              <option value="50,100">$50 – $100</option>
+              <option value="100,500">$100 – $500</option>
+              <option value="500,1000">$500 – $1k</option>
+              <option value="1000,5000">$1k – $5k</option>
+              <option value="5000,">$5k+</option>
+            </select>
+          </div>
+        </div>
+        <div class="sf-select-row">
+          <div class="sf-select-group">
+            <label>Market Raw</label>
+            <select id="sfRawRange" class="sf-select">
+              <option value="">Any</option>
+              <option value="0,10">Under $10</option>
+              <option value="10,50">$10 – $50</option>
+              <option value="50,100">$50 – $100</option>
+              <option value="100,500">$100 – $500</option>
+              <option value="500,1000">$500 – $1k</option>
+              <option value="1000,5000">$1k – $5k</option>
+              <option value="5000,">$5k+</option>
+            </select>
+          </div>
+          <div class="sf-select-group">
+            <label>PSA 10 Price</label>
+            <select id="sfPsa10Range" class="sf-select">
+              <option value="">Any</option>
+              <option value="0,50">Under $50</option>
+              <option value="50,200">$50 – $200</option>
+              <option value="200,500">$200 – $500</option>
+              <option value="500,1000">$500 – $1k</option>
+              <option value="1000,5000">$1k – $5k</option>
+              <option value="5000,20000">$5k – $20k</option>
+              <option value="20000,">$20k+</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Status & Rarity dropdowns -->
+        <div class="sf-select-row">
+          <div class="sf-select-group">
             <label>Buy Status</label>
-            <select id="sfSignal">
+            <select id="sfSignal" class="sf-select">
               <option value="">Any</option>
               <option value="STRONG BUY">Strong Buy</option>
               <option value="BUY">Buy</option>
@@ -443,7 +512,25 @@
               <option value="SELL">Sell</option>
             </select>
           </div>
+          <div class="sf-select-group">
+            <label>Rarity</label>
+            <select id="sfRarity" class="sf-select">
+              <option value="">Any</option>
+              <option value="IR,SIR,SAR">Illustration / Special Art</option>
+              <option value="UR">Ultra Rare</option>
+              <option value="SR">Secret Rare</option>
+              <option value="HYR">Hyper Rare</option>
+              <option value="HR">Holo Rare</option>
+              <option value="R,double">Rare / Double Rare</option>
+              <option value="AR">Amazing / Art Rare</option>
+              <option value="PR">Promo</option>
+              <option value="UC">Uncommon</option>
+              <option value="C">Common</option>
+            </select>
+          </div>
         </div>
+
+        <!-- Language + Actions -->
         <div class="sf-actions">
           <div class="sf-lang-filters">
             <button class="sf-lang-btn active" data-lang="all">All</button>
