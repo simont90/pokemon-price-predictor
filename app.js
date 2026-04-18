@@ -279,24 +279,67 @@ function getCurrentPrice(card) {
   return card.p;
 }
 
+// ---- Art / Hype Base Score by Rarity ----
+const ART_BY_RARITY = {
+  'SIR': 9.5, 'IR': 8.5, 'SHR': 7.5, 'MHR': 7.5, 'SHUR': 7.0,
+  'AR': 7.5, 'UR': 6.5, 'HR': 5.0, 'SR': 6.0,
+  'DR': 4.5, 'RR': 4.5, 'AS': 4.0, 'PR': 4.5,
+  'R': 3.0, 'U': 2.0, 'C': 1.5,
+};
+
+function getArtBaseScore(rc, cardName) {
+  let base = ART_BY_RARITY[rc] || 3.0;
+  const ln = (cardName || '').toLowerCase();
+  // Boost for premium card types that the rarity code alone may not capture
+  if (ln.includes('vmax') || ln.includes('vstar')) base = Math.max(base, 7.0);
+  else if (/\bv\b/.test(ln) || ln.includes('-gx') || ln.includes(' gx')) base = Math.max(base, 5.5);
+  else if (ln.includes(' ex') || ln.includes('-ex')) base = Math.max(base, 5.0);
+  else if (ln.includes('legend')) base = Math.max(base, 7.5);
+  else if (ln.includes('lv.x') || ln.includes(' lvx')) base = Math.max(base, 6.0);
+  else if (ln.includes('break')) base = Math.max(base, 5.5);
+  // Shining / Gold Star
+  if (ln.includes('shining') || ln.includes('\u2605') || ln.includes('\u2606')) base = Math.max(base, 8.0);
+  return Math.min(10, base);
+}
+
+// Median-ish expected price per rarity tier for price-premium adjustments
+const EXPECTED_PRICE_BY_RARITY = {
+  'SIR': 80, 'IR': 20, 'SHR': 30, 'MHR': 40, 'SHUR': 25,
+  'AR': 10, 'UR': 20, 'HR': 8, 'SR': 15,
+  'DR': 5, 'RR': 3, 'AS': 8, 'PR': 5,
+  'R': 2, 'U': 0.5, 'C': 0.25,
+};
+
 // ---- Auto-fill Desirability ----
 function autoFillDesirability(card, pullCost) {
   const charScore = getCharacterScore(card.n);
   const appealScore = getAppealScore(card.n);
 
-  const sf = Math.pow(PULL_MULT, pullCost);
-  const targetPrice = getCurrentPrice(card);
-  const impliedDes = Math.log(targetPrice / (BASE * sf)) / Math.log(DES_MULT);
-  const clampedDes = Math.max(1, Math.min(10, impliedDes));
+  // Art/Hype: base from rarity + card type
+  let artScore = getArtBaseScore(card.rc, card.n);
 
-  const impliedArt = (clampedDes - charScore * WEIGHTS.char - appealScore * WEIGHTS.appeal) / WEIGHTS.art;
-  const artScore = Math.max(1, Math.min(10, impliedArt));
+  // Price-premium adjustment: if card trades above/below expected for its rarity, adjust art
+  const price = getCurrentPrice(card);
+  const expected = EXPECTED_PRICE_BY_RARITY[card.rc] || 2;
+  if (price > 0 && expected > 0) {
+    const ratio = price / expected;
+    if (ratio > 5)       artScore = Math.min(10, artScore + 2.0);
+    else if (ratio > 3)  artScore = Math.min(10, artScore + 1.5);
+    else if (ratio > 2)  artScore = Math.min(10, artScore + 1.0);
+    else if (ratio > 1.5) artScore = Math.min(10, artScore + 0.5);
+    else if (ratio < 0.2) artScore = Math.max(1, artScore - 1.5);
+    else if (ratio < 0.4) artScore = Math.max(1, artScore - 1.0);
+    else if (ratio < 0.6) artScore = Math.max(1, artScore - 0.5);
+  }
+  artScore = Math.round(Math.max(1, Math.min(10, artScore)) * 10) / 10;
+
+  const total = charScore * WEIGHTS.char + artScore * WEIGHTS.art + appealScore * WEIGHTS.appeal;
 
   return {
     char: charScore,
-    art: Math.round(artScore * 10) / 10,
+    art: artScore,
     appeal: appealScore,
-    total: clampedDes,
+    total: Math.max(1, Math.min(10, total)),
   };
 }
 
