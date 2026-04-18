@@ -205,6 +205,7 @@ async function init() {
   setupSearch();
   setupInputs();
   setupPortfolio();
+  setupScreener();
   setupValuePicks();
   updateAll();
 }
@@ -1927,6 +1928,230 @@ function renderPortfolio() {
 function setupInputs() {
   ['packRate','cardsInTier','characterPremium','artworkHype','universalAppeal','ebayPrice']
     .forEach(id => $(id).addEventListener('input', updateAll));
+}
+
+// ================================================================
+// ---- Card Screener ----
+// ================================================================
+let screenerData = [];  // last scan results
+let screenerSort = { col: 'model', dir: 'desc' };
+let screenerLang = 'all';
+
+function computeCardRow(c) {
+  // Pull cost
+  let pullCost = 7.65;
+  if (setsData && setsData[c.sc]) {
+    const set = setsData[c.sc];
+    const rarity = set.rarities?.[c.rc];
+    if (rarity && rarity.pullRate > 0) {
+      const packsPerHit = Math.round(1 / rarity.pullRate);
+      pullCost = (packsPerHit * rarity.count) / 100;
+    }
+  }
+  // Desirability
+  const des = autoFillDesirability(c, pullCost);
+  // Model prediction
+  const { priceUSD } = predictPrice(pullCost, des.total);
+  // Market raw
+  const raw = getCurrentPrice(c);
+  // PSA 10
+  const psa10 = c.p10 || 0;
+  // Max buy = model price in USD
+  const maxBuy = priceUSD;
+  // Signal
+  const sig = computeSignal(c, pullCost, des.total);
+  return {
+    id: c.i, name: c.n, set: c.s, cn: c.cn, lang: c.lang || 'EN',
+    char: des.char, art: des.art, appeal: des.appeal,
+    pull: pullCost, model: priceUSD, maxBuy, raw, psa10,
+    signal: sig?.signal || 'HOLD', score: sig?.score || 0
+  };
+}
+
+function runScreener() {
+  if (!cardData || !cardData.cards) return;
+  const btn = $('sfScanBtn');
+  btn.disabled = true;
+  btn.textContent = 'Scanning...';
+  $('screenerStatus').textContent = 'Scanning 26k+ cards...';
+  $('screenerResults').style.display = 'none';
+
+  // Read filters
+  const f = {
+    charMin: parseFloat($('sfCharMin').value) || null,
+    charMax: parseFloat($('sfCharMax').value) || null,
+    artMin: parseFloat($('sfArtMin').value) || null,
+    artMax: parseFloat($('sfArtMax').value) || null,
+    appealMin: parseFloat($('sfAppealMin').value) || null,
+    appealMax: parseFloat($('sfAppealMax').value) || null,
+    pullMin: parseFloat($('sfPullMin').value) || null,
+    pullMax: parseFloat($('sfPullMax').value) || null,
+    modelMin: parseFloat($('sfModelMin').value) || null,
+    modelMax: parseFloat($('sfModelMax').value) || null,
+    buyMin: parseFloat($('sfBuyMin').value) || null,
+    buyMax: parseFloat($('sfBuyMax').value) || null,
+    rawMin: parseFloat($('sfRawMin').value) || null,
+    rawMax: parseFloat($('sfRawMax').value) || null,
+    psa10Min: parseFloat($('sfPsa10Min').value) || null,
+    psa10Max: parseFloat($('sfPsa10Max').value) || null,
+    signal: $('sfSignal').value || null,
+    lang: screenerLang,
+  };
+
+  // Check if at least one filter is set
+  const hasFilter = Object.entries(f).some(([k, v]) => {
+    if (k === 'lang' && v === 'all') return false;
+    return v !== null && v !== '';
+  });
+  if (!hasFilter) {
+    btn.disabled = false;
+    btn.textContent = 'Scan Cards';
+    $('screenerStatus').textContent = 'Set at least one filter to scan.';
+    return;
+  }
+
+  // Use setTimeout so the UI updates before the heavy loop
+  setTimeout(() => {
+    const results = [];
+    const cards = cardData.cards;
+    for (let i = 0; i < cards.length; i++) {
+      const c = cards[i];
+      // Language filter
+      const cLang = c.lang || 'EN';
+      if (f.lang !== 'all' && cLang !== f.lang) continue;
+
+      const row = computeCardRow(c);
+
+      // Apply filters
+      if (f.charMin != null && row.char < f.charMin) continue;
+      if (f.charMax != null && row.char > f.charMax) continue;
+      if (f.artMin != null && row.art < f.artMin) continue;
+      if (f.artMax != null && row.art > f.artMax) continue;
+      if (f.appealMin != null && row.appeal < f.appealMin) continue;
+      if (f.appealMax != null && row.appeal > f.appealMax) continue;
+      if (f.pullMin != null && row.pull < f.pullMin) continue;
+      if (f.pullMax != null && row.pull > f.pullMax) continue;
+      if (f.modelMin != null && row.model < f.modelMin) continue;
+      if (f.modelMax != null && row.model > f.modelMax) continue;
+      if (f.buyMin != null && row.maxBuy < f.buyMin) continue;
+      if (f.buyMax != null && row.maxBuy > f.buyMax) continue;
+      if (f.rawMin != null && row.raw < f.rawMin) continue;
+      if (f.rawMax != null && row.raw > f.rawMax) continue;
+      if (f.psa10Min != null && row.psa10 < f.psa10Min) continue;
+      if (f.psa10Max != null && row.psa10 > f.psa10Max) continue;
+      if (f.signal && row.signal !== f.signal) continue;
+
+      results.push(row);
+    }
+
+    screenerData = results;
+    sortScreenerData();
+    renderScreenerTable();
+
+    btn.disabled = false;
+    btn.textContent = 'Scan Cards';
+    $('screenerStatus').textContent = `${results.length.toLocaleString()} cards found`;
+    $('screenerResults').style.display = results.length > 0 ? '' : 'none';
+  }, 50);
+}
+
+function sortScreenerData() {
+  const { col, dir } = screenerSort;
+  const mult = dir === 'asc' ? 1 : -1;
+  screenerData.sort((a, b) => {
+    let va = a[col], vb = b[col];
+    if (typeof va === 'string') return mult * va.localeCompare(vb);
+    return mult * ((va || 0) - (vb || 0));
+  });
+}
+
+function renderScreenerTable() {
+  const tbody = $('screenerTableBody');
+  // Cap at 200 rows for performance
+  const rows = screenerData.slice(0, 200);
+  const fmtD = v => v?.toFixed(1) ?? '—';
+  const fmtP = v => v > 0 ? '$' + v.toFixed(0) : '—';
+
+  tbody.innerHTML = rows.map(r => {
+    const sigCls = r.signal === 'STRONG BUY' ? 'st-strong-buy'
+      : r.signal === 'BUY' ? 'st-buy'
+      : r.signal === 'SELL' ? 'st-sell' : 'st-hold';
+    const langBadge = r.lang === 'JP' ? '<span style="color:var(--text-faint);font-size:9px"> JP</span>' : '';
+    return `<tr data-id="${r.id}">
+      <td class="st-name-cell">${r.name}${langBadge}<br><span class="st-name-sub">${r.set} #${r.cn || '?'}</span></td>
+      <td class="st-num">${fmtD(r.char)}</td>
+      <td class="st-num">${fmtD(r.art)}</td>
+      <td class="st-num">${fmtD(r.appeal)}</td>
+      <td class="st-num">${r.pull.toFixed(2)}</td>
+      <td class="st-num">${fmtP(r.model)}</td>
+      <td class="st-num">${fmtP(r.maxBuy)}</td>
+      <td class="st-num">${fmtP(r.raw)}</td>
+      <td class="st-num">${fmtP(r.psa10)}</td>
+      <td><span class="st-signal ${sigCls}">${r.signal}</span></td>
+    </tr>`;
+  }).join('');
+
+  if (screenerData.length > 200) {
+    $('screenerStatus').textContent += ` (showing first 200)`;
+  }
+
+  // Row click → select card
+  tbody.querySelectorAll('tr').forEach(tr => {
+    tr.addEventListener('click', () => {
+      selectCard(tr.dataset.id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+}
+
+function setupScreener() {
+  // Scan button
+  $('sfScanBtn').addEventListener('click', runScreener);
+
+  // Clear button
+  $('sfClearBtn').addEventListener('click', () => {
+    ['sfCharMin','sfCharMax','sfArtMin','sfArtMax','sfAppealMin','sfAppealMax',
+     'sfPullMin','sfPullMax','sfModelMin','sfModelMax','sfBuyMin','sfBuyMax',
+     'sfRawMin','sfRawMax','sfPsa10Min','sfPsa10Max'].forEach(id => $(id).value = '');
+    $('sfSignal').value = '';
+    screenerData = [];
+    $('screenerResults').style.display = 'none';
+    $('screenerStatus').textContent = '';
+  });
+
+  // Language filter buttons
+  document.querySelectorAll('.sf-lang-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sf-lang-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      screenerLang = btn.dataset.lang;
+    });
+  });
+
+  // Sortable column headers
+  document.querySelectorAll('.st-sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (screenerSort.col === col) {
+        screenerSort.dir = screenerSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        screenerSort.col = col;
+        screenerSort.dir = 'desc';
+      }
+      // Update header classes
+      document.querySelectorAll('.st-sortable').forEach(h => {
+        h.classList.remove('st-sorted-asc', 'st-sorted-desc');
+      });
+      th.classList.add(screenerSort.dir === 'asc' ? 'st-sorted-asc' : 'st-sorted-desc');
+      sortScreenerData();
+      renderScreenerTable();
+    });
+  });
+
+  // Enter key triggers scan
+  $('screenerFilters').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') runScreener();
+  });
 }
 
 // ---- Value Picks ----
