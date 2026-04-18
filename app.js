@@ -2095,16 +2095,38 @@ function renderScreenerTable() {
     $('screenerStatus').textContent += ` (showing first 200)`;
   }
 
-  // Row click → select card
+  // Row click → select card + close panel
   tbody.querySelectorAll('tr').forEach(tr => {
     tr.addEventListener('click', () => {
+      closeScreener();
       selectCard(tr.dataset.id);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   });
 }
 
+function openScreener() {
+  $('screenerPanel').classList.add('open');
+  $('screenerOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeScreener() {
+  $('screenerPanel').classList.remove('open');
+  $('screenerOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
 function setupScreener() {
+  // Open/close panel
+  $('filterFab').addEventListener('click', openScreener);
+  $('spClose').addEventListener('click', closeScreener);
+  $('screenerOverlay').addEventListener('click', closeScreener);
+
+  // Escape key closes panel
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('screenerPanel').classList.contains('open')) closeScreener();
+  });
+
   // Scan button
   $('sfScanBtn').addEventListener('click', runScreener);
 
@@ -2138,7 +2160,6 @@ function setupScreener() {
         screenerSort.col = col;
         screenerSort.dir = 'desc';
       }
-      // Update header classes
       document.querySelectorAll('.st-sortable').forEach(h => {
         h.classList.remove('st-sorted-asc', 'st-sorted-desc');
       });

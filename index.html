@@ -343,96 +343,6 @@
           <p class="fc-disclaimer">Projections based on historical Pokémon TCG appreciation patterns. Not financial advice — actual results depend on market conditions, print runs, and collector demand.</p>
         </section>
 
-        <!-- Card Screener -->
-        <section class="card screener-card" id="screenerSection">
-          <div class="section-header">
-            <h2><span class="screener-icon">🔍</span> Card Screener</h2>
-            <p class="screener-subtitle">Filter 26k+ cards by any attribute — find exactly what you're looking for</p>
-          </div>
-          <div class="screener-filters" id="screenerFilters">
-            <div class="sf-row">
-              <div class="sf-group">
-                <label>Character Premium</label>
-                <div class="sf-range"><input type="number" id="sfCharMin" placeholder="Min" min="1" max="10" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfCharMax" placeholder="Max" min="1" max="10" step="0.1"></div>
-              </div>
-              <div class="sf-group">
-                <label>Artwork / Hype</label>
-                <div class="sf-range"><input type="number" id="sfArtMin" placeholder="Min" min="1" max="10" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfArtMax" placeholder="Max" min="1" max="10" step="0.1"></div>
-              </div>
-              <div class="sf-group">
-                <label>Universal Appeal</label>
-                <div class="sf-range"><input type="number" id="sfAppealMin" placeholder="Min" min="1" max="10" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfAppealMax" placeholder="Max" min="1" max="10" step="0.1"></div>
-              </div>
-            </div>
-            <div class="sf-row">
-              <div class="sf-group">
-                <label>Pull Cost Score</label>
-                <div class="sf-range"><input type="number" id="sfPullMin" placeholder="Min" min="0" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfPullMax" placeholder="Max" step="0.1"></div>
-              </div>
-              <div class="sf-group">
-                <label>Model Price ($)</label>
-                <div class="sf-range"><input type="number" id="sfModelMin" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfModelMax" placeholder="Max" step="1"></div>
-              </div>
-              <div class="sf-group">
-                <label>Max Buy Price ($)</label>
-                <div class="sf-range"><input type="number" id="sfBuyMin" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfBuyMax" placeholder="Max" step="1"></div>
-              </div>
-            </div>
-            <div class="sf-row">
-              <div class="sf-group">
-                <label>Market Raw ($)</label>
-                <div class="sf-range"><input type="number" id="sfRawMin" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfRawMax" placeholder="Max" step="1"></div>
-              </div>
-              <div class="sf-group">
-                <label>PSA 10 Price ($)</label>
-                <div class="sf-range"><input type="number" id="sfPsa10Min" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfPsa10Max" placeholder="Max" step="1"></div>
-              </div>
-              <div class="sf-group">
-                <label>Buy Status</label>
-                <select id="sfSignal">
-                  <option value="">Any</option>
-                  <option value="STRONG BUY">Strong Buy</option>
-                  <option value="BUY">Buy</option>
-                  <option value="HOLD">Hold</option>
-                  <option value="SELL">Sell</option>
-                </select>
-              </div>
-            </div>
-            <div class="sf-actions">
-              <div class="sf-lang-filters">
-                <button class="sf-lang-btn active" data-lang="all">All</button>
-                <button class="sf-lang-btn" data-lang="EN">English</button>
-                <button class="sf-lang-btn" data-lang="JP">Japanese</button>
-              </div>
-              <div class="sf-btns">
-                <button class="sf-clear-btn" id="sfClearBtn">Clear</button>
-                <button class="sf-scan-btn" id="sfScanBtn">Scan Cards</button>
-              </div>
-            </div>
-          </div>
-          <div class="screener-status" id="screenerStatus"></div>
-          <div class="screener-results" id="screenerResults" style="display:none">
-            <table class="screener-table">
-              <thead>
-                <tr>
-                  <th class="st-sortable" data-col="name">Card</th>
-                  <th class="st-sortable st-num" data-col="char">Char</th>
-                  <th class="st-sortable st-num" data-col="art">Art</th>
-                  <th class="st-sortable st-num" data-col="appeal">Appeal</th>
-                  <th class="st-sortable st-num" data-col="pull">Pull</th>
-                  <th class="st-sortable st-num" data-col="model">Model $</th>
-                  <th class="st-sortable st-num" data-col="maxBuy">Max Buy $</th>
-                  <th class="st-sortable st-num" data-col="raw">Raw $</th>
-                  <th class="st-sortable st-num" data-col="psa10">PSA 10 $</th>
-                  <th class="st-sortable" data-col="signal">Status</th>
-                </tr>
-              </thead>
-              <tbody id="screenerTableBody"></tbody>
-            </table>
-          </div>
-          <p class="screener-disclaimer">Computed from model data — live prices may differ. Click any row for full analysis.</p>
-        </section>
-
         <!-- Value Picks -->
         <section class="card value-picks-card" id="valuePicksSection">
           <div class="section-header">
@@ -471,6 +381,105 @@
 
     <footer class="footer"><p>Live prices via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> + <a href="https://tcgdex.net" target="_blank">TCGdex</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
   </div>
+  <!-- Floating Filter Button -->
+  <button class="filter-fab" id="filterFab" title="Card Screener">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+    <span class="fab-label">Filter</span>
+  </button>
+
+  <!-- Screener Overlay -->
+  <div class="screener-overlay" id="screenerOverlay"></div>
+  <div class="screener-panel" id="screenerPanel">
+    <div class="sp-header">
+      <h2>🔍 Card Screener</h2>
+      <button class="sp-close" id="spClose">✕</button>
+    </div>
+    <div class="sp-body">
+      <div class="screener-filters" id="screenerFilters">
+        <div class="sf-row">
+          <div class="sf-group">
+            <label>Character Premium</label>
+            <div class="sf-range"><input type="number" id="sfCharMin" placeholder="Min" min="1" max="10" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfCharMax" placeholder="Max" min="1" max="10" step="0.1"></div>
+          </div>
+          <div class="sf-group">
+            <label>Artwork / Hype</label>
+            <div class="sf-range"><input type="number" id="sfArtMin" placeholder="Min" min="1" max="10" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfArtMax" placeholder="Max" min="1" max="10" step="0.1"></div>
+          </div>
+          <div class="sf-group">
+            <label>Universal Appeal</label>
+            <div class="sf-range"><input type="number" id="sfAppealMin" placeholder="Min" min="1" max="10" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfAppealMax" placeholder="Max" min="1" max="10" step="0.1"></div>
+          </div>
+        </div>
+        <div class="sf-row">
+          <div class="sf-group">
+            <label>Pull Cost Score</label>
+            <div class="sf-range"><input type="number" id="sfPullMin" placeholder="Min" min="0" step="0.1"><span class="sf-sep">–</span><input type="number" id="sfPullMax" placeholder="Max" step="0.1"></div>
+          </div>
+          <div class="sf-group">
+            <label>Model Price ($)</label>
+            <div class="sf-range"><input type="number" id="sfModelMin" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfModelMax" placeholder="Max" step="1"></div>
+          </div>
+          <div class="sf-group">
+            <label>Max Buy Price ($)</label>
+            <div class="sf-range"><input type="number" id="sfBuyMin" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfBuyMax" placeholder="Max" step="1"></div>
+          </div>
+        </div>
+        <div class="sf-row">
+          <div class="sf-group">
+            <label>Market Raw ($)</label>
+            <div class="sf-range"><input type="number" id="sfRawMin" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfRawMax" placeholder="Max" step="1"></div>
+          </div>
+          <div class="sf-group">
+            <label>PSA 10 Price ($)</label>
+            <div class="sf-range"><input type="number" id="sfPsa10Min" placeholder="Min" min="0" step="1"><span class="sf-sep">–</span><input type="number" id="sfPsa10Max" placeholder="Max" step="1"></div>
+          </div>
+          <div class="sf-group">
+            <label>Buy Status</label>
+            <select id="sfSignal">
+              <option value="">Any</option>
+              <option value="STRONG BUY">Strong Buy</option>
+              <option value="BUY">Buy</option>
+              <option value="HOLD">Hold</option>
+              <option value="SELL">Sell</option>
+            </select>
+          </div>
+        </div>
+        <div class="sf-actions">
+          <div class="sf-lang-filters">
+            <button class="sf-lang-btn active" data-lang="all">All</button>
+            <button class="sf-lang-btn" data-lang="EN">English</button>
+            <button class="sf-lang-btn" data-lang="JP">Japanese</button>
+          </div>
+          <div class="sf-btns">
+            <button class="sf-clear-btn" id="sfClearBtn">Clear</button>
+            <button class="sf-scan-btn" id="sfScanBtn">Scan Cards</button>
+          </div>
+        </div>
+      </div>
+      <div class="screener-status" id="screenerStatus"></div>
+      <div class="screener-results" id="screenerResults" style="display:none">
+        <table class="screener-table">
+          <thead>
+            <tr>
+              <th class="st-sortable" data-col="name">Card</th>
+              <th class="st-sortable st-num" data-col="char">Char</th>
+              <th class="st-sortable st-num" data-col="art">Art</th>
+              <th class="st-sortable st-num" data-col="appeal">Appeal</th>
+              <th class="st-sortable st-num" data-col="pull">Pull</th>
+              <th class="st-sortable st-num" data-col="model">Model $</th>
+              <th class="st-sortable st-num" data-col="maxBuy">Max Buy $</th>
+              <th class="st-sortable st-num" data-col="raw">Raw $</th>
+              <th class="st-sortable st-num" data-col="psa10">PSA 10 $</th>
+              <th class="st-sortable" data-col="signal">Status</th>
+            </tr>
+          </thead>
+          <tbody id="screenerTableBody"></tbody>
+        </table>
+      </div>
+      <p class="screener-disclaimer">Computed from model data — live prices may differ. Click any row for full analysis.</p>
+    </div>
+  </div>
+
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
   <script src="app.js"></script>
