@@ -27,6 +27,99 @@ const APPEAL_TIERS = {
   A: { score: 7.5, names: ['gengar','umbreon','snorlax','gyarados','dragonite','gardevoir','lucario','greninja','blastoise','venusaur','magikarp','sylveon','arcanine'] },
 };
 
+// ---- Pack Economics: Fallback Pull Rates ----
+// Used when sets-db.js doesn't have rarity pull-rate data.
+// Format: average packs needed to pull ANY card of that rarity from a booster.
+// Sourced from community-tracked modern set odds (e.g. SV/Twilight Masquerade pull tracker).
+const FALLBACK_PACKS_PER_HIT = {
+  SIR: 95,    // Special Illustration Rare — ~1 in 95 packs
+  SAR: 85,
+  IR:  18,    // Illustration Rare — ~1 in 18 packs
+  AR:  18,
+  HR:  85,    // Hyper Rare (rainbow/gold)
+  SHR: 90,    // Shiny Hyper Rare
+  MHR: 110,   // Master Hyper Rare
+  SHUR: 120,
+  UR:  55,    // Ultra Rare
+  SR:  30,    // Secret Rare
+  RR:  6,     // Double Rare
+  R:   3,     // Rare
+  DR:  35,    // Dragon/Double Rare classic
+  AS:  90,
+  PR:  40,    // Promo varies
+  CSR: 70,
+  CHR: 40,
+  U:   1.5,   // Uncommon
+  C:   1,     // Common
+  '?': 30,    // Unknown rarity — assume mid-tier
+};
+
+// Approx number of unique cards in each rarity tier per modern set
+const FALLBACK_TIER_SIZE = {
+  SIR: 12, SAR: 10, IR: 25, AR: 25,
+  HR: 6, SHR: 8, MHR: 4, SHUR: 4,
+  UR: 8, SR: 10, RR: 18, R: 30,
+  DR: 12, AS: 6, PR: 1, CSR: 6, CHR: 12,
+  U: 30, C: 40, '?': 15,
+};
+
+// Era-based pack cost (GBP) — used when sets-db doesn't have packCost.
+// Reflects current UK market booster prices.
+function getDefaultPackCostGBP(setCode, lang) {
+  if (!setsData || !setsData[setCode]) return lang === 'JP' ? 3.00 : 4.50;
+  const set = setsData[setCode];
+  const releaseDate = set.releaseDate || set.released;
+  if (!releaseDate) return lang === 'JP' ? 3.00 : 4.50;
+  const year = parseInt(releaseDate.slice(0, 4));
+  // Japanese packs are ~180 yen retail (~£1) but sealed booster boxes price differently.
+  // We use per-pack equivalent including current sealed-product premium.
+  if (lang === 'JP') {
+    if (year >= 2023) return 3.00;
+    if (year >= 2020) return 4.50;
+    if (year >= 2015) return 7.00;
+    return 14.00;
+  }
+  if (year >= 2024) return 4.50;
+  if (year >= 2022) return 4.75;
+  if (year >= 2020) return 6.00;
+  if (year >= 2017) return 9.00;
+  if (year >= 2011) return 16.00;
+  if (year >= 2003) return 30.00;
+  return 80.00; // WOTC era
+}
+
+// Resolve pack economics for a card — returns { packsPerHit, tierSize, packsNeeded, packCost }.
+// Always returns numbers (uses fallbacks if sets-db lacks the data).
+function resolvePackEconomics(card) {
+  if (!card) return null;
+  const set = setsData?.[card.sc];
+  let packsPerHit = null;
+  let tierSize = null;
+  let packCost = null;
+
+  // 1. Try sets-db rarity pullRate first (most accurate when available)
+  if (set?.rarities?.[card.rc]?.pullRate > 0) {
+    packsPerHit = Math.round(1 / set.rarities[card.rc].pullRate);
+    tierSize = set.rarities[card.rc].count || FALLBACK_TIER_SIZE[card.rc] || 10;
+  } else {
+    // 2. Fallback to rarity-code-based estimates
+    packsPerHit = FALLBACK_PACKS_PER_HIT[card.rc] || 30;
+    tierSize = FALLBACK_TIER_SIZE[card.rc] || 10;
+  }
+
+  // 3. Pack cost — sets-db value (treated as USD), otherwise era-based GBP default → USD
+  if (set?.packCost > 0) {
+    packCost = set.packCost; // assumed USD per existing code
+  } else {
+    const gbp = getDefaultPackCostGBP(card.sc, card.lang);
+    packCost = fxRate > 0 ? gbp / fxRate : gbp / 0.79;
+  }
+
+  const packsNeeded = Math.round(packsPerHit * tierSize);
+  // packCost is in USD for math consistency with getCurrentPrice()
+  return { packsPerHit, tierSize, packsNeeded, packCost };
+}
+
 // ---- Rarity Appreciation Rates ----
 const RARITY_RATES = {
   SIR: { base: 0.22, label: 'Special Illustration Rare' },
@@ -1514,60 +1607,86 @@ function updateDealCheck(modelPriceUSD) {
 // ---- Rip or Buy ----
 function updateRipOrBuy(card, pullCost) {
   const section = $('ripSection');
-  if (!card || !setsData || !setsData[card.sc]) { section.style.display = 'none'; return; }
+  if (!card) { section.style.display = 'none'; return; }
 
-  const set = setsData[card.sc];
-  const rarity = set.rarities?.[card.rc];
-  if (!rarity || rarity.pullRate <= 0) { section.style.display = 'none'; return; }
+  const econ = resolvePackEconomics(card);
+  if (!econ) { section.style.display = 'none'; return; }
 
   section.style.display = 'block';
 
-  const packsPerHit = Math.round(1 / rarity.pullRate);
-  const packsNeeded = packsPerHit * rarity.count;
-  const packCost = set.packCost || 4.50;
-  const evPerPack = set.evPerPack || 0;
+  const { packsPerHit, tierSize, packsNeeded, packCost } = econ;
+  // EV per pack — only use sets-db value if available, otherwise 0 (conservative)
+  const set = setsData?.[card.sc];
+  const evPerPack = set?.evPerPack || 0;
 
   const totalRipCost = packsNeeded * packCost;
   const evRecovered = packsNeeded * evPerPack;
   const netRipCost = totalRipCost - evRecovered;
   const singleCost = getCurrentPrice(card);
 
-  const prob = 1 / packsNeeded;
-  const luckyPacks = Math.ceil(Math.log(0.75) / Math.log(1 - prob));
-  const unluckyPacks = Math.ceil(Math.log(0.25) / Math.log(1 - prob));
-  const medianPacks = Math.ceil(Math.log(0.5) / Math.log(1 - prob));
+  // Source label — transparency about where numbers come from
+  const usingFallbackRate = !(set?.rarities?.[card.rc]?.pullRate > 0);
+  const usingFallbackCost = !(set?.packCost > 0);
+  const sourceLabel = usingFallbackRate || usingFallbackCost
+    ? 'Estimated from rarity & set era'
+    : 'Tracked pull-rate data';
 
+  // ---- Packs Needed callout (always shown) ----
+  $('ripPacksNeeded').textContent = packsNeeded.toLocaleString();
+  $('ripPacksOdds').innerHTML =
+    `≈1 in <strong>${packsPerHit.toLocaleString()}</strong> packs hits this rarity · ` +
+    `<strong>${tierSize}</strong> different cards in tier`;
+  $('ripPacksSource').textContent = sourceLabel;
+
+  // ---- Comparison ----
   $('ripPackCost').textContent = fmtGBP(netRipCost);
   $('ripPackDetail').textContent = `${packsNeeded.toLocaleString()} packs × ${fmtGBP(packCost)}/pack`;
-  $('ripPackSub').textContent = `Net after selling pulls (EV ${fmtGBP(evPerPack)}/pack)`;
-  $('ripSingleCost').textContent = fmtGBP(singleCost);
-  $('ripSingleDetail').textContent = livePrice ? 'Live market price' : 'Current market price';
+  $('ripPackSub').textContent = evPerPack > 0
+    ? `Net after selling pulls (EV ${fmtGBP(evPerPack)}/pack)`
+    : 'Worst case: no value recovered from other pulls';
 
-  const savings = netRipCost - singleCost;
-  const savingsGBP = usdToGbp(Math.abs(savings));
-  const ripMultiple = netRipCost / singleCost;
+  $('ripSingleCost').textContent = singleCost > 0 ? fmtGBP(singleCost) : '—';
+  $('ripSingleDetail').textContent = singleCost > 0
+    ? (livePrice ? 'Live market price' : 'Current market price')
+    : 'No market price data';
 
+  // ---- Verdict ----
   const badge = $('ripVerdict');
-  if (ripMultiple > 1.2) {
-    badge.textContent = 'BUY SINGLE'; badge.className = 'rip-verdict-badge rip-buy';
-  } else if (ripMultiple < 0.8) {
-    badge.textContent = 'RIP PACKS'; badge.className = 'rip-verdict-badge rip-rip';
+  if (singleCost > 0) {
+    const ripMultiple = netRipCost / singleCost;
+    const savings = netRipCost - singleCost;
+    const savingsGBP = usdToGbp(Math.abs(savings));
+
+    if (ripMultiple > 1.2) {
+      badge.textContent = 'BUY SINGLE'; badge.className = 'rip-verdict-badge rip-buy';
+    } else if (ripMultiple < 0.8) {
+      badge.textContent = 'RIP PACKS'; badge.className = 'rip-verdict-badge rip-rip';
+    } else {
+      badge.textContent = 'CLOSE CALL'; badge.className = 'rip-verdict-badge rip-close';
+    }
+
+    if (savings > 0) {
+      $('ripSavings').innerHTML = `<span class="rip-save-good">Buying the single saves you £${savingsGBP.toFixed(0)}</span> <span class="rip-save-mult">(ripping costs ${ripMultiple.toFixed(1)}× more)</span>`;
+    } else {
+      $('ripSavings').innerHTML = `<span class="rip-save-rip">Ripping saves you £${savingsGBP.toFixed(0)}</span> vs buying — but variance is high`;
+    }
   } else {
-    badge.textContent = 'CLOSE CALL'; badge.className = 'rip-verdict-badge rip-close';
+    badge.textContent = 'BUY SINGLE'; badge.className = 'rip-verdict-badge rip-buy';
+    $('ripSavings').innerHTML = `<span class="rip-save-mult">No live single price — ripping for chase usually loses against buying once a price is set</span>`;
   }
 
-  if (savings > 0) {
-    $('ripSavings').innerHTML = `<span class="rip-save-good">Buying the single saves you £${savingsGBP.toFixed(0)}</span> <span class="rip-save-mult">(ripping costs ${ripMultiple.toFixed(1)}× more)</span>`;
-  } else {
-    $('ripSavings').innerHTML = `<span class="rip-save-rip">Ripping saves you £${savingsGBP.toFixed(0)}</span> vs buying`;
-  }
+  // ---- Luck percentiles (geometric distribution) ----
+  const prob = 1 / packsNeeded;
+  const luckyPacks = Math.max(1, Math.ceil(Math.log(0.75) / Math.log(1 - prob)));
+  const unluckyPacks = Math.ceil(Math.log(0.25) / Math.log(1 - prob));
+  const medianPacks = Math.ceil(Math.log(0.5) / Math.log(1 - prob));
 
   const luckyNet = (luckyPacks * packCost) - (luckyPacks * evPerPack);
   const medianNet = (medianPacks * packCost) - (medianPacks * evPerPack);
   const unluckyNet = (unluckyPacks * packCost) - (unluckyPacks * evPerPack);
   $('ripLuck').innerHTML = `
     <div class="rip-luck-row"><span class="rip-luck-label">Lucky (25th pct)</span><span>${luckyPacks.toLocaleString()} packs → net ${fmtGBP(luckyNet)}</span></div>
-    <div class="rip-luck-row"><span class="rip-luck-label">Median</span><span>${medianPacks.toLocaleString()} packs → net ${fmtGBP(medianNet)}</span></div>
+    <div class="rip-luck-row"><span class="rip-luck-label">Median (50%)</span><span>${medianPacks.toLocaleString()} packs → net ${fmtGBP(medianNet)}</span></div>
     <div class="rip-luck-row"><span class="rip-luck-label">Unlucky (75th pct)</span><span>${unluckyPacks.toLocaleString()} packs → net ${fmtGBP(unluckyNet)}</span></div>
   `;
 }
