@@ -326,6 +326,24 @@
           <p class="fc-disclaimer">Projections based on historical Pokémon TCG appreciation patterns. Not financial advice — actual results depend on market conditions, print runs, and collector demand.</p>
         </section>
 
+        <!-- Value Picks -->
+        <section class="card value-picks-card" id="valuePicksSection">
+          <div class="section-header">
+            <h2><span class="vp-icon">💎</span> Top 10 Value Picks</h2>
+            <p class="vp-subtitle">Cards where the market price is well below model valuation — the best bang for your buck right now</p>
+          </div>
+          <div class="vp-controls">
+            <button class="vp-filter-btn active" data-filter="all">All</button>
+            <button class="vp-filter-btn" data-filter="EN">English</button>
+            <button class="vp-filter-btn" data-filter="JP">Japanese</button>
+            <button class="vp-refresh-btn" id="vpRefreshBtn" title="Rescan">↻</button>
+          </div>
+          <div class="vp-list" id="valuePicksList">
+            <div class="vp-loading">Scanning 26k+ cards for value...</div>
+          </div>
+          <p class="vp-disclaimer">Based on static database prices. Select a card to get live PriceCharting data.</p>
+        </section>
+
         <!-- How It Works -->
         <details class="card how-card">
           <summary><h2>How the Model Works</h2></summary>

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pokémon Card Price Predictor</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23f44' stroke='%23222' stroke-width='4'/><rect x='2' y='46' width='96' height='8' fill='%23222'/><circle cx='50' cy='50' r='14' fill='%23fff' stroke='%23222' stroke-width='4'/><circle cx='50' cy='50' r='6' fill='%23222'/><path d='M2 50a48 48 0 0 0 96 0' fill='%23fff' stroke='%23222' stroke-width='4'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -210,7 +211,7 @@
             <!-- Cardmarket -->
             <div class="live-source-row" id="cardmarketRow" style="display:none">
               <div class="live-source-label">
-                Cardmarket
+                Cardmarket <span class="cm-lang-tag" id="cmLangTag">EN</span>
                 <a id="cardmarketLink" href="#" target="_blank" rel="noopener" class="live-source-link" style="display:none">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
                 </a>
@@ -239,6 +240,50 @@
                 <div class="lp-cell"><span class="lp-label">Grading ROI</span><span class="lp-val pc-grading-roi" id="pcGradingRoi">—</span></div>
               </div>
             </div>
+            <!-- Collectrics -->
+            <div class="live-source-row collectrics-source-row" id="collectricsRow" style="display:none">
+              <div class="live-source-label">
+                <span class="collectrics-label-icon">💎</span> Collectrics
+                <a id="collectricsLink" href="#" target="_blank" rel="noopener" class="live-source-link" style="display:none">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+                </a>
+                <span class="live-updated collectrics-match-name" id="collectricsMatchName"></span>
+              </div>
+              <div class="live-prices-grid">
+                <div class="lp-cell"><span class="lp-label">Raw</span><span class="lp-val lp-market" id="crRaw">—</span></div>
+                <div class="lp-cell"><span class="lp-label">PSA 10</span><span class="lp-val" id="crPsa10">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Gem Rate</span><span class="lp-val" id="crGemRate">—</span></div>
+                <div class="lp-cell"><span class="lp-label">Grading ROI</span><span class="lp-val collectrics-grading-roi" id="crGradingRoi">—</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Price History -->
+        <section class="card pricehist-card" id="priceHistSection" style="display:none">
+          <div class="ph-header">
+            <h2>Price History</h2>
+            <div class="ph-verdict" id="phVerdict"></div>
+          </div>
+          <p class="card-desc">Daily raw market price — has it spiked, dropped, or stayed flat?</p>
+          <div class="ph-loading" id="phLoading">Loading price history…</div>
+          <div class="ph-content" id="phContent" style="display:none">
+            <div class="ph-current-row">
+              <div class="ph-current">
+                <div class="ph-current-label">Current</div>
+                <div class="ph-current-value" id="phCurrent">—</div>
+              </div>
+              <div class="ph-deltas" id="phDeltas"></div>
+            </div>
+            <div class="ph-range" id="phRange">
+              <button data-range="30" class="phr-btn active">30d</button>
+              <button data-range="60" class="phr-btn">60d</button>
+              <button data-range="90" class="phr-btn">90d</button>
+              <button data-range="all" class="phr-btn">All</button>
+            </div>
+            <canvas id="priceHistChart" width="500" height="220" style="width:100%;height:220px;"></canvas>
+            <div class="ph-stats" id="phStats"></div>
+            <div class="ph-summary" id="phSummary"></div>
           </div>
         </section>
 
@@ -287,6 +332,13 @@
             <div class="rip-verdict-badge" id="ripVerdict"></div>
           </div>
           <p class="card-desc">Should you open packs or just buy the single?</p>
+          <div class="rip-packs-needed">
+            <div class="rpn-label">Average packs to pull this card</div>
+            <div class="rpn-value" id="ripPacksNeeded">—</div>
+            <div class="rpn-perpack" id="ripPerPackOdds"></div>
+            <div class="rpn-odds" id="ripPacksOdds"></div>
+            <div class="rpn-source" id="ripPacksSource"></div>
+          </div>
           <div class="rip-comparison">
             <div class="rip-option rip-packs">
               <div class="rip-option-label">Open Packs</div>
@@ -326,6 +378,24 @@
           <p class="fc-disclaimer">Projections based on historical Pokémon TCG appreciation patterns. Not financial advice — actual results depend on market conditions, print runs, and collector demand.</p>
         </section>
 
+        <!-- Value Picks -->
+        <section class="card value-picks-card" id="valuePicksSection">
+          <div class="section-header">
+            <h2><span class="vp-icon">💎</span> Top 10 Value Picks</h2>
+            <p class="vp-subtitle">Cards where the market price is well below model valuation — the best bang for your buck right now</p>
+          </div>
+          <div class="vp-controls">
+            <button class="vp-filter-btn active" data-filter="all">All</button>
+            <button class="vp-filter-btn" data-filter="EN">English</button>
+            <button class="vp-filter-btn" data-filter="JP">Japanese</button>
+            <button class="vp-refresh-btn" id="vpRefreshBtn" title="Rescan">↻</button>
+          </div>
+          <div class="vp-list" id="valuePicksList">
+            <div class="vp-loading">Scanning 26k+ cards for value...</div>
+          </div>
+          <p class="vp-disclaimer">Initial prices from database — enriched with live Collectrics data. Click any card for full analysis.</p>
+        </section>
+
         <!-- How It Works -->
         <details class="card how-card">
           <summary><h2>How the Model Works</h2></summary>
@@ -346,6 +416,195 @@
 
     <footer class="footer"><p>Live prices via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> + <a href="https://tcgdex.net" target="_blank">TCGdex</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
   </div>
+  <!-- Floating Filter Button -->
+  <button class="filter-fab" id="filterFab" title="Card Screener">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+    <span class="fab-label">Filter</span>
+  </button>
+
+  <!-- Screener Overlay -->
+  <div class="screener-overlay" id="screenerOverlay"></div>
+  <div class="screener-panel" id="screenerPanel">
+    <div class="sp-header">
+      <h2>🔍 Card Screener</h2>
+      <button class="sp-close" id="spClose">✕</button>
+    </div>
+    <div class="sp-body">
+      <div class="screener-filters" id="screenerFilters">
+        <!-- Dual-range sliders -->
+        <div class="sf-slider-group">
+          <div class="sf-slider-header">
+            <span class="sf-slider-label">Character Premium</span>
+            <span class="sf-slider-vals" id="sfCharVals">Any</span>
+          </div>
+          <div class="sf-dual-range">
+            <div class="sf-track"><div class="sf-fill"></div></div>
+            <input type="range" class="sf-thumb sf-thumb-lo" id="sfCharMin" min="1" max="10" step="0.5" value="1">
+            <input type="range" class="sf-thumb sf-thumb-hi" id="sfCharMax" min="1" max="10" step="0.5" value="10">
+          </div>
+        </div>
+        <div class="sf-slider-group">
+          <div class="sf-slider-header">
+            <span class="sf-slider-label">Artwork / Hype</span>
+            <span class="sf-slider-vals" id="sfArtVals">Any</span>
+          </div>
+          <div class="sf-dual-range">
+            <div class="sf-track"><div class="sf-fill"></div></div>
+            <input type="range" class="sf-thumb sf-thumb-lo" id="sfArtMin" min="1" max="10" step="0.5" value="1">
+            <input type="range" class="sf-thumb sf-thumb-hi" id="sfArtMax" min="1" max="10" step="0.5" value="10">
+          </div>
+        </div>
+        <div class="sf-slider-group">
+          <div class="sf-slider-header">
+            <span class="sf-slider-label">Universal Appeal</span>
+            <span class="sf-slider-vals" id="sfAppealVals">Any</span>
+          </div>
+          <div class="sf-dual-range">
+            <div class="sf-track"><div class="sf-fill"></div></div>
+            <input type="range" class="sf-thumb sf-thumb-lo" id="sfAppealMin" min="1" max="10" step="0.5" value="1">
+            <input type="range" class="sf-thumb sf-thumb-hi" id="sfAppealMax" min="1" max="10" step="0.5" value="10">
+          </div>
+        </div>
+        <div class="sf-slider-group">
+          <div class="sf-slider-header">
+            <span class="sf-slider-label">Pull Cost Score</span>
+            <span class="sf-slider-vals" id="sfPullVals">Any</span>
+          </div>
+          <div class="sf-dual-range">
+            <div class="sf-track"><div class="sf-fill"></div></div>
+            <input type="range" class="sf-thumb sf-thumb-lo" id="sfPullMin" min="0" max="20" step="0.5" value="0">
+            <input type="range" class="sf-thumb sf-thumb-hi" id="sfPullMax" min="0" max="20" step="0.5" value="20">
+          </div>
+        </div>
+
+        <!-- Price dropdowns -->
+        <div class="sf-select-row">
+          <div class="sf-select-group">
+            <label>Model Price</label>
+            <select id="sfModelRange" class="sf-select">
+              <option value="">Any</option>
+              <option value="0,10">Under $10</option>
+              <option value="10,50">$10 – $50</option>
+              <option value="50,100">$50 – $100</option>
+              <option value="100,500">$100 – $500</option>
+              <option value="500,1000">$500 – $1k</option>
+              <option value="1000,5000">$1k – $5k</option>
+              <option value="5000,">$5k+</option>
+            </select>
+          </div>
+          <div class="sf-select-group">
+            <label>Max Buy Price</label>
+            <select id="sfBuyRange" class="sf-select">
+              <option value="">Any</option>
+              <option value="0,10">Under $10</option>
+              <option value="10,50">$10 – $50</option>
+              <option value="50,100">$50 – $100</option>
+              <option value="100,500">$100 – $500</option>
+              <option value="500,1000">$500 – $1k</option>
+              <option value="1000,5000">$1k – $5k</option>
+              <option value="5000,">$5k+</option>
+            </select>
+          </div>
+        </div>
+        <div class="sf-select-row">
+          <div class="sf-select-group">
+            <label>Market Raw</label>
+            <select id="sfRawRange" class="sf-select">
+              <option value="">Any</option>
+              <option value="0,10">Under $10</option>
+              <option value="10,50">$10 – $50</option>
+              <option value="50,100">$50 – $100</option>
+              <option value="100,500">$100 – $500</option>
+              <option value="500,1000">$500 – $1k</option>
+              <option value="1000,5000">$1k – $5k</option>
+              <option value="5000,">$5k+</option>
+            </select>
+          </div>
+          <div class="sf-select-group">
+            <label>PSA 10 Price</label>
+            <select id="sfPsa10Range" class="sf-select">
+              <option value="">Any</option>
+              <option value="0,50">Under $50</option>
+              <option value="50,200">$50 – $200</option>
+              <option value="200,500">$200 – $500</option>
+              <option value="500,1000">$500 – $1k</option>
+              <option value="1000,5000">$1k – $5k</option>
+              <option value="5000,20000">$5k – $20k</option>
+              <option value="20000,">$20k+</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Status & Rarity dropdowns -->
+        <div class="sf-select-row">
+          <div class="sf-select-group">
+            <label>Buy Status</label>
+            <select id="sfSignal" class="sf-select">
+              <option value="">Any</option>
+              <option value="STRONG BUY">Strong Buy</option>
+              <option value="BUY">Buy</option>
+              <option value="HOLD">Hold</option>
+              <option value="SELL">Sell</option>
+            </select>
+          </div>
+          <div class="sf-select-group">
+            <label>Rarity</label>
+            <select id="sfRarity" class="sf-select">
+              <option value="">Any</option>
+              <option value="SIR">Special Illustration Rare</option>
+              <option value="IR">Illustration Rare</option>
+              <option value="SHR,SHUR">Shiny Rare</option>
+              <option value="UR">Ultra Rare</option>
+              <option value="MHR">Mega / Hyper Rare</option>
+              <option value="HR">Holo Rare</option>
+              <option value="DR,RR">Double Rare</option>
+              <option value="AR">Amazing Rare</option>
+              <option value="AS">ACE SPEC</option>
+              <option value="PR">Promo</option>
+              <option value="R">Rare</option>
+              <option value="U">Uncommon</option>
+              <option value="C">Common</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Language + Actions -->
+        <div class="sf-actions">
+          <div class="sf-lang-filters">
+            <button class="sf-lang-btn active" data-lang="all">All</button>
+            <button class="sf-lang-btn" data-lang="EN">English</button>
+            <button class="sf-lang-btn" data-lang="JP">Japanese</button>
+          </div>
+          <div class="sf-btns">
+            <button class="sf-clear-btn" id="sfClearBtn">Clear</button>
+            <button class="sf-scan-btn" id="sfScanBtn">Scan Cards</button>
+          </div>
+        </div>
+      </div>
+      <div class="screener-status" id="screenerStatus"></div>
+      <div class="screener-results" id="screenerResults" style="display:none">
+        <table class="screener-table">
+          <thead>
+            <tr>
+              <th class="st-sortable" data-col="name">Card</th>
+              <th class="st-sortable st-num" data-col="char">Char</th>
+              <th class="st-sortable st-num" data-col="art">Art</th>
+              <th class="st-sortable st-num" data-col="appeal">Appeal</th>
+              <th class="st-sortable st-num" data-col="pull">Pull</th>
+              <th class="st-sortable st-num" data-col="model">Model $</th>
+              <th class="st-sortable st-num" data-col="maxBuy">Max Buy $</th>
+              <th class="st-sortable st-num" data-col="raw">Raw $</th>
+              <th class="st-sortable st-num" data-col="psa10">PSA 10 $</th>
+              <th class="st-sortable" data-col="signal">Status</th>
+            </tr>
+          </thead>
+          <tbody id="screenerTableBody"></tbody>
+        </table>
+      </div>
+      <p class="screener-disclaimer">Computed from model data — live prices may differ. Click any row for full analysis.</p>
+    </div>
+  </div>
+
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
   <script src="app.js"></script>

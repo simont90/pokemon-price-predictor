@@ -27,6 +27,99 @@ const APPEAL_TIERS = {
   A: { score: 7.5, names: ['gengar','umbreon','snorlax','gyarados','dragonite','gardevoir','lucario','greninja','blastoise','venusaur','magikarp','sylveon','arcanine'] },
 };
 
+// ---- Pack Economics: Fallback Pull Rates ----
+// Used when sets-db.js doesn't have rarity pull-rate data.
+// Format: average packs needed to pull ANY card of that rarity from a booster.
+// Sourced from community-tracked modern set odds (e.g. SV/Twilight Masquerade pull tracker).
+const FALLBACK_PACKS_PER_HIT = {
+  SIR: 95,    // Special Illustration Rare — ~1 in 95 packs
+  SAR: 85,
+  IR:  18,    // Illustration Rare — ~1 in 18 packs
+  AR:  18,
+  HR:  85,    // Hyper Rare (rainbow/gold)
+  SHR: 90,    // Shiny Hyper Rare
+  MHR: 110,   // Master Hyper Rare
+  SHUR: 120,
+  UR:  55,    // Ultra Rare
+  SR:  30,    // Secret Rare
+  RR:  6,     // Double Rare
+  R:   3,     // Rare
+  DR:  35,    // Dragon/Double Rare classic
+  AS:  90,
+  PR:  40,    // Promo varies
+  CSR: 70,
+  CHR: 40,
+  U:   1.5,   // Uncommon
+  C:   1,     // Common
+  '?': 30,    // Unknown rarity — assume mid-tier
+};
+
+// Approx number of unique cards in each rarity tier per modern set
+const FALLBACK_TIER_SIZE = {
+  SIR: 12, SAR: 10, IR: 25, AR: 25,
+  HR: 6, SHR: 8, MHR: 4, SHUR: 4,
+  UR: 8, SR: 10, RR: 18, R: 30,
+  DR: 12, AS: 6, PR: 1, CSR: 6, CHR: 12,
+  U: 30, C: 40, '?': 15,
+};
+
+// Era-based pack cost (GBP) — used when sets-db doesn't have packCost.
+// Reflects current UK market booster prices.
+function getDefaultPackCostGBP(setCode, lang) {
+  if (!setsData || !setsData[setCode]) return lang === 'JP' ? 3.00 : 4.50;
+  const set = setsData[setCode];
+  const releaseDate = set.releaseDate || set.released;
+  if (!releaseDate) return lang === 'JP' ? 3.00 : 4.50;
+  const year = parseInt(releaseDate.slice(0, 4));
+  // Japanese packs are ~180 yen retail (~£1) but sealed booster boxes price differently.
+  // We use per-pack equivalent including current sealed-product premium.
+  if (lang === 'JP') {
+    if (year >= 2023) return 3.00;
+    if (year >= 2020) return 4.50;
+    if (year >= 2015) return 7.00;
+    return 14.00;
+  }
+  if (year >= 2024) return 4.50;
+  if (year >= 2022) return 4.75;
+  if (year >= 2020) return 6.00;
+  if (year >= 2017) return 9.00;
+  if (year >= 2011) return 16.00;
+  if (year >= 2003) return 30.00;
+  return 80.00; // WOTC era
+}
+
+// Resolve pack economics for a card — returns { packsPerHit, tierSize, packsNeeded, packCost }.
+// Always returns numbers (uses fallbacks if sets-db lacks the data).
+function resolvePackEconomics(card) {
+  if (!card) return null;
+  const set = setsData?.[card.sc];
+  let packsPerHit = null;
+  let tierSize = null;
+  let packCost = null;
+
+  // 1. Try sets-db rarity pullRate first (most accurate when available)
+  if (set?.rarities?.[card.rc]?.pullRate > 0) {
+    packsPerHit = Math.round(1 / set.rarities[card.rc].pullRate);
+    tierSize = set.rarities[card.rc].count || FALLBACK_TIER_SIZE[card.rc] || 10;
+  } else {
+    // 2. Fallback to rarity-code-based estimates
+    packsPerHit = FALLBACK_PACKS_PER_HIT[card.rc] || 30;
+    tierSize = FALLBACK_TIER_SIZE[card.rc] || 10;
+  }
+
+  // 3. Pack cost — sets-db value (treated as USD), otherwise era-based GBP default → USD
+  if (set?.packCost > 0) {
+    packCost = set.packCost; // assumed USD per existing code
+  } else {
+    const gbp = getDefaultPackCostGBP(card.sc, card.lang);
+    packCost = fxRate > 0 ? gbp / fxRate : gbp / 0.79;
+  }
+
+  const packsNeeded = Math.round(packsPerHit * tierSize);
+  // packCost is in USD for math consistency with getCurrentPrice()
+  return { packsPerHit, tierSize, packsNeeded, packCost };
+}
+
 // ---- Rarity Appreciation Rates ----
 const RARITY_RATES = {
   SIR: { base: 0.22, label: 'Special Illustration Rare' },
@@ -205,6 +298,9 @@ async function init() {
   setupSearch();
   setupInputs();
   setupPortfolio();
+  setupScreener();
+  setupValuePicks();
+  initPriceHistoryControls();
   updateAll();
 }
 
@@ -277,24 +373,67 @@ function getCurrentPrice(card) {
   return card.p;
 }
 
+// ---- Art / Hype Base Score by Rarity ----
+const ART_BY_RARITY = {
+  'SIR': 9.5, 'IR': 8.5, 'SHR': 7.5, 'MHR': 7.5, 'SHUR': 7.0,
+  'AR': 7.5, 'UR': 6.5, 'HR': 5.0, 'SR': 6.0,
+  'DR': 4.5, 'RR': 4.5, 'AS': 4.0, 'PR': 4.5,
+  'R': 3.0, 'U': 2.0, 'C': 1.5,
+};
+
+function getArtBaseScore(rc, cardName) {
+  let base = ART_BY_RARITY[rc] || 3.0;
+  const ln = (cardName || '').toLowerCase();
+  // Boost for premium card types that the rarity code alone may not capture
+  if (ln.includes('vmax') || ln.includes('vstar')) base = Math.max(base, 7.0);
+  else if (/\bv\b/.test(ln) || ln.includes('-gx') || ln.includes(' gx')) base = Math.max(base, 5.5);
+  else if (ln.includes(' ex') || ln.includes('-ex')) base = Math.max(base, 5.0);
+  else if (ln.includes('legend')) base = Math.max(base, 7.5);
+  else if (ln.includes('lv.x') || ln.includes(' lvx')) base = Math.max(base, 6.0);
+  else if (ln.includes('break')) base = Math.max(base, 5.5);
+  // Shining / Gold Star
+  if (ln.includes('shining') || ln.includes('\u2605') || ln.includes('\u2606')) base = Math.max(base, 8.0);
+  return Math.min(10, base);
+}
+
+// Median-ish expected price per rarity tier for price-premium adjustments
+const EXPECTED_PRICE_BY_RARITY = {
+  'SIR': 80, 'IR': 20, 'SHR': 30, 'MHR': 40, 'SHUR': 25,
+  'AR': 10, 'UR': 20, 'HR': 8, 'SR': 15,
+  'DR': 5, 'RR': 3, 'AS': 8, 'PR': 5,
+  'R': 2, 'U': 0.5, 'C': 0.25,
+};
+
 // ---- Auto-fill Desirability ----
 function autoFillDesirability(card, pullCost) {
   const charScore = getCharacterScore(card.n);
   const appealScore = getAppealScore(card.n);
 
-  const sf = Math.pow(PULL_MULT, pullCost);
-  const targetPrice = getCurrentPrice(card);
-  const impliedDes = Math.log(targetPrice / (BASE * sf)) / Math.log(DES_MULT);
-  const clampedDes = Math.max(1, Math.min(10, impliedDes));
+  // Art/Hype: base from rarity + card type
+  let artScore = getArtBaseScore(card.rc, card.n);
 
-  const impliedArt = (clampedDes - charScore * WEIGHTS.char - appealScore * WEIGHTS.appeal) / WEIGHTS.art;
-  const artScore = Math.max(1, Math.min(10, impliedArt));
+  // Price-premium adjustment: if card trades above/below expected for its rarity, adjust art
+  const price = getCurrentPrice(card);
+  const expected = EXPECTED_PRICE_BY_RARITY[card.rc] || 2;
+  if (price > 0 && expected > 0) {
+    const ratio = price / expected;
+    if (ratio > 5)       artScore = Math.min(10, artScore + 2.0);
+    else if (ratio > 3)  artScore = Math.min(10, artScore + 1.5);
+    else if (ratio > 2)  artScore = Math.min(10, artScore + 1.0);
+    else if (ratio > 1.5) artScore = Math.min(10, artScore + 0.5);
+    else if (ratio < 0.2) artScore = Math.max(1, artScore - 1.5);
+    else if (ratio < 0.4) artScore = Math.max(1, artScore - 1.0);
+    else if (ratio < 0.6) artScore = Math.max(1, artScore - 0.5);
+  }
+  artScore = Math.round(Math.max(1, Math.min(10, artScore)) * 10) / 10;
+
+  const total = charScore * WEIGHTS.char + artScore * WEIGHTS.art + appealScore * WEIGHTS.appeal;
 
   return {
     char: charScore,
-    art: Math.round(artScore * 10) / 10,
+    art: artScore,
     appeal: appealScore,
-    total: clampedDes,
+    total: Math.max(1, Math.min(10, total)),
   };
 }
 
@@ -541,6 +680,26 @@ async function fetchLivePriceJP(card) {
 }
 
 // Master live price fetcher — PriceCharting is PRIMARY for all cards, TCGPlayer is secondary for EN
+// Resolve a Collectrics ID via the live-price flow and trigger market data + price history
+function maybeFetchMarketDataFromLive(card, data) {
+  const mi = data && data.mi;
+  if (!mi) return;
+  // Cache mi on the card for subsequent renders
+  card.mi = mi;
+  // Update collectrics link
+  const link = document.getElementById('linkCollectrics');
+  if (link) link.href = `https://mycollectrics.com/card.html?id=${mi}`;
+  // Show price history loading state
+  const phSec = document.getElementById('priceHistSection');
+  if (phSec) {
+    phSec.style.display = 'block';
+    document.getElementById('phLoading').style.display = 'block';
+    document.getElementById('phLoading').textContent = 'Loading price history…';
+    document.getElementById('phContent').style.display = 'none';
+  }
+  fetchMarketData(mi);
+}
+
 async function fetchLivePrice(card) {
   const thisId = ++livePriceFetchId;
   livePrice = null;
@@ -562,6 +721,7 @@ async function fetchLivePrice(card) {
     livePrice = cached;
     renderLivePrice(cached);
     recalcWithLivePrice(card);
+    maybeFetchMarketDataFromLive(card, cached);
     // Still fetch fresh in background to update cache
     fetchAndCacheFresh(card, thisId);
     return;
@@ -575,6 +735,7 @@ async function fetchLivePrice(card) {
     setCachedPrice(card.i, priceData);
     renderLivePrice(priceData);
     recalcWithLivePrice(card);
+    maybeFetchMarketDataFromLive(card, priceData);
   } catch (e) {
     if (thisId !== livePriceFetchId) return;
     console.warn('Live price fetch failed:', e);
@@ -592,8 +753,9 @@ async function fetchFreshPriceData(card) {
     market: 0, low: 0, mid: 0, high: 0, directLow: 0,
     tcgUpdated: '', tcgUrl: '',
     cmTrend: 0, cmAvg1: 0, cmAvg7: 0, cmAvg30: 0, cmLow: 0, cmSuggested: 0,
-    cmUpdated: '', cmUrl: '',
+    cmUpdated: '', cmUrl: '', cmLang: card.lang || 'EN',
     pcUngraded: 0, pcPsa10: 0, pcGrade9: 0, pcName: '', pcConsole: '', pcId: '',
+    crRaw: 0, crPsa10: 0, crGemRate: 0, crName: '', crUrl: '', crPsa10VsRaw: 0,
   };
 
   // 1. PriceCharting — primary source for ALL cards
@@ -650,7 +812,54 @@ async function fetchFreshPriceData(card) {
     throw new Error('No pricing data available');
   }
 
+  // 3. Collectrics — additional grading data source for all cards
+  try {
+    const cr = await fetchCollectricsSearchData(card);
+    if (cr) Object.assign(priceData, cr);
+  } catch (e) {
+    // Silent — Collectrics is supplementary
+  }
+
   return priceData;
+}
+
+// Fetch Collectrics data via search API
+async function fetchCollectricsSearchData(card) {
+  const proxyBase = 'https://api.codetabs.com/v1/proxy/?quest=';
+  const searchName = card.n.replace(/ \(JP\)$/i, '').trim();
+  const q = card.cn ? `${searchName} #${card.cn}` : searchName;
+  const apiUrl = `https://mycollectrics.com/api/search/cards?sort=raw_desc&limit=5&offset=0&q=${encodeURIComponent(q)}`;
+  const proxyUrl = proxyBase + encodeURIComponent(apiUrl);
+
+  const r = await fetch(proxyUrl);
+  if (!r.ok) return null;
+  const text = await r.text();
+  let d;
+  try { d = JSON.parse(text); } catch(e) { return null; }
+  if (!d.results || d.results.length === 0) return null;
+
+  // Match: find result that best matches our card
+  const nameLower = searchName.toLowerCase().split(' ')[0];
+  const match = d.results.find(res => {
+    return res['product-name']?.toLowerCase().includes(nameLower);
+  }) || d.results[0];
+  if (!match) return null;
+
+  const rawPrice = match['raw-price'] || match['collectrics-raw-price'] || 0;
+  const psa10Price = match['psa-10-price'] || 0;
+  const gemPct = match['psa-gem-pct'] || 0;
+  const psa10VsRaw = match['psa-10-vs-raw-pct'] || 0;
+  const cardId = match['id'] || '';
+
+  return {
+    crRaw: rawPrice,
+    crPsa10: psa10Price,
+    crGemRate: gemPct,
+    crPsa10VsRaw: psa10VsRaw,
+    crName: match['product-name'] || '',
+    crUrl: cardId ? `https://mycollectrics.com/card.html?id=${cardId}` : '',
+    mi: cardId || '',
+  };
 }
 
 // Background refresh even when cache hit
@@ -755,11 +964,17 @@ function renderLivePrice(data) {
     }
     const cmLink = $('cardmarketLink');
     if (data.cmUrl) {
-      cmLink.href = data.cmUrl;
+      // Append language filter — 1 = English, 10 = Japanese
+      const langId = data.cmLang === 'JP' ? 10 : 1;
+      const sep = data.cmUrl.includes('?') ? '&' : '?';
+      cmLink.href = data.cmUrl + sep + 'language=' + langId;
       cmLink.style.display = '';
     } else {
       cmLink.style.display = 'none';
     }
+    // Language tag
+    const cmLangTag = $('cmLangTag');
+    if (cmLangTag) cmLangTag.textContent = data.cmLang === 'JP' ? 'JP' : 'EN';
   } else {
     cmRow.style.display = 'none';
   }
@@ -800,6 +1015,45 @@ function renderLivePrice(data) {
     }
   } else {
     pcRow.style.display = 'none';
+  }
+
+  // Collectrics row
+  const crRow = $('collectricsRow');
+  const hasCR = data.crRaw > 0 || data.crPsa10 > 0;
+  if (hasCR) {
+    crRow.style.display = '';
+    $('crRaw').textContent = data.crRaw > 0 ? fmtGBP(data.crRaw) : '—';
+    $('crPsa10').textContent = data.crPsa10 > 0 ? fmtGBP(data.crPsa10) : '—';
+    $('crGemRate').textContent = data.crGemRate > 0 ? data.crGemRate.toFixed(1) + '%' : '—';
+    // Grading ROI from Collectrics data
+    if (data.crPsa10 > 0 && data.crRaw > 0) {
+      const gradingCostUSD = 25;
+      const crROI = ((data.crPsa10 - data.crRaw - gradingCostUSD) / data.crRaw * 100).toFixed(0);
+      const crROIel = $('crGradingRoi');
+      crROIel.textContent = `${crROI > 0 ? '+' : ''}${crROI}%`;
+      crROIel.className = `lp-val collectrics-grading-roi ${crROI > 50 ? 'roi-good' : crROI > 0 ? 'roi-ok' : 'roi-bad'}`;
+    } else {
+      $('crGradingRoi').textContent = '—';
+      $('crGradingRoi').className = 'lp-val collectrics-grading-roi';
+    }
+    // Match name
+    const crMatchEl = $('collectricsMatchName');
+    if (data.crName) {
+      crMatchEl.textContent = data.crName;
+      crMatchEl.style.display = '';
+    } else {
+      crMatchEl.style.display = 'none';
+    }
+    // Link
+    const crLink = $('collectricsLink');
+    if (data.crUrl) {
+      crLink.href = data.crUrl;
+      crLink.style.display = '';
+    } else {
+      crLink.style.display = 'none';
+    }
+  } else {
+    crRow.style.display = 'none';
   }
 
   // Cache timestamp
@@ -987,6 +1241,18 @@ function selectCard(id) {
   $('marketTrend').textContent = '';
   $('marketTrend').className = 'market-trend-badge';
   $('gradeSection').style.display = 'none';
+
+  // Reset price history section
+  if (card.mi) {
+    $('priceHistSection').style.display = 'block';
+    $('phLoading').style.display = 'block';
+    $('phLoading').textContent = 'Loading price history…';
+    $('phContent').style.display = 'none';
+    $('phVerdict').textContent = '';
+    $('phVerdict').className = 'ph-verdict';
+  } else {
+    $('priceHistSection').style.display = 'none';
+  }
 
   // Reset live price panel
   $('livePricePanel').style.display = 'none';
@@ -1377,60 +1643,100 @@ function updateDealCheck(modelPriceUSD) {
 // ---- Rip or Buy ----
 function updateRipOrBuy(card, pullCost) {
   const section = $('ripSection');
-  if (!card || !setsData || !setsData[card.sc]) { section.style.display = 'none'; return; }
+  if (!card) { section.style.display = 'none'; return; }
 
-  const set = setsData[card.sc];
-  const rarity = set.rarities?.[card.rc];
-  if (!rarity || rarity.pullRate <= 0) { section.style.display = 'none'; return; }
+  const econ = resolvePackEconomics(card);
+  if (!econ) { section.style.display = 'none'; return; }
 
   section.style.display = 'block';
 
-  const packsPerHit = Math.round(1 / rarity.pullRate);
-  const packsNeeded = packsPerHit * rarity.count;
-  const packCost = set.packCost || 4.50;
-  const evPerPack = set.evPerPack || 0;
+  const { packsPerHit, tierSize, packsNeeded, packCost } = econ;
+  // EV per pack — only use sets-db value if available, otherwise 0 (conservative)
+  const set = setsData?.[card.sc];
+  const evPerPack = set?.evPerPack || 0;
 
   const totalRipCost = packsNeeded * packCost;
   const evRecovered = packsNeeded * evPerPack;
   const netRipCost = totalRipCost - evRecovered;
   const singleCost = getCurrentPrice(card);
 
-  const prob = 1 / packsNeeded;
-  const luckyPacks = Math.ceil(Math.log(0.75) / Math.log(1 - prob));
-  const unluckyPacks = Math.ceil(Math.log(0.25) / Math.log(1 - prob));
-  const medianPacks = Math.ceil(Math.log(0.5) / Math.log(1 - prob));
+  // Source label — transparency about where numbers come from
+  const usingFallbackRate = !(set?.rarities?.[card.rc]?.pullRate > 0);
+  const usingFallbackCost = !(set?.packCost > 0);
+  const sourceLabel = usingFallbackRate || usingFallbackCost
+    ? 'Estimated from rarity & set era'
+    : 'Tracked pull-rate data';
 
+  // ---- Packs Needed callout (always shown) ----
+  $('ripPacksNeeded').textContent = packsNeeded.toLocaleString();
+
+  // Per-pack odds for THIS specific card
+  const perPackProb = 1 / packsNeeded;
+  const perPackPct = perPackProb * 100;
+  const oddsPctText = perPackPct >= 1
+    ? perPackPct.toFixed(2) + '%'
+    : perPackPct >= 0.01
+      ? perPackPct.toFixed(3) + '%'
+      : perPackPct.toExponential(2) + '%';
+
+  $('ripPerPackOdds').innerHTML =
+    `Per-pack odds: <strong>1 in ${packsNeeded.toLocaleString()}</strong> ` +
+    `<span class="rpn-pct">(${oddsPctText})</span>`;
+
+  $('ripPacksOdds').innerHTML =
+    `≈1 in <strong>${packsPerHit.toLocaleString()}</strong> packs hits this rarity · ` +
+    `<strong>${tierSize}</strong> different cards in tier`;
+  $('ripPacksSource').textContent = sourceLabel;
+
+  // ---- Comparison ----
   $('ripPackCost').textContent = fmtGBP(netRipCost);
   $('ripPackDetail').textContent = `${packsNeeded.toLocaleString()} packs × ${fmtGBP(packCost)}/pack`;
-  $('ripPackSub').textContent = `Net after selling pulls (EV ${fmtGBP(evPerPack)}/pack)`;
-  $('ripSingleCost').textContent = fmtGBP(singleCost);
-  $('ripSingleDetail').textContent = livePrice ? 'Live market price' : 'Current market price';
+  $('ripPackSub').textContent = evPerPack > 0
+    ? `Net after selling pulls (EV ${fmtGBP(evPerPack)}/pack)`
+    : 'Worst case: no value recovered from other pulls';
 
-  const savings = netRipCost - singleCost;
-  const savingsGBP = usdToGbp(Math.abs(savings));
-  const ripMultiple = netRipCost / singleCost;
+  $('ripSingleCost').textContent = singleCost > 0 ? fmtGBP(singleCost) : '—';
+  $('ripSingleDetail').textContent = singleCost > 0
+    ? (livePrice ? 'Live market price' : 'Current market price')
+    : 'No market price data';
 
+  // ---- Verdict ----
   const badge = $('ripVerdict');
-  if (ripMultiple > 1.2) {
-    badge.textContent = 'BUY SINGLE'; badge.className = 'rip-verdict-badge rip-buy';
-  } else if (ripMultiple < 0.8) {
-    badge.textContent = 'RIP PACKS'; badge.className = 'rip-verdict-badge rip-rip';
+  if (singleCost > 0) {
+    const ripMultiple = netRipCost / singleCost;
+    const savings = netRipCost - singleCost;
+    const savingsGBP = usdToGbp(Math.abs(savings));
+
+    if (ripMultiple > 1.2) {
+      badge.textContent = 'BUY SINGLE'; badge.className = 'rip-verdict-badge rip-buy';
+    } else if (ripMultiple < 0.8) {
+      badge.textContent = 'RIP PACKS'; badge.className = 'rip-verdict-badge rip-rip';
+    } else {
+      badge.textContent = 'CLOSE CALL'; badge.className = 'rip-verdict-badge rip-close';
+    }
+
+    if (savings > 0) {
+      $('ripSavings').innerHTML = `<span class="rip-save-good">Buying the single saves you £${savingsGBP.toFixed(0)}</span> <span class="rip-save-mult">(ripping costs ${ripMultiple.toFixed(1)}× more)</span>`;
+    } else {
+      $('ripSavings').innerHTML = `<span class="rip-save-rip">Ripping saves you £${savingsGBP.toFixed(0)}</span> vs buying — but variance is high`;
+    }
   } else {
-    badge.textContent = 'CLOSE CALL'; badge.className = 'rip-verdict-badge rip-close';
+    badge.textContent = 'BUY SINGLE'; badge.className = 'rip-verdict-badge rip-buy';
+    $('ripSavings').innerHTML = `<span class="rip-save-mult">No live single price — ripping for chase usually loses against buying once a price is set</span>`;
   }
 
-  if (savings > 0) {
-    $('ripSavings').innerHTML = `<span class="rip-save-good">Buying the single saves you £${savingsGBP.toFixed(0)}</span> <span class="rip-save-mult">(ripping costs ${ripMultiple.toFixed(1)}× more)</span>`;
-  } else {
-    $('ripSavings').innerHTML = `<span class="rip-save-rip">Ripping saves you £${savingsGBP.toFixed(0)}</span> vs buying`;
-  }
+  // ---- Luck percentiles (geometric distribution) ----
+  const prob = 1 / packsNeeded;
+  const luckyPacks = Math.max(1, Math.ceil(Math.log(0.75) / Math.log(1 - prob)));
+  const unluckyPacks = Math.ceil(Math.log(0.25) / Math.log(1 - prob));
+  const medianPacks = Math.ceil(Math.log(0.5) / Math.log(1 - prob));
 
   const luckyNet = (luckyPacks * packCost) - (luckyPacks * evPerPack);
   const medianNet = (medianPacks * packCost) - (medianPacks * evPerPack);
   const unluckyNet = (unluckyPacks * packCost) - (unluckyPacks * evPerPack);
   $('ripLuck').innerHTML = `
     <div class="rip-luck-row"><span class="rip-luck-label">Lucky (25th pct)</span><span>${luckyPacks.toLocaleString()} packs → net ${fmtGBP(luckyNet)}</span></div>
-    <div class="rip-luck-row"><span class="rip-luck-label">Median</span><span>${medianPacks.toLocaleString()} packs → net ${fmtGBP(medianNet)}</span></div>
+    <div class="rip-luck-row"><span class="rip-luck-label">Median (50%)</span><span>${medianPacks.toLocaleString()} packs → net ${fmtGBP(medianNet)}</span></div>
     <div class="rip-luck-row"><span class="rip-luck-label">Unlucky (75th pct)</span><span>${unluckyPacks.toLocaleString()} packs → net ${fmtGBP(unluckyNet)}</span></div>
   `;
 }
@@ -1460,6 +1766,10 @@ async function fetchMarketData(cardId) {
 
     const mp = d.collectrics?.['market-pressure'];
     const ebayHist = d['history-ebay-market'] || [];
+    const priceHist = d.history || [];
+
+    // Always try to render the price history chart (independent of market-pressure)
+    renderPriceHistory(priceHist);
 
     if (!mp || ebayHist.length < 3) {
       $('marketLoading').textContent = 'No market data available for this card';
@@ -1480,6 +1790,7 @@ async function fetchMarketData(cardId) {
   } catch (e) {
     if (thisId !== marketFetchId) return;
     $('marketLoading').textContent = 'Market data unavailable';
+    $('priceHistSection').style.display = 'none';
     console.warn('Market fetch failed:', e);
   }
 }
@@ -1536,6 +1847,270 @@ function renderMarketDynamics(mp, ebayHist) {
   `;
 
   drawListingChart($('listingChart'), ebayHist);
+}
+
+// =============================================================
+// Price History (raw daily prices over the last ~3 months)
+// =============================================================
+let priceHistoryData = null;     // full history array (most recent last)
+let priceHistoryRange = 30;       // current selected range in days, or 'all'
+
+function hidePriceHistory() {
+  $('priceHistSection').style.display = 'none';
+  priceHistoryData = null;
+}
+
+function renderPriceHistory(history) {
+  const section = $('priceHistSection');
+  if (!Array.isArray(history) || history.length < 3) {
+    section.style.display = 'none';
+    return;
+  }
+  // Filter to entries that have a usable raw-price > 0
+  const cleaned = history
+    .filter(h => h && h.date && (h['raw-price'] || h['psa-9-price']))
+    .map(h => ({
+      date: h.date,
+      raw: h['raw-price'] || 0,
+      psa9: h['psa-9-price'] || 0,
+      psa10: h['psa-10-price'] || 0,
+      vol: h['sales-volume'] || 0,
+    }))
+    .filter(h => h.raw > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (cleaned.length < 3) { section.style.display = 'none'; return; }
+
+  priceHistoryData = cleaned;
+  section.style.display = 'block';
+  $('phLoading').style.display = 'none';
+  $('phContent').style.display = 'block';
+
+  // Reset to default 30d when a new card loads
+  priceHistoryRange = 30;
+  document.querySelectorAll('.phr-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.range === '30');
+  });
+
+  drawAndAnnotatePriceHistory();
+}
+
+function drawAndAnnotatePriceHistory() {
+  if (!priceHistoryData) return;
+  const all = priceHistoryData;
+  const range = priceHistoryRange === 'all' ? all.length : parseInt(priceHistoryRange);
+  const data = all.slice(-range);
+
+  // ---- Headline metrics ----
+  const last = all[all.length - 1].raw;
+  const lastUSD = last; // already USD
+
+  function priceAt(daysAgo) {
+    const idx = all.length - 1 - daysAgo;
+    if (idx < 0) return null;
+    return all[idx].raw;
+  }
+  function pctChange(daysAgo) {
+    const past = priceAt(daysAgo);
+    if (!past || past <= 0) return null;
+    return ((last - past) / past) * 100;
+  }
+
+  const d7 = pctChange(7);
+  const d30 = pctChange(30);
+  const d90 = pctChange(90);
+
+  $('phCurrent').textContent = fmtGBP(lastUSD);
+
+  function renderDelta(label, pct) {
+    if (pct === null) return `<div class="ph-delta"><div class="ph-delta-label">${label}</div><div class="ph-delta-value flat">—</div></div>`;
+    const cls = Math.abs(pct) < 1 ? 'flat' : pct > 0 ? 'up' : 'down';
+    const sign = pct > 0 ? '+' : '';
+    return `<div class="ph-delta"><div class="ph-delta-label">${label}</div><div class="ph-delta-value ${cls}">${sign}${pct.toFixed(1)}%</div></div>`;
+  }
+  $('phDeltas').innerHTML = renderDelta('7 day', d7) + renderDelta('30 day', d30) + renderDelta('90 day', d90);
+
+  // ---- Range stats ----
+  const prices = data.map(d => d.raw);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const avgP = prices.reduce((a, b) => a + b, 0) / prices.length;
+  const fromLow = ((last - minP) / minP) * 100;
+  const fromHigh = ((last - maxP) / maxP) * 100;
+
+  $('phStats').innerHTML = `
+    <div class="ph-stat"><div class="ph-stat-label">Range Low</div><div class="ph-stat-value">${fmtGBP(minP)}</div></div>
+    <div class="ph-stat"><div class="ph-stat-label">Range Avg</div><div class="ph-stat-value">${fmtGBP(avgP)}</div></div>
+    <div class="ph-stat"><div class="ph-stat-label">Range High</div><div class="ph-stat-value">${fmtGBP(maxP)}</div></div>
+  `;
+
+  // ---- Verdict + summary ----
+  const verdict = computePriceVerdict({ d7, d30, d90, last, minP, maxP, avgP, fromLow, fromHigh });
+  const badge = $('phVerdict');
+  badge.textContent = verdict.label;
+  badge.className = 'ph-verdict ' + verdict.cls;
+
+  $('phSummary').innerHTML = verdict.summary;
+
+  // ---- Draw chart ----
+  drawPriceChart($('priceHistChart'), data);
+}
+
+function computePriceVerdict({ d7, d30, d90, last, minP, maxP, avgP, fromLow, fromHigh }) {
+  const d7v = d7 ?? 0, d30v = d30 ?? 0, d90v = d90 ?? d30v;
+
+  // CRASH: huge recent drop
+  if (d30v < -25 || (d7v < -15 && d30v < -10)) {
+    return {
+      label: 'CRASH — RISKY',
+      cls: 'ph-crash',
+      summary: `Price has crashed <strong>${d30v.toFixed(1)}%</strong> over 30 days (7d: ${(d7v).toFixed(1)}%). May still be falling — wait for stabilisation before buying.`
+    };
+  }
+
+  // BUY THE DIP: meaningful recent drop, near range low, longer-term up or flat
+  if (d7v < -3 && fromHigh < -10 && fromLow < 15) {
+    return {
+      label: 'BUY THE DIP',
+      cls: 'ph-buy-dip',
+      summary: `Down <strong>${d7v.toFixed(1)}%</strong> in 7 days, sitting <strong>${fromHigh.toFixed(1)}%</strong> below the recent high — looks like a pullback rather than a trend reversal. Good entry if you like the card long-term.`
+    };
+  }
+
+  // SPIKE: sharp recent rise — expensive
+  if (d7v > 15 || (d7v > 8 && d30v > 20)) {
+    return {
+      label: 'SPIKE — OVERHEATED',
+      cls: 'ph-spike',
+      summary: `Up <strong>+${d7v.toFixed(1)}%</strong> in just 7 days. Often retraces 5–10% after a vertical move — consider waiting a week unless you must own it now.`
+    };
+  }
+
+  // RIDING UP: steady uptrend
+  if (d30v > 5 && d7v > -3) {
+    return {
+      label: 'RIDING UP',
+      cls: 'ph-riding',
+      summary: `Steady uptrend: <strong>+${d30v.toFixed(1)}%</strong> in 30 days. Momentum is in your favour but you're paying for it — fine to buy at market if conviction is high.`
+    };
+  }
+
+  // COOLING: gentle drift down
+  if (d30v < -5 && d7v < 0) {
+    return {
+      label: 'COOLING',
+      cls: 'ph-cooling',
+      summary: `Drifting down: <strong>${d30v.toFixed(1)}%</strong> over 30 days. No panic, but no rush — patient buyers may catch a better price.`
+    };
+  }
+
+  // FLAT: no real movement
+  return {
+    label: 'FLAT',
+    cls: 'ph-flat',
+    summary: `Sideways action: ${d30v >= 0 ? '+' : ''}${d30v.toFixed(1)}% over 30 days. Market is balanced — you're paying close to fair value either way.`
+  };
+}
+
+function drawPriceChart(canvas, data) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+  ctx.clearRect(0, 0, W, H);
+  if (data.length < 2) return;
+
+  const pad = { l: 56, r: 18, t: 16, b: 26 };
+  const cw = W - pad.l - pad.r;
+  const ch = H - pad.t - pad.b;
+
+  // Convert raw USD prices to GBP for display
+  const rates = data.map(d => d.raw * fxRate);
+  const minP = Math.min(...rates);
+  const maxP = Math.max(...rates);
+  const span = Math.max(maxP - minP, 0.01);
+  const yMin = minP - span * 0.10;
+  const yMax = maxP + span * 0.10;
+
+  function x(i) { return pad.l + (i / (data.length - 1)) * cw; }
+  function y(v) { return pad.t + ch - ((v - yMin) / (yMax - yMin)) * ch; }
+
+  // Gridlines + y-axis labels (4 horizontal divisions)
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = '#777a8a';
+  ctx.font = '10px JetBrains Mono, monospace';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const gy = pad.t + (ch / 4) * i;
+    ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
+    const val = yMax - ((yMax - yMin) / 4) * i;
+    ctx.fillText('£' + val.toFixed(val < 10 ? 2 : 0), pad.l - 6, gy + 3);
+  }
+
+  // Filled area under curve (gradient)
+  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ch);
+  grad.addColorStop(0, 'rgba(232,182,52,0.25)');
+  grad.addColorStop(1, 'rgba(232,182,52,0.0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(x(0), pad.t + ch);
+  data.forEach((d, i) => ctx.lineTo(x(i), y(d.raw * fxRate)));
+  ctx.lineTo(x(data.length - 1), pad.t + ch);
+  ctx.closePath();
+  ctx.fill();
+
+  // Price line
+  ctx.strokeStyle = '#e8b634';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  data.forEach((d, i) => {
+    const px = x(i), py = y(d.raw * fxRate);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  // Latest point marker
+  const lastIdx = data.length - 1;
+  const lx = x(lastIdx), ly = y(data[lastIdx].raw * fxRate);
+  ctx.fillStyle = '#e8b634';
+  ctx.beginPath(); ctx.arc(lx, ly, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(232,182,52,0.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(lx, ly, 8, 0, Math.PI * 2); ctx.stroke();
+
+  // X-axis date labels (start, mid, end)
+  ctx.fillStyle = '#777a8a';
+  ctx.font = '10px Space Grotesk, sans-serif';
+  ctx.textAlign = 'center';
+  const labelIdx = [0, Math.floor(data.length / 2), data.length - 1];
+  labelIdx.forEach(i => {
+    if (data[i]) {
+      const d = new Date(data[i].date);
+      const label = d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+      ctx.fillText(label, x(i), H - 6);
+    }
+  });
+}
+
+// Range button handler (bound once on init)
+function initPriceHistoryControls() {
+  const ctr = $('phRange');
+  if (!ctr || ctr.dataset.bound) return;
+  ctr.dataset.bound = '1';
+  ctr.addEventListener('click', (e) => {
+    const btn = e.target.closest('.phr-btn');
+    if (!btn) return;
+    document.querySelectorAll('.phr-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    priceHistoryRange = btn.dataset.range === 'all' ? 'all' : parseInt(btn.dataset.range);
+    drawAndAnnotatePriceHistory();
+  });
 }
 
 function drawListingChart(canvas, history) {
@@ -1834,6 +2409,587 @@ function renderPortfolio() {
 function setupInputs() {
   ['packRate','cardsInTier','characterPremium','artworkHype','universalAppeal','ebayPrice']
     .forEach(id => $(id).addEventListener('input', updateAll));
+}
+
+// ================================================================
+// ---- Card Screener ----
+// ================================================================
+let screenerData = [];  // last scan results
+let screenerSort = { col: 'model', dir: 'desc' };
+let screenerLang = 'all';
+
+function computeCardRow(c) {
+  // Pull cost
+  let pullCost = 7.65;
+  if (setsData && setsData[c.sc]) {
+    const set = setsData[c.sc];
+    const rarity = set.rarities?.[c.rc];
+    if (rarity && rarity.pullRate > 0) {
+      const packsPerHit = Math.round(1 / rarity.pullRate);
+      pullCost = (packsPerHit * rarity.count) / 100;
+    }
+  }
+  // Desirability
+  const des = autoFillDesirability(c, pullCost);
+  // Model prediction
+  const { priceUSD } = predictPrice(pullCost, des.total);
+  // Market raw
+  const raw = getCurrentPrice(c);
+  // PSA 10
+  const psa10 = c.p10 || 0;
+  // Max buy = model price in USD
+  const maxBuy = priceUSD;
+  // Signal
+  const sig = computeSignal(c, pullCost, des.total);
+  return {
+    id: c.i, name: c.n, set: c.s, cn: c.cn, lang: c.lang || 'EN',
+    char: des.char, art: des.art, appeal: des.appeal,
+    pull: pullCost, model: priceUSD, maxBuy, raw, psa10,
+    signal: sig?.signal || 'HOLD', score: sig?.score || 0
+  };
+}
+
+function runScreener() {
+  if (!cardData || !cardData.cards) return;
+  const btn = $('sfScanBtn');
+  btn.disabled = true;
+  btn.textContent = 'Scanning...';
+  $('screenerStatus').textContent = 'Scanning 26k+ cards...';
+  $('screenerResults').style.display = 'none';
+
+  // Helper: read slider range (returns null if at default extreme)
+  function sliderVal(id) {
+    const el = $(id);
+    const v = parseFloat(el.value);
+    const isLo = el.classList.contains('sf-thumb-lo');
+    if (isLo && v <= parseFloat(el.min)) return null;
+    if (!isLo && v >= parseFloat(el.max)) return null;
+    return v;
+  }
+  // Helper: parse price dropdown "lo,hi" value
+  function priceRange(id) {
+    const v = $(id).value;
+    if (!v) return { min: null, max: null };
+    const parts = v.split(',');
+    return { min: parts[0] ? parseFloat(parts[0]) : null, max: parts[1] ? parseFloat(parts[1]) : null };
+  }
+  const modelP = priceRange('sfModelRange');
+  const buyP = priceRange('sfBuyRange');
+  const rawP = priceRange('sfRawRange');
+  const psa10P = priceRange('sfPsa10Range');
+
+  // Read filters
+  const f = {
+    charMin: sliderVal('sfCharMin'), charMax: sliderVal('sfCharMax'),
+    artMin: sliderVal('sfArtMin'), artMax: sliderVal('sfArtMax'),
+    appealMin: sliderVal('sfAppealMin'), appealMax: sliderVal('sfAppealMax'),
+    pullMin: sliderVal('sfPullMin'), pullMax: sliderVal('sfPullMax'),
+    modelMin: modelP.min, modelMax: modelP.max,
+    buyMin: buyP.min, buyMax: buyP.max,
+    rawMin: rawP.min, rawMax: rawP.max,
+    psa10Min: psa10P.min, psa10Max: psa10P.max,
+    signal: $('sfSignal').value || null,
+    rarity: $('sfRarity').value || null,
+    lang: screenerLang,
+  };
+
+  // Check if at least one filter is set
+  const hasFilter = Object.entries(f).some(([k, v]) => {
+    if (k === 'lang' && v === 'all') return false;
+    return v !== null && v !== '';
+  });
+  if (!hasFilter) {
+    btn.disabled = false;
+    btn.textContent = 'Scan Cards';
+    $('screenerStatus').textContent = 'Set at least one filter to scan.';
+    return;
+  }
+
+  // Use setTimeout so the UI updates before the heavy loop
+  setTimeout(() => {
+    const results = [];
+    const cards = cardData.cards;
+    for (let i = 0; i < cards.length; i++) {
+      const c = cards[i];
+      // Language filter
+      const cLang = c.lang || 'EN';
+      if (f.lang !== 'all' && cLang !== f.lang) continue;
+
+      // Rarity filter (before expensive computeCardRow)
+      if (f.rarity) {
+        const allowed = f.rarity.split(',');
+        if (!allowed.includes(c.rc)) continue;
+      }
+
+      const row = computeCardRow(c);
+
+      // Apply filters
+      if (f.charMin != null && row.char < f.charMin) continue;
+      if (f.charMax != null && row.char > f.charMax) continue;
+      if (f.artMin != null && row.art < f.artMin) continue;
+      if (f.artMax != null && row.art > f.artMax) continue;
+      if (f.appealMin != null && row.appeal < f.appealMin) continue;
+      if (f.appealMax != null && row.appeal > f.appealMax) continue;
+      if (f.pullMin != null && row.pull < f.pullMin) continue;
+      if (f.pullMax != null && row.pull > f.pullMax) continue;
+      if (f.modelMin != null && row.model < f.modelMin) continue;
+      if (f.modelMax != null && row.model > f.modelMax) continue;
+      if (f.buyMin != null && row.maxBuy < f.buyMin) continue;
+      if (f.buyMax != null && row.maxBuy > f.buyMax) continue;
+      if (f.rawMin != null && row.raw < f.rawMin) continue;
+      if (f.rawMax != null && row.raw > f.rawMax) continue;
+      if (f.psa10Min != null && row.psa10 < f.psa10Min) continue;
+      if (f.psa10Max != null && row.psa10 > f.psa10Max) continue;
+      if (f.signal && row.signal !== f.signal) continue;
+
+      results.push(row);
+    }
+
+    screenerData = results;
+    sortScreenerData();
+    renderScreenerTable();
+
+    btn.disabled = false;
+    btn.textContent = 'Scan Cards';
+    $('screenerStatus').textContent = `${results.length.toLocaleString()} cards found`;
+    $('screenerResults').style.display = results.length > 0 ? '' : 'none';
+  }, 50);
+}
+
+function sortScreenerData() {
+  const { col, dir } = screenerSort;
+  const mult = dir === 'asc' ? 1 : -1;
+  screenerData.sort((a, b) => {
+    let va = a[col], vb = b[col];
+    if (typeof va === 'string') return mult * va.localeCompare(vb);
+    return mult * ((va || 0) - (vb || 0));
+  });
+}
+
+function renderScreenerTable() {
+  const tbody = $('screenerTableBody');
+  // Cap at 200 rows for performance
+  const rows = screenerData.slice(0, 200);
+  const fmtD = v => v?.toFixed(1) ?? '—';
+  const fmtP = v => v > 0 ? '$' + v.toFixed(0) : '—';
+
+  tbody.innerHTML = rows.map(r => {
+    const sigCls = r.signal === 'STRONG BUY' ? 'st-strong-buy'
+      : r.signal === 'BUY' ? 'st-buy'
+      : r.signal === 'SELL' ? 'st-sell' : 'st-hold';
+    const langBadge = r.lang === 'JP' ? '<span style="color:var(--text-faint);font-size:9px"> JP</span>' : '';
+    return `<tr data-id="${r.id}">
+      <td class="st-name-cell">${r.name}${langBadge}<br><span class="st-name-sub">${r.set} #${r.cn || '?'}</span></td>
+      <td class="st-num">${fmtD(r.char)}</td>
+      <td class="st-num">${fmtD(r.art)}</td>
+      <td class="st-num">${fmtD(r.appeal)}</td>
+      <td class="st-num">${r.pull.toFixed(2)}</td>
+      <td class="st-num">${fmtP(r.model)}</td>
+      <td class="st-num">${fmtP(r.maxBuy)}</td>
+      <td class="st-num">${fmtP(r.raw)}</td>
+      <td class="st-num">${fmtP(r.psa10)}</td>
+      <td><span class="st-signal ${sigCls}">${r.signal}</span></td>
+    </tr>`;
+  }).join('');
+
+  if (screenerData.length > 200) {
+    $('screenerStatus').textContent += ` (showing first 200)`;
+  }
+
+  // Row click → select card + close panel
+  tbody.querySelectorAll('tr').forEach(tr => {
+    tr.addEventListener('click', () => {
+      closeScreener();
+      selectCard(tr.dataset.id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+}
+
+function openScreener() {
+  $('screenerPanel').classList.add('open');
+  $('screenerOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeScreener() {
+  $('screenerPanel').classList.remove('open');
+  $('screenerOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function setupScreener() {
+  // Open/close panel
+  $('filterFab').addEventListener('click', openScreener);
+  $('spClose').addEventListener('click', closeScreener);
+  $('screenerOverlay').addEventListener('click', closeScreener);
+
+  // Escape key closes panel
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('screenerPanel').classList.contains('open')) closeScreener();
+  });
+
+  // Scan button
+  $('sfScanBtn').addEventListener('click', runScreener);
+
+  // --- Dual-range slider init ---
+  function initDualRange(group) {
+    const lo = group.querySelector('.sf-thumb-lo');
+    const hi = group.querySelector('.sf-thumb-hi');
+    const fill = group.querySelector('.sf-fill');
+    const valsEl = group.querySelector('.sf-slider-vals');
+    function update() {
+      const min = parseFloat(lo.min), max = parseFloat(lo.max);
+      let loV = parseFloat(lo.value), hiV = parseFloat(hi.value);
+      if (loV > hiV) { // clamp
+        if (document.activeElement === lo) { lo.value = hiV; loV = hiV; }
+        else { hi.value = loV; hiV = loV; }
+      }
+      const loPct = ((loV - min) / (max - min)) * 100;
+      const hiPct = ((hiV - min) / (max - min)) * 100;
+      fill.style.left = loPct + '%';
+      fill.style.width = (hiPct - loPct) + '%';
+      const isDefault = loV <= min && hiV >= max;
+      if (valsEl) {
+        valsEl.textContent = isDefault ? 'Any' : loV.toFixed(1) + ' – ' + hiV.toFixed(1);
+        valsEl.classList.toggle('sf-active', !isDefault);
+      }
+    }
+    lo.addEventListener('input', update);
+    hi.addEventListener('input', update);
+    update();
+  }
+  document.querySelectorAll('.sf-slider-group').forEach(initDualRange);
+
+  // Clear button
+  $('sfClearBtn').addEventListener('click', () => {
+    // Reset sliders to defaults
+    document.querySelectorAll('.sf-thumb').forEach(el => {
+      el.value = el.classList.contains('sf-thumb-lo') ? el.min : el.max;
+    });
+    // Re-run slider visuals
+    document.querySelectorAll('.sf-slider-group').forEach(g => {
+      const fill = g.querySelector('.sf-fill');
+      fill.style.left = '0%'; fill.style.width = '100%';
+      const vals = g.querySelector('.sf-slider-vals');
+      if (vals) { vals.textContent = 'Any'; vals.classList.remove('sf-active'); }
+    });
+    // Reset dropdowns
+    ['sfModelRange','sfBuyRange','sfRawRange','sfPsa10Range','sfSignal','sfRarity'].forEach(id => $(id).value = '');
+    screenerData = [];
+    $('screenerResults').style.display = 'none';
+    $('screenerStatus').textContent = '';
+  });
+
+  // Language filter buttons
+  document.querySelectorAll('.sf-lang-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sf-lang-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      screenerLang = btn.dataset.lang;
+    });
+  });
+
+  // Sortable column headers
+  document.querySelectorAll('.st-sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (screenerSort.col === col) {
+        screenerSort.dir = screenerSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        screenerSort.col = col;
+        screenerSort.dir = 'desc';
+      }
+      document.querySelectorAll('.st-sortable').forEach(h => {
+        h.classList.remove('st-sorted-asc', 'st-sorted-desc');
+      });
+      th.classList.add(screenerSort.dir === 'asc' ? 'st-sorted-asc' : 'st-sorted-desc');
+      sortScreenerData();
+      renderScreenerTable();
+    });
+  });
+
+  // Enter key triggers scan
+  $('screenerFilters').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') runScreener();
+  });
+}
+
+// ---- Value Picks ----
+let vpFilter = 'all';
+
+function scanValuePicks(filter) {
+  if (!cardData || !cardData.cards) return [];
+
+  const cards = cardData.cards;
+  const GRADING_COST_USD = 30; // ~£25 PSA grading cost
+
+  const scored = [];
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i];
+    if (c.p < 5) continue; // only cards with meaningful market value
+    if (filter === 'EN' && c.lang === 'JP') continue;
+    if (filter === 'JP' && c.lang !== 'JP') continue;
+
+    const charMult = getCharacterMultiplier(c.n);
+    if (charMult < 1.1) continue;
+
+    const rarityInfo = RARITY_RATES[c.rc] || RARITY_RATES[''];
+    const rarityRate = rarityInfo.base;
+    if (rarityRate < 0.10) continue;
+
+    const marketPrice = c.p;
+
+    // ---- Grading arbitrage (primary value signal) ----
+    const psa10 = (c.p10 && c.p10 > 0) ? c.p10 : 0;
+    const gradingRatio = psa10 > 0 ? psa10 / marketPrice : 0;
+    const gradingProfit = psa10 > 0 ? psa10 - marketPrice - GRADING_COST_USD : 0;
+    const gradingROI = psa10 > 0 ? gradingProfit / (marketPrice + GRADING_COST_USD) : 0;
+
+    // Need either good grading potential OR strong character at reasonable price
+    if (gradingROI < 0.3 && charMult < 1.3) continue;
+
+    // ---- Pull cost (supply) ----
+    let pullCost = 7.65;
+    if (setsData && setsData[c.sc]) {
+      const set = setsData[c.sc];
+      const rarity = set.rarities && set.rarities[c.rc];
+      if (rarity && rarity.pullRate > 0) {
+        const packsPerHit = Math.round(1 / rarity.pullRate);
+        const totalPacks = packsPerHit * rarity.count;
+        pullCost = totalPacks / 100;
+      }
+    }
+
+    // ---- Model price (character premium on top of market) ----
+    const sf = Math.pow(PULL_MULT, pullCost);
+    const impliedDes = Math.log(marketPrice / (BASE * sf)) / Math.log(DES_MULT);
+    if (impliedDes < 1) continue; // market must show this is above bulk
+    const charBoost = Math.min(0.8, (charMult - 1) * 1.2);
+    const modelDes = Math.min(10, impliedDes + charBoost);
+    const { priceUSD: modelPrice } = predictPrice(pullCost, modelDes);
+
+    // ---- Set age (supply tightening) ----
+    const ageMonths = getSetAgeMonths(c.sc);
+    const ageFactor = ageMonths > 48 ? 1.35 : ageMonths > 24 ? 1.15 : ageMonths < 6 ? 0.8 : 1.0;
+
+    // ---- Composite value score ----
+    const gradingScore = gradingROI > 0 ? (1 + Math.min(gradingROI, 3)) : 1;
+    const valueScore = gradingScore * charMult * ageFactor * (1 + rarityRate) * (modelPrice / marketPrice);
+
+    // ---- Reasons ----
+    const reasons = [];
+    if (charMult >= 1.4) reasons.push('Fan favourite');
+    else if (charMult >= 1.2) reasons.push('Popular character');
+    if (gradingROI > 0.5) reasons.push('PSA 10: ' + gradingRatio.toFixed(1) + '× raw');
+    if (ageMonths > 36) reasons.push('Proven set');
+    if (rarityRate >= 0.20) reasons.push('Chase pull');
+
+    // Target price: best realistic outcome (model or PSA 10)
+    const targetPrice = psa10 > modelPrice ? psa10 : modelPrice;
+    const upside = ((targetPrice / marketPrice - 1) * 100).toFixed(0);
+
+    scored.push({
+      card: c,
+      marketPrice,
+      modelPrice,
+      targetPrice,
+      psa10,
+      ratio: targetPrice / marketPrice,
+      upside,
+      rarity: rarityInfo.label,
+      pullCost,
+      des: modelDes,
+      valueScore,
+      reasons: reasons.join(' · ') || 'Character premium',
+      signal: targetPrice / marketPrice > 2 ? 'STRONG BUY' : 'BUY',
+      signalCls: targetPrice / marketPrice > 2 ? 'signal-strong-buy' : 'signal-buy',
+    });
+  }
+
+  scored.sort((a, b) => b.valueScore - a.valueScore);
+  // Diversify: max 2 cards per character name
+  const result = [];
+  const charCount = {};
+  for (const pick of scored) {
+    const baseName = pick.card.n.replace(/ ex$/i, '').replace(/ V$/i, '').replace(/ VMAX$/i, '').replace(/ VSTAR$/i, '').replace(/ GX$/i, '').replace(/ EX$/i, '').replace(/ \(JP\)$/i, '').trim();
+    charCount[baseName] = (charCount[baseName] || 0) + 1;
+    if (charCount[baseName] <= 2) result.push(pick);
+    if (result.length >= 10) break;
+  }
+  return result;
+}
+
+function renderValuePicks(filter) {
+  const list = $('valuePicksList');
+  const picks = scanValuePicks(filter || vpFilter);
+
+  if (picks.length === 0) {
+    list.innerHTML = '<div class="vp-loading">No standout value picks found for this filter</div>';
+    return;
+  }
+
+  list.innerHTML = picks.map((p, i) => {
+    const c = p.card;
+    const isJP = c.lang === 'JP';
+    const langBadge = isJP
+      ? '<span class="vp-lang vp-jp">🇯🇵</span> '
+      : '<span class="vp-lang vp-en">EN</span> ';
+    const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+    const upsideClass = p.ratio > 1.5 ? 'big-upside' : 'med-upside';
+
+    return `
+      <div class="vp-item" data-id="${c.i}">
+        <div class="vp-rank ${rankClass}">${i + 1}</div>
+        <img class="vp-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="this.style.display='none'">
+        <div class="vp-info">
+          <div class="vp-name">${esc(c.n)}</div>
+          <div class="vp-meta">${langBadge}${esc(c.s)} · ${p.rarity}</div>
+        </div>
+        <div class="vp-values">
+          <div class="vp-market">Raw: ${fmtGBP(p.marketPrice)}</div>
+          ${p.psa10 > 0 ? `<div class="vp-psa10">PSA 10: ${fmtGBP(p.psa10)}</div>` : `<div class="vp-model">Model: ${fmtGBP(p.modelPrice)}</div>`}
+          <div class="vp-upside ${upsideClass}">↑${p.upside}%</div>
+          <div class="vp-reasons">${p.reasons}</div>
+          <span class="vp-signal ${p.signalCls}">${p.signal}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Click handler — select the card
+  list.querySelectorAll('.vp-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const cardId = el.dataset.id;
+      if (cardId) {
+        selectCard(cardId);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+  });
+
+  // Enrich with live Collectrics data
+  enrichValuePicksFromCollectrics(picks);
+}
+
+// ---- Live Collectrics enrichment for value picks ----
+async function enrichValuePicksFromCollectrics(picks) {
+  const proxyBase = 'https://api.codetabs.com/v1/proxy/?quest=';
+  const items = document.querySelectorAll('.vp-item');
+
+  for (let i = 0; i < picks.length; i++) {
+    const p = picks[i];
+    const c = p.card;
+    const el = items[i];
+    if (!el) continue;
+
+    try {
+      // Build search query: card name + card number if available
+      const searchName = c.n.replace(/ \(JP\)$/i, '').trim();
+      const q = c.cn ? `${searchName} #${c.cn}` : searchName;
+      const apiUrl = `https://mycollectrics.com/api/search/cards?sort=raw_desc&limit=5&offset=0&q=${encodeURIComponent(q)}`;
+      const proxyUrl = proxyBase + encodeURIComponent(apiUrl);
+
+      const r = await fetch(proxyUrl);
+      if (!r.ok) continue;
+      const text = await r.text();
+      let d;
+      try { d = JSON.parse(text); } catch(pe) { continue; }
+      
+      if (!d.results || d.results.length === 0) continue;
+
+      // Match: find the result that best matches our card
+      const match = d.results.find(res => {
+        const nameMatch = res['product-name']?.toLowerCase().includes(searchName.toLowerCase().split(' ')[0]);
+        return nameMatch;
+      }) || d.results[0];
+
+      if (!match) continue;
+
+      // Extract live data
+      const liveRaw = match['raw-price'] || match['collectrics-raw-price'];
+      const livePsa10 = match['psa-10-price'];
+      const gemPct = match['psa-gem-pct'];
+      const liveRatio = livePsa10 > 0 && liveRaw > 0 ? livePsa10 / liveRaw : 0;
+
+      // Update the DOM with live Collectrics data
+      const valuesDiv = el.querySelector('.vp-values');
+      if (!valuesDiv) continue;
+
+      // Update raw price
+      const marketEl = valuesDiv.querySelector('.vp-market');
+      if (marketEl && liveRaw > 0) {
+        marketEl.innerHTML = `Raw: ${fmtGBP(liveRaw)} <span class="vp-live-tag">LIVE</span>`;
+      }
+
+      // Update PSA 10 price
+      const psa10El = valuesDiv.querySelector('.vp-psa10') || valuesDiv.querySelector('.vp-model');
+      if (psa10El && livePsa10 > 0) {
+        psa10El.className = 'vp-psa10';
+        psa10El.textContent = `PSA 10: ${fmtGBP(livePsa10)}`;
+      }
+
+      // Update upside %
+      const upsideEl = valuesDiv.querySelector('.vp-upside');
+      if (upsideEl && liveRatio > 1) {
+        const liveUpside = ((liveRatio - 1) * 100).toFixed(0);
+        upsideEl.textContent = `\u2191${liveUpside}%`;
+        upsideEl.className = 'vp-upside ' + (liveRatio > 2 ? 'big-upside' : 'med-upside');
+      }
+
+      // Add gem rate if available
+      if (gemPct && gemPct > 0) {
+        const reasonsEl = valuesDiv.querySelector('.vp-reasons');
+        if (reasonsEl) {
+          const gemStr = `Gem rate ${(gemPct * 100).toFixed(0)}%`;
+          const existing = reasonsEl.textContent;
+          if (!existing.includes('Gem rate')) {
+            reasonsEl.textContent = existing ? existing + ' \u00b7 ' + gemStr : gemStr;
+          }
+        }
+      }
+
+      // Update signal based on live ratio
+      const signalEl = valuesDiv.querySelector('.vp-signal');
+      if (signalEl && liveRatio > 0) {
+        if (liveRatio > 2) {
+          signalEl.textContent = 'STRONG BUY';
+          signalEl.className = 'vp-signal signal-strong-buy';
+        } else if (liveRatio > 1.3) {
+          signalEl.textContent = 'BUY';
+          signalEl.className = 'vp-signal signal-buy';
+        }
+      }
+
+    } catch (e) {
+      // Silently skip on error — static data remains
+      console.warn('Collectrics enrichment failed for', c.n, e.message);
+    }
+
+    // Small delay between requests to avoid rate limiting
+    await new Promise(r => setTimeout(r, 350));
+  }
+}
+
+function setupValuePicks() {
+  // Filter buttons
+  document.querySelectorAll('.vp-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.vp-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      vpFilter = btn.dataset.filter;
+      renderValuePicks(vpFilter);
+    });
+  });
+
+  // Refresh button
+  $('vpRefreshBtn').addEventListener('click', () => {
+    const btn = $('vpRefreshBtn');
+    btn.classList.add('spinning');
+    setTimeout(() => btn.classList.remove('spinning'), 600);
+    renderValuePicks(vpFilter);
+  });
+
+  // Initial render (deferred so it doesn't block page load)
+  setTimeout(() => renderValuePicks(vpFilter), 500);
 }
 
 // ---- Boot ----
