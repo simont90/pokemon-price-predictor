@@ -1314,3 +1314,300 @@ body {
   .cp-price-arrow { transform: rotate(90deg); padding: 2px 0; }
   .cp-actions .cp-btn { flex: 1; }
 }
+
+/* ================================================================
+   iPhone + iPad Responsive Overhaul
+   ================================================================
+   - Safe-area insets for notch/home-indicator (iPhone X-15 Pro Max)
+   - 16px input font-size to prevent iOS zoom-on-focus
+   - Momentum scroll + overscroll containment
+   - Tap targets >= 44px (Apple HIG)
+   - Removed grey tap highlight, added active states
+   - iPad mini/Pro breakpoints (portrait + landscape)
+   - Landscape phone tweaks (iPhone SE, Pro Max horizontal)
+   ================================================================ */
+
+/* --- Global iOS base --- */
+html {
+  /* Stop horizontal rubber-banding on iPad when panels scroll */
+  overscroll-behavior-x: none;
+  /* Prevent iOS text size adjust on orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Off-screen slide-over panels (screener, wishlist, compare) sit at right:-100vw
+     while closed; clip horizontal scroll so they don't widen the page on phones. */
+  overflow-x: hidden;
+}
+
+body {
+  /* Use dynamic viewport height so Safari's chrome doesn't cause layout jumps */
+  min-height: 100vh;
+  min-height: 100dvh;
+  -webkit-tap-highlight-color: transparent;
+  /* Respect safe areas at the bottom (home indicator) */
+  padding-bottom: env(safe-area-inset-bottom);
+  overflow-x: hidden;
+  /* Belt + braces: never wider than the viewport */
+  max-width: 100vw;
+}
+
+/* Respect notch on the sides of the app shell */
+.app {
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
+}
+
+/* Don't let the notch hide the header logo/controls in landscape */
+.header {
+  padding-top: max(20px, env(safe-area-inset-top));
+}
+
+/* All interactive elements: remove tap highlight, smooth touch */
+button, a, .portfolio-toggle, .wishlist-toggle, .compare-toggle,
+.search-result-item, .range-btn, .cp-btn, .filter-fab, .filter-fab *,
+.fx-rate, .credit-link, .add-portfolio-btn, #addWishlistBtn, #addCompareBtn {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: manipulation; /* disables 300ms double-tap zoom delay */
+}
+
+/* Clear active-press feedback for touch devices */
+@media (hover: none) {
+  button:active, a:active, .search-result-item:active,
+  .portfolio-toggle:active, .wishlist-toggle:active, .compare-toggle:active,
+  .cp-btn:active, .range-btn:active, .filter-fab:active {
+    transform: scale(0.97);
+    transition: transform 0.08s;
+  }
+  /* On touch devices, disable :hover rules that add weight/flash on tap */
+  button:hover, a:hover { filter: none; }
+}
+
+/* --- Inputs: prevent iOS zoom on focus --- */
+/* iOS auto-zooms when focused input is < 16px. Force 16px on ALL interactive text inputs. */
+input[type="text"],
+input[type="search"],
+input[type="number"],
+input[type="email"],
+input[type="tel"],
+input[type="url"],
+input[type="password"],
+textarea, select {
+  font-size: 16px;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: var(--radius-sm);
+}
+
+/* Scrolling surfaces: iOS momentum + contained overscroll */
+.portfolio-list,
+.wishlist-list,
+.search-results,
+.compare-panel,
+.portfolio-panel,
+.wishlist-panel,
+.price-history-chart-wrap {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Tap-target minimum (44px per Apple HIG) for common small buttons */
+.portfolio-toggle,
+.wishlist-toggle,
+.compare-toggle,
+.credit-link,
+.fx-rate,
+.range-btn,
+.portfolio-close,
+.wishlist-close,
+.compare-close,
+.cp-btn,
+#addWishlistBtn,
+#addCompareBtn,
+.add-portfolio-btn {
+  min-height: 40px;
+  min-width: 40px;
+}
+
+/* Search results: bigger touch rows on compact devices */
+.search-result-item {
+  min-height: 56px;
+}
+
+/* ================================================================
+   iPad mini portrait (744px - 820px width)
+   Two-column layout still works, just tightened
+   ================================================================ */
+@media (min-width: 744px) and (max-width: 1023px) {
+  .app { max-width: 100%; padding-left: max(28px, env(safe-area-inset-left)); padding-right: max(28px, env(safe-area-inset-right)); }
+  .main { grid-template-columns: 1fr; gap: 16px; }
+  .header-inner { flex-wrap: nowrap; }
+  .header-right { flex-wrap: wrap; gap: 8px; }
+  /* Make cards feel generous but not sparse on mini */
+  .card { padding: 22px; }
+  .price-grid { grid-template-columns: repeat(4, 1fr); }
+  .selected-card-header { gap: 20px; }
+  /* Side-by-side compare layout fits nicely on mini portrait */
+  .compare-grid { grid-template-columns: 1fr 1fr; gap: 14px; }
+}
+
+/* iPad mini landscape / iPad Pro 11" portrait (1024-1193px) */
+@media (min-width: 1024px) and (max-width: 1193px) {
+  .app { max-width: 1100px; }
+  .main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
+  /* Allow tables and pricing rows inside cards to shrink instead of pushing the column wider */
+  .main > * { min-width: 0; }
+}
+
+/* ================================================================
+   iPad Pro 12.9" (1194-1366px portrait, 1366+ landscape)
+   Use the extra space: wider app, larger type scale
+   ================================================================ */
+@media (min-width: 1194px) {
+  .app { max-width: 1280px; }
+  .main { gap: 28px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .main > * { min-width: 0; }
+}
+@media (min-width: 1366px) {
+  .app { max-width: 1400px; padding-left: 32px; padding-right: 32px; }
+  .main { gap: 32px; padding: 28px 0 48px; }
+  .predicted-price { font-size: 56px; }
+  .max-price { font-size: 44px; }
+  .live-main-price { font-size: 36px; }
+}
+
+/* Always allow grid children to shrink past content min-content */
+.main > .card { min-width: 0; }
+.card > * { min-width: 0; }
+/* Pricing tables: scroll horizontally inside their card if too wide */
+.live-price-card table,
+.live-price-card .price-row,
+.live-price-card .pricing-source-table {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ================================================================
+   iPhone size tiers
+   ================================================================ */
+
+/* iPhone SE / small phones (<= 400px width) */
+@media (max-width: 400px) {
+  .app { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
+  .card { padding: 14px; border-radius: 10px; }
+  .header { padding: 16px 0 12px; }
+  .logo h1 { font-size: 17px; }
+  .tagline { display: none; } /* buy back vertical space on tiny screens */
+  .predicted-price { font-size: 34px; }
+  .max-price { font-size: 30px; }
+  .live-main-price { font-size: 26px; }
+  .price-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .price-tile { padding: 10px 12px; }
+  .price-tile-label { font-size: 10px; }
+  /* Header right: let controls wrap cleanly */
+  .header-right { width: 100%; justify-content: space-between; gap: 6px; }
+  .credit-link { padding: 6px 8px; font-size: 11px; }
+  .fx-rate { padding: 4px 8px; }
+  /* Floating filter button should clear safe-area */
+  .filter-fab { bottom: calc(20px + env(safe-area-inset-bottom)); right: calc(20px + env(safe-area-inset-right)); }
+}
+
+/* iPhone 12/13/14/15 standard (390-430px) */
+@media (min-width: 401px) and (max-width: 500px) {
+  .app { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .card { padding: 18px; }
+  .filter-fab { bottom: calc(20px + env(safe-area-inset-bottom)); right: calc(20px + env(safe-area-inset-right)); }
+}
+
+/* All phone portrait: stack header + make search/result rows generous */
+@media (max-width: 600px) {
+  .header-inner { align-items: stretch; }
+  .header-right { justify-content: space-between; }
+  .main { grid-template-columns: 1fr; gap: 14px; padding: 16px 0 32px; }
+  /* Search dropdown: wider spacing for fat-finger taps */
+  .search-result-item { padding: 12px 14px; gap: 12px; }
+  .search-result-img { width: 44px; height: 62px; }
+  .search-result-name { font-size: 15px; }
+  .search-result-price .gbp { font-size: 16px; }
+  /* Prices: make dominant numbers huge and readable */
+  .predicted-price { font-size: 38px; line-height: 1.05; }
+  .max-price { font-size: 34px; line-height: 1.05; }
+  /* Portfolio + wishlist + compare panels fill the viewport nicely */
+  .portfolio-panel, .wishlist-panel, .compare-panel { padding: 16px; border-radius: 12px; }
+  .portfolio-header h2, .wishlist-header h2, .compare-header h2 { font-size: 16px; }
+  /* Compare goes stacked on phones, side-by-side on iPad+ */
+  .compare-grid { grid-template-columns: 1fr; gap: 12px; }
+  /* CTA buttons: full-width feel, easier thumb reach */
+  .cp-actions { flex-direction: column; }
+  .cp-actions .cp-btn { width: 100%; justify-content: center; min-height: 44px; }
+  /* Signal + counterpart flag: breathing room */
+  .signal-badge-wrap { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .counterpart-flag { padding: 14px 14px; }
+  /* Card images and links: compact, centered */
+  .card-images { gap: 8px; }
+  .card-images img { max-width: 140px; }
+  .card-links { flex-wrap: wrap; gap: 6px; }
+  /* Results screener table: scroll horizontally */
+  .screener-table, table { font-size: 13px; }
+  /* Inputs */
+  input, select, textarea { padding: 12px 14px; }
+  /* Search bar: hide the live card count chip on phones (it overlaps the placeholder).
+     Count is still visible in the search dropdown when the user types. */
+  .search-count { display: none; }
+  /* Trim the noisy long placeholder to fit small screens cleanly */
+  #searchInput { font-size: 16px; padding: 14px 10px; }
+}
+
+/* --- Landscape phones (iPhone 15 Pro Max horizontal, etc.) --- */
+@media (max-height: 500px) and (orientation: landscape) {
+  .header { padding: 10px 0 8px; }
+  .logo svg { width: 24px; height: 24px; }
+  .logo h1 { font-size: 16px; }
+  .tagline { font-size: 10px; }
+  /* Floating filter stays clear of home indicator on landscape */
+  .filter-fab {
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    right: calc(14px + env(safe-area-inset-right));
+    padding: 10px 14px;
+  }
+  .main { padding: 10px 0 24px; }
+}
+
+/* ================================================================
+   Large touch targets inside compact controls
+   ================================================================ */
+@media (hover: none) and (pointer: coarse) {
+  .search-result-item { padding-top: 12px; padding-bottom: 12px; }
+  /* Range buttons in history chart */
+  .range-btn { padding: 8px 14px; min-height: 40px; font-size: 13px; }
+  /* Side-panel close buttons */
+  .portfolio-close, .wishlist-close, .compare-close,
+  #closePortfolioBtn, #closeWishlistBtn, #closeCompareBtn {
+    width: 40px; height: 40px; padding: 0; font-size: 20px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  /* CSS-only way to make small icon buttons feel tappable */
+  #addWishlistBtn, #addCompareBtn, .add-portfolio-btn {
+    width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  /* Counterpart inline flag in search results: slightly bigger */
+  .search-result-cp-flag { font-size: 11px; padding: 2px 6px; }
+}
+
+/* ================================================================
+   Dynamic island/notch specific: push portfolio-style panels below
+   ================================================================ */
+.portfolio-panel, .wishlist-panel, .compare-panel {
+  /* Rounded top corners get clipped if flush against notch on iPad split view */
+  margin-top: max(16px, env(safe-area-inset-top, 16px));
+}
+
+/* Fix for iOS Safari: sticky/fixed elements can be pushed under keyboard */
+@supports (-webkit-touch-callout: none) {
+  .filter-fab { position: fixed; }
+}
+
+/* Smooth transitions when user rotates device */
+.app, .card, .main, .header { transition: padding 0.15s ease; }
