@@ -279,6 +279,7 @@ async function init() {
     if (cardData) {
       if (loadingText) loadingText.textContent = 'Building search index...';
       buildSearchIndex(cardData.cards);
+      buildCounterpartIndex(cardData.cards);
     }
 
     $('fxValue').textContent = `£${fxRate.toFixed(4)}`;
@@ -298,6 +299,8 @@ async function init() {
   setupSearch();
   setupInputs();
   setupPortfolio();
+  setupWishlist();
+  setupCompare();
   setupScreener();
   setupValuePicks();
   initPriceHistoryControls();
@@ -445,6 +448,385 @@ function buildSearchIndex(cards) {
   }));
 }
 
+// ================================================================
+// ---- EN ↔ JP COUNTERPART INDEX ----
+// Groups cards by a stable "pokemon + rarity tier" key so we can jump
+// from an English card straight to its Japanese equivalent (and back).
+// ================================================================
+let counterpartIndex = new Map(); // key -> { en:[], jp:[] }
+let counterpartByCard = new Map(); // cardId -> key
+
+function counterpartBaseName(n) {
+  return (n || '')
+    .replace(/\s*\(jp\)\s*$/i, '')
+    .replace(/\s+#\d+$/, '')
+    .replace(/\s*\[.*?\]\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function counterpartTier(c) {
+  const r = (c.r || '').toLowerCase();
+  const rc = (c.rc || '').toUpperCase();
+  // Special Illustration Rare / Special Art Rare
+  if (rc === 'SIR' || /special illustration rare|special art rare/i.test(r)) return 'SIR';
+  // Illustration Rare / Art Rare
+  if (rc === 'IR' || rc === 'AR' || /illustration rare$|^art rare/i.test(r)) return 'IR';
+  // Ultra Rare / Hyper Rare / Shiny Ultra Rare / Secret
+  if (rc === 'UR' || rc === 'SHR' || rc === 'SHUR' || /hyper rare|ultra rare|shiny ultra|rare secret|rare rainbow/i.test(r)) return 'UR';
+  // Double Rare (ex/V/VSTAR/VMAX main forms) — EN uses 'DR', JP uses 'RR'
+  if (rc === 'RR' || rc === 'DR' || /double rare$|rare holo (v|vstar|vmax|gx|ex)|rare ultra$/i.test(r)) return 'RR';
+  // Holo
+  if (rc === 'HR' || /rare holo$|rare shining/i.test(r)) return 'HR';
+  // Promo
+  if (rc === 'PR' || /promo/i.test(r)) return 'PR';
+  return 'STD';
+}
+
+function counterpartEra(sc) {
+  if (!sc) return '';
+  const u = String(sc).toUpperCase();
+  if (u.startsWith('SV')) return 'SV';
+  if (u.startsWith('SWSH')) return 'SWSH';
+  if (u.startsWith('S') && /^S\d|^SM/.test(u)) return u.startsWith('SM') ? 'SM' : 'SWSH';
+  if (u.startsWith('XY')) return 'XY';
+  if (u.startsWith('BW')) return 'BW';
+  if (u.startsWith('HGSS') || u.startsWith('HS')) return 'HGSS';
+  if (u.startsWith('DP') || u.startsWith('PL')) return 'DP';
+  if (u.startsWith('EX') || u.startsWith('PCG') || u.startsWith('E')) return 'EX';
+  if (u.startsWith('NEO') || u.startsWith('BASE') || u.startsWith('GYM')) return 'BASE';
+  return 'OTHER';
+}
+
+// Approximate EN<->JP set pairings based on the SV-era release pattern.
+// JP set codes typically map cleanly to EN sets but are released first.
+const SET_PAIRS = [
+  // Scarlet & Violet era
+  ['sv1', 'sv1'],            // Scarlet & Violet base
+  ['sv2', 'sv2'],            // Paldea Evolved
+  ['sv3', 'sv3'],            // Obsidian Flames
+  ['sv4', 'sv4'],            // Paradox Rift
+  ['sv5', 'sv5'],            // Temporal Forces
+  ['sv6', 'sv6'],            // Twilight Masquerade
+  ['sv7', 'sv7'],            // Stellar Crown
+  ['sv8', 'sv8'],            // Surging Sparks
+  // EN-only fusion sets are pairs of JP sets:
+  ['sv2', 'sv1v'],           // 151 / Pokemon 151 JP
+  ['sv2a', 'sv2a'],          // Pokemon 151
+  ['sv3pt5', 'sv2a'],        // 151 EN -> 151 JP
+  ['sv4pt5', 'sv4a'],        // Paldean Fates -> Shiny Treasure
+  ['sv4pt5', 'sv4'],         // Paldean Fates can also map to Future Flash
+  ['sv6pt5', 'sv6a'],        // Shrouded Fable -> Mask of Change
+  ['sv7pt5', 'sv7a'],        // Prismatic Evolutions -> Terastal Festival
+];
+function normSetCode(sc) {
+  if (!sc) return '';
+  return String(sc).toLowerCase().replace(/^jp-/, '');
+}
+function counterpartSetMatch(scA, scB) {
+  const a = normSetCode(scA), b = normSetCode(scB);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  // Check pairings (both directions)
+  for (const [en, jp] of SET_PAIRS) {
+    if ((a === en && b === jp) || (a === jp && b === en)) return true;
+  }
+  return false;
+}
+
+function buildCounterpartIndex(cards) {
+  counterpartIndex = new Map();
+  counterpartByCard = new Map();
+  for (const c of cards) {
+    // Skip plain commons/uncommons — only chase cards make EN/JP comparison meaningful.
+    // We index based on (base name + era) so JP cards (which often lack rarity data)
+    // still group with their EN siblings; tier matching is a ranking step in lookup.
+    const tier = counterpartTier(c);
+    if (c.lang !== 'JP' && (tier === 'STD' || tier === 'PR')) continue; // EN: only chase
+    // For JP, exclude obvious commons/uncommons by rarity code if present
+    if (c.lang === 'JP' && (c.rc === 'C' || c.rc === 'U')) continue;
+    const base = counterpartBaseName(c.n);
+    if (!base) continue;
+    const era = counterpartEra(c.sc);
+    if (!era || era === 'OTHER') continue;
+    const key = `${base}|${era}`;
+    let bucket = counterpartIndex.get(key);
+    if (!bucket) { bucket = { en: [], jp: [] }; counterpartIndex.set(key, bucket); }
+    if (c.lang === 'JP') bucket.jp.push(c); else bucket.en.push(c);
+    counterpartByCard.set(c.i, key);
+  }
+}
+
+// Score a counterpart for relevance to the source card.
+// Tier match scores highest; price proximity is the tiebreaker.
+function scoreCounterpartMatch(source, candidate) {
+  let score = 0;
+  const sTier = counterpartTier(source);
+  const cTier = counterpartTier(candidate);
+  if (sTier === cTier) score += 100;
+  // Tier compatibility groups (SIR <-> IR; UR <-> RR; etc.)
+  const compat = {
+    SIR: ['SIR', 'IR', 'UR'],
+    IR: ['IR', 'SIR', 'AR'],
+    UR: ['UR', 'SIR', 'HR', 'RR'],
+    HR: ['HR', 'UR', 'RR'],
+    RR: ['RR', 'UR', 'HR'],
+  };
+  if (sTier !== cTier && compat[sTier] && compat[sTier].includes(cTier)) score += 30;
+  // Same set code = strongest signal — use the EN/JP set-pair map.
+  if (counterpartSetMatch(source.sc, candidate.sc)) score += 60;
+  // Price proximity (in USD): nearer is better, but only meaningful when both > 0
+  const sP = source.p || 0, cP = candidate.p || 0;
+  if (sP > 0 && cP > 0) {
+    const ratio = Math.min(sP, cP) / Math.max(sP, cP);
+    score += ratio * 20; // 0..20 bonus
+  } else if (cP > 0) {
+    // candidate has a price at all
+    score += 5;
+  }
+  // Higher-priced candidates are more likely to be the matching chase printing
+  score += Math.min(10, Math.log10(1 + cP));
+  // JP chase variants typically have the highest card number in their set.
+  // When source is a high-tier EN chase (SIR/IR/UR), prefer JP cards with a
+  // large collector number (likely the SAR/SIR printing).
+  if (candidate.lang === 'JP' && (sTier === 'SIR' || sTier === 'IR' || sTier === 'UR')) {
+    const cn = parseInt(candidate.cn || 0, 10) || 0;
+    if (cn > 100) score += Math.min(15, (cn - 100) / 10);
+  }
+  // Symmetric boost when source is JP with high cn
+  if (source.lang === 'JP' && parseInt(source.cn || 0, 10) > 100) {
+    // Prefer higher-tier EN counterparts
+    if (cTier === 'SIR') score += 20;
+    else if (cTier === 'IR' || cTier === 'UR') score += 10;
+  }
+  return score;
+}
+
+// Returns { counterparts:[cards], primary, counterpartLang }
+function findCounterparts(card) {
+  if (!card) return null;
+  const key = counterpartByCard.get(card.i);
+  if (!key) return null;
+  const bucket = counterpartIndex.get(key);
+  if (!bucket) return null;
+  const isJP = card.lang === 'JP';
+  const counterparts = isJP ? bucket.en : bucket.jp;
+  if (!counterparts || counterparts.length === 0) return null;
+  // Rank counterparts by tier-match + price proximity
+  const ranked = [...counterparts].sort((a, b) => scoreCounterpartMatch(card, b) - scoreCounterpartMatch(card, a));
+  // Quality gate: only return a recommendation if the BEST counterpart has either
+  // a matching/compatible tier OR a non-trivial price. Otherwise we'd be matching
+  // an EN Special Illustration Rare to a JP base-set common, which would mislead.
+  const best = ranked[0];
+  const sTier = counterpartTier(card);
+  const cTier = counterpartTier(best);
+  const tierOk = sTier === cTier ||
+    (sTier === 'SIR' && (cTier === 'IR' || cTier === 'UR')) ||
+    (sTier === 'IR' && (cTier === 'SIR' || cTier === 'AR')) ||
+    (sTier === 'UR' && (cTier === 'SIR' || cTier === 'HR' || cTier === 'RR')) ||
+    (sTier === 'RR' && (cTier === 'UR' || cTier === 'HR'));
+  // For JP source cards with no rarity data, accept any EN counterpart whose
+  // tier is RR or higher (i.e., the user can still find a real chase printing).
+  const jpFallback = isJP && (cTier === 'SIR' || cTier === 'IR' || cTier === 'UR' || cTier === 'HR' || cTier === 'RR');
+  if (!tierOk && !jpFallback) return null;
+  return {
+    counterparts: ranked,
+    primary: best,
+    counterpartLang: isJP ? 'EN' : 'JP',
+  };
+}
+
+function hasCounterpart(card) {
+  const r = findCounterparts(card);
+  return !!(r && r.primary);
+}
+
+// Build a compact EN-vs-JP recommendation given a card and its counterpart
+function buildCounterpartRecommendation(card) {
+  const cp = findCounterparts(card);
+  if (!cp) return null;
+  const other = cp.primary;
+
+  // Pull live/current price in USD for both
+  const selfUSD = getCurrentPrice(card);
+  const otherUSD = getCurrentPrice(other);
+  const selfGBP = usdToGbp(selfUSD);
+  const otherGBP = usdToGbp(otherUSD);
+
+  // If we don't have at least one real price, offer the link but no verdict
+  if (selfUSD <= 0 || otherUSD <= 0) {
+    return {
+      other,
+      otherLang: cp.counterpartLang,
+      selfGBP, otherGBP,
+      verdict: 'link-only',
+      reason: `We found the ${cp.counterpartLang === 'JP' ? 'Japanese' : 'English'} counterpart but don't have a reliable price for one side yet. Open it to see the live market.`,
+    };
+  }
+
+  // Both prices available — give a real recommendation
+  const cheaper = selfUSD < otherUSD ? card : other;
+  const cheaperLang = cheaper.lang === 'JP' ? 'JP' : 'EN';
+  const pricier = cheaper === card ? other : card;
+  const cheaperUSD = Math.min(selfUSD, otherUSD);
+  const pricierUSD = Math.max(selfUSD, otherUSD);
+  // Savings as a % of the MORE expensive version (e.g., £207 vs £1 → 99% savings, not 15000%)
+  const savingsPct = pricierUSD > 0 ? Math.min(99, ((pricierUSD - cheaperUSD) / pricierUSD) * 100) : 0;
+  const savingsGBP = Math.abs(selfGBP - otherGBP);
+
+  // Quality tiebreakers: PSA 10 ceiling & gem rate
+  const selfPSA10 = card.p10 || 0, otherPSA10 = other.p10 || 0;
+  const psaSame = !selfPSA10 || !otherPSA10;
+
+  let verdict, reason;
+  const cheaperGBPv = usdToGbp(cheaperUSD);
+  const pricierGBPv = usdToGbp(pricierUSD);
+  if (savingsPct < 8) {
+    verdict = 'tie';
+    reason = `Prices are within ${savingsPct.toFixed(0)}% of each other (£${selfGBP.toFixed(2)} vs £${otherGBP.toFixed(2)}). Either printing is fine — pick the one you prefer visually.`;
+  } else if (savingsPct > 50) {
+    verdict = cheaperLang === 'JP' ? 'buy-jp' : 'buy-en';
+    reason = `The ${cheaperLang === 'JP' ? 'Japanese' : 'English'} version is dramatically cheaper at <strong>£${cheaperGBPv.toFixed(2)}</strong> vs <strong>£${pricierGBPv.toFixed(2)}</strong> — ${savingsPct.toFixed(0)}% less, saving ~£${savingsGBP.toFixed(2)}. Unless you specifically want the ${cheaperLang === 'JP' ? 'English' : 'Japanese'} art or the higher PSA 10 grading ceiling, grab the ${cheaperLang === 'JP' ? 'JP' : 'EN'} printing.`;
+  } else {
+    verdict = cheaperLang === 'JP' ? 'buy-jp' : 'buy-en';
+    const ceilingNote = psaSame ? '' : ` The English PSA 10 ceiling is typically higher, so if you plan to grade, the EN version may still be worth the premium.`;
+    reason = `The ${cheaperLang === 'JP' ? 'Japanese' : 'English'} version is ${savingsPct.toFixed(0)}% cheaper (£${cheaperGBPv.toFixed(2)} vs £${pricierGBPv.toFixed(2)}).${cheaperLang === 'JP' ? ' For raw collecting or sealing in a binder, JP is the value play.' : ' Rare case where the English printing undercuts the Japanese — worth a closer look.'}${cheaperLang === 'JP' && !psaSame ? ceilingNote : ''}`;
+  }
+
+  return {
+    other, otherLang: cp.counterpartLang,
+    selfUSD, otherUSD, selfGBP, otherGBP,
+    cheaper, cheaperLang, pricier, savingsPct, savingsGBP,
+    verdict, reason,
+    totalCounterparts: cp.counterparts.length,
+  };
+}
+function cheaperGBP(a, b, cheaper) { return usdToGbp(cheaper === a ? getCurrentPrice(a) : getCurrentPrice(b)); }
+function pricierGBP(a, b, pricier) { return usdToGbp(pricier === a ? getCurrentPrice(a) : getCurrentPrice(b)); }
+
+// Render the EN ↔ JP recommendation panel for the selected card.
+function renderCounterpartFlag(card) {
+  const wrap = document.getElementById('counterpartFlag');
+  if (!wrap) return;
+  if (!card) { wrap.style.display = 'none'; return; }
+
+  const rec = buildCounterpartRecommendation(card);
+  if (!rec) { wrap.style.display = 'none'; return; }
+
+  wrap.style.display = 'flex';
+  wrap.classList.remove('verdict-buy-jp', 'verdict-buy-en', 'verdict-tie', 'verdict-link-only');
+  wrap.classList.add('verdict-' + rec.verdict);
+
+  const badge = document.getElementById('cpBadge');
+  const headline = document.getElementById('cpHeadline');
+  const prices = document.getElementById('cpPrices');
+  const reason = document.getElementById('cpReason');
+  const openBtn = document.getElementById('cpOpenBtn');
+  const compareBtn = document.getElementById('cpCompareBtn');
+
+  // Headline + badge text per verdict
+  const isJPSelf = card.lang === 'JP';
+  if (rec.verdict === 'buy-jp') {
+    badge.textContent = 'Get the JP';
+    headline.innerHTML = `<strong>Japanese version is the value pick</strong>`;
+  } else if (rec.verdict === 'buy-en') {
+    badge.textContent = 'Get the EN';
+    headline.innerHTML = `<strong>English version is cheaper here</strong>`;
+  } else if (rec.verdict === 'tie') {
+    badge.textContent = 'Toss-up';
+    headline.innerHTML = `<strong>Either version works</strong>`;
+  } else {
+    badge.textContent = 'Counterpart';
+    headline.innerHTML = `${isJPSelf ? 'English' : 'Japanese'} counterpart found`;
+  }
+
+  // Price cells — self on left, counterpart on right
+  const selfLang = isJPSelf ? 'JP' : 'EN';
+  const otherLang = rec.otherLang;
+  const selfFlag = isJPSelf ? '🇯🇵' : '🇬🇧';
+  const otherFlag = otherLang === 'JP' ? '🇯🇵' : '🇬🇧';
+  const selfPriceTxt = rec.selfGBP > 0 ? `£${rec.selfGBP.toFixed(2)}` : '—';
+  const otherPriceTxt = rec.otherGBP > 0 ? `£${rec.otherGBP.toFixed(2)}` : '—';
+  const selfCheaper = rec.cheaper === card;
+  const otherCheaper = !selfCheaper && rec.verdict !== 'tie' && rec.verdict !== 'link-only';
+  const selfCellCls = (rec.verdict !== 'tie' && rec.verdict !== 'link-only') ? (selfCheaper ? 'is-cheaper' : 'is-pricier') : '';
+  const otherCellCls = (rec.verdict !== 'tie' && rec.verdict !== 'link-only') ? (otherCheaper ? 'is-cheaper' : 'is-pricier') : '';
+
+  // Tier labels for transparency — user should see if matching SIR-to-DR
+  const tierLabel = (c) => {
+    const t = counterpartTier(c);
+    const map = { SIR: 'Special Illustration', IR: 'Illustration Rare', UR: 'Ultra Rare', RR: 'Double Rare', HR: 'Hyper Rare', AR: 'Art Rare', PR: 'Promo' };
+    return c.r || map[t] || '';
+  };
+  const selfTier = tierLabel(card);
+  const otherTier = tierLabel(rec.other);
+  const tierMismatch = counterpartTier(card) !== counterpartTier(rec.other) && selfTier && otherTier;
+
+  prices.innerHTML = `
+    <div class="cp-price-cell ${selfCellCls}">
+      <span class="cp-price-lang">${selfFlag} ${selfLang} · This card</span>
+      <span class="cp-price-amt">${selfPriceTxt}</span>
+      <span class="cp-price-name">${esc(card.s || '')}${card.cn ? ' #' + card.cn : ''}${selfTier ? ' · ' + esc(selfTier) : ''}</span>
+    </div>
+    <div class="cp-price-arrow">↔</div>
+    <div class="cp-price-cell ${otherCellCls}">
+      <span class="cp-price-lang">${otherFlag} ${otherLang} · Counterpart</span>
+      <span class="cp-price-amt">${otherPriceTxt}</span>
+      <span class="cp-price-name">${esc(rec.other.s || '')}${rec.other.cn ? ' #' + rec.other.cn : ''}${otherTier ? ' · ' + esc(otherTier) : ''}</span>
+    </div>
+  `;
+
+  // If tiers don't match, prepend a transparency note so user isn't misled
+  let reasonHtml = rec.reason;
+  if (tierMismatch && rec.verdict !== 'link-only') {
+    reasonHtml = `<em style="color:var(--accent)">Note:</em> the closest match in our database is a different rarity tier (${esc(selfTier)} ↔ ${esc(otherTier)}) — the artwork won't be identical. ${reasonHtml}`;
+  }
+  reason.innerHTML = reasonHtml;
+
+  // Wire actions
+  openBtn.textContent = `Open ${otherLang} version →`;
+  openBtn.onclick = () => selectCard(rec.other.i);
+  compareBtn.onclick = () => {
+    // Pin both into the compare slots and open the panel
+    compareSlots[0] = snapshotCardForCompare(card);
+    compareSlots[1] = snapshotCardForCompare(rec.other);
+    saveCompare();
+    renderCompare();
+    updateCompareButton();
+    document.getElementById('comparePanel').style.display = 'block';
+    document.getElementById('comparePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // Background: warm the counterpart's live price so the next paint has live data
+  warmCounterpartLivePrice(rec.other);
+}
+
+// Fetch counterpart's live price into cache (no UI change), then re-render the flag.
+let _counterpartWarmId = null;
+async function warmCounterpartLivePrice(other) {
+  if (!other || !other.i) return;
+  if (_counterpartWarmId === other.i) return; // already warming
+  if (getCachedPrice(other.i)) return; // already cached
+  _counterpartWarmId = other.i;
+  try {
+    if (typeof fetchFreshPriceData === 'function') {
+      const data = await fetchFreshPriceData(other);
+      if (data) {
+        if (typeof setCachedPrice === 'function') setCachedPrice(other.i, data);
+        // Re-render flag if still on the same card
+        if (selectedCard && counterpartByCard.get(selectedCard.i) === counterpartByCard.get(other.i)) {
+          renderCounterpartFlag(selectedCard);
+        }
+      }
+    }
+  } catch (e) {
+    // Silent: counterpart price warm-up is best-effort
+  } finally {
+    _counterpartWarmId = null;
+  }
+}
+
 function setupSearch() {
   const input = $('searchInput');
   const clear = $('searchClear');
@@ -517,6 +899,7 @@ function doSearch(query) {
     const isJP = c.lang === 'JP';
     const langBadge = isJP ? '<span class="lang-badge jp">JP</span>' : '';
     const jpNameLabel = isJP && c.nj ? `<span class="jp-name">${esc(c.nj)}</span>` : '';
+    const cpFlag = hasCounterpart(c) ? `<span class="search-result-cp-flag" title="${isJP ? 'English' : 'Japanese'} counterpart available">⇄ ${isJP ? 'EN' : 'JP'}</span>` : '';
     // Show cached live price if available, else static
     const cached = getCachedPrice(c.i);
     const displayPrice = cached ? (cached.market || cached.mid || c.p) : c.p;
@@ -529,7 +912,7 @@ function doSearch(query) {
     <div class="search-result-item${isJP ? ' jp-card' : ''}" data-id="${c.i}">
       ${`<img class="search-result-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="this.style.display='none'">`}
       <div class="search-result-info">
-        <div class="search-result-name">${langBadge}${esc(c.n)}${jpNameLabel}</div>
+        <div class="search-result-name">${langBadge}${esc(c.n)}${cpFlag}${jpNameLabel}</div>
         <div class="search-result-meta">
           <span>${esc(c.s)}</span>
           ${numLabel ? `<span class="meta-num">${numLabel}</span>` : ''}
@@ -1112,6 +1495,9 @@ function recalcWithLivePrice(card) {
   if (livePrice.pcPsa10 > 0) {
     renderGradingROI(null);
   }
+
+  // Refresh EN ↔ JP recommendation with live price data
+  renderCounterpartFlag(card);
 }
 
 // ================================================================
@@ -1232,6 +1618,9 @@ function selectCard(id) {
   updateRipOrBuy(card, pullCost);
   updateSignal(card, pullCost, des.total);
   updatePortfolioButton();
+  updateWishlistButton();
+  updateCompareButton();
+  renderCounterpartFlag(card);
 
   // Reset market dynamics section
   $('marketSection').style.display = 'none';
@@ -2405,6 +2794,437 @@ function renderPortfolio() {
   });
 }
 
+// =============================================================
+// Wishlist (cards you want to buy at a target price)
+// =============================================================
+let wishlist = JSON.parse(localStorage.getItem('pkm-wishlist') || '[]');
+
+function setupWishlist() {
+  $('wishlistToggle').addEventListener('click', () => toggleSidePanel('wishlistPanel'));
+  $('wishlistClose').addEventListener('click', () => { $('wishlistPanel').style.display = 'none'; });
+  $('addWishlistBtn').addEventListener('click', toggleCardInWishlist);
+  renderWishlist();
+}
+
+function toggleSidePanel(id) {
+  // Close the others when one opens
+  ['portfolioPanel', 'wishlistPanel', 'comparePanel'].forEach(p => {
+    const el = document.getElementById(p);
+    if (!el) return;
+    if (p === id) {
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    } else {
+      el.style.display = 'none';
+    }
+  });
+}
+
+function toggleCardInWishlist() {
+  if (!selectedCard) return;
+  const idx = wishlist.findIndex(w => w.id === selectedCard.i);
+  if (idx >= 0) {
+    wishlist.splice(idx, 1);
+  } else {
+    const currentUSD = getCurrentPrice(selectedCard);
+    const currentGBP = usdToGbp(currentUSD);
+    // Default target: 15% below current price
+    const targetGBP = +(currentGBP * 0.85).toFixed(2);
+    wishlist.push({
+      id: selectedCard.i,
+      name: selectedCard.n,
+      set: selectedCard.s,
+      lang: selectedCard.lang || 'EN',
+      img: getCardImg(selectedCard),
+      addedDate: new Date().toISOString(),
+      addedPriceGBP: currentGBP,
+      targetGBP: targetGBP,
+    });
+  }
+  saveWishlist();
+  renderWishlist();
+  updateWishlistButton();
+}
+
+function updateWishlistButton() {
+  const btn = $('addWishlistBtn');
+  if (!btn || !selectedCard) return;
+  const inList = wishlist.some(w => w.id === selectedCard.i);
+  btn.classList.toggle('in-wishlist', inList);
+  btn.title = inList ? 'Remove from wishlist' : 'Add to wishlist';
+}
+
+function saveWishlist() {
+  localStorage.setItem('pkm-wishlist', JSON.stringify(wishlist));
+}
+
+function renderWishlist() {
+  const list = $('wishlistList');
+  const countEl = $('wishlistCount');
+  const totalEl = $('wishlistTotal');
+  if (!list) return;
+
+  if (wishlist.length === 0) {
+    list.innerHTML = '<div class="portfolio-empty">No wishlisted cards yet. Open a card and tap the heart icon to add it. Set a target price to get a BUY alert when the market drops below it.</div>';
+    countEl.style.display = 'none';
+    totalEl.textContent = '0 cards · £0';
+    return;
+  }
+
+  countEl.textContent = wishlist.length;
+  countEl.style.display = 'flex';
+
+  let totalCurrent = 0;
+  let alertCount = 0;
+  const items = wishlist.map(w => {
+    const currentCard = cardData ? cardData.cards.find(c => c.i === w.id) : null;
+    const cached = getCachedPrice(w.id);
+    const currentUSD = cached
+      ? (cached.pcUngraded || cached.market || cached.mid || (currentCard ? currentCard.p : 0))
+      : (currentCard ? currentCard.p : 0);
+    const currentGBP = usdToGbp(currentUSD);
+    totalCurrent += currentGBP;
+    const target = w.targetGBP || 0;
+    let alertClass = 'alert-far', alertLabel = 'Watching';
+    let rowClass = '';
+    if (target > 0) {
+      if (currentGBP <= target) {
+        alertClass = 'alert-buy';
+        alertLabel = 'BUY NOW';
+        alertCount++;
+        rowClass = 'alert-buy';
+      } else if (currentGBP <= target * 1.10) {
+        alertClass = 'alert-watch';
+        alertLabel = 'Close';
+      }
+    }
+    return `
+      <div class="wishlist-item ${rowClass}" data-id="${w.id}">
+        ${w.img ? `<img class="wishlist-item-img" src="${w.img}" alt="" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
+        <div class="wishlist-item-info">
+          <div class="wishlist-item-name">${esc(w.name)}</div>
+          <div class="wishlist-item-meta">
+            <span>${esc(w.set)}</span>
+            <span class="lang-pill">${w.lang === 'JP' ? '🇯🇵 JP' : '🇬🇧 EN'}</span>
+            <span class="wishlist-alert ${alertClass}">${alertLabel}</span>
+          </div>
+        </div>
+        <div class="wishlist-target">
+          <div class="wishlist-current">£${currentGBP.toFixed(2)}</div>
+          <input class="wishlist-target-input" type="number" step="0.01" min="0" value="${target.toFixed(2)}" data-id="${w.id}" title="Target price (GBP)">
+          <div class="wishlist-target-label">Target £</div>
+        </div>
+        <button class="wishlist-remove" data-id="${w.id}" title="Remove">✕</button>
+      </div>
+    `;
+  });
+  list.innerHTML = items.join('');
+  totalEl.textContent = `${wishlist.length} cards · £${totalCurrent.toFixed(2)}` + (alertCount > 0 ? ` · ${alertCount} BUY` : '');
+
+  list.querySelectorAll('.wishlist-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.wishlist-remove') || e.target.closest('.wishlist-target-input')) return;
+      selectCard(el.dataset.id);
+    });
+  });
+  list.querySelectorAll('.wishlist-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      wishlist = wishlist.filter(w => w.id !== btn.dataset.id);
+      saveWishlist();
+      renderWishlist();
+      updateWishlistButton();
+    });
+  });
+  list.querySelectorAll('.wishlist-target-input').forEach(input => {
+    input.addEventListener('click', e => e.stopPropagation());
+    input.addEventListener('change', e => {
+      const id = e.target.dataset.id;
+      const w = wishlist.find(x => x.id === id);
+      if (w) {
+        w.targetGBP = +parseFloat(e.target.value || '0').toFixed(2);
+        saveWishlist();
+        renderWishlist();
+      }
+    });
+  });
+}
+
+// =============================================================
+// Compare (English vs Japanese, or any two cards)
+// =============================================================
+let compareSlots = JSON.parse(localStorage.getItem('pkm-compare') || '[null, null]');
+if (!Array.isArray(compareSlots) || compareSlots.length !== 2) compareSlots = [null, null];
+
+function setupCompare() {
+  $('compareToggle').addEventListener('click', () => toggleSidePanel('comparePanel'));
+  $('compareClose').addEventListener('click', () => { $('comparePanel').style.display = 'none'; });
+  $('addCompareBtn').addEventListener('click', toggleCardInCompare);
+  renderCompare();
+}
+
+function toggleCardInCompare() {
+  if (!selectedCard) return;
+  const id = selectedCard.i;
+  // If already pinned, remove it
+  const slot = compareSlots.findIndex(s => s && s.id === id);
+  if (slot >= 0) {
+    compareSlots[slot] = null;
+  } else {
+    // Fill first empty slot, otherwise replace slot B
+    const empty = compareSlots.findIndex(s => !s);
+    const targetSlot = empty >= 0 ? empty : 1;
+    compareSlots[targetSlot] = snapshotCardForCompare(selectedCard);
+  }
+  saveCompare();
+  renderCompare();
+  updateCompareButton();
+  // Auto-open when 2 cards are pinned
+  if (compareSlots[0] && compareSlots[1]) {
+    $('comparePanel').style.display = 'block';
+  }
+}
+
+function snapshotCardForCompare(card) {
+  const currentUSD = getCurrentPrice(card);
+  const cached = getCachedPrice(card.i);
+  // Pull cost
+  let pullCost = 7.65;
+  let packsNeeded = 0;
+  if (setsData && setsData[card.sc]) {
+    const set = setsData[card.sc];
+    const rarity = set.rarities?.[card.rc];
+    if (rarity && rarity.pullRate > 0) {
+      const packsPerHit = Math.round(1 / rarity.pullRate);
+      packsNeeded = packsPerHit * (rarity.count || 1);
+      pullCost = packsNeeded / 100;
+    }
+  }
+  const des = autoFillDesirability(card, pullCost);
+  const signal = computeSignal(card, pullCost, des.total);
+  return {
+    id: card.i,
+    name: card.n,
+    set: card.s,
+    sc: card.sc,
+    lang: card.lang || 'EN',
+    rc: card.rc,
+    cn: card.cn,
+    img: getCardImg(card),
+    priceUSD: currentUSD,
+    psa10: cached?.pcPsa10 || card.p10 || 0,
+    gemPct: cached?.crGemRate || card.g || 0,
+    pullCost: pullCost,
+    packsNeeded: packsNeeded,
+    desirability: des.total,
+    charScore: des.char,
+    artScore: des.art,
+    appealScore: des.appeal,
+    signal: signal?.signal || '',
+  };
+}
+
+function updateCompareButton() {
+  const btn = $('addCompareBtn');
+  const countEl = $('compareCount');
+  const filled = compareSlots.filter(Boolean).length;
+  if (countEl) {
+    countEl.textContent = filled;
+    countEl.style.display = filled > 0 ? 'flex' : 'none';
+  }
+  if (!btn || !selectedCard) return;
+  const slot = compareSlots.findIndex(s => s && s.id === selectedCard.i);
+  btn.classList.toggle('in-compare', slot >= 0);
+  if (slot >= 0) {
+    btn.dataset.slot = slot === 0 ? 'A' : 'B';
+    btn.title = `Pinned as Slot ${slot === 0 ? 'A' : 'B'} — tap to unpin`;
+  } else {
+    btn.removeAttribute('data-slot');
+    const empty = compareSlots.findIndex(s => !s);
+    btn.title = empty >= 0
+      ? `Pin as Slot ${empty === 0 ? 'A' : 'B'}`
+      : 'Replace Slot B';
+  }
+}
+
+function saveCompare() {
+  localStorage.setItem('pkm-compare', JSON.stringify(compareSlots));
+}
+
+function renderCompare() {
+  const body = $('compareBody');
+  if (!body) return;
+  const filled = compareSlots.filter(Boolean).length;
+  if (filled === 0) {
+    body.innerHTML = '<div class="compare-empty">Open a card and tap the compare icon to add it as Slot A. Repeat for Slot B — you\'ll see a side-by-side breakdown with a winner verdict.</div>';
+    return;
+  }
+
+  // Compute winner per metric (only when both slots filled)
+  const both = filled === 2;
+  const a = compareSlots[0], b = compareSlots[1];
+
+  // Compute verdict
+  let verdict = null;
+  if (both) verdict = computeCompareVerdict(a, b);
+
+  body.innerHTML = `
+    <div class="compare-grid">
+      ${renderCompareSlot(0, a, b, verdict)}
+      ${renderCompareSlot(1, b, a, verdict)}
+    </div>
+    ${verdict ? `
+      <div class="compare-verdict">
+        <span class="compare-verdict-badge ${verdict.badgeClass}">${verdict.badge}</span>
+        <div>${verdict.summary}</div>
+      </div>
+    ` : ''}
+  `;
+
+  body.querySelectorAll('.compare-slot[data-id]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.compare-slot-remove')) return;
+      selectCard(el.dataset.id);
+    });
+  });
+  body.querySelectorAll('.compare-slot-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      compareSlots[parseInt(btn.dataset.slot)] = null;
+      saveCompare();
+      renderCompare();
+      updateCompareButton();
+    });
+  });
+}
+
+function renderCompareSlot(idx, slot, other, verdict) {
+  const slotLabel = idx === 0 ? 'A' : 'B';
+  if (!slot) {
+    return `<div class="compare-slot empty"><div class="compare-slot-label">Slot ${slotLabel}</div><div>Open a card and tap the compare icon to fill this slot.</div></div>`;
+  }
+
+  const isWinner = verdict && verdict.winner === slotLabel.toLowerCase();
+  const priceGBP = usdToGbp(slot.priceUSD);
+
+  // Compute stat winners (lower price/pull-cost wins; higher gem% wins; higher desirability wins)
+  function statRowCls(metric, lower) {
+    if (!other) return '';
+    const v1 = slot[metric] || 0, v2 = other[metric] || 0;
+    if (v1 === v2) return '';
+    if (lower) return v1 < v2 ? 'winner' : '';
+    return v1 > v2 ? 'winner' : '';
+  }
+  function statRowClsCustom(predicate) {
+    if (!other) return '';
+    return predicate(slot, other) ? 'winner' : '';
+  }
+
+  return `
+    <div class="compare-slot ${isWinner ? 'is-winner' : ''}" data-id="${slot.id}">
+      <button class="compare-slot-remove" data-slot="${idx}" title="Remove">✕</button>
+      <div class="compare-slot-label">Slot ${slotLabel} · ${slot.lang === 'JP' ? '🇯🇵 Japanese' : '🇬🇧 English'}</div>
+      <div class="compare-card-row">
+        ${slot.img ? `<img class="compare-card-img" src="${slot.img}" alt="" onerror="this.style.display='none'">` : '<div class="compare-card-img"></div>'}
+        <div class="compare-card-info">
+          <div class="compare-card-name">${esc(slot.name)}</div>
+          <div class="compare-card-meta">${esc(slot.set)}${slot.cn ? ` · #${slot.cn}` : ''}${slot.rc ? ` · ${slot.rc}` : ''}</div>
+        </div>
+      </div>
+      <div class="compare-stats">
+        <div class="compare-stat-row ${statRowClsCustom((s, o) => s.priceUSD > 0 && (o.priceUSD === 0 || s.priceUSD < o.priceUSD))}">
+          <span class="compare-stat-label">Market price</span>
+          <span class="compare-stat-value">£${priceGBP.toFixed(2)}</span>
+        </div>
+        <div class="compare-stat-row ${statRowClsCustom((s, o) => s.psa10 > 0 && (o.psa10 === 0 || s.psa10 > o.psa10))}">
+          <span class="compare-stat-label">PSA 10 ceiling</span>
+          <span class="compare-stat-value">${slot.psa10 > 0 ? `£${usdToGbp(slot.psa10).toFixed(2)}` : '—'}</span>
+        </div>
+        <div class="compare-stat-row ${statRowClsCustom((s, o) => s.gemPct > 0 && (o.gemPct === 0 || s.gemPct > o.gemPct))}">
+          <span class="compare-stat-label">Gem rate</span>
+          <span class="compare-stat-value">${slot.gemPct > 0 ? `${(slot.gemPct * 100).toFixed(1)}%` : '—'}</span>
+        </div>
+        <div class="compare-stat-row ${statRowClsCustom((s, o) => s.psa10 > s.priceUSD && o.psa10 > 0 && (s.psa10 / Math.max(s.priceUSD, 1)) > (o.psa10 / Math.max(o.priceUSD, 1)))}">
+          <span class="compare-stat-label">PSA 10 multiplier</span>
+          <span class="compare-stat-value">${slot.priceUSD > 0 && slot.psa10 > 0 ? `${(slot.psa10 / slot.priceUSD).toFixed(2)}×` : '—'}</span>
+        </div>
+        <div class="compare-stat-row ${statRowClsCustom((s, o) => s.packsNeeded > 0 && (o.packsNeeded === 0 || s.packsNeeded < o.packsNeeded))}">
+          <span class="compare-stat-label">Packs to pull</span>
+          <span class="compare-stat-value">${slot.packsNeeded > 0 ? slot.packsNeeded.toLocaleString() : '—'}</span>
+        </div>
+        <div class="compare-stat-row ${statRowClsCustom((s, o) => s.desirability > o.desirability)}">
+          <span class="compare-stat-label">Desirability</span>
+          <span class="compare-stat-value">${slot.desirability ? slot.desirability.toFixed(1) : '—'}</span>
+        </div>
+        ${slot.signal ? `
+        <div class="compare-stat-row">
+          <span class="compare-stat-label">Signal</span>
+          <span class="compare-stat-value">${slot.signal}</span>
+        </div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function computeCompareVerdict(a, b) {
+  // Score model: cheaper price + higher gem rate + higher PSA10 multiplier + higher desirability = better value
+  const priceA = a.priceUSD || 0, priceB = b.priceUSD || 0;
+  const multA = priceA > 0 && a.psa10 > 0 ? a.psa10 / priceA : 0;
+  const multB = priceB > 0 && b.psa10 > 0 ? b.psa10 / priceB : 0;
+  const gemA = a.gemPct || 0, gemB = b.gemPct || 0;
+  const desA = a.desirability || 0, desB = b.desirability || 0;
+
+  let scoreA = 0, scoreB = 0;
+  // Cheaper market price = +1
+  if (priceA > 0 && priceB > 0) { if (priceA < priceB) scoreA += 1; else scoreB += 1; }
+  // Higher PSA 10 multiplier = +2 (most important for value)
+  if (multA > 0 || multB > 0) { if (multA > multB) scoreA += 2; else scoreB += 2; }
+  // Higher gem rate = +1
+  if (gemA > 0 || gemB > 0) { if (gemA > gemB) scoreA += 1; else scoreB += 1; }
+  // Higher desirability = +1
+  if (desA > desB) scoreA += 1; else scoreB += 1;
+  // Fewer packs to pull = +1
+  if (a.packsNeeded > 0 && b.packsNeeded > 0) { if (a.packsNeeded < b.packsNeeded) scoreA += 1; else scoreB += 1; }
+
+  let winner = 'tie', badge = 'TIE', badgeClass = 'cv-tie', summary = '';
+  if (scoreA === scoreB) {
+    summary = `Both cards score evenly on value, gem rate, and desirability. Pick the one you'd rather own — collector preference matters more than the spreadsheet here.`;
+  } else {
+    winner = scoreA > scoreB ? 'a' : 'b';
+    const W = winner === 'a' ? a : b, L = winner === 'a' ? b : a;
+    badge = winner === 'a' ? 'SLOT A WINS' : 'SLOT B WINS';
+    badgeClass = (W.lang === 'EN') ? 'cv-en' : 'cv-jp';
+
+    // Build summary based on what made it win
+    const reasons = [];
+    const wPrice = usdToGbp(W.priceUSD), lPrice = usdToGbp(L.priceUSD);
+    if (W.priceUSD > 0 && L.priceUSD > 0 && W.priceUSD < L.priceUSD) {
+      const pct = ((L.priceUSD - W.priceUSD) / L.priceUSD * 100).toFixed(0);
+      reasons.push(`<strong>${pct}% cheaper</strong> at £${wPrice.toFixed(2)} vs £${lPrice.toFixed(2)}`);
+    }
+    const wMult = W.priceUSD > 0 && W.psa10 > 0 ? W.psa10 / W.priceUSD : 0;
+    const lMult = L.priceUSD > 0 && L.psa10 > 0 ? L.psa10 / L.priceUSD : 0;
+    if (wMult > 0 && lMult > 0 && wMult > lMult) {
+      reasons.push(`stronger PSA 10 ceiling (${wMult.toFixed(2)}× vs ${lMult.toFixed(2)}×)`);
+    }
+    if (W.gemPct > L.gemPct && W.gemPct > 0) {
+      reasons.push(`higher gem rate (${(W.gemPct * 100).toFixed(1)}% vs ${(L.gemPct * 100).toFixed(1)}%)`);
+    }
+    if (W.packsNeeded > 0 && L.packsNeeded > 0 && W.packsNeeded < L.packsNeeded) {
+      reasons.push(`fewer packs to pull (${W.packsNeeded.toLocaleString()} vs ${L.packsNeeded.toLocaleString()})`);
+    }
+    const langName = W.lang === 'JP' ? 'Japanese' : 'English';
+    const otherLang = L.lang === 'JP' ? 'Japanese' : 'English';
+    const head = (a.lang !== b.lang)
+      ? `The <strong>${langName}</strong> version edges it.`
+      : `<strong>${esc(W.name)}</strong> takes it.`;
+    summary = `${head} ${reasons.length > 0 ? 'Wins on ' + reasons.slice(0, 3).join(', ') + '.' : 'Marginal advantage on the combined value model.'}`;
+    if (a.lang !== b.lang) {
+      summary += ` If you collect for art and prefer ${otherLang} aesthetic, the gap may be worth paying for — but on pure numbers, ${langName} wins.`;
+    }
+  }
+  return { winner, badge, badgeClass, summary };
+}
+
 // ---- Events ----
 function setupInputs() {
   ['packRate','cardsInTier','characterPremium','artworkHype','universalAppeal','ebayPrice']
@@ -2842,7 +3662,7 @@ function renderValuePicks(filter) {
         <div class="vp-rank ${rankClass}">${i + 1}</div>
         <img class="vp-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="this.style.display='none'">
         <div class="vp-info">
-          <div class="vp-name">${esc(c.n)}</div>
+          <div class="vp-name">${esc(c.n)}${hasCounterpart(c) ? `<span class="search-result-cp-flag" title="${isJP ? 'English' : 'Japanese'} counterpart available">⇄ ${isJP ? 'EN' : 'JP'}</span>` : ''}</div>
           <div class="vp-meta">${langBadge}${esc(c.s)} · ${p.rarity}</div>
         </div>
         <div class="vp-values">
