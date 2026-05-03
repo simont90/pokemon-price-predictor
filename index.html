@@ -136,6 +136,28 @@
       </div>
     </section>
 
+    <!-- Manual Add Card modal — for cards not in the indexed database.
+         Looks up TCG Collector and lets the user inject a synthetic card. -->
+    <div class="ql-overlay" id="maOverlay" style="display:none" aria-hidden="true"></div>
+    <section class="ql-modal" id="maModal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="maTitle">
+      <div class="ql-header">
+        <div>
+          <h2 id="maTitle">Add card manually</h2>
+          <p class="ql-sub">Can't find a card by number? Search <em>TCG Collector</em>, pick the right card, and we'll add it to your local database with live prices.</p>
+        </div>
+        <button class="ql-close" id="maClose" aria-label="Close">✕</button>
+      </div>
+      <div class="ql-body">
+        <div class="ql-input-row">
+          <input type="text" id="maInput" placeholder="Card number, name, or both — e.g. 125 obsidian flames" autocomplete="off" spellcheck="false">
+          <label class="ql-jp-toggle"><input type="checkbox" id="maJP"> Japanese</label>
+          <button class="ql-search-btn" id="maSearchBtn">Search</button>
+        </div>
+        <div class="ql-status" id="maStatus">Tip: include the set name for the best results (e.g. <em>Charizard 125 Obsidian Flames</em>).</div>
+        <div class="ql-results" id="maResults"></div>
+      </div>
+    </section>
+
     <!-- PriceCharting manual-override modal — lets the user pick the correct
          product when the auto-match returned the wrong card. -->
     <div class="pcov-overlay" id="pcovOverlay" style="display:none" aria-hidden="true"></div>

@@ -306,7 +306,21 @@ async function init() {
   initPriceHistoryControls();
   setupQuickLookup();
   setupPCOverride();
+  setupManualAdd();
   setupPWANav();
+  // Bring back any cards the user has manually added in past sessions, then
+  // rebuild the search index and refresh the displayed total card count.
+  injectUserCards();
+  if (cardData) {
+    buildSearchIndex(cardData.cards);
+    if (typeof buildCounterpartIndex === 'function') buildCounterpartIndex(cardData.cards);
+    const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
+    const enCount = cardData.count - jpCount;
+    const userCount = cardData.cards.filter(c => c._userAdded).length;
+    const userSuffix = userCount > 0 ? ` + ${userCount} added` : '';
+    $('searchCount').textContent =
+      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${userSuffix})`;
+  }
   updateAll();
 }
 
@@ -447,7 +461,9 @@ function autoFillDesirability(card, pullCost) {
 function buildSearchIndex(cards) {
   searchIndex = cards.map(c => ({
     ...c,
-    _search: `${c.n} ${c.nj || ''} ${c.s} ${c.cn || ''} ${c.ns || ''} ${c.r || ''} ${c.sr || ''} ${c.lang || ''}`.toLowerCase(),
+    _search: `${c.n} ${c.nj || ''} ${c.s} ${c.cn || ''} ${c.ns || ''} ${c.r || ''} ${c.sr || ''} ${c.lang || ''}`
+      .replace(/\s+/g, ' ')
+      .toLowerCase(),
   }));
 }
 
@@ -891,7 +907,19 @@ function doSearch(query) {
   matches = matches.slice(0, 30);
 
   if (!matches.length) {
-    results.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-faint);font-size:13px;">No cards found — try a different name or card number</div>';
+    results.innerHTML = `
+      <div class="search-empty-state">
+        <div class="search-empty-text">No cards found — try a different name or card number.</div>
+        <button class="search-empty-add" id="searchOpenManualAdd">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Add card manually (look up on TCG Collector)
+        </button>
+      </div>`;
+    const btn = results.querySelector('#searchOpenManualAdd');
+    if (btn) btn.addEventListener('click', () => {
+      const seed = $('searchInput').value.trim();
+      if (typeof openManualAdd === 'function') openManualAdd(seed);
+    });
     results.classList.add('open');
     return;
   }
@@ -4213,6 +4241,232 @@ function setupPCOverride() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('pcovModal').style.display !== 'none') closePCOverride();
   });
+}
+
+// ================================================================
+// Manual Add Card — look up on TCG Collector and inject a synthetic card
+// when the indexed database doesn't have it (rare promos, regional, new sets).
+// ================================================================
+const USER_CARDS_KEY = 'pkm-user-cards-v1';
+
+function loadUserCards() {
+  try { return JSON.parse(localStorage.getItem(USER_CARDS_KEY) || '[]'); }
+  catch { return []; }
+}
+function saveUserCards(arr) {
+  try { localStorage.setItem(USER_CARDS_KEY, JSON.stringify(arr)); } catch {}
+}
+
+// Re-inject any user-added cards on init so they survive reloads.
+function injectUserCards() {
+  if (!cardData || !Array.isArray(cardData.cards)) return;
+  const userCards = loadUserCards();
+  if (!userCards.length) return;
+  const existing = new Set(cardData.cards.map(c => c.i));
+  for (const uc of userCards) {
+    if (!existing.has(uc.i)) cardData.cards.push(uc);
+  }
+  cardData.count = cardData.cards.length;
+}
+
+function openManualAdd(seed) {
+  $('maOverlay').style.display = '';
+  $('maOverlay').setAttribute('aria-hidden', 'false');
+  $('maModal').style.display = 'flex';
+  const input = $('maInput');
+  if (typeof seed === 'string' && seed) input.value = seed;
+  $('maResults').innerHTML = '';
+  $('maStatus').className = 'ql-status';
+  $('maStatus').innerHTML = 'Tip: include the set name for the best results (e.g. <em>Charizard 125 Obsidian Flames</em>).';
+  setTimeout(() => input.focus(), 50);
+  if (input.value.trim().length >= 2) runManualAddSearch();
+}
+function closeManualAdd() {
+  $('maOverlay').style.display = 'none';
+  $('maOverlay').setAttribute('aria-hidden', 'true');
+  $('maModal').style.display = 'none';
+}
+
+// TCG Collector returns Cloudflare-protected HTML to bots, but r.jina.ai
+// renders it server-side and returns a Markdown-friendly version we can parse.
+async function fetchTCGCollectorMarkdown(query) {
+  const url = `https://www.tcgcollector.com/cards?cardSearch=${encodeURIComponent(query)}&cardsPerPage=20`;
+  const resp = await fetch(`https://r.jina.ai/${url}`, { headers: { 'Accept': 'text/plain' } });
+  if (!resp.ok) throw new Error(`TCG Collector lookup failed (${resp.status})`);
+  return resp.text();
+}
+
+// Each card row in the markdown is a multi-image link, e.g.:
+//   [![Image 8: ...](url1) ![Image 9: ...](url2) 125/094 ![...](url3)]
+//     (https://www.tcgcollector.com/cards/51583/slug "Charizard ex (Obsidian Flames 125/197)")
+// We anchor on the title link and look backward for the first card-art image.
+function parseTCGCollectorMarkdown(md) {
+  const out = [];
+  const seen = new Set();
+  // Match the closing of any tcgcollector card link with title attribute.
+  const re = /\]\((https:\/\/www\.tcgcollector\.com\/cards\/(\d+)\/[^\s")]+)\s+"([^"]+)"\)/g;
+  let m;
+  while ((m = re.exec(md)) !== null) {
+    const detailUrl = m[1];
+    const tcgcId = m[2];
+    const title = m[3];
+    if (seen.has(tcgcId)) continue;
+    seen.add(tcgcId);
+    // Skip non-card links (Random, navigation)
+    if (!/\(.*\d/.test(title)) continue;
+    // Look at the ~1500 chars preceding this match for the first card-art image.
+    const start = Math.max(0, m.index - 1500);
+    const slice = md.slice(start, m.index);
+    // The first .webp/.jpg/.png in the slice is the card art
+    const imgM = slice.match(/(https:\/\/static\.tcgcollector\.com\/content\/images\/[^\s)"]+\.(?:webp|jpg|jpeg|png))/i);
+    const imgUrl = imgM ? imgM[1] : null;
+    // Parse title: "Charizard ex (Obsidian Flames 125/197)" or "... (Set Name 0101/07)"
+    // Be tolerant: name may include parentheses (e.g. set names with brackets)
+    const tM = title.match(/^(.+?)\s+\(([^()]+?)\s+(\d+[A-Za-z]?)(?:\/(\d+[A-Za-z]?))?\)\s*$/);
+    if (!tM) continue;
+    const name = tM[1].trim();
+    const setName = tM[2].trim();
+    const cn = tM[3];
+    const ct = tM[4] || '';
+    out.push({ tcgcId, detailUrl, name, setName, cn, ct, imgUrl, title });
+    if (out.length >= 25) break;
+  }
+  return out;
+}
+
+async function runManualAddSearch() {
+  const q = $('maInput').value.trim();
+  if (!q) { $('maStatus').textContent = 'Type a card name and/or number first.'; $('maStatus').className = 'ql-status error'; return; }
+  const isJP = $('maJP').checked;
+  $('maStatus').className = 'ql-status';
+  $('maStatus').textContent = 'Searching TCG Collector…';
+  $('maResults').innerHTML = '';
+  const btn = $('maSearchBtn'); btn.disabled = true;
+  try {
+    const md = await fetchTCGCollectorMarkdown(q);
+    let rows = parseTCGCollectorMarkdown(md);
+    if (isJP) {
+      rows = rows.filter(r => /japan/i.test(r.setName) || /\b(jp|japanese)\b/i.test(r.setName));
+    }
+    if (!rows.length) {
+      $('maStatus').className = 'ql-status error';
+      $('maStatus').textContent = isJP
+        ? 'No Japanese matches on TCG Collector. Try unchecking Japanese, or rephrase.'
+        : 'No cards on TCG Collector for that query. Try just the Pokémon name + number.';
+      return;
+    }
+    $('maStatus').className = 'ql-status success';
+    $('maStatus').textContent = `Found ${rows.length} card${rows.length === 1 ? '' : 's'}. Pick the right one.`;
+    $('maResults').innerHTML = rows.map(renderManualAddCard).join('');
+    $('maResults').querySelectorAll('.ma-add-btn').forEach(b => {
+      b.addEventListener('click', () => addManualCardFromTCGC(JSON.parse(b.dataset.card), isJP));
+    });
+  } catch (e) {
+    console.error(e);
+    $('maStatus').className = 'ql-status error';
+    $('maStatus').textContent = `Couldn't reach TCG Collector right now. ${e.message || ''}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderManualAddCard(r) {
+  const numLabel = r.cn && r.ct ? `${r.cn}/${r.ct}` : r.cn || '';
+  const langGuess = /\b(japan|japanese)\b/i.test(r.setName) ? 'JP' : 'EN';
+  const langBadge = langGuess === 'JP' ? '<span class="lang-jp">JP</span>' : '<span class="lang-en">EN</span>';
+  const safe = JSON.stringify(r).replace(/'/g, '&#39;');
+  const img = r.imgUrl ? `<img class="ma-thumb" src="${escapeHtml(r.imgUrl)}" alt="" loading="lazy" onerror="this.style.display='none'">` : '';
+  return `
+    <div class="ql-card ma-card">
+      <div class="ql-card-head">
+        ${img}
+        <div class="ql-card-title">
+          <div class="ql-card-name">${escapeHtml(r.name)}</div>
+          <div class="ql-card-set">${escapeHtml(r.setName)}</div>
+          <div class="ql-card-meta">
+            ${langBadge}
+            ${numLabel ? `<span style="font-family:var(--mono);font-size:11px;color:var(--text-muted)">#${escapeHtml(numLabel)}</span>` : ''}
+            <a class="ql-card-link" href="${escapeHtml(r.detailUrl)}" target="_blank" rel="noopener">tcgcollector ↗</a>
+          </div>
+        </div>
+        <div class="ql-card-actions">
+          <button class="pcov-pick-btn ma-add-btn" data-card='${safe}'>Add to my cards</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function addManualCardFromTCGC(r, isJPHint) {
+  if (!cardData) return;
+  const langGuess = /\b(japan|japanese)\b/i.test(r.setName) ? 'JP' : (isJPHint ? 'JP' : 'EN');
+  // Build a synthetic card ID that won't collide with the indexed DB.
+  // tcgc-{lang}-{tcgcId} keeps it stable across reloads.
+  const id = `tcgc-${langGuess.toLowerCase()}-${r.tcgcId}`;
+  // If already added, just select it.
+  if (cardData.cards.find(c => c.i === id)) {
+    closeManualAdd();
+    selectCard(id);
+    return;
+  }
+  const card = {
+    i: id,
+    n: r.name,
+    s: r.setName,
+    sc: '',                 // no canonical set code
+    cn: r.cn || '',
+    ct: r.ct || '',
+    r: '',                  // unknown rarity
+    sr: '',                 // unknown series
+    p: 0,                   // no static price; live lookup will fill
+    lang: langGuess,
+    img: r.imgUrl || '',    // direct image URL from TCG Collector
+    nj: '',
+    _userAdded: true,
+    _tcgcId: r.tcgcId,
+    _tcgcUrl: r.detailUrl,
+  };
+  // Persist + inject into in-memory DB + rebuild search index
+  const userCards = loadUserCards();
+  userCards.push(card);
+  saveUserCards(userCards);
+  cardData.cards.push(card);
+  cardData.count = cardData.cards.length;
+  buildSearchIndex(cardData.cards);
+  if (typeof buildCounterpartIndex === 'function') buildCounterpartIndex(cardData.cards);
+  // Refresh the search-count display to reflect the new total
+  try {
+    const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
+    const enCount = cardData.count - jpCount;
+    const userCount = cardData.cards.filter(c => c._userAdded).length;
+    const userSuffix = userCount > 0 ? ` + ${userCount} added` : '';
+    $('searchCount').textContent =
+      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${userSuffix})`;
+  } catch {}
+  closeManualAdd();
+  // Bust price cache for this id (just in case) and select it.
+  try {
+    const cache = getPriceCache();
+    delete cache[id];
+    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+  selectCard(id);
+}
+
+function setupManualAdd() {
+  const open = () => openManualAdd($('searchInput').value.trim());
+  const closeBtn = $('maClose');
+  const overlay = $('maOverlay');
+  if (closeBtn) closeBtn.addEventListener('click', closeManualAdd);
+  if (overlay) overlay.addEventListener('click', closeManualAdd);
+  const searchBtn = $('maSearchBtn');
+  if (searchBtn) searchBtn.addEventListener('click', runManualAddSearch);
+  const input = $('maInput');
+  if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') runManualAddSearch(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('maModal') && $('maModal').style.display !== 'none') closeManualAdd();
+  });
+  // Make openManualAdd globally reachable for the empty-state button
+  window.openManualAdd = openManualAdd;
 }
 
 // ================================================================
