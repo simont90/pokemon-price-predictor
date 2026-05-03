@@ -1633,6 +1633,20 @@ function updateRipOrBuy(card, pullCost) {
 
   // ---- Packs Needed callout (always shown) ----
   $('ripPacksNeeded').textContent = packsNeeded.toLocaleString();
+
+  // Per-pack odds for THIS specific card
+  const perPackProb = 1 / packsNeeded;
+  const perPackPct = perPackProb * 100;
+  const oddsPctText = perPackPct >= 1
+    ? perPackPct.toFixed(2) + '%'
+    : perPackPct >= 0.01
+      ? perPackPct.toFixed(3) + '%'
+      : perPackPct.toExponential(2) + '%';
+
+  $('ripPerPackOdds').innerHTML =
+    `Per-pack odds: <strong>1 in ${packsNeeded.toLocaleString()}</strong> ` +
+    `<span class="rpn-pct">(${oddsPctText})</span>`;
+
   $('ripPacksOdds').innerHTML =
     `≈1 in <strong>${packsPerHit.toLocaleString()}</strong> packs hits this rarity · ` +
     `<strong>${tierSize}</strong> different cards in tier`;
