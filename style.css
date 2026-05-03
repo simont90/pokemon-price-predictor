@@ -1611,3 +1611,377 @@ textarea, select {
 
 /* Smooth transitions when user rotates device */
 .app, .card, .main, .header { transition: padding 0.15s ease; }
+
+/* ================================================================
+   PWA Navigation Bar (only visible in standalone mode or ?pwa=1)
+   ================================================================ */
+.pwa-nav {
+  display: none;
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 2000;
+  align-items: center; gap: 6px;
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top, 8px));
+  background: rgba(14, 15, 19, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.pwa-nav.visible { display: flex; }
+body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
+
+.pwa-nav-btn {
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pwa-nav-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.pwa-nav-btn:active:not(:disabled) { transform: scale(0.94); }
+.pwa-nav-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.pwa-nav-title {
+  margin-left: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ================================================================
+   Quick Lookup modal + PriceCharting Override modal
+   (share most styling — override-specific overrides below)
+   ================================================================ */
+.ql-overlay, .pcov-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(3px);
+  z-index: 1500;
+}
+.ql-modal, .pcov-modal {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100% - 32px);
+  max-width: 720px;
+  max-height: 85vh;
+  display: flex; flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  z-index: 1600;
+  overflow: hidden;
+}
+.pcov-modal { z-index: 1700; }
+.pcov-overlay { z-index: 1650; }
+
+.ql-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ql-header h2 { font-size: 17px; font-weight: 600; }
+.ql-sub {
+  font-size: 12px; color: var(--text-muted);
+  margin-top: 4px; line-height: 1.45;
+}
+.ql-sub em { color: var(--text); font-style: normal; font-family: var(--mono); font-size: 11px; }
+.ql-close {
+  flex-shrink: 0;
+  width: 32px; height: 32px;
+  background: none; border: none;
+  color: var(--text-faint); cursor: pointer;
+  font-size: 18px; border-radius: 6px;
+  transition: all 0.15s;
+}
+.ql-close:hover { color: var(--text); background: var(--bg-raised); }
+
+.ql-body {
+  padding: 16px 20px 20px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+}
+
+.ql-input-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px;
+}
+.ql-input-row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+.ql-input-row input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.ql-jp-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-muted);
+  padding: 8px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.ql-jp-toggle input { accent-color: var(--accent); }
+.ql-search-btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.ql-search-btn:hover { background: var(--accent-hover); }
+.ql-search-btn:active { transform: scale(0.97); }
+.ql-search-btn:disabled { opacity: 0.5; cursor: wait; }
+
+.ql-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  min-height: 16px;
+}
+.ql-status.error { color: var(--red); }
+.ql-status.success { color: var(--green); }
+
+.ql-results {
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+/* Result card */
+.ql-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  transition: border-color 0.15s;
+}
+.ql-card:hover { border-color: var(--border-light); }
+.ql-card-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; margin-bottom: 10px;
+}
+.ql-card-title { flex: 1; min-width: 0; }
+.ql-card-name {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  line-height: 1.3; margin-bottom: 3px;
+  word-break: break-word;
+}
+.ql-card-set { font-size: 11px; color: var(--text-muted); }
+.ql-card-meta {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.ql-card-link {
+  font-size: 11px; color: var(--text-faint);
+  text-decoration: none;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.ql-card-link:hover { color: var(--accent); }
+.ql-card-actions {
+  display: flex; flex-direction: column; gap: 6px;
+  flex-shrink: 0;
+}
+.ql-card-prices {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.ql-price {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ql-price-label {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.ql-price-val {
+  font-family: var(--mono);
+  font-size: 14px; font-weight: 600;
+  color: var(--accent);
+}
+.ql-price-usd { font-size: 10px; color: var(--text-faint); font-family: var(--mono); }
+
+/* Override modal current-match callout */
+.pcov-current {
+  padding: 10px 12px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+.pcov-current strong { color: var(--accent); font-weight: 600; }
+.pcov-current .pcov-current-empty { color: var(--text-muted); }
+
+.pcov-clear-btn {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--red-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.pcov-clear-btn:hover { background: var(--red-dim); }
+.pcov-clear-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.pcov-pick-btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.pcov-pick-btn:hover { background: var(--accent-hover); }
+.pcov-pick-btn:active { transform: scale(0.97); }
+
+/* ================================================================
+   PriceCharting row: confidence badge + override link
+   ================================================================ */
+.pc-match-confidence {
+  display: none;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.pc-match-confidence.conf-high,
+.pc-match-confidence.conf-ok,
+.pc-match-confidence.conf-low,
+.pc-match-confidence.conf-override { display: inline-block; }
+.pc-match-confidence.conf-high {
+  background: var(--green-dim);
+  color: var(--green);
+  border: 1px solid var(--green-border);
+}
+.pc-match-confidence.conf-ok {
+  background: rgba(232, 182, 52, 0.10);
+  color: var(--accent);
+  border: 1px solid rgba(232, 182, 52, 0.30);
+}
+.pc-match-confidence.conf-low {
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid var(--red-border);
+}
+.pc-match-confidence.conf-override {
+  background: var(--supply-dim);
+  color: var(--supply);
+  border: 1px solid var(--supply-border);
+}
+
+.pc-override-btn {
+  display: inline-block;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  margin-left: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.pc-override-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* Language badges (used in Quick Lookup + override results) */
+.lang-jp, .lang-en {
+  display: inline-block;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.lang-jp { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
+.lang-en { background: var(--supply-dim); color: var(--supply); border: 1px solid var(--supply-border); }
+
+/* ================================================================
+   Mobile responsive (≤600px) for new modals & PWA nav
+   ================================================================ */
+@media (max-width: 600px) {
+  .ql-modal, .pcov-modal {
+    width: 100%; height: 100%;
+    max-width: none; max-height: none;
+    top: 0; left: 0;
+    transform: none;
+    border-radius: 0;
+    border: none;
+  }
+  /* When PWA nav is visible, push modal contents below it */
+  body.pwa-standalone .ql-modal,
+  body.pwa-standalone .pcov-modal {
+    padding-top: calc(48px + env(safe-area-inset-top, 0px));
+  }
+  .ql-header { padding: 16px; }
+  .ql-header h2 { font-size: 16px; }
+  .ql-body { padding: 14px 16px 24px; }
+  .ql-input-row {
+    flex-wrap: wrap;
+  }
+  .ql-input-row input[type="text"] { width: 100%; flex-basis: 100%; }
+  .ql-jp-toggle, .ql-search-btn, .pcov-clear-btn {
+    flex: 1;
+    justify-content: center;
+    text-align: center;
+  }
+  .ql-card-head { flex-direction: column; gap: 8px; }
+  .ql-card-actions { flex-direction: row; flex-wrap: wrap; }
+  .ql-card-prices { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .ql-price-val { font-size: 12px; }
+
+  .pwa-nav { padding: 6px 10px; padding-top: max(6px, env(safe-area-inset-top, 6px)); }
+  .pwa-nav-btn { width: 34px; height: 34px; }
+  .pwa-nav-title { font-size: 12px; }
+
+  .pc-override-btn {
+    margin-left: 0;
+    margin-top: 4px;
+  }
+}

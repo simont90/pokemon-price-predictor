@@ -304,6 +304,9 @@ async function init() {
   setupScreener();
   setupValuePicks();
   initPriceHistoryControls();
+  setupQuickLookup();
+  setupPCOverride();
+  setupPWANav();
   updateAll();
 }
 
@@ -985,47 +988,180 @@ async function fetchLivePriceEN(cardId) {
   return result;
 }
 
-// Fetch live pricing from PriceCharting JSON search API (works for both EN and JP)
-// Returns { pcUngraded, pcPsa10, pcGrade9, pcName, pcConsole, pcId, pcImageUrl }
-async function fetchPriceChartingData(card) {
-  // Build search query: card name + card number + "japanese" for JP cards
-  const name = card.n.replace(/\s*\(JP\)/, '').replace(/\s*#\d+/, '').trim();
-  const num = card.cn ? ` ${card.cn}` : '';
-  const lang = card.lang === 'JP' ? ' japanese' : '';
-  const q = `${name}${num}${lang}`;
-  
-  const pcUrl = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(q)}&format=json`;
+// ================================================================
+// PriceCharting search — primary live-pricing source
+// ================================================================
+//
+// Strategy:
+// 1. Build a tight query that includes the set name (so we don't match
+//    a same-numbered card from a different set).
+// 2. Score every returned product against (set, name, number) and pick the
+//    best one. If confidence is low, mark it as 'low' so the UI can prompt
+//    the user to override manually.
+// 3. If the user has saved a manual override (PriceCharting product ID)
+//    for this card, fetch that product directly and bypass search.
+
+const parsePCPrice = (s) => {
+  if (!s) return 0;
+  return parseFloat(String(s).replace(/[^0-9.]/g, '')) || 0;
+};
+
+// localStorage key for per-card PriceCharting overrides
+const PC_OVERRIDE_KEY = 'pkm-pc-overrides-v1';
+function getPCOverrides() {
+  try { return JSON.parse(localStorage.getItem(PC_OVERRIDE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function setPCOverride(cardId, product) {
+  const all = getPCOverrides();
+  if (product) all[cardId] = product; else delete all[cardId];
+  try { localStorage.setItem(PC_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
+}
+function getPCOverride(cardId) {
+  const all = getPCOverrides();
+  return all[cardId] || null;
+}
+
+// Build the cleanest possible query for PriceCharting.
+// Includes set name first (most discriminating), then card name, then number, then JP flag.
+function buildPCQuery(card) {
+  const name = (card.n || '').replace(/\s*\(JP\)/, '').replace(/\s*#\d+/, '').trim();
+  const set = setsData?.[card.sc];
+  const setName = set?.name ? set.name.replace(/\s*\(.*?\)/g, '').trim() : '';
+  const num = card.cn ? `${card.cn}` : '';
+  const langTag = card.lang === 'JP' ? 'japanese' : '';
+  // PriceCharting indexes products by full label like:
+  //   "Charizard ex #125 - Pokemon Obsidian Flames"
+  //   "Charizard ex #066 - Pokemon Japanese Ruler of the Black Flame"
+  // Including the set name first dramatically improves match quality.
+  return [setName, name, num, langTag].filter(Boolean).join(' ').trim();
+}
+
+// Score a PriceCharting product against the card we're looking up.
+// Higher = better. Negative = incompatible.
+function scorePCProduct(product, card) {
+  if (!product) return -100;
+  const pName = (product.productName || '').toLowerCase();
+  const pCons = (product.consoleName || '').toLowerCase();
+  const cName = (card.n || '').toLowerCase().replace(/\s*\(jp\)/, '').trim();
+  const setName = (setsData?.[card.sc]?.name || '').toLowerCase();
+  const isJP = card.lang === 'JP';
+  const consoleIsJP = pCons.includes('japanese');
+
+  let score = 0;
+
+  // Hard language gate — wrong language = disqualify (penalty rather than -Infinity
+  // so we still show low-confidence options to the user if nothing better matches)
+  if (isJP && !consoleIsJP) score -= 50;
+  if (!isJP && consoleIsJP) score -= 50;
+
+  // Set match (most important signal)
+  if (setName && pCons.includes(setName)) score += 40;
+
+  // Card name — token overlap rather than substring (handles "Mega Charizard X" vs "Charizard ex")
+  const cTokens = cName.split(/\s+/).filter(t => t.length > 1);
+  const pTokens = pName.split(/\s+/).filter(t => t.length > 1);
+  let nameOverlap = 0;
+  for (const t of cTokens) if (pTokens.includes(t)) nameOverlap++;
+  // Penalise extra tokens in the product name that aren't in the card name
+  // (e.g. "Mega Charizard" when we wanted "Charizard")
+  const extraTokens = pTokens.filter(t => !cTokens.includes(t) && !['pokemon', 'card', 'tcg', 'japanese', '#'].includes(t)).length;
+  score += nameOverlap * 8;
+  // Reject if the product name has extra non-trivial tokens that change the identity
+  // (e.g. our card is "Charizard ex" but theirs is "Mega Charizard X ex")
+  // Specifically penalise tokens like 'mega' / 'shiny' / 'gold' / 'reverse' if they
+  // aren't in our card name.
+  const dangerTokens = ['mega', 'shiny', 'gold', 'reverse', 'shadowless', 'first', 'edition', 'holo'];
+  for (const dt of dangerTokens) {
+    if (pTokens.includes(dt) && !cTokens.includes(dt)) score -= 12;
+  }
+  score -= Math.min(extraTokens, 4) * 3;
+
+  // Card number match (very strong signal — note PC uses #066 vs raw 66 sometimes)
+  if (card.cn) {
+    const cardNum = String(card.cn).replace(/^0+/, '');
+    const numRe = new RegExp(`#?0*${cardNum}\\b`);
+    if (numRe.test(pName)) score += 25;
+    else score -= 8;
+  }
+
+  return score;
+}
+
+async function pcSearchRaw(query) {
+  const pcUrl = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(query)}&format=json`;
   const proxyUrl = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(pcUrl)}`;
   const r = await fetch(proxyUrl);
   if (!r.ok) throw new Error(`PriceCharting ${r.status}`);
   const data = await r.json();
-  
-  if (!data.products || data.products.length === 0) {
-    return null;
-  }
+  return data.products || [];
+}
 
-  // Pick the best match — for JP cards, prefer results with "Japanese" in consoleName
-  let match = data.products[0];
-  if (card.lang === 'JP') {
-    const jpMatch = data.products.find(p => p.consoleName?.toLowerCase().includes('japanese'));
-    if (jpMatch) match = jpMatch;
-  }
-
-  // Parse dollar prices — price1=ungraded, price2=PSA10, price3=Grade9
-  const parsePrice = (s) => {
-    if (!s) return 0;
-    return parseFloat(s.replace(/[^0-9.]/g, '')) || 0;
-  };
-
+function productToPC(p) {
+  if (!p) return null;
   return {
-    pcUngraded: parsePrice(match.price1),
-    pcPsa10: parsePrice(match.price2),
-    pcGrade9: parsePrice(match.price3),
-    pcName: match.productName || '',
-    pcConsole: match.consoleName || '',
-    pcId: match.id || '',
-    pcImageUrl: match.imageUri || '',
+    pcUngraded: parsePCPrice(p.price1),
+    pcPsa10: parsePCPrice(p.price2),
+    pcGrade9: parsePCPrice(p.price3),
+    pcName: p.productName || '',
+    pcConsole: p.consoleName || '',
+    pcId: p.id || '',
+    pcImageUrl: p.imageUri || '',
+    pcMatchScore: typeof p._score === 'number' ? p._score : null,
+    pcMatchConfidence: typeof p._score === 'number'
+      ? (p._score >= 50 ? 'high' : p._score >= 25 ? 'ok' : 'low')
+      : null,
   };
+}
+
+// Search PriceCharting for candidate products for a card and return them ranked.
+// Used by the manual-override modal so the user can pick the right product.
+async function searchPCCandidates(card) {
+  const q = buildPCQuery(card);
+  let products = [];
+  try { products = await pcSearchRaw(q); } catch {}
+  // Fallback to a looser query if no results — drop the set name.
+  if (products.length === 0) {
+    const fallback = [card.n, card.cn, card.lang === 'JP' ? 'japanese' : ''].filter(Boolean).join(' ');
+    try { products = await pcSearchRaw(fallback); } catch {}
+  }
+  // Score and sort
+  for (const p of products) p._score = scorePCProduct(p, card);
+  products.sort((a, b) => b._score - a._score);
+  return products;
+}
+
+async function fetchPriceChartingData(card) {
+  // 1. Manual override wins
+  const override = getPCOverride(card.i);
+  if (override && override.id) {
+    // The override carries the full product blob from when the user picked it.
+    // We still re-fetch by ID via search so prices stay fresh.
+    try {
+      const products = await pcSearchRaw(override.productName || override.id);
+      const exact = products.find(p => String(p.id) === String(override.id));
+      if (exact) {
+        return { ...productToPC(exact), pcMatchConfidence: 'override' };
+      }
+    } catch {}
+    // If re-fetch fails, return the cached override blob unchanged
+    return {
+      pcUngraded: parsePCPrice(override.price1),
+      pcPsa10: parsePCPrice(override.price2),
+      pcGrade9: parsePCPrice(override.price3),
+      pcName: override.productName || '',
+      pcConsole: override.consoleName || '',
+      pcId: override.id || '',
+      pcImageUrl: override.imageUri || '',
+      pcMatchConfidence: 'override',
+    };
+  }
+
+  // 2. Normal search with the tightened query
+  const products = await searchPCCandidates(card);
+  if (products.length === 0) return null;
+  const best = products[0];
+  return productToPC(best);
 }
 
 // Fetch live pricing for JP cards — PriceCharting is primary source
@@ -1388,10 +1524,35 @@ function renderLivePrice(data) {
     } else {
       matchEl.style.display = 'none';
     }
-    // Link to PriceCharting product page
+    // Confidence badge — helps the user notice when the auto-match might be wrong
+    const confEl = $('pcMatchConfidence');
+    if (confEl) {
+      const c = data.pcMatchConfidence;
+      confEl.className = 'pc-match-confidence';
+      if (c === 'override') {
+        confEl.textContent = 'Manual match';
+        confEl.classList.add('conf-override');
+      } else if (c === 'high') {
+        confEl.textContent = 'High confidence';
+        confEl.classList.add('conf-high');
+      } else if (c === 'ok') {
+        confEl.textContent = 'OK match — verify';
+        confEl.classList.add('conf-ok');
+      } else if (c === 'low') {
+        confEl.textContent = 'Low confidence — likely wrong';
+        confEl.classList.add('conf-low');
+      } else {
+        confEl.textContent = '';
+      }
+    }
+    // Always show the override button so the user can correct any match
+    const ovBtn = $('pcOverrideBtn');
+    if (ovBtn) ovBtn.style.display = selectedCard ? '' : 'none';
+    // Link to PriceCharting product page — use the actual console slug returned by PC
     const pcLink = $('priceChartingLink');
     if (data.pcId) {
-      pcLink.href = `https://www.pricecharting.com/game/pokemon-japanese-${data.pcConsole ? data.pcConsole.toLowerCase().replace(/\s+/g, '-') : 'cards'}/${data.pcId}`;
+      const consoleSlug = (data.pcConsole || 'cards').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      pcLink.href = `https://www.pricecharting.com/game/${consoleSlug}/${data.pcId}`;
       pcLink.style.display = '';
     } else {
       pcLink.style.display = 'none';
@@ -3810,6 +3971,347 @@ function setupValuePicks() {
 
   // Initial render (deferred so it doesn't block page load)
   setTimeout(() => renderValuePicks(vpFilter), 500);
+}
+
+// ================================================================
+// Quick Lookup — search PriceCharting on the fly for any card
+// ================================================================
+function openQuickLookup() {
+  $('qlOverlay').style.display = '';
+  $('qlModal').style.display = '';
+  // Focus the input on next tick so the keyboard pops on iOS
+  setTimeout(() => $('qlInput').focus(), 50);
+}
+function closeQuickLookup() {
+  $('qlOverlay').style.display = 'none';
+  $('qlModal').style.display = 'none';
+}
+
+async function runQuickLookup() {
+  const raw = $('qlInput').value.trim();
+  if (!raw) {
+    $('qlStatus').textContent = 'Type a card name (e.g. "Charizard ex 125 obsidian flames")';
+    return;
+  }
+  const isJP = $('qlJP').checked;
+  const query = isJP && !/japanese/i.test(raw) ? `${raw} japanese` : raw;
+  $('qlStatus').textContent = 'Searching PriceCharting…';
+  $('qlResults').innerHTML = '';
+  try {
+    const products = await pcSearchRaw(query);
+    if (!products || products.length === 0) {
+      $('qlStatus').textContent = 'No matches — try a different name or number';
+      return;
+    }
+    $('qlStatus').textContent = `${products.length} match${products.length === 1 ? '' : 'es'}`;
+    $('qlResults').innerHTML = products.slice(0, 50).map(p => renderQLCard(p)).join('');
+  } catch (e) {
+    $('qlStatus').textContent = 'Search failed — try again in a moment';
+    console.warn('Quick Lookup error:', e);
+  }
+}
+
+function renderQLCard(p) {
+  const ungraded = parsePCPrice(p.price1);
+  const psa10 = parsePCPrice(p.price2);
+  const grade9 = parsePCPrice(p.price3);
+  const consoleSlug = (p.consoleName || 'cards').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const pcUrl = p.id ? `https://www.pricecharting.com/game/${consoleSlug}/${p.id}` : '#';
+  const isJP = (p.consoleName || '').toLowerCase().includes('japanese');
+  return `
+    <div class="ql-card">
+      <div class="ql-card-head">
+        <div class="ql-card-title">
+          <span class="ql-card-name">${escapeHtml(p.productName || 'Unknown')}</span>
+          <span class="ql-card-set ${isJP ? 'lang-jp' : 'lang-en'}">${escapeHtml(p.consoleName || '')}</span>
+        </div>
+        <a class="ql-card-link" href="${pcUrl}" target="_blank" rel="noopener">
+          PriceCharting <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+        </a>
+      </div>
+      <div class="ql-card-prices">
+        <div class="ql-price"><span class="ql-price-label">Ungraded</span><span class="ql-price-val">${ungraded > 0 ? fmtGBP(ungraded) : '—'}</span><span class="ql-price-usd">${ungraded > 0 ? fmtUSD(ungraded) : ''}</span></div>
+        <div class="ql-price"><span class="ql-price-label">PSA 10</span><span class="ql-price-val">${psa10 > 0 ? fmtGBP(psa10) : '—'}</span><span class="ql-price-usd">${psa10 > 0 ? fmtUSD(psa10) : ''}</span></div>
+        <div class="ql-price"><span class="ql-price-label">Grade 9</span><span class="ql-price-val">${grade9 > 0 ? fmtGBP(grade9) : '—'}</span><span class="ql-price-usd">${grade9 > 0 ? fmtUSD(grade9) : ''}</span></div>
+      </div>
+    </div>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function setupQuickLookup() {
+  const toggle = $('quickLookupToggle');
+  if (toggle) toggle.addEventListener('click', openQuickLookup);
+  const close = $('qlClose');
+  if (close) close.addEventListener('click', closeQuickLookup);
+  const overlay = $('qlOverlay');
+  if (overlay) overlay.addEventListener('click', closeQuickLookup);
+  const btn = $('qlSearchBtn');
+  if (btn) btn.addEventListener('click', runQuickLookup);
+  const input = $('qlInput');
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); runQuickLookup(); }
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('qlModal').style.display !== 'none') closeQuickLookup();
+  });
+}
+
+// ================================================================
+// PriceCharting manual override modal
+// ================================================================
+let pcovCard = null; // card currently being overridden
+
+function openPCOverride() {
+  if (!selectedCard) return;
+  pcovCard = selectedCard;
+  $('pcovOverlay').style.display = '';
+  $('pcovModal').style.display = '';
+  // Pre-fill the search box with our auto-built query so the user can tweak it
+  $('pcovInput').value = buildPCQuery(pcovCard);
+  // Show what's currently active
+  const cur = livePrice && livePrice.pcName
+    ? `Currently using: <strong>${escapeHtml(livePrice.pcName)}</strong> (${escapeHtml(livePrice.pcConsole || '')})`
+    : 'No PriceCharting match yet for this card.';
+  $('pcovCurrent').innerHTML = cur;
+  $('pcovSub').textContent = `Card: ${pcovCard.n}${pcovCard.cn ? ' #' + pcovCard.cn : ''} · ${setsData?.[pcovCard.sc]?.name || ''} · ${pcovCard.lang || 'EN'}`;
+  setTimeout(() => $('pcovInput').focus(), 50);
+  // Auto-run a search
+  runPCOverrideSearch();
+}
+function closePCOverride() {
+  $('pcovOverlay').style.display = 'none';
+  $('pcovModal').style.display = 'none';
+  pcovCard = null;
+}
+
+async function runPCOverrideSearch() {
+  const q = $('pcovInput').value.trim() || (pcovCard ? buildPCQuery(pcovCard) : '');
+  if (!q) return;
+  $('pcovStatus').textContent = 'Searching PriceCharting…';
+  $('pcovResults').innerHTML = '';
+  try {
+    const products = await pcSearchRaw(q);
+    if (!products || products.length === 0) {
+      $('pcovStatus').textContent = 'No matches — try refining your search above';
+      return;
+    }
+    // Score against the card to bring better matches to the top
+    if (pcovCard) {
+      for (const p of products) p._score = scorePCProduct(p, pcovCard);
+      products.sort((a, b) => b._score - a._score);
+    }
+    $('pcovStatus').textContent = `${products.length} match${products.length === 1 ? '' : 'es'} — click “Use this match” on the right one`;
+    $('pcovResults').innerHTML = products.slice(0, 50).map((p, i) => renderPCOverrideCard(p, i)).join('');
+    // Wire "Use this match" buttons
+    document.querySelectorAll('#pcovResults .pcov-pick-btn').forEach((btn, i) => {
+      btn.addEventListener('click', () => applyPCOverride(products[i]));
+    });
+  } catch (e) {
+    $('pcovStatus').textContent = 'Search failed — try again in a moment';
+    console.warn('Override search error:', e);
+  }
+}
+
+function renderPCOverrideCard(p, idx) {
+  const ungraded = parsePCPrice(p.price1);
+  const psa10 = parsePCPrice(p.price2);
+  const grade9 = parsePCPrice(p.price3);
+  const consoleSlug = (p.consoleName || 'cards').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const pcUrl = p.id ? `https://www.pricecharting.com/game/${consoleSlug}/${p.id}` : '#';
+  const isJP = (p.consoleName || '').toLowerCase().includes('japanese');
+  // Score badge
+  let badge = '';
+  if (typeof p._score === 'number') {
+    const cls = p._score >= 50 ? 'conf-high' : p._score >= 25 ? 'conf-ok' : 'conf-low';
+    const label = p._score >= 50 ? 'Top match' : p._score >= 25 ? 'Possible' : 'Unlikely';
+    badge = `<span class="pc-match-confidence ${cls}">${label}</span>`;
+  }
+  return `
+    <div class="ql-card">
+      <div class="ql-card-head">
+        <div class="ql-card-title">
+          <span class="ql-card-name">${escapeHtml(p.productName || 'Unknown')}</span>
+          <span class="ql-card-meta">
+            <span class="ql-card-set ${isJP ? 'lang-jp' : 'lang-en'}">${escapeHtml(p.consoleName || '')}</span>
+            ${badge}
+          </span>
+        </div>
+        <div class="ql-card-actions">
+          <a class="ql-card-link" href="${pcUrl}" target="_blank" rel="noopener">View on PC</a>
+          <button class="pcov-pick-btn" data-idx="${idx}">Use this match</button>
+        </div>
+      </div>
+      <div class="ql-card-prices">
+        <div class="ql-price"><span class="ql-price-label">Ungraded</span><span class="ql-price-val">${ungraded > 0 ? fmtGBP(ungraded) : '—'}</span></div>
+        <div class="ql-price"><span class="ql-price-label">PSA 10</span><span class="ql-price-val">${psa10 > 0 ? fmtGBP(psa10) : '—'}</span></div>
+        <div class="ql-price"><span class="ql-price-label">Grade 9</span><span class="ql-price-val">${grade9 > 0 ? fmtGBP(grade9) : '—'}</span></div>
+      </div>
+    </div>`;
+}
+
+function applyPCOverride(product) {
+  if (!pcovCard || !product) return;
+  // Persist the full product blob so we can re-render even when offline
+  setPCOverride(pcovCard.i, {
+    id: product.id,
+    productName: product.productName,
+    consoleName: product.consoleName,
+    price1: product.price1,
+    price2: product.price2,
+    price3: product.price3,
+    imageUri: product.imageUri,
+  });
+  // Bust the live-price cache for this card so the override is picked up immediately
+  try {
+    const cache = getPriceCache();
+    delete cache[pcovCard.i];
+    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+  closePCOverride();
+  // Re-fetch with the override applied
+  if (selectedCard && selectedCard.i === pcovCard.i) {
+    fetchLivePrice(selectedCard);
+  }
+}
+
+function clearPCOverride() {
+  if (!pcovCard) return;
+  setPCOverride(pcovCard.i, null);
+  try {
+    const cache = getPriceCache();
+    delete cache[pcovCard.i];
+    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+  closePCOverride();
+  if (selectedCard && selectedCard.i === pcovCard.i) {
+    fetchLivePrice(selectedCard);
+  }
+}
+
+function setupPCOverride() {
+  const btn = $('pcOverrideBtn');
+  if (btn) btn.addEventListener('click', openPCOverride);
+  const close = $('pcovClose');
+  if (close) close.addEventListener('click', closePCOverride);
+  const overlay = $('pcovOverlay');
+  if (overlay) overlay.addEventListener('click', closePCOverride);
+  const search = $('pcovSearchBtn');
+  if (search) search.addEventListener('click', runPCOverrideSearch);
+  const clear = $('pcovClearBtn');
+  if (clear) clear.addEventListener('click', clearPCOverride);
+  const input = $('pcovInput');
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); runPCOverrideSearch(); }
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('pcovModal').style.display !== 'none') closePCOverride();
+  });
+}
+
+// ================================================================
+// PWA navigation bar — only visible when running as installed app
+// ================================================================
+// History stack of selected card IDs so back/forward feel native to the app,
+// since the PWA shell doesn't have system browser chrome to use those buttons.
+const pwaHistory = { stack: [], idx: -1, suppress: false };
+
+function pwaPushCard(cardId) {
+  if (pwaHistory.suppress) return;
+  // If we're not at the top, drop forward entries
+  if (pwaHistory.idx < pwaHistory.stack.length - 1) {
+    pwaHistory.stack = pwaHistory.stack.slice(0, pwaHistory.idx + 1);
+  }
+  // Avoid duplicate consecutive entries
+  if (pwaHistory.stack[pwaHistory.idx] === cardId) return;
+  pwaHistory.stack.push(cardId);
+  pwaHistory.idx = pwaHistory.stack.length - 1;
+  updatePWANavButtons();
+}
+function pwaBack() {
+  if (pwaHistory.idx <= 0) return;
+  pwaHistory.idx--;
+  pwaHistory.suppress = true;
+  selectCard(pwaHistory.stack[pwaHistory.idx]);
+  pwaHistory.suppress = false;
+  updatePWANavButtons();
+}
+function pwaForward() {
+  if (pwaHistory.idx >= pwaHistory.stack.length - 1) return;
+  pwaHistory.idx++;
+  pwaHistory.suppress = true;
+  selectCard(pwaHistory.stack[pwaHistory.idx]);
+  pwaHistory.suppress = false;
+  updatePWANavButtons();
+}
+function updatePWANavButtons() {
+  const back = $('pwaBack');
+  const fwd = $('pwaForward');
+  if (back) back.disabled = pwaHistory.idx <= 0;
+  if (fwd) fwd.disabled = pwaHistory.idx >= pwaHistory.stack.length - 1;
+}
+
+function setupPWANav() {
+  // Show the nav bar when we're running standalone (installed PWA)
+  // or when the URL has ?pwa=1 (so we can force-test it in regular browsers)
+  const standalone = window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true
+    || /[?&]pwa=1\b/.test(window.location.search);
+  const nav = $('pwaNav');
+  if (!nav) return;
+  if (standalone) {
+    nav.classList.add('visible');
+    document.body.classList.add('pwa-standalone');
+  } else {
+    nav.classList.remove('visible');
+  }
+
+  $('pwaBack').addEventListener('click', pwaBack);
+  $('pwaForward').addEventListener('click', pwaForward);
+  $('pwaRefresh').addEventListener('click', () => {
+    // If a card is selected, just re-fetch its live price; otherwise reload the page
+    if (selectedCard) {
+      try {
+        // Bust the price cache for this card
+        const cache = getPriceCache();
+        delete cache[selectedCard.i];
+        localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
+      } catch {}
+      fetchLivePrice(selectedCard);
+    } else {
+      window.location.reload();
+    }
+  });
+
+  // Also wire native browser back/forward (where available) so they feel consistent
+  window.addEventListener('popstate', (e) => {
+    if (e.state && e.state.cardId) {
+      pwaHistory.suppress = true;
+      selectCard(e.state.cardId);
+      pwaHistory.suppress = false;
+    }
+  });
+
+  // Hook into selectCard to push history
+  const origSelectCard = window.selectCard;
+  if (typeof origSelectCard === 'function') {
+    window.selectCard = function(id) {
+      const before = selectedCard?.i;
+      origSelectCard.apply(this, arguments);
+      if (selectedCard && selectedCard.i !== before) {
+        pwaPushCard(selectedCard.i);
+        try { history.pushState({ cardId: selectedCard.i }, '', '#' + selectedCard.i); } catch {}
+      }
+    };
+  }
+
+  updatePWANavButtons();
 }
 
 // ---- Boot ----
