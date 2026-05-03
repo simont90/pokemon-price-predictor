@@ -300,6 +300,7 @@ async function init() {
   setupPortfolio();
   setupScreener();
   setupValuePicks();
+  initPriceHistoryControls();
   updateAll();
 }
 
@@ -679,6 +680,26 @@ async function fetchLivePriceJP(card) {
 }
 
 // Master live price fetcher — PriceCharting is PRIMARY for all cards, TCGPlayer is secondary for EN
+// Resolve a Collectrics ID via the live-price flow and trigger market data + price history
+function maybeFetchMarketDataFromLive(card, data) {
+  const mi = data && data.mi;
+  if (!mi) return;
+  // Cache mi on the card for subsequent renders
+  card.mi = mi;
+  // Update collectrics link
+  const link = document.getElementById('linkCollectrics');
+  if (link) link.href = `https://mycollectrics.com/card.html?id=${mi}`;
+  // Show price history loading state
+  const phSec = document.getElementById('priceHistSection');
+  if (phSec) {
+    phSec.style.display = 'block';
+    document.getElementById('phLoading').style.display = 'block';
+    document.getElementById('phLoading').textContent = 'Loading price history…';
+    document.getElementById('phContent').style.display = 'none';
+  }
+  fetchMarketData(mi);
+}
+
 async function fetchLivePrice(card) {
   const thisId = ++livePriceFetchId;
   livePrice = null;
@@ -700,6 +721,7 @@ async function fetchLivePrice(card) {
     livePrice = cached;
     renderLivePrice(cached);
     recalcWithLivePrice(card);
+    maybeFetchMarketDataFromLive(card, cached);
     // Still fetch fresh in background to update cache
     fetchAndCacheFresh(card, thisId);
     return;
@@ -713,6 +735,7 @@ async function fetchLivePrice(card) {
     setCachedPrice(card.i, priceData);
     renderLivePrice(priceData);
     recalcWithLivePrice(card);
+    maybeFetchMarketDataFromLive(card, priceData);
   } catch (e) {
     if (thisId !== livePriceFetchId) return;
     console.warn('Live price fetch failed:', e);
@@ -835,6 +858,7 @@ async function fetchCollectricsSearchData(card) {
     crPsa10VsRaw: psa10VsRaw,
     crName: match['product-name'] || '',
     crUrl: cardId ? `https://mycollectrics.com/card.html?id=${cardId}` : '',
+    mi: cardId || '',
   };
 }
 
@@ -1217,6 +1241,18 @@ function selectCard(id) {
   $('marketTrend').textContent = '';
   $('marketTrend').className = 'market-trend-badge';
   $('gradeSection').style.display = 'none';
+
+  // Reset price history section
+  if (card.mi) {
+    $('priceHistSection').style.display = 'block';
+    $('phLoading').style.display = 'block';
+    $('phLoading').textContent = 'Loading price history…';
+    $('phContent').style.display = 'none';
+    $('phVerdict').textContent = '';
+    $('phVerdict').className = 'ph-verdict';
+  } else {
+    $('priceHistSection').style.display = 'none';
+  }
 
   // Reset live price panel
   $('livePricePanel').style.display = 'none';
@@ -1730,6 +1766,10 @@ async function fetchMarketData(cardId) {
 
     const mp = d.collectrics?.['market-pressure'];
     const ebayHist = d['history-ebay-market'] || [];
+    const priceHist = d.history || [];
+
+    // Always try to render the price history chart (independent of market-pressure)
+    renderPriceHistory(priceHist);
 
     if (!mp || ebayHist.length < 3) {
       $('marketLoading').textContent = 'No market data available for this card';
@@ -1750,6 +1790,7 @@ async function fetchMarketData(cardId) {
   } catch (e) {
     if (thisId !== marketFetchId) return;
     $('marketLoading').textContent = 'Market data unavailable';
+    $('priceHistSection').style.display = 'none';
     console.warn('Market fetch failed:', e);
   }
 }
@@ -1806,6 +1847,270 @@ function renderMarketDynamics(mp, ebayHist) {
   `;
 
   drawListingChart($('listingChart'), ebayHist);
+}
+
+// =============================================================
+// Price History (raw daily prices over the last ~3 months)
+// =============================================================
+let priceHistoryData = null;     // full history array (most recent last)
+let priceHistoryRange = 30;       // current selected range in days, or 'all'
+
+function hidePriceHistory() {
+  $('priceHistSection').style.display = 'none';
+  priceHistoryData = null;
+}
+
+function renderPriceHistory(history) {
+  const section = $('priceHistSection');
+  if (!Array.isArray(history) || history.length < 3) {
+    section.style.display = 'none';
+    return;
+  }
+  // Filter to entries that have a usable raw-price > 0
+  const cleaned = history
+    .filter(h => h && h.date && (h['raw-price'] || h['psa-9-price']))
+    .map(h => ({
+      date: h.date,
+      raw: h['raw-price'] || 0,
+      psa9: h['psa-9-price'] || 0,
+      psa10: h['psa-10-price'] || 0,
+      vol: h['sales-volume'] || 0,
+    }))
+    .filter(h => h.raw > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (cleaned.length < 3) { section.style.display = 'none'; return; }
+
+  priceHistoryData = cleaned;
+  section.style.display = 'block';
+  $('phLoading').style.display = 'none';
+  $('phContent').style.display = 'block';
+
+  // Reset to default 30d when a new card loads
+  priceHistoryRange = 30;
+  document.querySelectorAll('.phr-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.range === '30');
+  });
+
+  drawAndAnnotatePriceHistory();
+}
+
+function drawAndAnnotatePriceHistory() {
+  if (!priceHistoryData) return;
+  const all = priceHistoryData;
+  const range = priceHistoryRange === 'all' ? all.length : parseInt(priceHistoryRange);
+  const data = all.slice(-range);
+
+  // ---- Headline metrics ----
+  const last = all[all.length - 1].raw;
+  const lastUSD = last; // already USD
+
+  function priceAt(daysAgo) {
+    const idx = all.length - 1 - daysAgo;
+    if (idx < 0) return null;
+    return all[idx].raw;
+  }
+  function pctChange(daysAgo) {
+    const past = priceAt(daysAgo);
+    if (!past || past <= 0) return null;
+    return ((last - past) / past) * 100;
+  }
+
+  const d7 = pctChange(7);
+  const d30 = pctChange(30);
+  const d90 = pctChange(90);
+
+  $('phCurrent').textContent = fmtGBP(lastUSD);
+
+  function renderDelta(label, pct) {
+    if (pct === null) return `<div class="ph-delta"><div class="ph-delta-label">${label}</div><div class="ph-delta-value flat">—</div></div>`;
+    const cls = Math.abs(pct) < 1 ? 'flat' : pct > 0 ? 'up' : 'down';
+    const sign = pct > 0 ? '+' : '';
+    return `<div class="ph-delta"><div class="ph-delta-label">${label}</div><div class="ph-delta-value ${cls}">${sign}${pct.toFixed(1)}%</div></div>`;
+  }
+  $('phDeltas').innerHTML = renderDelta('7 day', d7) + renderDelta('30 day', d30) + renderDelta('90 day', d90);
+
+  // ---- Range stats ----
+  const prices = data.map(d => d.raw);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const avgP = prices.reduce((a, b) => a + b, 0) / prices.length;
+  const fromLow = ((last - minP) / minP) * 100;
+  const fromHigh = ((last - maxP) / maxP) * 100;
+
+  $('phStats').innerHTML = `
+    <div class="ph-stat"><div class="ph-stat-label">Range Low</div><div class="ph-stat-value">${fmtGBP(minP)}</div></div>
+    <div class="ph-stat"><div class="ph-stat-label">Range Avg</div><div class="ph-stat-value">${fmtGBP(avgP)}</div></div>
+    <div class="ph-stat"><div class="ph-stat-label">Range High</div><div class="ph-stat-value">${fmtGBP(maxP)}</div></div>
+  `;
+
+  // ---- Verdict + summary ----
+  const verdict = computePriceVerdict({ d7, d30, d90, last, minP, maxP, avgP, fromLow, fromHigh });
+  const badge = $('phVerdict');
+  badge.textContent = verdict.label;
+  badge.className = 'ph-verdict ' + verdict.cls;
+
+  $('phSummary').innerHTML = verdict.summary;
+
+  // ---- Draw chart ----
+  drawPriceChart($('priceHistChart'), data);
+}
+
+function computePriceVerdict({ d7, d30, d90, last, minP, maxP, avgP, fromLow, fromHigh }) {
+  const d7v = d7 ?? 0, d30v = d30 ?? 0, d90v = d90 ?? d30v;
+
+  // CRASH: huge recent drop
+  if (d30v < -25 || (d7v < -15 && d30v < -10)) {
+    return {
+      label: 'CRASH — RISKY',
+      cls: 'ph-crash',
+      summary: `Price has crashed <strong>${d30v.toFixed(1)}%</strong> over 30 days (7d: ${(d7v).toFixed(1)}%). May still be falling — wait for stabilisation before buying.`
+    };
+  }
+
+  // BUY THE DIP: meaningful recent drop, near range low, longer-term up or flat
+  if (d7v < -3 && fromHigh < -10 && fromLow < 15) {
+    return {
+      label: 'BUY THE DIP',
+      cls: 'ph-buy-dip',
+      summary: `Down <strong>${d7v.toFixed(1)}%</strong> in 7 days, sitting <strong>${fromHigh.toFixed(1)}%</strong> below the recent high — looks like a pullback rather than a trend reversal. Good entry if you like the card long-term.`
+    };
+  }
+
+  // SPIKE: sharp recent rise — expensive
+  if (d7v > 15 || (d7v > 8 && d30v > 20)) {
+    return {
+      label: 'SPIKE — OVERHEATED',
+      cls: 'ph-spike',
+      summary: `Up <strong>+${d7v.toFixed(1)}%</strong> in just 7 days. Often retraces 5–10% after a vertical move — consider waiting a week unless you must own it now.`
+    };
+  }
+
+  // RIDING UP: steady uptrend
+  if (d30v > 5 && d7v > -3) {
+    return {
+      label: 'RIDING UP',
+      cls: 'ph-riding',
+      summary: `Steady uptrend: <strong>+${d30v.toFixed(1)}%</strong> in 30 days. Momentum is in your favour but you're paying for it — fine to buy at market if conviction is high.`
+    };
+  }
+
+  // COOLING: gentle drift down
+  if (d30v < -5 && d7v < 0) {
+    return {
+      label: 'COOLING',
+      cls: 'ph-cooling',
+      summary: `Drifting down: <strong>${d30v.toFixed(1)}%</strong> over 30 days. No panic, but no rush — patient buyers may catch a better price.`
+    };
+  }
+
+  // FLAT: no real movement
+  return {
+    label: 'FLAT',
+    cls: 'ph-flat',
+    summary: `Sideways action: ${d30v >= 0 ? '+' : ''}${d30v.toFixed(1)}% over 30 days. Market is balanced — you're paying close to fair value either way.`
+  };
+}
+
+function drawPriceChart(canvas, data) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+  ctx.clearRect(0, 0, W, H);
+  if (data.length < 2) return;
+
+  const pad = { l: 56, r: 18, t: 16, b: 26 };
+  const cw = W - pad.l - pad.r;
+  const ch = H - pad.t - pad.b;
+
+  // Convert raw USD prices to GBP for display
+  const rates = data.map(d => d.raw * fxRate);
+  const minP = Math.min(...rates);
+  const maxP = Math.max(...rates);
+  const span = Math.max(maxP - minP, 0.01);
+  const yMin = minP - span * 0.10;
+  const yMax = maxP + span * 0.10;
+
+  function x(i) { return pad.l + (i / (data.length - 1)) * cw; }
+  function y(v) { return pad.t + ch - ((v - yMin) / (yMax - yMin)) * ch; }
+
+  // Gridlines + y-axis labels (4 horizontal divisions)
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = '#777a8a';
+  ctx.font = '10px JetBrains Mono, monospace';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const gy = pad.t + (ch / 4) * i;
+    ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
+    const val = yMax - ((yMax - yMin) / 4) * i;
+    ctx.fillText('£' + val.toFixed(val < 10 ? 2 : 0), pad.l - 6, gy + 3);
+  }
+
+  // Filled area under curve (gradient)
+  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ch);
+  grad.addColorStop(0, 'rgba(232,182,52,0.25)');
+  grad.addColorStop(1, 'rgba(232,182,52,0.0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(x(0), pad.t + ch);
+  data.forEach((d, i) => ctx.lineTo(x(i), y(d.raw * fxRate)));
+  ctx.lineTo(x(data.length - 1), pad.t + ch);
+  ctx.closePath();
+  ctx.fill();
+
+  // Price line
+  ctx.strokeStyle = '#e8b634';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  data.forEach((d, i) => {
+    const px = x(i), py = y(d.raw * fxRate);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  // Latest point marker
+  const lastIdx = data.length - 1;
+  const lx = x(lastIdx), ly = y(data[lastIdx].raw * fxRate);
+  ctx.fillStyle = '#e8b634';
+  ctx.beginPath(); ctx.arc(lx, ly, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(232,182,52,0.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(lx, ly, 8, 0, Math.PI * 2); ctx.stroke();
+
+  // X-axis date labels (start, mid, end)
+  ctx.fillStyle = '#777a8a';
+  ctx.font = '10px Space Grotesk, sans-serif';
+  ctx.textAlign = 'center';
+  const labelIdx = [0, Math.floor(data.length / 2), data.length - 1];
+  labelIdx.forEach(i => {
+    if (data[i]) {
+      const d = new Date(data[i].date);
+      const label = d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+      ctx.fillText(label, x(i), H - 6);
+    }
+  });
+}
+
+// Range button handler (bound once on init)
+function initPriceHistoryControls() {
+  const ctr = $('phRange');
+  if (!ctr || ctr.dataset.bound) return;
+  ctr.dataset.bound = '1';
+  ctr.addEventListener('click', (e) => {
+    const btn = e.target.closest('.phr-btn');
+    if (!btn) return;
+    document.querySelectorAll('.phr-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    priceHistoryRange = btn.dataset.range === 'all' ? 'all' : parseInt(btn.dataset.range);
+    drawAndAnnotatePriceHistory();
+  });
 }
 
 function drawListingChart(canvas, history) {

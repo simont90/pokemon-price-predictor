@@ -259,6 +259,34 @@
           </div>
         </section>
 
+        <!-- Price History -->
+        <section class="card pricehist-card" id="priceHistSection" style="display:none">
+          <div class="ph-header">
+            <h2>Price History</h2>
+            <div class="ph-verdict" id="phVerdict"></div>
+          </div>
+          <p class="card-desc">Daily raw market price — has it spiked, dropped, or stayed flat?</p>
+          <div class="ph-loading" id="phLoading">Loading price history…</div>
+          <div class="ph-content" id="phContent" style="display:none">
+            <div class="ph-current-row">
+              <div class="ph-current">
+                <div class="ph-current-label">Current</div>
+                <div class="ph-current-value" id="phCurrent">—</div>
+              </div>
+              <div class="ph-deltas" id="phDeltas"></div>
+            </div>
+            <div class="ph-range" id="phRange">
+              <button data-range="30" class="phr-btn active">30d</button>
+              <button data-range="60" class="phr-btn">60d</button>
+              <button data-range="90" class="phr-btn">90d</button>
+              <button data-range="all" class="phr-btn">All</button>
+            </div>
+            <canvas id="priceHistChart" width="500" height="220" style="width:100%;height:220px;"></canvas>
+            <div class="ph-stats" id="phStats"></div>
+            <div class="ph-summary" id="phSummary"></div>
+          </div>
+        </section>
+
         <!-- Market Dynamics -->
         <section class="card market-card" id="marketSection" style="display:none">
           <div class="market-header">
