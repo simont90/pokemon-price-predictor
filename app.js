@@ -145,7 +145,17 @@ const $ = id => document.getElementById(id);
 
 // ---- Image URL Helper (reconstructed from card ID to save DB size) ----
 function getCardImg(card) {
-  if (card.img) return card.img;
+  // Defensive: ignore malformed `img` overrides (e.g. a TCGC card-page URL
+  // saved before the image fetch completed). Only accept direct image URLs
+  // or recognised CDN domains.
+  if (card.img && /^(https?:)?\/\//i.test(card.img)) {
+    const u = card.img.toLowerCase();
+    const looksLikeImage = /\.(webp|jpg|jpeg|png|gif|avif)(\?|#|$)/.test(u)
+      || u.includes('static.tcgcollector.com')
+      || u.includes('images.pokemontcg.io')
+      || u.includes('assets.tcgdex.net');
+    if (looksLikeImage) return card.img;
+  }
   if (card.lang === 'JP') {
     // JP cards: tcgdex format — jp-{set}-{num} -> /ja/{era}/{set}/{num}/high.png
     const parts = card.i.replace('jp-', '').split('-');
@@ -4848,7 +4858,41 @@ function switchManualAddTab(which) {
 // ----------------------------------------------------------------
 // Add-from-scratch: validate the form, build a synthetic card and persist.
 // ----------------------------------------------------------------
-function saveCustomCard() {
+// If the field still contains a TCGC card-page URL when Save is pressed,
+// resolve it to an image URL synchronously here so the saved card actually
+// shows the artwork (not a broken-image "?" icon).
+async function resolveImageInputIfTCGC(imgInputId, statusId) {
+  const el = $(imgInputId);
+  if (!el) return '';
+  const v = el.value.trim();
+  if (!v) return '';
+  if (!isTCGCollectorCardURL(v)) return v;
+  const status = $(statusId);
+  if (status) {
+    status.className = 'ma-img-status loading';
+    status.textContent = 'Fetching artwork from TCG Collector…';
+  }
+  try {
+    const { imgUrl } = await fetchTCGCollectorCardDetails(v);
+    if (imgUrl) {
+      el.value = imgUrl;
+      if (status) {
+        status.className = 'ma-img-status success';
+        status.textContent = '✓ Got the artwork.';
+      }
+      return imgUrl;
+    }
+  } catch {}
+  if (status) {
+    status.className = 'ma-img-status error';
+    status.textContent = 'Couldn’t resolve that link to an image. Card was saved without artwork.';
+  }
+  // Don't save the bad page URL as an image — fall back to no override.
+  el.value = '';
+  return '';
+}
+
+async function saveCustomCard() {
   if (!cardData) return;
   const name = $('mcName').value.trim();
   const set = $('mcSet').value.trim();
@@ -4857,9 +4901,13 @@ function saveCustomCard() {
   const lang = $('mcLang').value === 'JP' ? 'JP' : 'EN';
   const r = $('mcRarity').value.trim();
   const sr = $('mcSeries').value.trim();
-  const img = $('mcImg').value.trim();
   const status = $('mcStatus');
   status.className = 'ql-status';
+  // Resolve TCGC link → image URL before persisting
+  const saveBtn = $('mcSaveBtn');
+  if (saveBtn) saveBtn.disabled = true;
+  const img = await resolveImageInputIfTCGC('mcImg', 'mcImgStatus');
+  if (saveBtn) saveBtn.disabled = false;
   if (!name || !set || !cn) {
     status.className = 'ql-status error';
     status.textContent = 'Please fill in name, set, and card number.';
@@ -4966,13 +5014,18 @@ function closeEditCard() {
   $('ecOverlay').setAttribute('aria-hidden', 'true');
   $('ecModal').style.display = 'none';
 }
-function saveEditCard() {
+async function saveEditCard() {
   if (!selectedCard) return;
   const c = selectedCard;
   const orig = c._orig || {
     n: c.n, s: c.s, cn: c.cn, ct: c.ct,
     r: c.r, sr: c.sr, lang: c.lang, img: c.img, nj: c.nj,
   };
+  // Resolve TCGC link → image URL before reading values
+  const saveBtn = $('ecSaveBtn');
+  if (saveBtn) saveBtn.disabled = true;
+  const resolvedImg = await resolveImageInputIfTCGC('ecImg', 'ecImgStatus');
+  if (saveBtn) saveBtn.disabled = false;
   const next = {
     n: $('ecName').value.trim(),
     s: $('ecSet').value.trim(),
@@ -4981,7 +5034,7 @@ function saveEditCard() {
     lang: $('ecLang').value === 'JP' ? 'JP' : 'EN',
     r: $('ecRarity').value.trim(),
     sr: $('ecSeries').value.trim(),
-    img: $('ecImg').value.trim(),
+    img: resolvedImg,
   };
   const status = $('ecStatus');
   if (!next.n || !next.s || !next.cn) {
