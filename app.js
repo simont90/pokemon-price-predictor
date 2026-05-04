@@ -143,11 +143,20 @@ let selectedCard = null;
 let searchIndex = [];
 const $ = id => document.getElementById(id);
 
+// Inline transparent placeholder used while a TCGC page-URL is being resolved
+// in the background, or when no valid image URL can be constructed.
+const CARD_PLACEHOLDER_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 245 342'>`
+  + `<rect width='100%' height='100%' rx='12' ry='12' fill='%23eef0f4' stroke='%23cdd2dc' stroke-width='2'/>`
+  + `<text x='50%' y='50%' text-anchor='middle' font-family='system-ui,sans-serif' font-size='18' fill='%237b8290'>Loading…</text>`
+  + `</svg>`
+);
+// One-shot in-flight set so we don't re-fetch the same TCGC page URL repeatedly
+const _pendingImgResolves = new Set();
+
 // ---- Image URL Helper (reconstructed from card ID to save DB size) ----
 function getCardImg(card) {
-  // Defensive: ignore malformed `img` overrides (e.g. a TCGC card-page URL
-  // saved before the image fetch completed). Only accept direct image URLs
-  // or recognised CDN domains.
+  // Accept direct image URLs or recognised CDN domains as-is.
   if (card.img && /^(https?:)?\/\//i.test(card.img)) {
     const u = card.img.toLowerCase();
     const looksLikeImage = /\.(webp|jpg|jpeg|png|gif|avif)(\?|#|$)/.test(u)
@@ -155,6 +164,13 @@ function getCardImg(card) {
       || u.includes('images.pokemontcg.io')
       || u.includes('assets.tcgdex.net');
     if (looksLikeImage) return card.img;
+    // Bad legacy override: a TCGC card-page URL was saved before the image
+    // fetch completed. Kick off a one-shot resolution that will rewrite it to
+    // the real CDN image, then re-render. Show a placeholder meanwhile.
+    if (typeof isTCGCollectorCardURL === 'function' && isTCGCollectorCardURL(card.img)) {
+      _resolveLegacyTCGCImage(card).catch(() => {});
+      return CARD_PLACEHOLDER_IMG;
+    }
   }
   if (card.lang === 'JP') {
     // JP cards: tcgdex format — jp-{set}-{num} -> /ja/{era}/{set}/{num}/high.png
@@ -164,7 +180,57 @@ function getCardImg(card) {
     return `https://assets.tcgdex.net/ja/S/${setCode}/${num}/high.png`;
   }
   // EN cards: pokemontcg.io format — {setCode}-{num} -> /images/{setCode}/{num}.png
+  // If there's no setCode (user-added cards), the constructed URL would be
+  // broken (`/images/pokemontcg.io//003.png`). Show the placeholder instead.
+  if (!card.sc) return CARD_PLACEHOLDER_IMG;
   return `https://images.pokemontcg.io/${card.sc}/${card.cn || card.ns || ''}.png`;
+}
+
+// Background resolver for legacy bad img values (TCGC card-page URLs).
+// Resolves to the real CDN image, persists the new value into both the
+// user-cards bucket and the per-card override, then re-renders.
+async function _resolveLegacyTCGCImage(card) {
+  if (!card || !card.img) return;
+  const pageUrl = card.img;
+  if (_pendingImgResolves.has(pageUrl)) return;
+  _pendingImgResolves.add(pageUrl);
+  try {
+    if (typeof fetchTCGCollectorCardDetails !== 'function') return;
+    const { imgUrl } = await fetchTCGCollectorCardDetails(pageUrl);
+    if (!imgUrl) return;
+    // Update in-memory copy
+    card.img = imgUrl;
+    // Persist to user-cards bucket if this is a user-added card
+    try {
+      if (card._userAdded && typeof loadUserCards === 'function') {
+        const userCards = loadUserCards();
+        const idx = userCards.findIndex(u => u.i === card.i);
+        if (idx >= 0) {
+          userCards[idx].img = imgUrl;
+          if (typeof saveUserCards === 'function') saveUserCards(userCards);
+        }
+      }
+    } catch {}
+    // Persist to override bucket too (so other rendering paths pick it up)
+    try {
+      if (typeof setCardOverride === 'function') setCardOverride(card.i, { img: imgUrl });
+    } catch {}
+    // Swap any rendered <img> tags currently pointing at the placeholder
+    try {
+      document.querySelectorAll('img').forEach(el => {
+        if (el.src === CARD_PLACEHOLDER_IMG || (el.dataset && el.dataset.cardId === card.i)) {
+          el.src = imgUrl;
+        }
+      });
+      // If this is the currently selected card, re-select to refresh the panel
+      if (typeof selectedCard !== 'undefined' && selectedCard && selectedCard.i === card.i
+          && typeof selectCard === 'function') {
+        selectCard(card.i);
+      }
+    } catch {}
+  } finally {
+    _pendingImgResolves.delete(pageUrl);
+  }
 }
 
 // ---- Live Pricing Cache (localStorage with TTL) ----
