@@ -136,6 +136,28 @@
       </div>
     </section>
 
+    <!-- Counterpart manual-override modal — lets the user pick the correct
+         EN/JP counterpart when the auto-match is wrong. -->
+    <div class="ql-overlay" id="cpovOverlay" style="display:none" aria-hidden="true"></div>
+    <section class="ql-modal" id="cpovModal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="cpovTitle">
+      <div class="ql-header">
+        <div>
+          <h2 id="cpovTitle">Pick the correct counterpart</h2>
+          <p class="ql-sub" id="cpovSub">Choose the right EN or JP version of this card. Your pick is saved per card.</p>
+        </div>
+        <button class="ql-close" id="cpovClose" aria-label="Close">✕</button>
+      </div>
+      <div class="ql-body">
+        <div class="pcov-current" id="cpovCurrent"></div>
+        <div class="ql-input-row">
+          <input type="text" id="cpovInput" placeholder="Search by name, set, or card number…" autocomplete="off" spellcheck="false">
+          <button class="pcov-clear-btn" id="cpovClearBtn">Clear override</button>
+        </div>
+        <div class="ql-status" id="cpovStatus"></div>
+        <div class="ql-results" id="cpovResults"></div>
+      </div>
+    </section>
+
     <!-- Manual Add Card modal — for cards not in the indexed database.
          Looks up TCG Collector and lets the user inject a synthetic card. -->
     <div class="ql-overlay" id="maOverlay" style="display:none" aria-hidden="true"></div>
@@ -227,6 +249,7 @@
                 <a id="linkTcgCollector" href="#" target="_blank" rel="noopener" class="card-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> tcgcollector</a>
                 <a id="linkTcgJp" href="#" target="_blank" rel="noopener" class="card-link jp-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> 🇯🇵 Japanese</a>
                 <a id="linkPriceCharting" href="#" target="_blank" rel="noopener" class="card-link pc-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> 📈 PriceCharting</a>
+                <button id="linkFindCounterpart" class="card-link cp-find-link" type="button" title="Manually pick the EN/JP counterpart"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7l10 10M7 17L17 7M3 12h18"/></svg> Pick counterpart</button>
               </div>
               <!-- HOLD / BUY / SELL Signal -->
               <div class="signal-badge-wrap" id="signalWrap" style="display:none">
@@ -244,6 +267,7 @@
                 <div class="cp-actions">
                   <button class="cp-btn cp-btn-primary" id="cpOpenBtn">Open counterpart</button>
                   <button class="cp-btn cp-btn-secondary" id="cpCompareBtn">Compare side-by-side</button>
+                  <button class="cp-btn cp-btn-tertiary" id="cpOverrideBtn" title="Pick the correct EN/JP counterpart manually">Wrong card? Pick manually</button>
                 </div>
               </div>
             </div>

@@ -2025,3 +2025,52 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 @media (max-width: 600px) {
   .ma-thumb { width: 48px; height: 68px; }
 }
+
+/* ================================================================
+   Counterpart override button + manual-pick visual indicator
+   ================================================================ */
+.cp-btn-tertiary {
+  background: transparent;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.cp-btn-tertiary:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* Inline "Pick counterpart" link in card-links bar */
+.cp-find-link {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-faint);
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.cp-find-link:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
+}
+
+/* Visual chip when the user has overridden the counterpart manually */
+.counterpart-flag.verdict-manual .cp-badge {
+  background: var(--supply-dim);
+  color: var(--supply);
+  border-color: var(--supply-border);
+}

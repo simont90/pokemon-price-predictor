@@ -306,6 +306,7 @@ async function init() {
   initPriceHistoryControls();
   setupQuickLookup();
   setupPCOverride();
+  setupCPOverride();
   setupManualAdd();
   setupPWANav();
   // Bring back any cards the user has manually added in past sessions, then
@@ -622,9 +623,44 @@ function scoreCounterpartMatch(source, candidate) {
   return score;
 }
 
-// Returns { counterparts:[cards], primary, counterpartLang }
+// Manual counterpart overrides — user picks the correct EN/JP counterpart
+// when our auto-match is wrong. Stored per-card in localStorage.
+const CP_OVERRIDE_KEY = 'pkm-counterpart-overrides-v1';
+function getCPOverrides() {
+  try { return JSON.parse(localStorage.getItem(CP_OVERRIDE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function setCPOverride(cardId, otherId) {
+  const all = getCPOverrides();
+  all[cardId] = otherId;
+  try { localStorage.setItem(CP_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
+}
+function clearCPOverride(cardId) {
+  const all = getCPOverrides();
+  delete all[cardId];
+  try { localStorage.setItem(CP_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
+}
+function getCPOverride(cardId) {
+  return getCPOverrides()[cardId] || null;
+}
+
+// Returns { counterparts:[cards], primary, counterpartLang, isManual }
 function findCounterparts(card) {
   if (!card) return null;
+  // Manual override wins over auto-detection
+  const overrideId = getCPOverride(card.i);
+  if (overrideId && cardData) {
+    const other = cardData.cards.find(c => c.i === overrideId);
+    if (other) {
+      return {
+        counterparts: [other],
+        primary: other,
+        counterpartLang: other.lang === 'JP' ? 'JP' : 'EN',
+        isManual: true,
+      };
+    }
+    // Override points to a card no longer in DB — fall through to auto
+  }
   const key = counterpartByCard.get(card.i);
   if (!key) return null;
   const bucket = counterpartIndex.get(key);
@@ -734,7 +770,7 @@ function renderCounterpartFlag(card) {
   if (!rec) { wrap.style.display = 'none'; return; }
 
   wrap.style.display = 'flex';
-  wrap.classList.remove('verdict-buy-jp', 'verdict-buy-en', 'verdict-tie', 'verdict-link-only');
+  wrap.classList.remove('verdict-buy-jp', 'verdict-buy-en', 'verdict-tie', 'verdict-link-only', 'verdict-manual');
   wrap.classList.add('verdict-' + rec.verdict);
 
   const badge = document.getElementById('cpBadge');
@@ -746,6 +782,7 @@ function renderCounterpartFlag(card) {
 
   // Headline + badge text per verdict
   const isJPSelf = card.lang === 'JP';
+  const isManual = !!getCPOverride(card.i);
   if (rec.verdict === 'buy-jp') {
     badge.textContent = 'Get the JP';
     headline.innerHTML = `<strong>Japanese version is the value pick</strong>`;
@@ -758,6 +795,12 @@ function renderCounterpartFlag(card) {
   } else {
     badge.textContent = 'Counterpart';
     headline.innerHTML = `${isJPSelf ? 'English' : 'Japanese'} counterpart found`;
+  }
+  if (isManual) {
+    badge.textContent = 'Manual pick';
+    wrap.classList.add('verdict-manual');
+  } else {
+    wrap.classList.remove('verdict-manual');
   }
 
   // Price cells — self on left, counterpart on right
@@ -4241,6 +4284,179 @@ function setupPCOverride() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('pcovModal').style.display !== 'none') closePCOverride();
   });
+}
+
+// ================================================================
+// Manual Counterpart Override — lets the user pick the correct EN/JP
+// counterpart when our auto-detection picks the wrong card. Search covers
+// the FULL indexed DB (filtered to opposite language), not just the bucket.
+// ================================================================
+let _cpovCard = null;
+
+function openCPOverride(card) {
+  if (!card) return;
+  _cpovCard = card;
+  $('cpovOverlay').style.display = '';
+  $('cpovOverlay').setAttribute('aria-hidden', 'false');
+  $('cpovModal').style.display = 'flex';
+
+  const wantLang = card.lang === 'JP' ? 'EN' : 'JP';
+  $('cpovSub').innerHTML = `Find the right <strong>${wantLang}</strong> counterpart for <em>${esc(card.n)}</em>${card.cn ? ` #${esc(card.cn)}` : ''} · ${esc(card.s || '')}.`;
+
+  // Render current state
+  renderCPOverrideCurrent();
+
+  // Pre-fill with the card name + number to give a useful starting search
+  const seed = `${card.n} ${card.cn || ''}`.trim();
+  const input = $('cpovInput');
+  input.value = seed;
+  $('cpovStatus').textContent = '';
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+  runCPOverrideSearch();
+}
+
+function closeCPOverride() {
+  $('cpovOverlay').style.display = 'none';
+  $('cpovOverlay').setAttribute('aria-hidden', 'true');
+  $('cpovModal').style.display = 'none';
+  _cpovCard = null;
+}
+
+function renderCPOverrideCurrent() {
+  if (!_cpovCard) return;
+  const cur = $('cpovCurrent');
+  const overrideId = getCPOverride(_cpovCard.i);
+  const auto = findCounterparts(_cpovCard);
+  if (overrideId && cardData) {
+    const o = cardData.cards.find(c => c.i === overrideId);
+    if (o) {
+      cur.innerHTML = `<strong>Manual override active:</strong> ${esc(o.n)} · ${esc(o.s || '')}${o.cn ? ' #' + esc(o.cn) : ''} <span class="lang-${o.lang === 'JP' ? 'jp' : 'en'}">${o.lang === 'JP' ? 'JP' : 'EN'}</span>`;
+      $('cpovClearBtn').disabled = false;
+      return;
+    }
+  }
+  if (auto && auto.primary) {
+    const o = auto.primary;
+    cur.innerHTML = `Currently auto-matched to: <strong>${esc(o.n)}</strong> · ${esc(o.s || '')}${o.cn ? ' #' + esc(o.cn) : ''} <span class="lang-${o.lang === 'JP' ? 'jp' : 'en'}">${o.lang === 'JP' ? 'JP' : 'EN'}</span>`;
+  } else {
+    cur.innerHTML = `<span class="pcov-current-empty">No auto-match found. Pick the right counterpart from the search below.</span>`;
+  }
+  $('cpovClearBtn').disabled = !overrideId;
+}
+
+function runCPOverrideSearch() {
+  if (!_cpovCard || !searchIndex) return;
+  const q = $('cpovInput').value.trim().toLowerCase();
+  const wantLang = _cpovCard.lang === 'JP' ? 'EN' : 'JP';
+  const status = $('cpovStatus');
+
+  // Filter searchIndex to opposite language only, exclude self
+  let pool = searchIndex.filter(c => {
+    if (c.i === _cpovCard.i) return false;
+    const isJP = c.lang === 'JP';
+    return wantLang === 'JP' ? isJP : !isJP;
+  });
+
+  if (q) {
+    // Token-AND match: every space-separated token must appear
+    const tokens = q.split(/\s+/).filter(Boolean);
+    pool = pool.filter(c => tokens.every(t => c._search.includes(t)));
+  }
+
+  // Boost cards in the same auto-bucket (likely correct family)
+  const myKey = counterpartByCard.get(_cpovCard.i);
+  pool.sort((a, b) => {
+    const ak = counterpartByCard.get(a.i) === myKey ? 1 : 0;
+    const bk = counterpartByCard.get(b.i) === myKey ? 1 : 0;
+    if (ak !== bk) return bk - ak;
+    // Then by name match closeness
+    const an = a.n === _cpovCard.n ? 1 : 0;
+    const bn = b.n === _cpovCard.n ? 1 : 0;
+    if (an !== bn) return bn - an;
+    return 0;
+  });
+
+  pool = pool.slice(0, 30);
+  if (!pool.length) {
+    status.className = 'ql-status error';
+    status.textContent = `No ${wantLang} cards match "${q}". Try a different query.`;
+    $('cpovResults').innerHTML = '';
+    return;
+  }
+  status.className = 'ql-status';
+  status.textContent = `Showing ${pool.length} ${wantLang} candidate${pool.length === 1 ? '' : 's'}. Pick the right one.`;
+  $('cpovResults').innerHTML = pool.map(renderCPOverrideCard).join('');
+  $('cpovResults').querySelectorAll('.cpov-pick').forEach(b => {
+    b.addEventListener('click', () => applyCPOverride(b.dataset.id));
+  });
+}
+
+function renderCPOverrideCard(c) {
+  const lang = c.lang === 'JP' ? 'JP' : 'EN';
+  const langBadge = lang === 'JP' ? '<span class="lang-jp">JP</span>' : '<span class="lang-en">EN</span>';
+  const num = c.cn ? (c.ct ? `${c.cn}/${c.ct}` : c.cn) : '';
+  return `
+    <div class="ql-card">
+      <div class="ql-card-head">
+        <div class="ql-card-title">
+          <div class="ql-card-name">${esc(c.n)}</div>
+          <div class="ql-card-set">${esc(c.s || '')}${num ? ' · #' + esc(num) : ''}${c.r ? ' · ' + esc(c.r) : ''}</div>
+          <div class="ql-card-meta">${langBadge}</div>
+        </div>
+        <div class="ql-card-actions">
+          <button class="pcov-pick-btn cpov-pick" data-id="${esc(c.i)}">Use this match</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function applyCPOverride(otherId) {
+  if (!_cpovCard) return;
+  setCPOverride(_cpovCard.i, otherId);
+  // Bust counterpart's live-price cache so we re-fetch fresh data on next render
+  try {
+    const cache = getPriceCache();
+    delete cache[otherId];
+    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+  closeCPOverride();
+  // Re-render the counterpart flag so the new pick shows immediately
+  renderCounterpartFlag(_cpovCard || selectedCard);
+  if (typeof selectedCard !== 'undefined' && selectedCard) renderCounterpartFlag(selectedCard);
+}
+
+function clearCPOverrideForCurrent() {
+  if (!_cpovCard) return;
+  clearCPOverride(_cpovCard.i);
+  renderCPOverrideCurrent();
+  if (typeof selectedCard !== 'undefined' && selectedCard) renderCounterpartFlag(selectedCard);
+}
+
+function setupCPOverride() {
+  $('cpovClose')?.addEventListener('click', closeCPOverride);
+  $('cpovOverlay')?.addEventListener('click', closeCPOverride);
+  $('cpovInput')?.addEventListener('input', debounce(runCPOverrideSearch, 200));
+  $('cpovInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') runCPOverrideSearch(); });
+  $('cpovClearBtn')?.addEventListener('click', clearCPOverrideForCurrent);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('cpovModal') && $('cpovModal').style.display !== 'none') closeCPOverride();
+  });
+  // Wire the buttons that open this modal
+  $('cpOverrideBtn')?.addEventListener('click', () => {
+    if (typeof selectedCard !== 'undefined' && selectedCard) openCPOverride(selectedCard);
+  });
+  $('linkFindCounterpart')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (typeof selectedCard !== 'undefined' && selectedCard) openCPOverride(selectedCard);
+  });
+}
+
+// debounce helper (use existing one if defined; otherwise tiny local)
+if (typeof debounce === 'undefined') {
+  // eslint-disable-next-line no-var
+  var debounce = function(fn, ms) {
+    let t; return function(...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
+  };
 }
 
 // ================================================================
