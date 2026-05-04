@@ -1873,6 +1873,65 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .pcov-pick-btn:active { transform: scale(0.97); }
 
 /* ================================================================
+   Counterpart override: dual-input search grid
+   ================================================================ */
+.cpov-search-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.cpov-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.cpov-field-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+.cpov-field input[type="text"] {
+  width: 100%;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+.cpov-field input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.cpov-field-num {
+  flex: 0 0 110px;
+}
+.cpov-field-num input[type="text"] {
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+}
+.cpov-buttons {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.cpov-buttons .ql-search-btn,
+.cpov-buttons .pcov-clear-btn {
+  height: 40px;
+}
+
+/* ================================================================
    PriceCharting row: confidence badge + override link
    ================================================================ */
 .pc-match-confidence {
@@ -1967,6 +2026,27 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   }
   .ql-input-row input[type="text"] { width: 100%; flex-basis: 100%; }
   .ql-jp-toggle, .ql-search-btn, .pcov-clear-btn {
+    flex: 1;
+    justify-content: center;
+    text-align: center;
+  }
+  /* Counterpart override modal — stack inputs and buttons */
+  .cpov-search-grid {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .cpov-field,
+  .cpov-field-num {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  .cpov-buttons {
+    flex-direction: row;
+    width: 100%;
+  }
+  .cpov-buttons .ql-search-btn,
+  .cpov-buttons .pcov-clear-btn {
     flex: 1;
     justify-content: center;
     text-align: center;

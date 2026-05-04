@@ -4306,12 +4306,13 @@ function openCPOverride(card) {
   // Render current state
   renderCPOverrideCurrent();
 
-  // Pre-fill with the card name + number to give a useful starting search
-  const seed = `${card.n} ${card.cn || ''}`.trim();
-  const input = $('cpovInput');
-  input.value = seed;
+  // Pre-fill with just the Pokémon name (most lenient default)
+  const nameInput = $('cpovInput');
+  const numInput = $('cpovNumInput');
+  if (nameInput) nameInput.value = card.n || '';
+  if (numInput) numInput.value = ''; // start with no number filter so we don't return 0
   $('cpovStatus').textContent = '';
-  setTimeout(() => { input.focus(); input.select(); }, 50);
+  setTimeout(() => { if (nameInput) { nameInput.focus(); nameInput.select(); } }, 50);
   runCPOverrideSearch();
 }
 
@@ -4347,6 +4348,7 @@ function renderCPOverrideCurrent() {
 function runCPOverrideSearch() {
   if (!_cpovCard || !searchIndex) return;
   const q = $('cpovInput').value.trim().toLowerCase();
+  const num = ($('cpovNumInput')?.value || '').trim().toLowerCase();
   const wantLang = _cpovCard.lang === 'JP' ? 'EN' : 'JP';
   const status = $('cpovStatus');
 
@@ -4358,9 +4360,20 @@ function runCPOverrideSearch() {
   });
 
   if (q) {
-    // Token-AND match: every space-separated token must appear
+    // Token-AND match for name/set: every space-separated token must appear
     const tokens = q.split(/\s+/).filter(Boolean);
     pool = pool.filter(c => tokens.every(t => c._search.includes(t)));
+  }
+
+  if (num) {
+    // Match card number flexibly: "125" matches "125", "125/197", "125a", but
+    // not "1125". Strip leading zeros from both sides for tolerance (066 ↔ 66).
+    const stripped = num.replace(/^0+/, '') || '0';
+    pool = pool.filter(c => {
+      const cn = (c.cn || '').toString().toLowerCase();
+      const cnStripped = cn.replace(/^0+/, '') || cn;
+      return cn === num || cnStripped === stripped || cn.startsWith(num + '/') || cnStripped.startsWith(stripped + '/');
+    });
   }
 
   // Boost cards in the same auto-bucket (likely correct family)
@@ -4435,28 +4448,35 @@ function clearCPOverrideForCurrent() {
 function setupCPOverride() {
   $('cpovClose')?.addEventListener('click', closeCPOverride);
   $('cpovOverlay')?.addEventListener('click', closeCPOverride);
-  $('cpovInput')?.addEventListener('input', debounce(runCPOverrideSearch, 200));
-  $('cpovInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') runCPOverrideSearch(); });
+  // Both inputs trigger live search
+  const debounced = cpovDebounce(runCPOverrideSearch, 180);
+  $('cpovInput')?.addEventListener('input', debounced);
+  $('cpovNumInput')?.addEventListener('input', debounced);
+  // Enter key + explicit Search button
+  const onEnter = (e) => { if (e.key === 'Enter') runCPOverrideSearch(); };
+  $('cpovInput')?.addEventListener('keydown', onEnter);
+  $('cpovNumInput')?.addEventListener('keydown', onEnter);
+  $('cpovSearchBtn')?.addEventListener('click', runCPOverrideSearch);
   $('cpovClearBtn')?.addEventListener('click', clearCPOverrideForCurrent);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('cpovModal') && $('cpovModal').style.display !== 'none') closeCPOverride();
   });
   // Wire the buttons that open this modal
   $('cpOverrideBtn')?.addEventListener('click', () => {
-    if (typeof selectedCard !== 'undefined' && selectedCard) openCPOverride(selectedCard);
+    if (selectedCard) openCPOverride(selectedCard);
+    else alert('Select a card first.');
   });
   $('linkFindCounterpart')?.addEventListener('click', (e) => {
     e.preventDefault();
-    if (typeof selectedCard !== 'undefined' && selectedCard) openCPOverride(selectedCard);
+    if (selectedCard) openCPOverride(selectedCard);
+    else alert('Select a card first.');
   });
 }
 
-// debounce helper (use existing one if defined; otherwise tiny local)
-if (typeof debounce === 'undefined') {
-  // eslint-disable-next-line no-var
-  var debounce = function(fn, ms) {
-    let t; return function(...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
-  };
+// Tiny local debounce so we don't depend on outer scope
+function cpovDebounce(fn, ms) {
+  let t;
+  return function(...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
 }
 
 // ================================================================

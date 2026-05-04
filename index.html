@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260504">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -149,9 +149,19 @@
       </div>
       <div class="ql-body">
         <div class="pcov-current" id="cpovCurrent"></div>
-        <div class="ql-input-row">
-          <input type="text" id="cpovInput" placeholder="Search by name, set, or card number…" autocomplete="off" spellcheck="false">
-          <button class="pcov-clear-btn" id="cpovClearBtn">Clear override</button>
+        <div class="cpov-search-grid">
+          <label class="cpov-field">
+            <span class="cpov-field-label">Card name / set</span>
+            <input type="text" id="cpovInput" placeholder="e.g. Charizard ex, Obsidian Flames" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="cpov-field cpov-field-num">
+            <span class="cpov-field-label">Card number</span>
+            <input type="text" id="cpovNumInput" placeholder="e.g. 125 or 066" autocomplete="off" spellcheck="false" inputmode="text">
+          </label>
+          <div class="cpov-buttons">
+            <button class="ql-search-btn" id="cpovSearchBtn">Search</button>
+            <button class="pcov-clear-btn" id="cpovClearBtn">Clear override</button>
+          </div>
         </div>
         <div class="ql-status" id="cpovStatus"></div>
         <div class="ql-results" id="cpovResults"></div>
@@ -780,6 +790,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260504"></script>
 </body>
 </html>
