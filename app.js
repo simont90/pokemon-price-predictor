@@ -4448,14 +4448,12 @@ function clearCPOverrideForCurrent() {
 function setupCPOverride() {
   $('cpovClose')?.addEventListener('click', closeCPOverride);
   $('cpovOverlay')?.addEventListener('click', closeCPOverride);
-  // Both inputs trigger live search
+  // Single input — live search as the user types
   const debounced = cpovDebounce(runCPOverrideSearch, 180);
   $('cpovInput')?.addEventListener('input', debounced);
-  $('cpovNumInput')?.addEventListener('input', debounced);
   // Enter key + explicit Search button
   const onEnter = (e) => { if (e.key === 'Enter') runCPOverrideSearch(); };
   $('cpovInput')?.addEventListener('keydown', onEnter);
-  $('cpovNumInput')?.addEventListener('keydown', onEnter);
   $('cpovSearchBtn')?.addEventListener('click', runCPOverrideSearch);
   $('cpovClearBtn')?.addEventListener('click', clearCPOverrideForCurrent);
   document.addEventListener('keydown', (e) => {
