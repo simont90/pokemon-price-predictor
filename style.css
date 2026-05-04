@@ -1969,6 +1969,19 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   height: 40px;
 }
 
+/* Inline status text under the image-URL input */
+.ma-img-status {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  min-height: 14px;
+  margin-top: 2px;
+  letter-spacing: 0.01em;
+}
+.ma-img-status.loading { color: var(--text-muted); }
+.ma-img-status.success { color: var(--green, #4ade80); }
+.ma-img-status.error { color: var(--red, #f87171); }
+
 /* Edit details link — same shape as the other card-link buttons */
 .ec-edit-link {
   background: var(--bg-raised);

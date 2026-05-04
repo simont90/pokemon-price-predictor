@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260504c">
+  <link rel="stylesheet" href="style.css?v=20260504d">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -234,8 +234,9 @@
               </label>
             </div>
             <label class="ma-field">
-              <span class="ma-field-label">Image URL <span class="ma-opt">(optional)</span></span>
-              <input type="url" id="mcImg" placeholder="https://…" autocomplete="off" spellcheck="false">
+              <span class="ma-field-label">Image or TCG Collector URL <span class="ma-opt">(optional)</span></span>
+              <input type="url" id="mcImg" placeholder="Paste a tcgcollector.com card link — we'll extract the image" autocomplete="off" spellcheck="false">
+              <span class="ma-img-status" id="mcImgStatus"></span>
             </label>
             <div class="ma-form-actions">
               <button class="ql-search-btn" id="mcSaveBtn" type="button">Save card</button>
@@ -297,8 +298,9 @@
             </label>
           </div>
           <label class="ma-field">
-            <span class="ma-field-label">Image URL <span class="ma-opt">(optional)</span></span>
-            <input type="url" id="ecImg" autocomplete="off" spellcheck="false">
+            <span class="ma-field-label">Image or TCG Collector URL <span class="ma-opt">(optional)</span></span>
+            <input type="url" id="ecImg" placeholder="Paste a tcgcollector.com card link — we'll extract the image" autocomplete="off" spellcheck="false">
+            <span class="ma-img-status" id="ecImgStatus"></span>
           </label>
           <div class="ma-form-actions">
             <button class="ql-search-btn" id="ecSaveBtn" type="button">Save changes</button>
@@ -910,6 +912,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260504c"></script>
+  <script src="app.js?v=20260504d"></script>
 </body>
 </html>

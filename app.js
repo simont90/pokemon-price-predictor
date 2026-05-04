@@ -4742,6 +4742,97 @@ function addManualCardFromTCGC(r, isJPHint) {
 }
 
 // ----------------------------------------------------------------
+// TCG Collector URL → card-art helper
+// Lets the user paste a tcgcollector.com/cards/... link and we extract
+// the card image from the rendered page (via r.jina.ai). Used by both
+// the 'Add from scratch' and 'Edit details' image fields.
+// ----------------------------------------------------------------
+function isTCGCollectorCardURL(s) {
+  return /^https?:\/\/(www\.)?tcgcollector\.com\/cards\/\d+\b/i.test((s || '').trim());
+}
+
+// Fetch a TCGC card detail page through r.jina.ai and pull out the first
+// real card-art image URL. Returns { imgUrl, name, setLabel, num } where
+// any field may be empty if not parseable.
+async function fetchTCGCollectorCardDetails(url) {
+  const clean = url.trim().replace(/[#?].*$/, '');
+  const resp = await fetch(`https://r.jina.ai/${clean}`, { headers: { 'Accept': 'text/plain' } });
+  if (!resp.ok) throw new Error(`TCG Collector lookup failed (${resp.status})`);
+  const md = await resp.text();
+  // First static.tcgcollector.com card-art image is the front of the card.
+  const imgM = md.match(/(https:\/\/static\.tcgcollector\.com\/content\/images\/[^\s)"]+\.(?:webp|jpg|jpeg|png))/i);
+  const imgUrl = imgM ? imgM[1] : '';
+  // The detail page often opens with a header like "# Charizard ex\n\n...Obsidian Flames 125/197".
+  // Be lenient — just look for a recognisable "Set Name 125/197" pattern.
+  let name = '';
+  let setLabel = '';
+  let num = '';
+  const titleM = md.match(/^#\s+(.+?)\s*$/m);
+  if (titleM) name = titleM[1].trim();
+  const setM = md.match(/([A-Za-z][^\n]{2,80}?)\s+(\d+[a-zA-Z]?)\s*\/\s*(\d+[a-zA-Z]?)/);
+  if (setM) { setLabel = setM[1].trim(); num = setM[2]; }
+  return { imgUrl, name, setLabel, num };
+}
+
+// Wire a (input, status, optional name/set/num inputs) trio so that pasting a
+// TCGC URL fetches the image and — if the corresponding text fields are empty
+// — also pre-fills name/set/number. Auto-fires on input + paste, debounced.
+function wireTCGCImageInput(imgInputId, statusId, opts = {}) {
+  const input = $(imgInputId);
+  const status = $(statusId);
+  if (!input || !status) return;
+  let token = 0;
+  async function maybeFetch() {
+    const v = input.value.trim();
+    status.className = 'ma-img-status';
+    if (!v) { status.textContent = ''; return; }
+    if (!isTCGCollectorCardURL(v)) {
+      // Plain image URL or anything else: leave it alone.
+      if (/\.(webp|jpg|jpeg|png)(\?|$)/i.test(v)) status.textContent = 'Image URL detected.';
+      else status.textContent = '';
+      return;
+    }
+    const my = ++token;
+    status.className = 'ma-img-status loading';
+    status.textContent = 'Fetching artwork from TCG Collector…';
+    try {
+      const { imgUrl, name, setLabel, num } = await fetchTCGCollectorCardDetails(v);
+      if (my !== token) return; // stale
+      if (!imgUrl) {
+        status.className = 'ma-img-status error';
+        status.textContent = 'Couldn’t find card art on that page — paste a different link or a direct image URL.';
+        return;
+      }
+      input.value = imgUrl;
+      status.className = 'ma-img-status success';
+      status.textContent = '✓ Got the artwork.';
+      // Helpfully pre-fill linked text fields when they're empty.
+      if (opts.nameId && name) {
+        const el = $(opts.nameId);
+        if (el && !el.value.trim()) el.value = name;
+      }
+      if (opts.setId && setLabel) {
+        const el = $(opts.setId);
+        if (el && !el.value.trim()) el.value = setLabel;
+      }
+      if (opts.numId && num) {
+        const el = $(opts.numId);
+        if (el && !el.value.trim()) el.value = num;
+      }
+    } catch (e) {
+      if (my !== token) return;
+      status.className = 'ma-img-status error';
+      status.textContent = `Couldn’t reach TCG Collector. ${e.message || ''}`;
+    }
+  }
+  // Debounce keyboard input; fire immediately on paste/blur.
+  let t;
+  input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(maybeFetch, 350); });
+  input.addEventListener('paste', () => { clearTimeout(t); setTimeout(maybeFetch, 50); });
+  input.addEventListener('blur', () => { clearTimeout(t); maybeFetch(); });
+}
+
+// ----------------------------------------------------------------
 // Tab switcher inside the Manual Add modal (Search vs Add from scratch)
 // ----------------------------------------------------------------
 function switchManualAddTab(which) {
@@ -4834,6 +4925,8 @@ function setupManualAdd() {
   // Custom-card form
   $('mcSaveBtn')?.addEventListener('click', saveCustomCard);
   $('mcClearBtn')?.addEventListener('click', clearCustomCardForm);
+  // TCGC URL → image extractor for the custom-add form
+  wireTCGCImageInput('mcImg', 'mcImgStatus', { nameId: 'mcName', setId: 'mcSet', numId: 'mcNum' });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('maModal') && $('maModal').style.display !== 'none') closeManualAdd();
   });
@@ -4972,6 +5065,9 @@ function setupEditCard() {
   $('ecSaveBtn')?.addEventListener('click', saveEditCard);
   $('ecResetBtn')?.addEventListener('click', resetEditCard);
   $('linkEditCard')?.addEventListener('click', openEditCard);
+  // TCGC URL → image extractor (don't auto-fill name/set/number when editing
+  // an existing card — the user usually keeps those, just refreshing the art).
+  wireTCGCImageInput('ecImg', 'ecImgStatus');
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('ecModal') && $('ecModal').style.display !== 'none') closeEditCard();
   });
