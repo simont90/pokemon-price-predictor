@@ -1873,6 +1873,116 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .pcov-pick-btn:active { transform: scale(0.97); }
 
 /* ================================================================
+   Manual Add modal — tabs + custom-card form
+   ================================================================ */
+.ma-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.ma-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  border-radius: 6px 6px 0 0;
+  margin-bottom: -1px;
+}
+.ma-tab:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.ma-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.ma-tab-active:hover { background: transparent; }
+
+.ma-pane { padding-top: 4px; }
+.ma-form-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+.ma-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ma-form-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ma-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.ma-field-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+.ma-req { color: var(--red); margin-left: 2px; }
+.ma-opt { color: var(--text-faint); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.ma-form input[type="text"],
+.ma-form input[type="url"],
+.ma-form select {
+  width: 100%;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ma-form input:focus,
+.ma-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.ma-field-num { flex: 0 0 110px; }
+.ma-field-num input { font-family: var(--mono); letter-spacing: 0.04em; }
+.ma-field-lang { flex: 0 0 140px; }
+.ma-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.ma-form-actions .ql-search-btn,
+.ma-form-actions .pcov-clear-btn {
+  height: 40px;
+}
+
+/* Edit details link — same shape as the other card-link buttons */
+.ec-edit-link {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+.ec-edit-link:hover {
+  color: var(--text);
+  border-color: var(--border-light);
+}
+
+/* ================================================================
    Counterpart override: dual-input search grid
    ================================================================ */
 .cpov-search-grid {
@@ -2030,6 +2140,16 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
     justify-content: center;
     text-align: center;
   }
+  /* Manual Add custom-card form — stack on small screens */
+  .ma-form-row { flex-direction: column; gap: 10px; }
+  .ma-field-num,
+  .ma-field-lang { flex: 1 1 100%; }
+  .ma-form-actions .ql-search-btn,
+  .ma-form-actions .pcov-clear-btn {
+    flex: 1; justify-content: center; text-align: center;
+  }
+  .ma-tab { padding: 8px 10px; font-size: 12px; }
+
   /* Counterpart override modal — stack inputs and buttons */
   .cpov-search-grid {
     flex-direction: column;

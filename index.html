@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260504b">
+  <link rel="stylesheet" href="style.css?v=20260504c">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -176,13 +176,136 @@
         <button class="ql-close" id="maClose" aria-label="Close">✕</button>
       </div>
       <div class="ql-body">
-        <div class="ql-input-row">
-          <input type="text" id="maInput" placeholder="Card number, name, or both — e.g. 125 obsidian flames" autocomplete="off" spellcheck="false">
-          <label class="ql-jp-toggle"><input type="checkbox" id="maJP"> Japanese</label>
-          <button class="ql-search-btn" id="maSearchBtn">Search</button>
+        <div class="ma-tabs" role="tablist">
+          <button class="ma-tab ma-tab-active" id="maTabSearch" role="tab" aria-selected="true" type="button">Search TCG Collector</button>
+          <button class="ma-tab" id="maTabCustom" role="tab" aria-selected="false" type="button">Add from scratch</button>
         </div>
-        <div class="ql-status" id="maStatus">Tip: include the set name for the best results (e.g. <em>Charizard 125 Obsidian Flames</em>).</div>
-        <div class="ql-results" id="maResults"></div>
+
+        <!-- TAB 1: Search TCG Collector (existing flow) -->
+        <div class="ma-pane" id="maPaneSearch">
+          <div class="ql-input-row">
+            <input type="text" id="maInput" placeholder="Card number, name, or both — e.g. 125 obsidian flames" autocomplete="off" spellcheck="false">
+            <label class="ql-jp-toggle"><input type="checkbox" id="maJP"> Japanese</label>
+            <button class="ql-search-btn" id="maSearchBtn">Search</button>
+          </div>
+          <div class="ql-status" id="maStatus">Tip: include the set name for the best results (e.g. <em>Charizard 125 Obsidian Flames</em>).</div>
+          <div class="ql-results" id="maResults"></div>
+        </div>
+
+        <!-- TAB 2: Add from scratch — user types details directly when TCG Collector
+             can't find the card (e.g. small / regional / very new sets). Saved to
+             localStorage and survives reloads via the same user-cards bucket. -->
+        <div class="ma-pane" id="maPaneCustom" style="display:none">
+          <p class="ma-form-hint">Enter the card details exactly as printed. The card is saved locally on this device and used like any indexed card.</p>
+          <div class="ma-form">
+            <label class="ma-field">
+              <span class="ma-field-label">Pokémon name <span class="ma-req">*</span></span>
+              <input type="text" id="mcName" placeholder="e.g. Charizard ex" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="ma-field">
+              <span class="ma-field-label">Set name <span class="ma-req">*</span></span>
+              <input type="text" id="mcSet" placeholder="e.g. Pokémon Card 151" autocomplete="off" spellcheck="false">
+            </label>
+            <div class="ma-form-row">
+              <label class="ma-field ma-field-num">
+                <span class="ma-field-label">Card number <span class="ma-req">*</span></span>
+                <input type="text" id="mcNum" placeholder="003" autocomplete="off" spellcheck="false" inputmode="text">
+              </label>
+              <label class="ma-field ma-field-num">
+                <span class="ma-field-label">Total in set</span>
+                <input type="text" id="mcTotal" placeholder="032" autocomplete="off" spellcheck="false" inputmode="text">
+              </label>
+              <label class="ma-field ma-field-lang">
+                <span class="ma-field-label">Language</span>
+                <select id="mcLang">
+                  <option value="EN">English</option>
+                  <option value="JP">Japanese</option>
+                </select>
+              </label>
+            </div>
+            <div class="ma-form-row">
+              <label class="ma-field">
+                <span class="ma-field-label">Rarity</span>
+                <input type="text" id="mcRarity" placeholder="e.g. Special Illustration Rare" autocomplete="off" spellcheck="false">
+              </label>
+              <label class="ma-field">
+                <span class="ma-field-label">Series</span>
+                <input type="text" id="mcSeries" placeholder="e.g. Scarlet &amp; Violet" autocomplete="off" spellcheck="false">
+              </label>
+            </div>
+            <label class="ma-field">
+              <span class="ma-field-label">Image URL <span class="ma-opt">(optional)</span></span>
+              <input type="url" id="mcImg" placeholder="https://…" autocomplete="off" spellcheck="false">
+            </label>
+            <div class="ma-form-actions">
+              <button class="ql-search-btn" id="mcSaveBtn" type="button">Save card</button>
+              <button class="pcov-clear-btn" id="mcClearBtn" type="button">Clear form</button>
+            </div>
+            <div class="ql-status" id="mcStatus"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Edit Card modal — lets the user override name/set/number/rarity/series/image
+         on any card (indexed or user-added). Overrides are saved to localStorage
+         and re-applied on every load. -->
+    <div class="ql-overlay" id="ecOverlay" style="display:none" aria-hidden="true"></div>
+    <section class="ql-modal" id="ecModal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ecTitle">
+      <div class="ql-header">
+        <div>
+          <h2 id="ecTitle">Edit card details</h2>
+          <p class="ql-sub" id="ecSub">Override information when the indexed data is wrong. Saved on this device only.</p>
+        </div>
+        <button class="ql-close" id="ecClose" aria-label="Close">✕</button>
+      </div>
+      <div class="ql-body">
+        <div class="ma-form">
+          <label class="ma-field">
+            <span class="ma-field-label">Pokémon name</span>
+            <input type="text" id="ecName" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="ma-field">
+            <span class="ma-field-label">Set name</span>
+            <input type="text" id="ecSet" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="ma-form-row">
+            <label class="ma-field ma-field-num">
+              <span class="ma-field-label">Card number</span>
+              <input type="text" id="ecNum" autocomplete="off" spellcheck="false" inputmode="text">
+            </label>
+            <label class="ma-field ma-field-num">
+              <span class="ma-field-label">Total in set</span>
+              <input type="text" id="ecTotal" autocomplete="off" spellcheck="false" inputmode="text">
+            </label>
+            <label class="ma-field ma-field-lang">
+              <span class="ma-field-label">Language</span>
+              <select id="ecLang">
+                <option value="EN">English</option>
+                <option value="JP">Japanese</option>
+              </select>
+            </label>
+          </div>
+          <div class="ma-form-row">
+            <label class="ma-field">
+              <span class="ma-field-label">Rarity</span>
+              <input type="text" id="ecRarity" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="ma-field">
+              <span class="ma-field-label">Series</span>
+              <input type="text" id="ecSeries" autocomplete="off" spellcheck="false">
+            </label>
+          </div>
+          <label class="ma-field">
+            <span class="ma-field-label">Image URL <span class="ma-opt">(optional)</span></span>
+            <input type="url" id="ecImg" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="ma-form-actions">
+            <button class="ql-search-btn" id="ecSaveBtn" type="button">Save changes</button>
+            <button class="pcov-clear-btn" id="ecResetBtn" type="button">Reset to original</button>
+          </div>
+          <div class="ql-status" id="ecStatus"></div>
+        </div>
       </div>
     </section>
 
@@ -256,6 +379,7 @@
                 <a id="linkTcgJp" href="#" target="_blank" rel="noopener" class="card-link jp-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> 🇯🇵 Japanese</a>
                 <a id="linkPriceCharting" href="#" target="_blank" rel="noopener" class="card-link pc-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> 📈 PriceCharting</a>
                 <button id="linkFindCounterpart" class="card-link cp-find-link" type="button" title="Manually pick the EN/JP counterpart"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7l10 10M7 17L17 7M3 12h18"/></svg> Pick counterpart</button>
+                <button id="linkEditCard" class="card-link ec-edit-link" type="button" title="Override card details (name, number, set, etc.)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg> Edit details</button>
               </div>
               <!-- HOLD / BUY / SELL Signal -->
               <div class="signal-badge-wrap" id="signalWrap" style="display:none">
@@ -786,6 +910,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260504b"></script>
+  <script src="app.js?v=20260504c"></script>
 </body>
 </html>

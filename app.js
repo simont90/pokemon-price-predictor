@@ -308,6 +308,7 @@ async function init() {
   setupPCOverride();
   setupCPOverride();
   setupManualAdd();
+  setupEditCard();
   setupPWANav();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
@@ -4491,16 +4492,70 @@ function saveUserCards(arr) {
   try { localStorage.setItem(USER_CARDS_KEY, JSON.stringify(arr)); } catch {}
 }
 
+// ================================================================
+// Card-detail OVERRIDES — lets the user fix wrong information on any
+// card (indexed or user-added). Persisted to localStorage and re-applied
+// every time the card DB is loaded.
+//   shape: { [cardId]: { n?, s?, cn?, ct?, r?, sr?, lang?, img?, nj? } }
+// ================================================================
+const CARD_OVERRIDES_KEY = 'pkm-card-overrides-v1';
+function loadCardOverrides() {
+  try { return JSON.parse(localStorage.getItem(CARD_OVERRIDES_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveCardOverrides(o) {
+  try { localStorage.setItem(CARD_OVERRIDES_KEY, JSON.stringify(o)); } catch {}
+}
+function setCardOverride(id, fields) {
+  const all = loadCardOverrides();
+  all[id] = { ...(all[id] || {}), ...fields };
+  saveCardOverrides(all);
+}
+function clearCardOverride(id) {
+  const all = loadCardOverrides();
+  delete all[id];
+  saveCardOverrides(all);
+}
+// Mutate a card object in place with any override that exists for it.
+// Stash the original snapshot in `_orig` so 'Reset to original' works
+// even after the override has been applied multiple times.
+function applyCardOverride(card, override) {
+  if (!override) return false;
+  if (!card._orig) {
+    card._orig = {
+      n: card.n, s: card.s, cn: card.cn, ct: card.ct,
+      r: card.r, sr: card.sr, lang: card.lang, img: card.img, nj: card.nj,
+    };
+  }
+  let changed = false;
+  for (const k of ['n','s','cn','ct','r','sr','lang','img','nj']) {
+    if (override[k] !== undefined && card[k] !== override[k]) {
+      card[k] = override[k];
+      changed = true;
+    }
+  }
+  card._edited = true;
+  return changed;
+}
+
 // Re-inject any user-added cards on init so they survive reloads.
+// Also re-apply any field overrides on indexed cards so corrections persist.
 function injectUserCards() {
   if (!cardData || !Array.isArray(cardData.cards)) return;
   const userCards = loadUserCards();
-  if (!userCards.length) return;
   const existing = new Set(cardData.cards.map(c => c.i));
   for (const uc of userCards) {
     if (!existing.has(uc.i)) cardData.cards.push(uc);
   }
   cardData.count = cardData.cards.length;
+  // Apply per-card overrides AFTER user cards are injected so edits to
+  // user-added cards also take effect.
+  const overrides = loadCardOverrides();
+  if (Object.keys(overrides).length) {
+    for (const c of cardData.cards) {
+      if (overrides[c.i]) applyCardOverride(c, overrides[c.i]);
+    }
+  }
 }
 
 function openManualAdd(seed) {
@@ -4686,6 +4741,83 @@ function addManualCardFromTCGC(r, isJPHint) {
   selectCard(id);
 }
 
+// ----------------------------------------------------------------
+// Tab switcher inside the Manual Add modal (Search vs Add from scratch)
+// ----------------------------------------------------------------
+function switchManualAddTab(which) {
+  const search = which === 'search';
+  $('maTabSearch')?.classList.toggle('ma-tab-active', search);
+  $('maTabCustom')?.classList.toggle('ma-tab-active', !search);
+  $('maTabSearch')?.setAttribute('aria-selected', String(search));
+  $('maTabCustom')?.setAttribute('aria-selected', String(!search));
+  $('maPaneSearch').style.display = search ? '' : 'none';
+  $('maPaneCustom').style.display = search ? 'none' : '';
+}
+
+// ----------------------------------------------------------------
+// Add-from-scratch: validate the form, build a synthetic card and persist.
+// ----------------------------------------------------------------
+function saveCustomCard() {
+  if (!cardData) return;
+  const name = $('mcName').value.trim();
+  const set = $('mcSet').value.trim();
+  const cn = $('mcNum').value.trim();
+  const ct = $('mcTotal').value.trim();
+  const lang = $('mcLang').value === 'JP' ? 'JP' : 'EN';
+  const r = $('mcRarity').value.trim();
+  const sr = $('mcSeries').value.trim();
+  const img = $('mcImg').value.trim();
+  const status = $('mcStatus');
+  status.className = 'ql-status';
+  if (!name || !set || !cn) {
+    status.className = 'ql-status error';
+    status.textContent = 'Please fill in name, set, and card number.';
+    return;
+  }
+  // Build a stable id for the custom card. Use a content hash so re-adding
+  // the same card later still maps to the same entry.
+  const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g,'');
+  const id = `usr-${lang.toLowerCase()}-${slug(set)}-${slug(name)}-${slug(cn)}`;
+  if (cardData.cards.find(c => c.i === id)) {
+    status.className = 'ql-status error';
+    status.textContent = 'A card with these details already exists. Open it from search instead.';
+    return;
+  }
+  const card = {
+    i: id, n: name, s: set, sc: '', cn, ct, r: r || '', sr: sr || '',
+    p: 0, lang, img: img || '', nj: '',
+    _userAdded: true, _custom: true,
+  };
+  const userCards = loadUserCards();
+  userCards.push(card);
+  saveUserCards(userCards);
+  cardData.cards.push(card);
+  cardData.count = cardData.cards.length;
+  buildSearchIndex(cardData.cards);
+  if (typeof buildCounterpartIndex === 'function') buildCounterpartIndex(cardData.cards);
+  // Refresh search-count display
+  try {
+    const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
+    const enCount = cardData.count - jpCount;
+    const userCount = cardData.cards.filter(c => c._userAdded).length;
+    const userSuffix = userCount > 0 ? ` + ${userCount} added` : '';
+    $('searchCount').textContent =
+      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${userSuffix})`;
+  } catch {}
+  status.className = 'ql-status success';
+  status.textContent = 'Card saved. Opening it now…';
+  closeManualAdd();
+  selectCard(id);
+}
+
+function clearCustomCardForm() {
+  ['mcName','mcSet','mcNum','mcTotal','mcRarity','mcSeries','mcImg'].forEach(id => { const el = $(id); if (el) el.value = ''; });
+  $('mcLang').value = 'EN';
+  $('mcStatus').textContent = '';
+  $('mcStatus').className = 'ql-status';
+  $('mcName').focus();
+}
+
 function setupManualAdd() {
   const open = () => openManualAdd($('searchInput').value.trim());
   const closeBtn = $('maClose');
@@ -4696,11 +4828,153 @@ function setupManualAdd() {
   if (searchBtn) searchBtn.addEventListener('click', runManualAddSearch);
   const input = $('maInput');
   if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') runManualAddSearch(); });
+  // Tabs
+  $('maTabSearch')?.addEventListener('click', () => switchManualAddTab('search'));
+  $('maTabCustom')?.addEventListener('click', () => switchManualAddTab('custom'));
+  // Custom-card form
+  $('mcSaveBtn')?.addEventListener('click', saveCustomCard);
+  $('mcClearBtn')?.addEventListener('click', clearCustomCardForm);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('maModal') && $('maModal').style.display !== 'none') closeManualAdd();
   });
   // Make openManualAdd globally reachable for the empty-state button
   window.openManualAdd = openManualAdd;
+}
+
+// ================================================================
+// Edit Card modal — override details on any card (indexed or user-added)
+// ================================================================
+function openEditCard() {
+  if (!selectedCard) { alert('Select a card first.'); return; }
+  const c = selectedCard;
+  const orig = c._orig || c; // _orig has untouched values if overrides exist
+  $('ecName').value = c.n || '';
+  $('ecSet').value = c.s || '';
+  $('ecNum').value = c.cn || '';
+  $('ecTotal').value = c.ct || '';
+  $('ecLang').value = c.lang === 'JP' ? 'JP' : 'EN';
+  $('ecRarity').value = c.r || '';
+  $('ecSeries').value = c.sr || '';
+  $('ecImg').value = c.img || '';
+  const sub = $('ecSub');
+  const hasOverride = !!loadCardOverrides()[c.i];
+  sub.innerHTML = hasOverride
+    ? `Editing <code>${escapeHtml(orig.n)}</code> — <strong>currently overridden</strong>. Saved on this device only.`
+    : `Editing <code>${escapeHtml(c.n)}</code>. Changes are saved on this device only.`;
+  $('ecStatus').textContent = '';
+  $('ecStatus').className = 'ql-status';
+  $('ecOverlay').style.display = '';
+  $('ecOverlay').setAttribute('aria-hidden', 'false');
+  $('ecModal').style.display = 'flex';
+  setTimeout(() => $('ecName').focus(), 50);
+}
+function closeEditCard() {
+  $('ecOverlay').style.display = 'none';
+  $('ecOverlay').setAttribute('aria-hidden', 'true');
+  $('ecModal').style.display = 'none';
+}
+function saveEditCard() {
+  if (!selectedCard) return;
+  const c = selectedCard;
+  const orig = c._orig || {
+    n: c.n, s: c.s, cn: c.cn, ct: c.ct,
+    r: c.r, sr: c.sr, lang: c.lang, img: c.img, nj: c.nj,
+  };
+  const next = {
+    n: $('ecName').value.trim(),
+    s: $('ecSet').value.trim(),
+    cn: $('ecNum').value.trim(),
+    ct: $('ecTotal').value.trim(),
+    lang: $('ecLang').value === 'JP' ? 'JP' : 'EN',
+    r: $('ecRarity').value.trim(),
+    sr: $('ecSeries').value.trim(),
+    img: $('ecImg').value.trim(),
+  };
+  const status = $('ecStatus');
+  if (!next.n || !next.s || !next.cn) {
+    status.className = 'ql-status error';
+    status.textContent = 'Name, set and card number can’t be empty.';
+    return;
+  }
+  // Only persist fields that differ from the original — keeps overrides minimal.
+  // Coerce both sides to strings so a numeric `cn=125` matches input `'125'`.
+  // For `lang`, treat missing/empty as the implicit default 'EN' (the indexed DB
+  // omits the field on English cards), so unchanged language doesn't get saved.
+  const diff = {};
+  for (const k of Object.keys(next)) {
+    let o = orig[k];
+    if (k === 'lang' && (o === undefined || o === null || o === '')) o = 'EN';
+    o = (o === undefined || o === null) ? '' : String(o);
+    if (next[k] !== o) diff[k] = next[k];
+  }
+  if (!Object.keys(diff).length) {
+    clearCardOverride(c.i);
+  } else {
+    setCardOverride(c.i, diff);
+  }
+  // Apply immediately to the in-memory card
+  if (!c._orig) c._orig = { ...orig };
+  for (const k of Object.keys(next)) c[k] = next[k];
+  c._edited = Object.keys(diff).length > 0;
+  // If this is a user-added card, persist the new shape into the user-cards bucket too
+  if (c._userAdded) {
+    const userCards = loadUserCards();
+    const idx = userCards.findIndex(u => u.i === c.i);
+    if (idx >= 0) {
+      Object.assign(userCards[idx], next);
+      saveUserCards(userCards);
+    }
+  }
+  // Rebuild search/counterpart index because name/set/number affect them
+  buildSearchIndex(cardData.cards);
+  if (typeof buildCounterpartIndex === 'function') buildCounterpartIndex(cardData.cards);
+  // Bust price cache for this card so it re-fetches with the corrected name
+  try {
+    const cache = getPriceCache();
+    delete cache[c.i];
+    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+  status.className = 'ql-status success';
+  status.textContent = 'Saved. Re-loading the card…';
+  closeEditCard();
+  selectCard(c.i);
+}
+function resetEditCard() {
+  if (!selectedCard) return;
+  const c = selectedCard;
+  if (!c._orig && !loadCardOverrides()[c.i]) {
+    $('ecStatus').className = 'ql-status';
+    $('ecStatus').textContent = 'Nothing to reset — this card has no overrides.';
+    return;
+  }
+  const orig = c._orig;
+  clearCardOverride(c.i);
+  if (orig) {
+    Object.assign(c, orig);
+    delete c._orig;
+    delete c._edited;
+  }
+  // For user-added cards we don't have a sensible "original" — keep the
+  // current saved values; clearing the override is enough.
+  buildSearchIndex(cardData.cards);
+  if (typeof buildCounterpartIndex === 'function') buildCounterpartIndex(cardData.cards);
+  try {
+    const cache = getPriceCache();
+    delete cache[c.i];
+    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+  closeEditCard();
+  selectCard(c.i);
+}
+function setupEditCard() {
+  $('ecClose')?.addEventListener('click', closeEditCard);
+  $('ecOverlay')?.addEventListener('click', closeEditCard);
+  $('ecSaveBtn')?.addEventListener('click', saveEditCard);
+  $('ecResetBtn')?.addEventListener('click', resetEditCard);
+  $('linkEditCard')?.addEventListener('click', openEditCard);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('ecModal') && $('ecModal').style.display !== 'none') closeEditCard();
+  });
 }
 
 // ================================================================
