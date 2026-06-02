@@ -385,6 +385,7 @@ async function init() {
   setupCPOverride();
   setupManualAdd();
   setupEditCard();
+  setupImageLightbox();
   setupPWANav();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
@@ -1831,17 +1832,20 @@ function selectCard(id) {
   section.style.display = 'block';
   const isJP = card.lang === 'JP';
 
-  // Card images
+  // Card images — click to open the full-resolution lightbox
   if (isJP) {
     $('cardImageJp').src = getCardImg(card);
     $('cardImageJp').style.display = 'block';
-    $('cardImageJp').title = 'Japanese card';
-    $('cardImageJp').onclick = null;
-    $('cardImageJp').style.cursor = 'default';
+    $('cardImageJp').title = 'Click to view full resolution';
+    $('cardImageJp').style.cursor = 'zoom-in';
+    $('cardImageJp').onclick = () => openImageLightbox(getCardImg(card), card.n + ' (Japanese)');
     $('cardImage').style.display = 'none';
   } else {
     $('cardImage').src = getCardImg(card);
     $('cardImage').style.display = 'block';
+    $('cardImage').title = 'Click to view full resolution';
+    $('cardImage').style.cursor = 'zoom-in';
+    $('cardImage').onclick = () => openImageLightbox(getCardImg(card), card.n);
     loadJapaneseImage(card);
   }
 
@@ -1968,16 +1972,67 @@ function selectCard(id) {
 }
 
 // ---- Japanese Card Image ----
+// Used when the selected card is EN — we surface the JP counterpart image too
+// in the side-by-side view. Click opens the full-resolution lightbox.
 function loadJapaneseImage(card) {
   const jpImg = $('cardImageJp');
-  const tcgName = card.n.replace(/#\d+/, '').replace(/\s+/g, ' ').trim();
-  const jpSearchUrl = `https://www.tcgcollector.com/cards/jp?cardName=${encodeURIComponent(tcgName)}${card.cn ? '&displayNumber=' + card.cn : ''}`;
-
   jpImg.src = getCardImg(card);
   jpImg.style.display = 'block';
-  jpImg.title = 'Click to find Japanese version on TCG Collector';
-  jpImg.style.cursor = 'pointer';
-  jpImg.onclick = () => window.open(jpSearchUrl, '_blank');
+  jpImg.title = 'Click to view full resolution';
+  jpImg.style.cursor = 'zoom-in';
+  jpImg.onclick = () => openImageLightbox(getCardImg(card), card.n + ' (Japanese)');
+}
+
+// ---- Image Lightbox (full-resolution viewer) ----
+function openImageLightbox(src, caption) {
+  if (!src) return;
+  const overlay = $('imgLightboxOverlay');
+  const lb = $('imgLightbox');
+  const img = $('imgLightboxImg');
+  const cap = $('imgLightboxCaption');
+  if (!overlay || !lb || !img) return;
+  // Upgrade pokemontcg.io thumbnails to hi-res by swapping the path:
+  // /sv3/125.png → /sv3/125_hires.png. Other CDNs serve a single full-res asset.
+  let hires = src;
+  try {
+    if (/images\.pokemontcg\.io\/[^\/]+\/[^\/]+\.png(\?|$)/.test(src) && !/_hires/.test(src)) {
+      hires = src.replace(/\.png(\?|$)/, '_hires.png$1');
+    }
+  } catch {}
+  img.src = hires;
+  img.alt = caption || '';
+  // If the hi-res variant 404s, fall back to the original src once.
+  img.onerror = () => {
+    if (img.src !== src) img.src = src;
+    img.onerror = null;
+  };
+  if (cap) cap.textContent = caption || '';
+  overlay.style.display = 'block';
+  overlay.setAttribute('aria-hidden', 'false');
+  lb.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeImageLightbox() {
+  const overlay = $('imgLightboxOverlay');
+  const lb = $('imgLightbox');
+  const img = $('imgLightboxImg');
+  if (overlay) { overlay.style.display = 'none'; overlay.setAttribute('aria-hidden', 'true'); }
+  if (lb) lb.style.display = 'none';
+  if (img) img.src = '';
+  document.body.style.overflow = '';
+}
+
+function setupImageLightbox() {
+  $('imgLightboxClose')?.addEventListener('click', closeImageLightbox);
+  $('imgLightboxOverlay')?.addEventListener('click', closeImageLightbox);
+  $('imgLightbox')?.addEventListener('click', (e) => {
+    // Click on the backdrop (anywhere outside the <img> and <button>) closes
+    if (e.target.id === 'imgLightbox' || e.target.id === 'imgLightboxCaption') closeImageLightbox();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('imgLightbox') && $('imgLightbox').style.display !== 'none') closeImageLightbox();
+  });
 }
 
 // ---- HOLD / BUY / SELL Signal ----
@@ -5184,12 +5239,69 @@ function setupEditCard() {
   $('ecSaveBtn')?.addEventListener('click', saveEditCard);
   $('ecResetBtn')?.addEventListener('click', resetEditCard);
   $('linkEditCard')?.addEventListener('click', openEditCard);
+  $('linkRefreshImg')?.addEventListener('click', refreshCardImage);
   // TCGC URL → image extractor (don't auto-fill name/set/number when editing
   // an existing card — the user usually keeps those, just refreshing the art).
   wireTCGCImageInput('ecImg', 'ecImgStatus');
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('ecModal') && $('ecModal').style.display !== 'none') closeEditCard();
   });
+}
+
+// Refresh the artwork for the currently selected card. Use this when a CDN URL
+// has gone stale or broken and you want to force a fresh fetch / fall back to
+// the canonical CDN reconstruction. Clears any saved `img` override and the
+// `img` field on a user-added card, then re-renders. Adds a cache-bust query
+// to the rendered <img> src so the browser doesn't serve a stale 404.
+function refreshCardImage() {
+  const c = selectedCard;
+  if (!c) return;
+  const btn = $('linkRefreshImg');
+  if (btn) {
+    btn.disabled = true;
+    btn.dataset._origLabel = btn.dataset._origLabel || btn.innerHTML;
+    btn.innerHTML = btn.dataset._origLabel.replace('Refresh image', 'Refreshing…');
+  }
+  try {
+    // 1) Clear `img` from the per-card override bucket
+    try {
+      const map = JSON.parse(localStorage.getItem('pkm-card-overrides-v1') || '{}');
+      if (map && map[c.i] && 'img' in map[c.i]) {
+        delete map[c.i].img;
+        if (!Object.keys(map[c.i]).length) delete map[c.i];
+        localStorage.setItem('pkm-card-overrides-v1', JSON.stringify(map));
+      }
+    } catch {}
+    // 2) Clear `img` from the user-cards bucket (for user-added cards)
+    try {
+      if (c._userAdded && typeof loadUserCards === 'function') {
+        const userCards = loadUserCards();
+        const idx = userCards.findIndex(u => u.i === c.i);
+        if (idx >= 0) {
+          userCards[idx].img = '';
+          if (typeof saveUserCards === 'function') saveUserCards(userCards);
+        }
+      }
+    } catch {}
+    // 3) Clear in-memory copy so getCardImg falls through to canonical CDN
+    c.img = '';
+    // 4) Re-render with a cache-bust suffix so the browser doesn't reuse a
+    //    cached 404 response.
+    const ts = Date.now();
+    const bust = (url) => {
+      if (!url || url.startsWith('data:')) return url;
+      return url + (url.includes('?') ? '&' : '?') + '_=' + ts;
+    };
+    const fresh = getCardImg(c);
+    const en = $('cardImage'), jp = $('cardImageJp');
+    if (en && en.style.display !== 'none') en.src = bust(fresh);
+    if (jp && jp.style.display !== 'none') jp.src = bust(fresh);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = btn.dataset._origLabel || btn.innerHTML;
+    }
+  }
 }
 
 // ================================================================

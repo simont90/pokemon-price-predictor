@@ -2287,3 +2287,91 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   color: var(--supply);
   border-color: var(--supply-border);
 }
+
+/* ----------------------------------------------------------------
+   Refresh Image button (next to "Edit details") — same chip style
+   ---------------------------------------------------------------- */
+.ri-refresh-link {
+  background: transparent;
+  border: 1px solid var(--border, #d4d8e0);
+  color: var(--text-secondary, #555);
+  cursor: pointer;
+  font: inherit;
+}
+.ri-refresh-link:hover:not(:disabled) {
+  background: rgba(0,0,0,0.04);
+  color: var(--text, #111);
+}
+.ri-refresh-link:disabled { opacity: 0.6; cursor: wait; }
+
+/* ----------------------------------------------------------------
+   Image Lightbox — full-resolution modal viewer
+   ---------------------------------------------------------------- */
+.img-lb-overlay {
+  position: fixed; inset: 0;
+  background: rgba(8, 11, 18, 0.86);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 9998;
+  animation: imgLbFadeIn 160ms ease-out;
+}
+.img-lb {
+  position: fixed; inset: 0;
+  z-index: 9999;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 24px;
+  pointer-events: none; /* let backdrop receive close-clicks */
+  animation: imgLbFadeIn 200ms ease-out;
+}
+.img-lb img,
+.img-lb-close,
+.img-lb-caption { pointer-events: auto; }
+
+.img-lb img {
+  max-width: min(94vw, 720px);
+  max-height: 86vh;
+  width: auto; height: auto;
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06);
+  background: #1a1d24;
+  cursor: zoom-out;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.img-lb-caption {
+  margin-top: 14px;
+  color: rgba(255,255,255,0.85);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  letter-spacing: 0.01em;
+  max-width: 90vw;
+}
+.img-lb-close {
+  position: absolute;
+  top: 16px; right: 16px;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+.img-lb-close:hover {
+  background: rgba(255,255,255,0.18);
+  transform: scale(1.05);
+}
+.img-lb-close:active { transform: scale(0.95); }
+
+@keyframes imgLbFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (max-width: 600px) {
+  .img-lb img { max-width: 96vw; max-height: 78vh; border-radius: 12px; }
+  .img-lb-close { top: 10px; right: 10px; width: 40px; height: 40px; }
+}

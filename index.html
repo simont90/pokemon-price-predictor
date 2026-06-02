@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260504f">
+  <link rel="stylesheet" href="style.css?v=20260504g">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -382,6 +382,7 @@
                 <a id="linkPriceCharting" href="#" target="_blank" rel="noopener" class="card-link pc-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> 📈 PriceCharting</a>
                 <button id="linkFindCounterpart" class="card-link cp-find-link" type="button" title="Manually pick the EN/JP counterpart"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7l10 10M7 17L17 7M3 12h18"/></svg> Pick counterpart</button>
                 <button id="linkEditCard" class="card-link ec-edit-link" type="button" title="Override card details (name, number, set, etc.)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg> Edit details</button>
+                <button id="linkRefreshImg" class="card-link ri-refresh-link" type="button" title="Refresh image (re-fetch artwork if it's broken)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> Refresh image</button>
               </div>
               <!-- HOLD / BUY / SELL Signal -->
               <div class="signal-badge-wrap" id="signalWrap" style="display:none">
@@ -910,8 +911,18 @@
     </div>
   </div>
 
+  <!-- Image Lightbox: click any card image to view at full resolution -->
+  <div id="imgLightboxOverlay" class="img-lb-overlay" style="display:none" aria-hidden="true"></div>
+  <div id="imgLightbox" class="img-lb" style="display:none" role="dialog" aria-modal="true" aria-label="Card image at full resolution">
+    <button id="imgLightboxClose" class="img-lb-close" type="button" aria-label="Close">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <img id="imgLightboxImg" src="" alt="">
+    <div id="imgLightboxCaption" class="img-lb-caption"></div>
+  </div>
+
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260504f"></script>
+  <script src="app.js?v=20260504g"></script>
 </body>
 </html>
