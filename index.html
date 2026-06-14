@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260614s">
+  <link rel="stylesheet" href="style.css?v=20260614t">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -592,6 +592,98 @@
           </div>
         </section>
 
+        <!-- Acquisition tracker — logs how the user got the card (pack pull vs single purchase)
+             and shows realised + max ROI based on actual cost basis. -->
+        <section class="card acq-card" id="acqSection" style="display:none">
+          <div class="acq-header">
+            <h2><span class="acq-icon">💰</span> Acquisition &amp; Max ROI</h2>
+            <p class="acq-sub">Tell the model how you got this card so it knows your true cost basis. The lower your basis, the higher your ceiling.</p>
+          </div>
+          <div class="acq-source-toggle" role="radiogroup" aria-label="How did you get this card?">
+            <button class="acq-src-btn" data-src="pack" role="radio" aria-checked="false" type="button">
+              <span class="acq-src-ico">🎁</span>
+              <span class="acq-src-label">Pulled from pack</span>
+              <span class="acq-src-hint">Cost basis = pack ÷ hits</span>
+            </button>
+            <button class="acq-src-btn" data-src="single" role="radio" aria-checked="false" type="button">
+              <span class="acq-src-ico">🛒</span>
+              <span class="acq-src-label">Bought as single</span>
+              <span class="acq-src-hint">Cost basis = price paid</span>
+            </button>
+            <button class="acq-src-btn acq-src-clear" data-src="clear" type="button" title="Clear acquisition info" style="display:none">✕ Clear</button>
+          </div>
+
+          <!-- Pack inputs -->
+          <div class="acq-fields acq-fields-pack" id="acqFieldsPack" style="display:none">
+            <div class="acq-field">
+              <label for="acqPackName">Pack / product (optional)</label>
+              <input id="acqPackName" type="text" class="acq-input" placeholder="e.g. Prismatic Evolutions ETB" autocomplete="off">
+            </div>
+            <div class="acq-field acq-field-small">
+              <label for="acqPackCost">Pack / product cost (£)</label>
+              <input id="acqPackCost" type="number" step="0.01" min="0" class="acq-input" placeholder="0.00" inputmode="decimal">
+            </div>
+            <div class="acq-field acq-field-small">
+              <label for="acqPackHits">Hits you kept from it</label>
+              <input id="acqPackHits" type="number" step="1" min="1" class="acq-input" placeholder="1" inputmode="numeric">
+              <span class="acq-help">Cost basis = pack cost ÷ hits</span>
+            </div>
+          </div>
+
+          <!-- Single inputs -->
+          <div class="acq-fields acq-fields-single" id="acqFieldsSingle" style="display:none">
+            <div class="acq-field acq-field-small">
+              <label for="acqSinglePrice">Price paid (£)</label>
+              <input id="acqSinglePrice" type="number" step="0.01" min="0" class="acq-input" placeholder="0.00" inputmode="decimal">
+            </div>
+            <div class="acq-field acq-field-small">
+              <label for="acqSingleDate">Date acquired (optional)</label>
+              <input id="acqSingleDate" type="date" class="acq-input">
+            </div>
+            <div class="acq-field">
+              <label for="acqSingleSrc">Where (optional)</label>
+              <input id="acqSingleSrc" type="text" class="acq-input" placeholder="eBay UK / Cardmarket / shop" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="acq-empty" id="acqEmpty">Tap a source above to log how you got this card.</div>
+
+          <!-- ROI readout -->
+          <div class="acq-roi" id="acqRoi" style="display:none">
+            <div class="acq-roi-row">
+              <div class="acq-roi-cell">
+                <span class="acq-roi-lbl">Your cost</span>
+                <span class="acq-roi-val acq-roi-cost" id="acqCost">—</span>
+                <span class="acq-roi-sub" id="acqCostSub"></span>
+              </div>
+              <div class="acq-roi-cell">
+                <span class="acq-roi-lbl">Market now (raw)</span>
+                <span class="acq-roi-val" id="acqMarket">—</span>
+                <span class="acq-roi-sub acq-roi-delta" id="acqMarketDelta"></span>
+              </div>
+              <div class="acq-roi-cell">
+                <span class="acq-roi-lbl">Realised ROI</span>
+                <span class="acq-roi-val acq-roi-roi" id="acqRoiNow">—</span>
+                <span class="acq-roi-sub" id="acqRoiNowSub">if flipped raw today</span>
+              </div>
+            </div>
+            <div class="acq-roi-row acq-roi-row-max">
+              <div class="acq-roi-cell acq-roi-cell-wide">
+                <span class="acq-roi-lbl acq-roi-lbl-max">Max ROI · PSA 10 in 5 years</span>
+                <span class="acq-roi-val acq-roi-val-max" id="acqRoiMax">—</span>
+                <span class="acq-roi-sub" id="acqRoiMaxSub"></span>
+              </div>
+              <div class="acq-roi-cell">
+                <span class="acq-roi-lbl">Profit if PSA 10</span>
+                <span class="acq-roi-val" id="acqProfitMax">—</span>
+                <span class="acq-roi-sub" id="acqProfitMaxSub">after £40 grading</span>
+              </div>
+            </div>
+            <div class="acq-ladder" id="acqLadder"></div>
+            <div class="acq-meta" id="acqMeta"></div>
+          </div>
+        </section>
+
         <!-- Price History -->
         <section class="card pricehist-card" id="priceHistSection" style="display:none">
           <div class="ph-header">
@@ -1149,6 +1241,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260614s"></script>
+  <script src="app.js?v=20260614t"></script>
 </body>
 </html>

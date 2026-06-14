@@ -389,6 +389,7 @@ async function init() {
   setupWatchlist();
   setupTop50();
   setupPriceSync();
+  setupAcquisition();
   setupPWANav();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
@@ -1891,6 +1892,9 @@ function recalcWithLivePrice(card) {
 
   // Refresh EN ↔ JP recommendation with live price data
   renderCounterpartFlag(card);
+
+  // Re-render Acquisition section so ROI uses the live raw + PSA 10 prices
+  if (typeof renderAcquisition === 'function') renderAcquisition();
 }
 
 // ================================================================
@@ -1904,6 +1908,8 @@ function selectCard(id) {
 
   // Refresh Price Sync stats so "Refresh selected card" button enables
   if (typeof psUpdateStats === 'function') psUpdateStats();
+  // Refresh Acquisition section for the new card
+  if (typeof renderAcquisition === 'function') renderAcquisition();
 
   // Reset stale data immediately
   marketData = null;
@@ -3186,6 +3192,8 @@ function renderPortfolio() {
   countEl.style.display = 'flex';
 
   let totalGBP = 0;
+  let totalCostGBP = 0;
+  let hasAnyAcq = false;
   const items = portfolio.map(p => {
     const currentCard = cardData ? cardData.cards.find(c => c.i === p.id) : null;
     // Try cached live price first
@@ -3213,12 +3221,34 @@ function renderPortfolio() {
     const addedGBP = p.addedPriceGBP || 0;
     const change = addedGBP > 0 ? ((currentGBP - addedGBP) / addedGBP * 100).toFixed(1) : null;
 
+    // Acquisition info — source badge + cost basis ROI
+    const acq = (typeof getAcq === 'function') ? getAcq(p.id) : null;
+    const acqCost = (typeof getAcqCostBasisGBP === 'function') ? getAcqCostBasisGBP(p.id) : null;
+    let acqBadge = '';
+    let acqLine = '';
+    if (acq && acq.source) {
+      hasAnyAcq = true;
+      const ico = acq.source === 'pack' ? '🎁' : '🛒';
+      const lbl = acq.source === 'pack' ? 'Pulled' : 'Bought';
+      acqBadge = `<span class="portfolio-acq-badge portfolio-acq-${acq.source}" title="${lbl}">${ico} ${lbl}</span>`;
+    }
+    if (Number.isFinite(acqCost) && acqCost > 0) {
+      totalCostGBP += acqCost;
+      const pnlPct = ((currentGBP - acqCost) / acqCost) * 100;
+      const pnlGBP = currentGBP - acqCost;
+      const pos = pnlPct >= 0;
+      acqLine = `<div class="portfolio-acq-line">Cost £${acqCost.toFixed(2)} · <span class="portfolio-acq-pnl ${pos ? 'pos' : 'neg'}">${pos ? '+' : ''}£${pnlGBP.toFixed(2)} (${pos ? '+' : ''}${pnlPct.toFixed(1)}%)</span></div>`;
+    } else if (acq && acq.source) {
+      acqLine = `<div class="portfolio-acq-line portfolio-acq-line-empty">Add cost to track ROI</div>`;
+    }
+
     return `
       <div class="portfolio-item" data-id="${p.id}">
         ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="" onerror="this.style.display='none'">` : '<div class="portfolio-item-img"></div>'}
         <div class="portfolio-item-info">
-          <div class="portfolio-item-name">${esc(p.name)}</div>
+          <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}</div>
           <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}</div>
+          ${acqLine}
         </div>
         <div class="portfolio-item-right">
           <div class="portfolio-item-price">£${currentGBP.toFixed(2)}</div>
@@ -3230,7 +3260,14 @@ function renderPortfolio() {
   });
 
   list.innerHTML = items.join('');
-  totalEl.textContent = `Total: £${totalGBP.toFixed(2)}`;
+  if (hasAnyAcq && totalCostGBP > 0) {
+    const pnl = totalGBP - totalCostGBP;
+    const pnlPct = (pnl / totalCostGBP) * 100;
+    const pos = pnl >= 0;
+    totalEl.innerHTML = `Value <strong>£${totalGBP.toFixed(2)}</strong> · Cost £${totalCostGBP.toFixed(2)} · <span class="${pos ? 'pos' : 'neg'}">${pos ? '+' : ''}£${pnl.toFixed(2)} (${pos ? '+' : ''}${pnlPct.toFixed(1)}%)</span>`;
+  } else {
+    totalEl.textContent = `Total: £${totalGBP.toFixed(2)}`;
+  }
 
   list.querySelectorAll('.portfolio-item').forEach(el => {
     el.addEventListener('click', (e) => {
@@ -7249,4 +7286,268 @@ function setupPriceSync() {
   psUpdateStats();
   // Keep stats / "last sync" label live
   setInterval(psUpdateStats, 30 * 1000);
+}
+
+// =============================================================
+// Acquisition tracker · realised + max ROI by cost basis
+// =============================================================
+//
+// Each card can record:
+//   { source: 'pack' | 'single',
+//     packName, packCostGBP, packHits,
+//     singlePriceGBP, singleDate, singleWhere,
+//     ts }
+// Stored in localStorage as a map keyed by cardId.
+
+const ACQ_KEY = 'pkm-acquisitions-v1';
+let acquisitions = {};
+try { acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}'); } catch { acquisitions = {}; }
+
+function saveAcquisitions() {
+  try { localStorage.setItem(ACQ_KEY, JSON.stringify(acquisitions)); } catch {}
+}
+
+function getAcq(cardId) {
+  return cardId && acquisitions[cardId] ? acquisitions[cardId] : null;
+}
+
+// Returns cost basis in GBP for a card, or null if not enough info
+function getAcqCostBasisGBP(cardId) {
+  const a = getAcq(cardId);
+  if (!a) return null;
+  if (a.source === 'pack') {
+    const cost = parseFloat(a.packCostGBP);
+    const hits = Math.max(1, parseInt(a.packHits || 1, 10));
+    if (!Number.isFinite(cost) || cost <= 0) return null;
+    return cost / hits;
+  }
+  if (a.source === 'single') {
+    const p = parseFloat(a.singlePriceGBP);
+    if (!Number.isFinite(p) || p <= 0) return null;
+    return p;
+  }
+  return null;
+}
+
+function fmtPct(v, signed) {
+  if (!Number.isFinite(v)) return '—';
+  const s = (signed && v > 0 ? '+' : '') + v.toFixed(1) + '%';
+  return s;
+}
+function fmtGBPDirect(gbp) {
+  if (!Number.isFinite(gbp)) return '—';
+  return '£' + gbp.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function renderAcquisition() {
+  const sec = document.getElementById('acqSection');
+  if (!sec) return;
+  if (!selectedCard) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+
+  const card = selectedCard;
+  const acq = getAcq(card.i) || {};
+
+  // Toggle button state
+  document.querySelectorAll('.acq-src-btn').forEach(b => {
+    const src = b.dataset.src;
+    if (src === 'clear') return;
+    const on = acq.source === src;
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  document.querySelector('.acq-src-clear').style.display = acq.source ? 'inline-flex' : 'none';
+
+  // Show the right fields
+  const packFields = document.getElementById('acqFieldsPack');
+  const singleFields = document.getElementById('acqFieldsSingle');
+  const empty = document.getElementById('acqEmpty');
+  const roi = document.getElementById('acqRoi');
+  packFields.style.display = acq.source === 'pack' ? 'grid' : 'none';
+  singleFields.style.display = acq.source === 'single' ? 'grid' : 'none';
+  empty.style.display = acq.source ? 'none' : 'block';
+
+  // Populate fields without clobbering user-active focus
+  const setIfNotFocused = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (document.activeElement === el) return;
+    el.value = val == null ? '' : val;
+  };
+  setIfNotFocused('acqPackName', acq.packName);
+  setIfNotFocused('acqPackCost', acq.packCostGBP);
+  setIfNotFocused('acqPackHits', acq.packHits);
+  setIfNotFocused('acqSinglePrice', acq.singlePriceGBP);
+  setIfNotFocused('acqSingleDate', acq.singleDate);
+  setIfNotFocused('acqSingleSrc', acq.singleWhere);
+
+  // Compute ROI readout
+  const costGBP = getAcqCostBasisGBP(card.i);
+  if (!acq.source || !Number.isFinite(costGBP) || costGBP <= 0) {
+    roi.style.display = 'none';
+    return;
+  }
+  roi.style.display = 'block';
+
+  const rawUSD = getCurrentPrice(card);
+  const marketGBP = usdToGbp(rawUSD || 0);
+  const psa10USD = (card.p10 || 0) || (livePrice && livePrice.pcPsa10 > 0 ? livePrice.pcPsa10 : 0);
+
+  // Realised ROI: market value now (raw) vs cost basis
+  // Assume 10% buy/sell friction if you flipped it today
+  const FRICTION = 0.10;
+  const realisedNetGBP = marketGBP * (1 - FRICTION);
+  const realisedROI = costGBP > 0 ? ((realisedNetGBP - costGBP) / costGBP) * 100 : null;
+
+  // Max ROI scenario: PSA 10 in 5 years
+  let maxROI = null, maxProfit = null, maxValueGBP = null;
+  if (psa10USD > 0) {
+    const psa10NowUSD = estimateGradePrice(card, 10, psa10USD);
+    const psa10In5USD = projectGradePrice(card, 10, psa10NowUSD, 5);
+    const psa10In5GBP = usdToGbp(psa10In5USD);
+    const gradingFeeGBP = (typeof UK_GRADING_ALL_IN_GBP === 'number') ? UK_GRADING_ALL_IN_GBP : 40;
+    const netGBP = psa10In5GBP * (1 - FRICTION) - gradingFeeGBP;
+    maxValueGBP = psa10In5GBP;
+    maxROI = costGBP > 0 ? ((netGBP - costGBP) / costGBP) * 100 : null;
+    maxProfit = netGBP - costGBP;
+  }
+
+  // Cost basis card
+  const costEl = document.getElementById('acqCost');
+  const costSub = document.getElementById('acqCostSub');
+  costEl.textContent = fmtGBPDirect(costGBP);
+  if (acq.source === 'pack') {
+    const hits = Math.max(1, parseInt(acq.packHits || 1, 10));
+    const pack = parseFloat(acq.packCostGBP);
+    costSub.textContent = `${fmtGBPDirect(pack)} pack ÷ ${hits} hit${hits === 1 ? '' : 's'}`;
+  } else {
+    const bits = [];
+    if (acq.singleDate) bits.push(acq.singleDate);
+    if (acq.singleWhere) bits.push(acq.singleWhere);
+    costSub.textContent = bits.join(' · ');
+  }
+
+  // Market now
+  document.getElementById('acqMarket').textContent = fmtGBPDirect(marketGBP);
+  const delta = marketGBP - costGBP;
+  const deltaEl = document.getElementById('acqMarketDelta');
+  if (Number.isFinite(delta)) {
+    deltaEl.textContent = (delta >= 0 ? '+' : '') + fmtGBPDirect(delta) + ' vs cost';
+    deltaEl.classList.toggle('acq-pos', delta >= 0);
+    deltaEl.classList.toggle('acq-neg', delta < 0);
+  }
+
+  // Realised ROI now
+  const roiEl = document.getElementById('acqRoiNow');
+  if (Number.isFinite(realisedROI)) {
+    roiEl.textContent = fmtPct(realisedROI, true);
+    roiEl.classList.toggle('acq-pos', realisedROI >= 0);
+    roiEl.classList.toggle('acq-neg', realisedROI < 0);
+  } else { roiEl.textContent = '—'; }
+  document.getElementById('acqRoiNowSub').textContent = `flip raw today · ${(FRICTION * 100).toFixed(0)}% fees`;
+
+  // Max ROI
+  const maxEl = document.getElementById('acqRoiMax');
+  const maxSub = document.getElementById('acqRoiMaxSub');
+  const profEl = document.getElementById('acqProfitMax');
+  const profSub = document.getElementById('acqProfitMaxSub');
+  if (Number.isFinite(maxROI) && maxValueGBP) {
+    maxEl.textContent = fmtPct(maxROI, true);
+    maxEl.classList.toggle('acq-pos', maxROI >= 0);
+    maxEl.classList.toggle('acq-neg', maxROI < 0);
+    maxSub.textContent = `if it grades PSA 10 · projected ${fmtGBPDirect(maxValueGBP)} in 5 years`;
+    profEl.textContent = (maxProfit >= 0 ? '+' : '') + fmtGBPDirect(maxProfit);
+    profEl.classList.toggle('acq-pos', maxProfit >= 0);
+    profEl.classList.toggle('acq-neg', maxProfit < 0);
+    profSub.textContent = `after £40 grading + 10% sell fees`;
+  } else {
+    maxEl.textContent = '—';
+    maxSub.textContent = 'PSA 10 anchor unavailable for this card';
+    profEl.textContent = '—';
+    profSub.textContent = '';
+  }
+
+  // ROI ladder: PSA 7-10 ROIs for context
+  const ladder = document.getElementById('acqLadder');
+  if (psa10USD > 0) {
+    const grades = [10, 9, 8, 7];
+    const rows = grades.map(g => {
+      const todayUSD = estimateGradePrice(card, g, psa10USD);
+      const yr5USD = projectGradePrice(card, g, todayUSD, 5);
+      const yr5GBP = usdToGbp(yr5USD);
+      const gradingFee = 40;
+      const net = yr5GBP * (1 - FRICTION) - gradingFee;
+      const r = costGBP > 0 ? ((net - costGBP) / costGBP) * 100 : null;
+      const cls = r >= 200 ? 'acq-pos' : r < 0 ? 'acq-neg' : '';
+      return `<div class="acq-rung ${cls}">
+        <span class="acq-rung-g">PSA ${g}</span>
+        <span class="acq-rung-val">${fmtGBPDirect(yr5GBP)}</span>
+        <span class="acq-rung-roi">${fmtPct(r, true)}</span>
+      </div>`;
+    }).join('');
+    ladder.innerHTML = `<div class="acq-ladder-head">If you grade this card and it lands at…</div>${rows}`;
+    ladder.style.display = 'block';
+  } else {
+    ladder.style.display = 'none';
+  }
+
+  // Meta line
+  const meta = document.getElementById('acqMeta');
+  const acqDate = acq.ts ? new Date(acq.ts) : null;
+  const acqLabel = acqDate ? `Logged ${acqDate.toLocaleDateString('en-GB')}` : '';
+  const inPortfolio = (portfolio || []).some(p => p.id === card.i);
+  meta.innerHTML = [
+    acqLabel,
+    inPortfolio ? '<span class="acq-pill">In collection</span>' : '<span class="acq-pill acq-pill-muted">Not in collection</span>'
+  ].filter(Boolean).join(' · ');
+}
+
+function updateAcq(patch) {
+  if (!selectedCard) return;
+  const id = selectedCard.i;
+  const current = acquisitions[id] || {};
+  acquisitions[id] = { ...current, ...patch, ts: current.ts || Date.now() };
+  saveAcquisitions();
+  renderAcquisition();
+  // Refresh portfolio rendering if this card is in it
+  try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
+}
+
+function clearAcq() {
+  if (!selectedCard) return;
+  delete acquisitions[selectedCard.i];
+  saveAcquisitions();
+  renderAcquisition();
+  try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
+}
+
+function setupAcquisition() {
+  if (!document.getElementById('acqSection')) return;
+
+  document.querySelectorAll('.acq-src-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      const src = b.dataset.src;
+      if (!selectedCard) return;
+      if (src === 'clear') { clearAcq(); return; }
+      updateAcq({ source: src });
+    });
+  });
+
+  // Live-update on input changes
+  const wire = (id, key, parser) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const handler = () => {
+      const v = parser ? parser(el.value) : el.value;
+      updateAcq({ [key]: v });
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  };
+  wire('acqPackName', 'packName');
+  wire('acqPackCost', 'packCostGBP', v => v === '' ? '' : parseFloat(v));
+  wire('acqPackHits', 'packHits', v => v === '' ? '' : parseInt(v, 10));
+  wire('acqSinglePrice', 'singlePriceGBP', v => v === '' ? '' : parseFloat(v));
+  wire('acqSingleDate', 'singleDate');
+  wire('acqSingleSrc', 'singleWhere');
 }
