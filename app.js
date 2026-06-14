@@ -388,6 +388,7 @@ async function init() {
   setupImageLightbox();
   setupWatchlist();
   setupTop50();
+  setupPriceSync();
   setupPWANav();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
@@ -1900,6 +1901,9 @@ function selectCard(id) {
   const card = cardData.cards.find(c => c.i === id);
   if (!card) return;
   selectedCard = card;
+
+  // Refresh Price Sync stats so "Refresh selected card" button enables
+  if (typeof psUpdateStats === 'function') psUpdateStats();
 
   // Reset stale data immediately
   marketData = null;
@@ -6916,4 +6920,333 @@ function renderHoldStrategy(card) {
     Risk-adjusted ranking discounts ROI by variance so a coin-flip can’t win “best” when
     a steadier graded copy delivers nearly the same return without the wait.
   `;
+}
+
+// =============================================================
+// Price Sync · refresh cached prices on demand
+// =============================================================
+//
+// Three scopes:
+//   1. Single card  — selected card OR manual ID/name input
+//   2. Tracked      — every card in portfolio ∪ wishlist ∪ watchlist
+//   3. Cached/Stale — every entry currently in the local price cache
+//
+// Each refresh bypasses the 1-hour cache TTL by calling fetchFreshPriceData
+// directly and overwriting the cache entry with a new timestamp. Batched
+// refreshes run with a small concurrency limit so we don't hammer
+// PriceCharting / pokemontcg.io.
+
+const PRICE_SYNC_CONCURRENCY = 3;
+const PRICE_SYNC_LAST_KEY = 'pkm-price-sync-last-v1';
+let _psState = { running: false, cancel: false, done: 0, total: 0 };
+
+function psSetLastSync(ts) {
+  try { localStorage.setItem(PRICE_SYNC_LAST_KEY, String(ts)); } catch {}
+}
+function psGetLastSync() {
+  const v = Number(localStorage.getItem(PRICE_SYNC_LAST_KEY) || 0);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+function psFormatAgo(ts) {
+  if (!ts) return '—';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+function psTrackedIds() {
+  const set = new Set();
+  (portfolio || []).forEach(p => p && p.id && set.add(p.id));
+  (wishlist || []).forEach(w => w && w.id && set.add(w.id));
+  (watchlist || []).forEach(w => w && w.id && set.add(w.id));
+  return Array.from(set);
+}
+
+function psCacheIds(opts = {}) {
+  const cache = getPriceCache();
+  const now = Date.now();
+  return Object.keys(cache).filter(id => {
+    const entry = cache[id];
+    if (!entry) return false;
+    if (opts.staleOnly) {
+      return (now - (entry._ts || 0)) > PRICE_CACHE_TTL;
+    }
+    return true;
+  });
+}
+
+function psCacheStats() {
+  const cache = getPriceCache();
+  const now = Date.now();
+  let fresh = 0, stale = 0;
+  Object.values(cache).forEach(e => {
+    if (!e) return;
+    if (now - (e._ts || 0) <= PRICE_CACHE_TTL) fresh++; else stale++;
+  });
+  return { total: fresh + stale, fresh, stale };
+}
+
+function psUpdateStats() {
+  if (!document.getElementById('psStatCached')) return;
+  const stats = psCacheStats();
+  document.getElementById('psStatCached').textContent = stats.total.toLocaleString();
+  document.getElementById('psStatFresh').textContent = stats.fresh.toLocaleString();
+  document.getElementById('psStatStale').textContent = stats.stale.toLocaleString();
+  document.getElementById('psStatTracked').textContent = psTrackedIds().length.toLocaleString();
+  document.getElementById('psStatLast').textContent = psFormatAgo(psGetLastSync());
+
+  // Selected hint + enable state
+  const selBtn = document.getElementById('psRefreshSelected');
+  const selHint = document.getElementById('psSelectedHint');
+  if (selBtn && selHint) {
+    if (selectedCard) {
+      selBtn.disabled = false;
+      selHint.textContent = selectedCard.n + (selectedCard.cn ? ` #${selectedCard.cn}` : '');
+    } else {
+      selBtn.disabled = true;
+      selHint.textContent = 'Pick a card from search first';
+    }
+  }
+
+  // Other hints
+  const trackedCount = psTrackedIds().length;
+  const tHint = document.getElementById('psTrackedHint');
+  if (tHint) tHint.textContent = trackedCount
+    ? `${trackedCount} card${trackedCount === 1 ? '' : 's'} · Portfolio · Wishlist · Watchlist`
+    : 'No tracked cards yet';
+
+  const staleHint = document.getElementById('psStaleHint');
+  if (staleHint) staleHint.textContent = stats.stale
+    ? `${stats.stale} stale entr${stats.stale === 1 ? 'y' : 'ies'} to refresh`
+    : 'Nothing stale right now';
+
+  const allHint = document.getElementById('psAllHint');
+  if (allHint) allHint.textContent = stats.total
+    ? `Re-pulls all ${stats.total} cached card${stats.total === 1 ? '' : 's'}`
+    : 'Cache is empty';
+}
+
+function psLog(line, kind) {
+  const log = document.getElementById('psLog');
+  if (!log) return;
+  log.style.display = 'block';
+  const row = document.createElement('div');
+  row.className = 'ps-log-row' + (kind ? ' ps-log-' + kind : '');
+  row.textContent = line;
+  log.appendChild(row);
+  // Keep log to last 50 rows
+  while (log.children.length > 50) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+}
+function psClearLog() {
+  const log = document.getElementById('psLog');
+  if (log) { log.innerHTML = ''; log.style.display = 'none'; }
+}
+
+function psShowProgress(label, total) {
+  const wrap = document.getElementById('psProgress');
+  if (!wrap) return;
+  wrap.style.display = 'block';
+  document.getElementById('psProgressLabel').textContent = label;
+  document.getElementById('psProgressCounter').textContent = `0 / ${total}`;
+  document.getElementById('psProgressFill').style.width = '0%';
+  document.getElementById('psProgressCurrent').textContent = '';
+}
+function psUpdateProgress(done, total, currentLabel) {
+  const wrap = document.getElementById('psProgress');
+  if (!wrap) return;
+  document.getElementById('psProgressCounter').textContent = `${done} / ${total}`;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  document.getElementById('psProgressFill').style.width = pct + '%';
+  if (currentLabel != null) document.getElementById('psProgressCurrent').textContent = currentLabel;
+}
+function psHideProgress() {
+  const wrap = document.getElementById('psProgress');
+  if (wrap) wrap.style.display = 'none';
+}
+
+function psSetButtonsDisabled(disabled) {
+  ['psRefreshSelected', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psClearCache', 'psManualGo', 'livePriceRefresh']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (disabled) {
+        el.dataset._wasDisabled = el.disabled ? '1' : '0';
+        el.disabled = true;
+      } else {
+        // Selected button retains its real state (depends on selectedCard)
+        if (id === 'psRefreshSelected') {
+          el.disabled = !selectedCard;
+        } else {
+          el.disabled = el.dataset._wasDisabled === '1';
+        }
+        delete el.dataset._wasDisabled;
+      }
+    });
+}
+
+// Refresh a single card by id — returns {ok, error, data}
+async function psRefreshOne(id) {
+  if (!cardData) return { ok: false, error: 'Catalog not loaded' };
+  const card = cardData.cards.find(c => c.i === id);
+  if (!card) return { ok: false, error: `Card not in catalog: ${id}` };
+  try {
+    const data = await fetchFreshPriceData(card);
+    setCachedPrice(card.i, data);
+    // If this is the currently selected card, update the live panel immediately
+    if (selectedCard && selectedCard.i === card.i) {
+      livePrice = data;
+      if (typeof renderLivePrice === 'function') renderLivePrice(data);
+      if (typeof recalcWithLivePrice === 'function') recalcWithLivePrice(card);
+    }
+    return { ok: true, card, data };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e), card };
+  }
+}
+
+// Batch refresh with concurrency control
+async function psBatchRefresh(ids, label) {
+  if (_psState.running) {
+    psLog('Already running — wait for it to finish or cancel.', 'warn');
+    return;
+  }
+  if (!ids.length) {
+    psLog(`Nothing to refresh for "${label}".`, 'warn');
+    return;
+  }
+  _psState = { running: true, cancel: false, done: 0, total: ids.length };
+  psSetButtonsDisabled(true);
+  psClearLog();
+  psShowProgress(label, ids.length);
+  psLog(`Starting ${label} · ${ids.length} card${ids.length === 1 ? '' : 's'}`, 'info');
+
+  let okCount = 0, errCount = 0;
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(PRICE_SYNC_CONCURRENCY, ids.length) }, async () => {
+    while (cursor < ids.length && !_psState.cancel) {
+      const myIdx = cursor++;
+      const id = ids[myIdx];
+      const card = cardData?.cards.find(c => c.i === id);
+      const labelText = card ? `${card.n}${card.cn ? ' #' + card.cn : ''} (${card.s || id})` : id;
+      psUpdateProgress(_psState.done, _psState.total, `→ ${labelText}`);
+      const result = await psRefreshOne(id);
+      _psState.done++;
+      if (result.ok) {
+        okCount++;
+        const px = result.data?.pcUngraded || result.data?.market || result.data?.cmTrend || 0;
+        psLog(`✓ ${labelText} · ${px > 0 ? fmtGBP(px) : 'no price'}`, 'ok');
+      } else {
+        errCount++;
+        psLog(`✗ ${labelText} · ${result.error}`, 'err');
+      }
+      psUpdateProgress(_psState.done, _psState.total, '');
+    }
+  });
+  await Promise.all(workers);
+
+  psSetLastSync(Date.now());
+  psUpdateStats();
+  psHideProgress();
+  psSetButtonsDisabled(false);
+  _psState.running = false;
+
+  const finishMsg = _psState.cancel
+    ? `Cancelled · ${okCount} refreshed · ${errCount} failed`
+    : `Done · ${okCount} refreshed · ${errCount} failed`;
+  psLog(finishMsg, errCount ? 'warn' : 'ok');
+
+  // Re-render any panels that depend on prices
+  try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
+  try { if (typeof renderWishlist === 'function') renderWishlist(); } catch {}
+  try { if (typeof renderWatchlist === 'function') renderWatchlist(); } catch {}
+  try { if (typeof rebuildAlerts === 'function') rebuildAlerts(); } catch {}
+}
+
+// Manual lookup — accepts a cardId ("sv8pt5-161") OR a free-text query
+function psResolveManual(query) {
+  if (!query || !cardData) return null;
+  const q = query.trim();
+  // Direct id match
+  const byId = cardData.cards.find(c => c.i.toLowerCase() === q.toLowerCase());
+  if (byId) return byId;
+  // Try "set num" or "name num"
+  const parts = q.split(/\s+/);
+  const numTok = parts.find(p => /^\d{1,4}[a-z]?$/i.test(p));
+  const nameTok = parts.filter(p => p !== numTok).join(' ').toLowerCase();
+  const matches = cardData.cards.filter(c => {
+    const name = (c.n || '').toLowerCase();
+    const setName = (c.s || '').toLowerCase();
+    const num = String(c.cn || c.ns || '').toLowerCase();
+    const numOk = numTok ? num === numTok.toLowerCase() : true;
+    const nameOk = nameTok ? (name.includes(nameTok) || setName.includes(nameTok)) : true;
+    return numOk && nameOk;
+  });
+  // Prefer EN over JP, then highest p10 (likely the chase card)
+  matches.sort((a, b) => {
+    if ((a.lang || 'EN') !== (b.lang || 'EN')) return a.lang === 'JP' ? 1 : -1;
+    return (b.p10 || 0) - (a.p10 || 0);
+  });
+  return matches[0] || null;
+}
+
+async function psManualRefresh() {
+  const input = document.getElementById('psManualInput');
+  const q = (input?.value || '').trim();
+  if (!q) { psLog('Type a card ID or "set num" first.', 'warn'); return; }
+  const card = psResolveManual(q);
+  if (!card) { psLog(`No match for "${q}".`, 'err'); return; }
+  await psBatchRefresh([card.i], `Refresh "${card.n}"`);
+}
+
+function setupPriceSync() {
+  const sel = id => document.getElementById(id);
+  if (!sel('priceSyncSection')) return;
+
+  sel('psRefreshSelected')?.addEventListener('click', () => {
+    if (!selectedCard) return;
+    psBatchRefresh([selectedCard.i], `Refresh "${selectedCard.n}"`);
+  });
+  sel('psRefreshTracked')?.addEventListener('click', () => {
+    psBatchRefresh(psTrackedIds(), 'Refresh tracked cards');
+  });
+  sel('psRefreshStale')?.addEventListener('click', () => {
+    psBatchRefresh(psCacheIds({ staleOnly: true }), 'Refresh stale cached cards');
+  });
+  sel('psRefreshAll')?.addEventListener('click', () => {
+    psBatchRefresh(psCacheIds(), 'Refresh every cached card');
+  });
+  sel('psClearCache')?.addEventListener('click', () => {
+    if (_psState.running) return;
+    try { localStorage.removeItem(PRICE_CACHE_KEY); } catch {}
+    psSetLastSync(0);
+    psUpdateStats();
+    psLog('Price cache cleared.', 'info');
+    const log = document.getElementById('psLog');
+    if (log) log.style.display = 'block';
+  });
+  sel('psCancel')?.addEventListener('click', () => {
+    if (!_psState.running) return;
+    _psState.cancel = true;
+    psLog('Cancelling after current batch finishes…', 'warn');
+  });
+  sel('psManualGo')?.addEventListener('click', psManualRefresh);
+  sel('psManualInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); psManualRefresh(); }
+  });
+
+  // Per-selected-card refresh in the Live Market Price panel
+  sel('livePriceRefresh')?.addEventListener('click', () => {
+    if (!selectedCard || _psState.running) return;
+    psBatchRefresh([selectedCard.i], `Refresh "${selectedCard.n}"`);
+  });
+
+  psUpdateStats();
+  // Keep stats / "last sync" label live
+  setInterval(psUpdateStats, 30 * 1000);
 }

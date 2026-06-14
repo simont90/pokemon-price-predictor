@@ -3102,3 +3102,145 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   .hold-outcomes { padding: 18px 22px; }
   .hold-out-grid-head, .hold-out-row { grid-template-columns: 100px 1fr 140px 90px; gap: 16px; }
 }
+
+/* ===================== Price Sync ===================== */
+.price-sync-card { padding: 22px; }
+.price-sync-card .section-header { margin-bottom: 16px; }
+.price-sync-card .section-header h2 { display: flex; align-items: center; gap: 8px; font-size: 18px; margin: 0 0 4px 0; }
+.ps-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--accent-dim); color: var(--accent);
+  font-size: 16px; font-weight: 700;
+}
+.ps-subtitle { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+
+/* Stats row */
+.ps-stats {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+  margin-bottom: 16px;
+}
+.ps-stat {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 2px; padding: 10px 12px;
+  background: var(--surface-2, rgba(255,255,255,0.02));
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.ps-stat-num { font-family: var(--mono); font-size: 18px; font-weight: 600; color: var(--text); }
+.ps-stat-lbl { font-size: 11px; color: var(--text-faint); letter-spacing: 0.04em; text-transform: uppercase; }
+
+/* Action buttons (grid of refresh actions) */
+.ps-actions {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px; margin-bottom: 14px;
+}
+.ps-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 12px 14px;
+  background: var(--surface, transparent); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: border-color 0.15s, background 0.15s, transform 0.05s;
+  text-align: left;
+}
+.ps-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-dim); }
+.ps-btn:active:not(:disabled) { transform: translateY(1px); }
+.ps-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.ps-btn-primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.ps-btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--bg); }
+.ps-btn-ghost { background: transparent; color: var(--text-muted); }
+.ps-btn-ghost:hover:not(:disabled) { color: var(--red, #e85f5f); border-color: var(--red, #e85f5f); background: rgba(232, 95, 95, 0.08); }
+.ps-btn-ico {
+  display: inline-block; font-size: 15px; line-height: 1;
+  font-family: var(--mono); font-weight: 600; opacity: 0.85;
+}
+.ps-btn-text { font-size: 13px; font-weight: 600; }
+.ps-btn-hint { font-size: 11px; color: inherit; opacity: 0.75; font-weight: 400; }
+.ps-btn-primary .ps-btn-hint { opacity: 0.85; }
+
+/* Manual lookup row */
+.ps-manual { margin-bottom: 14px; }
+.ps-manual-lbl { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+.ps-manual-lbl code {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--accent-dim); color: var(--accent);
+  padding: 1px 5px; border-radius: 3px;
+}
+.ps-manual-row { display: flex; gap: 8px; align-items: stretch; }
+.ps-manual-input {
+  flex: 1; min-width: 0;
+  padding: 10px 12px;
+  background: var(--surface-2, rgba(255,255,255,0.02));
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-family: var(--mono); font-size: 13px;
+}
+.ps-manual-input:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+.ps-manual-row .ps-btn { flex-direction: row; align-items: center; padding: 10px 18px; }
+
+/* Progress */
+.ps-progress {
+  margin: 14px 0; padding: 12px 14px;
+  background: var(--accent-dim); border: 1px solid var(--accent);
+  border-radius: 10px;
+}
+.ps-progress-head {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+  font-size: 12px;
+}
+.ps-progress-label { font-weight: 600; color: var(--text); flex: 1; }
+.ps-progress-counter { font-family: var(--mono); color: var(--accent); font-size: 12px; font-weight: 600; }
+.ps-cancel {
+  background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+  font-size: 11px; padding: 4px 10px; border-radius: 5px; cursor: pointer;
+}
+.ps-cancel:hover { color: var(--red, #e85f5f); border-color: var(--red, #e85f5f); }
+.ps-progress-bar {
+  height: 6px; border-radius: 3px;
+  background: rgba(0,0,0,0.25); overflow: hidden;
+}
+.ps-progress-fill {
+  height: 100%; width: 0%; background: var(--accent);
+  transition: width 0.25s ease;
+}
+.ps-progress-current {
+  margin-top: 6px; font-size: 11px; color: var(--text-muted);
+  font-family: var(--mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Log */
+.ps-log {
+  margin-top: 12px; max-height: 220px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: rgba(0,0,0,0.15); padding: 8px 12px;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
+}
+.ps-log-row { padding: 2px 0; color: var(--text-muted); }
+.ps-log-ok { color: var(--green); }
+.ps-log-err { color: var(--red, #e85f5f); }
+.ps-log-warn { color: var(--accent); }
+.ps-log-info { color: var(--text); }
+
+/* Per-card refresh button in the Live Market Price header */
+.live-price-refresh {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-left: 6px;
+  padding: 5px 10px;
+  background: transparent; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-family: inherit; font-size: 11px; font-weight: 500;
+  cursor: pointer; transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.live-price-refresh:hover:not(:disabled) {
+  color: var(--accent); border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.live-price-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Responsive */
+@media (max-width: 720px) {
+  .ps-stats { grid-template-columns: repeat(2, 1fr); }
+  .ps-actions { grid-template-columns: 1fr; }
+  .ps-manual-row { flex-direction: column; }
+  .ps-manual-row .ps-btn { width: 100%; justify-content: center; }
+}
