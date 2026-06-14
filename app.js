@@ -1939,6 +1939,7 @@ function selectCard(id) {
   renderPsaGradeRange(card, pullCost, des.total);
   updateWatchButton();
   renderMarketplaceScan(card, pullCost, des.total);
+  renderHoldStrategy(card);
 
   // Reset market dynamics section
   $('marketSection').style.display = 'none';
@@ -6279,3 +6280,234 @@ renderMarketplaceScan = function(card, pullCost, des) {
 // Boot the settings button once the DOM is ready (init() runs synchronously
 // near the top of this file; we attach in microtask so dependencies exist).
 queueMicrotask(setupMarketplaceWorker);
+
+// =============================================================
+// Hold Strategy · Raw vs Graded comparison
+// =============================================================
+//
+// Given the selected card, build a side-by-side comparison of six holding
+// strategies and pick the long-term winner:
+//
+//   1. Buy Raw — hold ungraded — cheapest entry, modest ceiling
+//   2. Buy Raw + Grade — EV across the PSA grade distribution
+//   3. Buy PSA 7 — graded floor entry
+//   4. Buy PSA 8 — mid-grade
+//   5. Buy PSA 9 — near-mint entry
+//   6. Buy PSA 10 — gem mint, highest ceiling and lowest variance
+//
+// For each, we compute: today's all-in cost, projected 5yr value, expected
+// profit £, ROI %, and a qualitative risk band. The strategy with the highest
+// risk-adjusted ROI gets a "Best long-term pick" highlight.
+//
+// All money displayed in GBP via fmtGBP (which converts USD -> GBP internally).
+
+// Grading economics
+const GRADING_FEE_USD = 20;          // PSA economy tier ≈ $20 / card
+const BUY_SELL_FRICTION = 0.10;      // 10% combined buy + sell fees (fair tier midpoint)
+
+// When you grade a raw card and it ISN'T a PSA 10, the result is spread across
+// PSA 7/8/9 (and a small tail at <=6 that effectively trades like raw). These
+// conditional weights sum to 1 and are typical for modern English-language
+// singles in collector-grade condition.
+const SUBGEM_DISTRIBUTION = {
+  9: 0.55,                            // PSA 9 — majority of non-gem outcomes
+  8: 0.30,                            // PSA 8
+  7: 0.10,                            // PSA 7
+  rawLike: 0.05,                      // PSA ≤6 — effectively trades at raw value
+};
+
+// Default gem rate to assume when the card has no card.g data. Conservative
+// 18% reflects the long-run PSA 10 hit rate for modern hand-picked cards.
+const DEFAULT_GEM_RATE = 0.18;
+
+function renderHoldStrategy(card) {
+  const section = $('holdStrategySection');
+  if (!section || !card) return;
+  const pcPsa10 = (typeof livePrice !== 'undefined' && livePrice && livePrice.pcPsa10 > 0) ? livePrice.pcPsa10 : 0;
+  const psa10Price = card.p10 > 0 ? card.p10 : pcPsa10;
+  const rawUSD = getCurrentPrice(card);
+
+  // Need both a raw and a PSA 10 anchor to do the comparison.
+  if (!psa10Price || psa10Price <= 0 || !rawUSD || rawUSD <= 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+
+  const gradingFeeUSD = GRADING_FEE_USD;
+  const gemRate = (typeof card.g === 'number' && card.g > 0) ? card.g : DEFAULT_GEM_RATE;
+  const gemRateSource = (typeof card.g === 'number' && card.g > 0) ? 'tracked' : 'estimated';
+
+  // ----- Strategy 1: Buy Raw, hold ungraded -----
+  const rawYr5USD = projectGradePrice(card, 9, rawUSD, 5) / GRADE_GROWTH_PREMIUM[9] * 1.0;
+  // ^ Use the same growth machinery, but apply the "raw" growth premium (1.0).
+  //   Doing it this way keeps the projection consistent with renderPsaGradeRange.
+  const rawSell5USD = rawYr5USD * (1 - BUY_SELL_FRICTION);
+  const rawProfitUSD = rawSell5USD - rawUSD;
+  const rawRoi = rawUSD > 0 ? (rawProfitUSD / rawUSD) * 100 : 0;
+
+  // ----- Strategy 2: Buy Raw + Grade (EV across grades) -----
+  const psa7Yr5  = projectGradePrice(card, 7,  estimateGradePrice(card, 7,  psa10Price), 5);
+  const psa8Yr5  = projectGradePrice(card, 8,  estimateGradePrice(card, 8,  psa10Price), 5);
+  const psa9Yr5  = projectGradePrice(card, 9,  estimateGradePrice(card, 9,  psa10Price), 5);
+  const psa10Yr5 = projectGradePrice(card, 10, psa10Price, 5);
+  const subgemEV =
+      SUBGEM_DISTRIBUTION[9]       * psa9Yr5
+    + SUBGEM_DISTRIBUTION[8]       * psa8Yr5
+    + SUBGEM_DISTRIBUTION[7]       * psa7Yr5
+    + SUBGEM_DISTRIBUTION.rawLike  * rawYr5USD;
+  const gradeYr5EV = gemRate * psa10Yr5 + (1 - gemRate) * subgemEV;
+  const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
+  const gradeCost = rawUSD + gradingFeeUSD;
+  const gradeProfit = gradeSell5EV - gradeCost;
+  const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
+
+  // ----- Strategies 3-6: Buy graded at each tier -----
+  const gradedStrategies = [7, 8, 9, 10].map(g => {
+    const today = estimateGradePrice(card, g, psa10Price);
+    const yr5 = projectGradePrice(card, g, today, 5);
+    const sell = yr5 * (1 - BUY_SELL_FRICTION);
+    const profit = sell - today;
+    const roi = today > 0 ? (profit / today) * 100 : 0;
+    return { label: `Buy PSA ${g}`, key: `psa${g}`, grade: g, today, yr5, profit, roi };
+  });
+
+  const strategies = [
+    { label: 'Buy Raw',          key: 'raw',      desc: 'Hold ungraded for 5 yrs',                today: rawUSD,    yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20 },
+    { label: 'Buy Raw + Grade',  key: 'gamble',   desc: `EV at ${(gemRate*100).toFixed(0)}% gem rate (${gemRateSource})`, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit,  roi: gradeRoi,  risk: 'high',   variance: 0.70 },
+    ...gradedStrategies.map((s, i) => ({
+      ...s,
+      desc: i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling',
+      // Variance falls as grade rises (less subjective re-grade risk).
+      risk: s.grade === 10 ? 'low' : s.grade === 9 ? 'med' : 'med',
+      variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : 0.32,
+    })),
+  ];
+
+  // Risk-adjusted score: ROI minus a variance discount, then a small bonus
+  // for absolute upside so a £500 profit beats a £50 profit at the same ROI.
+  // This is how we pick the "long-term winner" — it punishes the high-variance
+  // "raw + grade" gamble unless it has a meaningfully higher ROI.
+  strategies.forEach(s => {
+    const upsideGBP = Math.max(0, gbpFromUSD(s.profit));
+    const upsideBonus = Math.min(15, upsideGBP / 50); // up to +15 for big absolute profit
+    s.riskAdjusted = s.roi - (s.variance * 100 * 0.35) + upsideBonus;
+  });
+
+  // Pick winners. Two separate questions per the user's ask:
+  //   1. Raw vs Graded — which broad approach wins? Compare best raw-side
+  //      option (Raw, Raw+Grade) vs best already-graded option (PSA 7-10).
+  //   2. Which graded tier (PSA 7/8/9/10) is the best long-term hold?
+  const positives = strategies.filter(s => s.roi > 0);
+  const overallWinner = positives.length
+    ? positives.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
+    : null;
+
+  const rawSide = strategies.filter(s => (s.key === 'raw' || s.key === 'gamble') && s.roi > 0);
+  const gradedSide = strategies.filter(s => s.key.startsWith('psa') && s.roi > 0);
+  const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
+  const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
+
+  // The card visually highlighted as the winner is the overall best risk-adjusted
+  // option. But the recommendation copy answers BOTH the user's questions in
+  // plain English so they don't have to read the table to extract the answer.
+  const winner = overallWinner;
+
+  // Build the two-line recommendation: raw-vs-graded verdict + best graded tier.
+  const recEl = $('holdRecommendation');
+  if (!winner) {
+    recEl.innerHTML = `
+      <div class="hold-rec-pill hold-rec-skip">Skip this card</div>
+      <div class="hold-rec-body">
+        No version of this card projects positive 5-year ROI after buy/sell friction and grading fees.
+        Park your capital somewhere with a better expected return.
+      </div>
+    `;
+  } else {
+    // Raw-vs-graded headline: which side wins outright?
+    let rawVsGradedLine;
+    if (bestRaw && bestGraded) {
+      const rawScore = bestRaw.riskAdjusted;
+      const gradedScore = bestGraded.riskAdjusted;
+      if (rawScore > gradedScore + 30) {
+        rawVsGradedLine = `<strong>Buy raw</strong> — <strong>${bestRaw.label}</strong> beats the best graded option (${bestGraded.label}) by a wide margin on risk-adjusted return.`;
+      } else if (gradedScore > rawScore + 30) {
+        rawVsGradedLine = `<strong>Buy graded</strong> — <strong>${bestGraded.label}</strong> beats the best raw approach (${bestRaw.label}) on risk-adjusted return.`;
+      } else {
+        rawVsGradedLine = `<strong>Close call</strong> — ${bestRaw.label} and ${bestGraded.label} are within a few points of each other; pick based on how much capital you want to deploy and your appetite for grading variance.`;
+      }
+    } else if (bestGraded) {
+      rawVsGradedLine = `<strong>Buy graded</strong> — no raw-side option projects positive 5yr ROI for this card; only graded holds make sense.`;
+    } else {
+      rawVsGradedLine = `<strong>Buy raw</strong> — graded copies don’t project a positive 5yr return at current prices; the raw card is the only sensible entry.`;
+    }
+
+    // Best graded tier line.
+    let gradedLine;
+    if (bestGraded) {
+      const gradeNum = bestGraded.grade;
+      gradedLine = `Among graded copies, <strong>PSA ${gradeNum}</strong> is the best long-term hold: ${fmtGBP(bestGraded.today)} today → ${fmtGBP(bestGraded.yr5)} in 5yrs (+${bestGraded.roi.toFixed(0)}% ROI, +${fmtGBP(bestGraded.profit)} profit, ${bestGraded.risk === 'low' ? 'low' : 'medium'} risk).`;
+    } else {
+      gradedLine = `No graded tier projects positive 5yr ROI — every graded copy is overpriced relative to the model.`;
+    }
+
+    recEl.innerHTML = `
+      <div class="hold-rec-pill">Verdict</div>
+      <div class="hold-rec-body">
+        <div class="hold-rec-line">${rawVsGradedLine}</div>
+        <div class="hold-rec-line hold-rec-line-sub">${gradedLine}</div>
+      </div>
+    `;
+  }
+
+  // Render the comparison grid.
+  const grid = $('holdGrid');
+  grid.innerHTML = strategies.map(s => {
+    const isWinner = winner && s.key === winner.key;
+    const verdict = s.roi >= 80 ? { c: 'hold-v-strong', t: 'Strong hold' }
+                  : s.roi >= 40 ? { c: 'hold-v-good',   t: 'Worth holding' }
+                  : s.roi >= 15 ? { c: 'hold-v-fair',   t: 'Fair' }
+                  : s.roi >= 0  ? { c: 'hold-v-flat',   t: 'Flat' }
+                  :               { c: 'hold-v-skip',   t: 'Skip' };
+    const riskLabel = s.risk === 'low' ? 'Low risk' : s.risk === 'med' ? 'Medium risk' : 'High risk';
+    const profitSign = s.profit >= 0 ? '+' : '−';
+    return `
+      <div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${verdict.c}">
+        ${isWinner ? '<div class="hold-winner-tag">\u2605 Best long-term pick</div>' : ''}
+        <div class="hold-tile-head">
+          <div class="hold-tile-title">${s.label}</div>
+          <div class="hold-tile-desc">${s.desc}</div>
+        </div>
+        <div class="hold-tile-row">
+          <span class="hold-tile-k">Today</span>
+          <span class="hold-tile-v">${fmtGBP(s.today)}</span>
+        </div>
+        <div class="hold-tile-row">
+          <span class="hold-tile-k">5yr target</span>
+          <span class="hold-tile-v hold-tile-target">${fmtGBP(s.yr5)}</span>
+        </div>
+        <div class="hold-tile-row">
+          <span class="hold-tile-k">Profit (net of fees)</span>
+          <span class="hold-tile-v ${s.profit >= 0 ? 'hold-pos' : 'hold-neg'}">${profitSign}${fmtGBP(Math.abs(s.profit))}</span>
+        </div>
+        <div class="hold-tile-row">
+          <span class="hold-tile-k">ROI</span>
+          <span class="hold-tile-v ${s.roi >= 0 ? 'hold-pos' : 'hold-neg'}">${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</span>
+        </div>
+        <div class="hold-tile-foot">
+          <span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>
+          <span class="hold-verdict ${verdict.c}">${verdict.t}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Footnote with assumptions.
+  const gemPctStr = (gemRate * 100).toFixed(0);
+  $('holdFootnote').innerHTML = `
+    Assumes \u00a3${(gradingFeeUSD * (typeof fxRate === 'number' ? fxRate : 0.79)).toFixed(0)} grading fee (PSA economy tier), ${(BUY_SELL_FRICTION*100).toFixed(0)}% combined buy + sell friction,
+    and ${gemPctStr}% gem rate (${gemRateSource}). The \"Raw + Grade\" cell is an expected value across the full PSA 7/8/9/10 distribution,
+    so it carries the most variance \u2014 think of it as the high-upside lottery ticket of the six options.
+    Risk-adjusted ranking discounts ROI by variance so we don\u2019t recommend a coin-flip as \"best\" when a steadier play has nearly the same return.
+  `;
+}

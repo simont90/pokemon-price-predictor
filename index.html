@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260614d">
+  <link rel="stylesheet" href="style.css?v=20260614f">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -733,6 +733,19 @@
           <p class="mkt-footnote" id="marketplaceFootnote"></p>
         </section>
 
+        <!-- Hold Strategy · Raw vs Graded -->
+        <section class="card hold-card" id="holdStrategySection" style="display:none">
+          <div class="hold-header">
+            <div>
+              <h2>Hold Strategy · Raw vs Graded</h2>
+              <p class="card-desc">Which version of this card is the best 5-year hold? We compare buying raw (and holding ungraded), buying raw and gambling on grading, and buying already-graded at PSA 7–10 — then highlight the winning play.</p>
+            </div>
+          </div>
+          <div class="hold-recommendation" id="holdRecommendation"></div>
+          <div class="hold-grid" id="holdGrid"></div>
+          <p class="hold-footnote" id="holdFootnote"></p>
+        </section>
+
         <!-- Rip or Buy -->
         <section class="card rip-card" id="ripSection" style="display:none">
           <div class="rip-header">
@@ -1073,6 +1086,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260614d"></script>
+  <script src="app.js?v=20260614f"></script>
 </body>
 </html>

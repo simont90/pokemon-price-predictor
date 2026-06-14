@@ -2758,3 +2758,104 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .mkt-deal-spread.pos { color: var(--green); }
 .mkt-deal-spread.neg { color: var(--red); }
+
+/* =========================================================
+   Hold Strategy · Raw vs Graded comparison
+   ========================================================= */
+.hold-card { margin-top: 16px; }
+.hold-header { margin-bottom: 14px; }
+
+.hold-recommendation {
+  display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center;
+  padding: 14px 16px; margin-bottom: 18px;
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.10), rgba(74, 222, 128, 0.04));
+  border: 1px solid rgba(74, 222, 128, 0.35); border-radius: 10px;
+}
+.hold-rec-pill {
+  padding: 6px 12px; border-radius: 6px;
+  background: rgba(74, 222, 128, 0.20); color: #86efac;
+  font-family: var(--font); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
+}
+.hold-rec-pill.hold-rec-skip {
+  background: rgba(248, 113, 113, 0.15); color: #fca5a5;
+}
+.hold-rec-body { font-size: 13px; line-height: 1.55; color: var(--text); }
+.hold-rec-body strong { color: var(--accent); }
+.hold-rec-line { font-size: 13.5px; line-height: 1.55; color: var(--text); }
+.hold-rec-line + .hold-rec-line { margin-top: 6px; }
+.hold-rec-line-sub {
+  font-size: 12px; line-height: 1.5; color: var(--text-muted);
+  padding-top: 6px; border-top: 1px dashed var(--border);
+}
+.hold-rec-line-sub strong { color: var(--text); }
+
+.hold-grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.hold-tile {
+  position: relative;
+  padding: 14px; border-radius: 10px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 8px;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.hold-tile:hover { border-color: var(--accent-dim, var(--border)); transform: translateY(-1px); }
+.hold-tile.hold-winner {
+  border: 1.5px solid #4ade80;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.08), 0 4px 14px rgba(74, 222, 128, 0.15);
+  background: linear-gradient(180deg, rgba(74, 222, 128, 0.06), var(--bg-raised) 60%);
+}
+.hold-winner-tag {
+  position: absolute; top: -10px; left: 12px;
+  padding: 3px 9px; border-radius: 5px;
+  background: #4ade80; color: #052e16;
+  font-family: var(--font); font-size: 10px; font-weight: 800;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.hold-tile-head { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.hold-tile-title { font-family: var(--font); font-weight: 700; font-size: 14px; color: var(--text); }
+.hold-tile-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
+.hold-tile-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 12px;
+}
+.hold-tile-k { color: var(--text-muted); font-family: var(--font); }
+.hold-tile-v { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.hold-tile-target { color: var(--accent); }
+.hold-pos { color: #86efac; }
+.hold-neg { color: #fca5a5; }
+.hold-tile-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border);
+  gap: 6px; flex-wrap: wrap;
+}
+.hold-risk {
+  padding: 3px 8px; border-radius: 5px;
+  font-family: var(--font); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.hold-risk-low { background: rgba(74, 222, 128, 0.12); color: #86efac; }
+.hold-risk-med { background: rgba(250, 204, 21, 0.12); color: #fde047; }
+.hold-risk-high { background: rgba(248, 113, 113, 0.14); color: #fca5a5; }
+.hold-verdict {
+  padding: 3px 8px; border-radius: 5px;
+  font-family: var(--font); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.hold-v-strong { background: rgba(74, 222, 128, 0.18); color: #86efac; }
+.hold-v-good   { background: rgba(125, 211, 252, 0.16); color: #7dd3fc; }
+.hold-v-fair   { background: rgba(250, 204, 21, 0.16); color: #fde047; }
+.hold-v-flat   { background: rgba(148, 163, 184, 0.16); color: #cbd5e1; }
+.hold-v-skip   { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+
+.hold-footnote {
+  font-size: 11px; color: var(--text-muted); line-height: 1.55;
+  margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .hold-recommendation { grid-template-columns: 1fr; gap: 8px; }
+  .hold-grid { grid-template-columns: 1fr 1fr; }
+}
