@@ -2647,6 +2647,31 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .mkt-link.mkt-uk:hover { border-color: #1d4ed8; color: #5b8cff; }
 .mkt-link.mkt-us:hover { border-color: #b91c1c; color: #ff7676; }
 .mkt-link.mkt-cm:hover { border-color: #f59e0b; color: #ffc04d; }
+.mkt-link.mkt-tcg:hover { border-color: #2dd4bf; color: #5eead4; }
+.mkt-link.mkt-direct {
+  /* Visually distinguish direct product-page links from generic search links.
+     A green-accented border + label tells the user this is the exact page. */
+  background: rgba(74, 222, 128, 0.08);
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #86efac;
+}
+.mkt-link.mkt-direct:hover {
+  background: rgba(74, 222, 128, 0.15);
+  border-color: #4ade80;
+  color: #bbf7d0;
+}
+.mkt-cm-chip {
+  margin-top: 8px;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 6px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  font-family: var(--font);
+  font-size: 11px; font-weight: 600;
+  color: #fcd34d;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-cm-chip-label { color: var(--text-muted); font-weight: 500; }
 .mkt-footnote {
   font-size: 11px; color: var(--text-muted); line-height: 1.5;
   margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);

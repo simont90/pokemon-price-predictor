@@ -5931,6 +5931,64 @@ function buildCardmarketUrl(query, maxPriceEUR) {
   return `https://www.cardmarket.com/en/Pokemon/Products/Search?${params.toString()}`;
 }
 
+// =============================================================
+// pokemontcg.io direct-link resolver
+// =============================================================
+// pokemontcg.io is free, has open CORS, and returns per-card Cardmarket
+// and TCGplayer URLs that redirect to the exact product page (no Worker
+// needed). We cache results per card id so reselecting the same card is
+// instant. Japanese cards (id prefix "jp-") aren't in pokemontcg.io, so we
+// fall back to the search URLs.
+const pokemonTcgIoCache = new Map(); // cardId -> {cardmarketUrl, tcgplayerUrl, prices} | null
+const pokemonTcgIoInflight = new Map(); // cardId -> Promise
+
+async function fetchPokemonTcgIoLinks(cardId) {
+  if (!cardId || cardId.startsWith('jp-') || cardId.startsWith('mc-')) return null;
+  if (pokemonTcgIoCache.has(cardId)) return pokemonTcgIoCache.get(cardId);
+  if (pokemonTcgIoInflight.has(cardId)) return pokemonTcgIoInflight.get(cardId);
+  const url = `https://api.pokemontcg.io/v2/cards/${encodeURIComponent(cardId)}`;
+  const p = (async () => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) { pokemonTcgIoCache.set(cardId, null); return null; }
+      const json = await res.json();
+      const d = json && json.data ? json.data : {};
+      const result = {
+        // The /cardmarket/<id> and /tcgplayer/<id> URLs are 302 redirects
+        // that bounce to the actual product page on each retailer. Browsers
+        // follow these transparently when the user clicks the link.
+        cardmarketUrl: (d.cardmarket && d.cardmarket.url) || null,
+        tcgplayerUrl: (d.tcgplayer && d.tcgplayer.url) || null,
+        cmPrices: (d.cardmarket && d.cardmarket.prices) || null,
+      };
+      pokemonTcgIoCache.set(cardId, result);
+      return result;
+    } catch (e) {
+      pokemonTcgIoCache.set(cardId, null);
+      return null;
+    } finally {
+      pokemonTcgIoInflight.delete(cardId);
+    }
+  })();
+  pokemonTcgIoInflight.set(cardId, p);
+  return p;
+}
+
+// Build a TCGplayer search URL as a fallback for cards pokemontcg.io doesn't
+// resolve (Japanese, McDonald's promos, very new sets).
+function buildTcgplayerUrl(query, maxPriceUSD) {
+  const params = new URLSearchParams({
+    q: query,
+    productLineName: 'pokemon',
+    view: 'grid',
+  });
+  // TCGplayer's max-price filter uses MinPrice/MaxPrice query params.
+  if (maxPriceUSD && isFinite(maxPriceUSD)) {
+    params.set('MaxPrice', Math.round(maxPriceUSD).toString());
+  }
+  return `https://www.tcgplayer.com/search/pokemon/product?${params.toString()}`;
+}
+
 // Build a search query that's tight enough to find the right card but
 // permissive enough to actually return results. Card name + set, no grade
 // term (we handle grade with the eBay search filter "PSA 10" appended).
@@ -5998,21 +6056,23 @@ function renderMarketplaceScan(card, pullCost, desirability) {
     const ebayUk = buildEbayUrl('uk', query, todayGBP);
     const ebayUs = buildEbayUrl('us', query, todayUSD);
     const cardmarket = buildCardmarketUrl(query, todayEUR);
-    return { ...row, todayGBP, todayEUR, yr5USD, yr5GBP, score, ebayUk, ebayUs, cardmarket };
+    const tcgplayer = buildTcgplayerUrl(query, todayUSD);
+    return { ...row, todayGBP, todayEUR, yr5USD, yr5GBP, score, ebayUk, ebayUs, cardmarket, tcgplayer };
   });
 
   // Sort by descending deal score so the most attractive grades surface first.
   rows.sort((a, b) => b.score - a.score);
 
   const tbody = $('marketplaceTable').querySelector('tbody');
-  tbody.innerHTML = rows.map(r => `
-    <tr>
+  tbody.innerHTML = rows.map((r, idx) => `
+    <tr data-mkt-row="${idx}" data-grade="${r.label}">
       <td class="mkt-grade">${r.label}</td>
       <td class="mkt-money">${fmtGBP(r.todayUSD)}</td>
       <td class="mkt-money mkt-yr5">${fmtGBP(r.yr5USD)}</td>
       <td><a class="mkt-link mkt-uk" href="${esc(r.ebayUk)}" target="_blank" rel="noopener">Search \u2192</a></td>
       <td><a class="mkt-link mkt-us" href="${esc(r.ebayUs)}" target="_blank" rel="noopener">Search \u2192</a></td>
-      <td><a class="mkt-link mkt-cm" href="${esc(r.cardmarket)}" target="_blank" rel="noopener">Search \u2192</a></td>
+      <td class="mkt-cm-cell"><a class="mkt-link mkt-cm" href="${esc(r.cardmarket)}" target="_blank" rel="noopener">Search \u2192</a></td>
+      <td class="mkt-tcg-cell"><a class="mkt-link mkt-tcg" href="${esc(r.tcgplayer)}" target="_blank" rel="noopener">Search \u2192</a></td>
       <td><span class="mkt-pill ${dealClass(r.score)}">${r.score}/100</span></td>
     </tr>
   `).join('');
@@ -6021,8 +6081,13 @@ function renderMarketplaceScan(card, pullCost, desirability) {
   $('marketplaceFootnote').innerHTML = `
     Best place to hunt right now: <strong>${topRow.label}</strong> at ${fmtGBP(topRow.todayUSD)} (deal score ${topRow.score}/100).
     Each search link is pre-filtered to <strong>max price = model fair value</strong>, so any listing you see is at or below the model.
-    Cardmarket prices in EUR; UK eBay in GBP. Connect a live-scan Worker (gear icon above) to also see real listings ranked by spread vs fair value.
+    Cardmarket prices in EUR; UK eBay in GBP. Direct Cardmarket + TCGplayer product links resolve in the background via pokemontcg.io.
   `;
+
+  // Fire-and-forget: resolve direct product page URLs from pokemontcg.io and
+  // swap the Cardmarket + TCGplayer search links for product-page links. Also
+  // inject Cardmarket trend / low prices as a small chip under the row.
+  upgradeMarketplaceLinks(card, rows);
 
   // If a live-scan Worker URL is configured, also fan out a fetch for live
   // listings. Otherwise hide the live-wrap so only deep-links show.
@@ -6030,6 +6095,63 @@ function renderMarketplaceScan(card, pullCost, desirability) {
     fetchLiveDeals(card);
   } else if ($('mktLiveWrap')) {
     $('mktLiveWrap').style.display = 'none';
+  }
+}
+
+// =============================================================
+// Upgrade Cardmarket + TCGplayer cells with direct product-page URLs
+// =============================================================
+// Called after renderMarketplaceScan. Looks up the card on pokemontcg.io
+// and swaps the generic search links for the per-card product page URLs
+// (e.g. /Pokemon/Products/Singles/Obsidian-Flames/Charizard-ex-V1-OBF125).
+// Also adds a small "Cardmarket: low €X.XX · trend €Y.YY" line under the
+// section header when prices are available. Safe to call repeatedly — the
+// result is cached per card id.
+async function upgradeMarketplaceLinks(card, rows) {
+  if (!card || !card.i) return;
+  const cardIdForFetch = card.i;
+  const data = await fetchPokemonTcgIoLinks(cardIdForFetch);
+  // Guard: card may have changed while we were fetching.
+  if (!selectedCard || selectedCard.i !== cardIdForFetch) return;
+  if (!data) return;
+
+  const table = $('marketplaceTable');
+  if (!table) return;
+
+  if (data.cardmarketUrl) {
+    table.querySelectorAll('.mkt-cm-cell').forEach(td => {
+      td.innerHTML = `<a class="mkt-link mkt-cm mkt-direct" href="${esc(data.cardmarketUrl)}" target="_blank" rel="noopener" title="Direct product page on Cardmarket">Product page \u2192</a>`;
+    });
+  }
+  if (data.tcgplayerUrl) {
+    table.querySelectorAll('.mkt-tcg-cell').forEach(td => {
+      td.innerHTML = `<a class="mkt-link mkt-tcg mkt-direct" href="${esc(data.tcgplayerUrl)}" target="_blank" rel="noopener" title="Direct product page on TCGplayer">Product page \u2192</a>`;
+    });
+  }
+
+  // Inject a small Cardmarket-prices chip into the section header so the
+  // user can sanity-check the model's USD-derived numbers against Cardmarket's
+  // own EUR low / trend / 30-day average for this exact card.
+  const cm = data.cmPrices || {};
+  const chipParts = [];
+  if (cm.lowPrice)   chipParts.push(`Low \u20ac${cm.lowPrice.toFixed(2)}`);
+  if (cm.trendPrice) chipParts.push(`Trend \u20ac${cm.trendPrice.toFixed(2)}`);
+  if (cm.avg30)      chipParts.push(`30d avg \u20ac${cm.avg30.toFixed(2)}`);
+  if (chipParts.length) {
+    let chip = document.getElementById('mktCmChip');
+    if (!chip) {
+      const header = document.querySelector('#marketplaceSection .mkt-header > div');
+      if (header) {
+        chip = document.createElement('div');
+        chip.id = 'mktCmChip';
+        chip.className = 'mkt-cm-chip';
+        header.appendChild(chip);
+      }
+    }
+    if (chip) chip.innerHTML = `<span class="mkt-cm-chip-label">Cardmarket (raw, EUR):</span> ${chipParts.join(' \u00b7 ')}`;
+  } else {
+    const chip = document.getElementById('mktCmChip');
+    if (chip) chip.remove();
   }
 }
 
