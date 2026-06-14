@@ -2926,6 +2926,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .hold-out-chip-good { background: rgba(74, 222, 128, 0.16); color: #86efac; }
 .hold-out-chip-bad  { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
 .hold-out-chip-wait { background: rgba(250, 204, 21, 0.16); color: #fde047; }
+.hold-out-chip-online { background: rgba(56, 189, 248, 0.16); color: #7dd3fc; }
 .hold-out-grid-head, .hold-out-row {
   display: grid; grid-template-columns: 70px 1fr 100px 70px;
   align-items: center; gap: 10px;
@@ -2955,6 +2956,29 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .hold-out-pl.hold-pos, .hold-out-roi.hold-pos { color: #86efac; }
 .hold-out-pl.hold-neg, .hold-out-roi.hold-neg { color: #fca5a5; }
+
+/* ---------- Flip vs Crack tactical sub-row ---------- */
+.hold-out-move {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  margin-top: 6px; padding: 6px 8px;
+  background: rgba(148, 163, 184, 0.06);
+  border-left: 2px solid rgba(148, 163, 184, 0.35);
+  border-radius: 4px;
+  font-size: 11.5px; line-height: 1.35;
+}
+.hold-out-move-label {
+  font-family: var(--font); font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px;
+}
+.hold-out-move-pill {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-family: var(--font); font-weight: 700; font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.hold-move-flip { background: rgba(56, 189, 248, 0.18); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.35); }
+.hold-move-crack { background: rgba(244, 114, 182, 0.16); color: #f9a8d4; border: 1px solid rgba(244, 114, 182, 0.35); }
+.hold-out-move-alt { color: var(--text-muted); font-size: 11px; }
 
 /* ================================================================
    Hold Strategy · device-aware responsive ladder

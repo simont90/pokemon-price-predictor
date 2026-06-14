@@ -6330,6 +6330,36 @@ const SUBGEM_DISTRIBUTION = {
 // 18% reflects the long-run PSA 10 hit rate for modern hand-picked cards.
 const DEFAULT_GEM_RATE = 0.18;
 
+// Buying raw online is sight-unseen — you can't check centering/whitening/surface
+// the way you can in-hand at a shop or show. PSA 10 hit rates on online-bought
+// raw modern English cards typically run ~50-65% of the hand-picked rate, so a
+// 0.6 multiplier is a fair central estimate. This is applied to gemRate inside
+// renderHoldStrategy so the EV math reflects the user's actual buying channel.
+const ONLINE_BUY_GEM_PENALTY = 0.6;
+
+// When grade comes back below PSA 10, two tactical options exist:
+//   - Flip the slabbed card at current market for that grade (immediate liquidity)
+//   - Crack it out of the slab, resubmit (another £40 + ~9mo wait), hope for an upgrade
+// PSA grades are sticky on resub — the grader saw the flaw once and will likely
+// see it again. These transition probabilities are conservative central estimates
+// for modern English singles; upgrades are the exception, not the rule.
+const CRACK_RESUB_TRANSITIONS = {
+  // PSA 9 → 10 review rates published in collector data sit around 8-12% for
+  // modern English singles. We use 10% — the grader already saw the flaw.
+  9: { 10: 0.10, 9: 0.80, 8: 0.08, 7: 0.02, 6: 0.00 },
+  // PSA 8 → 9+ resub upgrade is real but uncommon (~15%) and downgrades to
+  // PSA 7 / surface damage occur. Stays-at-PSA-8 dominates.
+  8: { 10: 0.02, 9: 0.13, 8: 0.70, 7: 0.10, 6: 0.05 },
+  // PSA 7 is a hard floor — a 7 means PSA saw a clear flaw. Resub upgrades
+  // to 8 happen but the modal outcome is still 7.
+  7: { 10: 0.01, 9: 0.06, 8: 0.18, 7: 0.65, 6: 0.10 },
+};
+// Probability that cracking the slab damages the card (crease, whitening on a
+// corner) such that the resub comes back materially worse than the model expects.
+// Modelled as a flat % haircut on the crack EV — keeps the math readable.
+// 8% reflects real-world handling risk on holo / textured modern cards.
+const CRACK_DAMAGE_RISK = 0.08;
+
 function renderHoldStrategy(card) {
   const section = $('holdStrategySection');
   if (!section || !card) return;
@@ -6355,8 +6385,11 @@ function renderHoldStrategy(card) {
   // money could have earned ~6% p.a. elsewhere and discount the eventual
   // value accordingly. Small but it matters for close calls.
   const waitDiscount = 1 / (1 + OPPORTUNITY_COST_ANNUAL * waitYears);
-  const gemRate = (typeof card.g === 'number' && card.g > 0) ? card.g : DEFAULT_GEM_RATE;
+  const baseGemRate = (typeof card.g === 'number' && card.g > 0) ? card.g : DEFAULT_GEM_RATE;
   const gemRateSource = (typeof card.g === 'number' && card.g > 0) ? 'tracked' : 'estimated';
+  // Apply the online sight-unseen penalty — default assumption is the user is
+  // buying raw online (eBay/TCGplayer), not hand-picking from a binder.
+  const gemRate = baseGemRate * ONLINE_BUY_GEM_PENALTY;
 
   // ----- Strategy 1: Buy Raw, hold ungraded -----
   const rawYr5USD = projectGradePrice(card, 9, rawUSD, 5) / GRADE_GROWTH_PREMIUM[9] * 1.0;
@@ -6406,6 +6439,43 @@ function renderHoldStrategy(card) {
     : 0;
   // Cumulative probability of hitting PSA 9 OR 10 — the "good outcome" the user asked about.
   const goodOutcomeProb = gemRate + (1 - gemRate) * SUBGEM_DISTRIBUTION[9];
+
+  // ----- Per-outcome Flip vs Crack tactical decision -----
+  // For each non-PSA-10 outcome, compare:
+  //   (a) Flip the slab now at current market for that grade, net of friction
+  //   (b) Crack out + resubmit — EV across CRACK_RESUB_TRANSITIONS, less another
+  //       grading fee, less crack-damage haircut, discounted for another wait.
+  // We compare these at current prices (not 5yr) because this is a tactical
+  // decision the user makes at the moment grades come back — not a 5yr hold.
+  gradeOutcomes.forEach(o => {
+    if (o.grade < 10 && o.grade >= 7) {
+      const transitions = CRACK_RESUB_TRANSITIONS[o.grade];
+      // Today's slabbed price for THIS grade — what flipping it would realise.
+      const flipTodayUSD = estimateGradePrice(card, o.grade, psa10Price);
+      const flipNetUSD = flipTodayUSD * (1 - BUY_SELL_FRICTION);
+      // EV of cracking: sum P(newGrade) * todayPrice(newGrade)
+      let crackGrossUSD = 0;
+      Object.entries(transitions).forEach(([newGStr, p]) => {
+        const newG = +newGStr;
+        const priceUSD = newG <= 6
+          ? rawUSD                                              // ≤PSA 6 trades like raw
+          : estimateGradePrice(card, newG, psa10Price);
+        crackGrossUSD += p * priceUSD;
+      });
+      // Net out: friction, another grading fee, crack-damage haircut, wait discount.
+      const crackNetUSD =
+        (crackGrossUSD * (1 - BUY_SELL_FRICTION) - gradingFeeUSD - CRACK_DAMAGE_RISK * flipTodayUSD)
+        * waitDiscount;
+      o.flipNetUSD = flipNetUSD;
+      o.crackNetUSD = crackNetUSD;
+      // Require crack EV to beat flip by at least 5% to overcome risk preference
+      // (cracking is a real, irreversible action with execution risk).
+      o.nextMove = crackNetUSD > flipNetUSD * 1.05 ? 'crack' : 'flip';
+      o.nextMoveEdgeUSD = Math.abs(crackNetUSD - flipNetUSD);
+      // Upside if crack pays off (P(≥10) at resub) — useful for messaging.
+      o.crackUpgradeProb = (transitions[10] || 0) + (o.grade < 9 ? (transitions[9] || 0) : 0);
+    }
+  });
 
   // ----- Strategies 3-6: Buy graded at each tier -----
   const gradedStrategies = [7, 8, 9, 10].map(g => {
@@ -6579,6 +6649,32 @@ function renderHoldStrategy(card) {
       const cls = profitGBP >= 0 ? 'hold-pos' : 'hold-neg';
       const pct = (o.prob * 100).toFixed(0);
       const isHero = o.profitUSD === bestProfit && o.profitUSD > 0;
+      // Build the tactical "flip vs crack" sub-line for non-PSA-10 outcomes.
+      // NB: fmtGBP() takes USD and converts internally — do NOT pre-convert.
+      let moveBlock = '';
+      if (o.nextMove) {
+        const moveCls = o.nextMove === 'crack' ? 'hold-move-crack' : 'hold-move-flip';
+        let moveLabel, otherLine;
+        if (o.nextMove === 'crack') {
+          moveLabel = `Crack &amp; resub (EV ${fmtGBP(o.crackNetUSD)})`;
+          otherLine = `Flip alt: ${fmtGBP(o.flipNetUSD)}\u00a0\u00b7\u00a0crack adds +${fmtGBP(o.nextMoveEdgeUSD)} EV (${(o.crackUpgradeProb*100).toFixed(0)}% upgrade chance)`;
+        } else {
+          moveLabel = `Flip the slab (${fmtGBP(o.flipNetUSD)})`;
+          if (o.crackNetUSD >= o.flipNetUSD) {
+            // Crack EV is technically higher but within the 5% risk-buffer.
+            otherLine = `Crack alt: ${fmtGBP(o.crackNetUSD)} EV\u00a0\u00b7\u00a0only +${fmtGBP(o.nextMoveEdgeUSD)} edge \u2014 not worth another \u00a3${UK_GRADING_ALL_IN_GBP} + ${UK_GRADING_WAIT_MONTHS}mo wait + ${(CRACK_DAMAGE_RISK*100).toFixed(0)}% damage risk`;
+          } else {
+            otherLine = `Crack alt: ${fmtGBP(o.crackNetUSD)} EV\u00a0\u00b7\u00a0\u2212${fmtGBP(o.nextMoveEdgeUSD)} after \u00a3${UK_GRADING_ALL_IN_GBP} resub fee + ${(CRACK_DAMAGE_RISK*100).toFixed(0)}% damage risk`;
+          }
+        }
+        moveBlock = `
+          <div class="hold-out-move">
+            <span class="hold-out-move-label">If this happens:</span>
+            <span class="hold-out-move-pill ${moveCls}">${moveLabel}</span>
+            <span class="hold-out-move-alt">${otherLine}</span>
+          </div>
+        `;
+      }
       return `
         <div class="hold-out-row ${isHero ? 'hold-out-hero' : ''}">
           <div class="hold-out-grade">${o.label}</div>
@@ -6588,6 +6684,7 @@ function renderHoldStrategy(card) {
           </div>
           <div class="hold-out-pl ${cls}">${sign}${fmtGBP(Math.abs(profitGBP))}</div>
           <div class="hold-out-roi ${cls}">${o.roi >= 0 ? '+' : ''}${o.roi.toFixed(0)}%</div>
+          ${moveBlock}
         </div>
       `;
     }).join('');
@@ -6600,6 +6697,7 @@ function renderHoldStrategy(card) {
           <span class="hold-out-chip hold-out-chip-good">${goodPct}% PSA 9 or 10</span>
           <span class="hold-out-chip hold-out-chip-bad">${lossPct}% loss case</span>
           <span class="hold-out-chip hold-out-chip-wait">${UK_GRADING_WAIT_MONTHS} mo wait (UK)</span>
+          <span class="hold-out-chip hold-out-chip-online">Online buy: ${(ONLINE_BUY_GEM_PENALTY*100).toFixed(0)}% of hand-picked gem rate</span>
         </div>
       </div>
       <div class="hold-out-grid-head">
@@ -6611,16 +6709,25 @@ function renderHoldStrategy(card) {
 
   // Footnote with assumptions.
   const gemPctStr = (gemRate * 100).toFixed(0);
+  const baseGemPctStr = (baseGemRate * 100).toFixed(0);
   $('holdFootnote').innerHTML = `
     <strong>UK grading assumptions:</strong> £${UK_GRADING_ALL_IN_GBP} all-in cost per card
     (PSA economy fee + Ludkins/GetGraded intermediary fee + insured round-trip shipping)
     and a ~${UK_GRADING_WAIT_MONTHS}-month wait. Capital locked during the wait is discounted at
     ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a. opportunity cost so the gamble can’t look better
     than it really is once your money is tied up. Also assumes ${(BUY_SELL_FRICTION*100).toFixed(0)}%
-    combined buy + sell friction and a ${gemPctStr}% gem rate (${gemRateSource}).
-    The “Raw + Grade” row is an EV across the full PSA 7/8/9/10/≤6 distribution — the
-    “loss case” row in that tile tells you the cumulative probability and average
-    £ outcome when you don’t hit PSA 9 or 10.
+    combined buy + sell friction.<br>
+    <strong>Online buy penalty:</strong> base gem rate is ${baseGemPctStr}% (${gemRateSource}) but we apply a
+    ${(ONLINE_BUY_GEM_PENALTY*100).toFixed(0)}% multiplier because buying raw online (eBay / TCGplayer) is sight-unseen —
+    you can’t check centering, whitening, or surface scratches — so the effective PSA 10
+    hit rate drops to <strong>${gemPctStr}%</strong>. Hand-pick from a shop or show and you can dial that back up.<br>
+    <strong>Flip vs Crack on a non-10 outcome:</strong> for each PSA 7/8/9 row above we compare
+    flipping the slab at current market against cracking it out, paying another £${UK_GRADING_ALL_IN_GBP}, waiting
+    ~${UK_GRADING_WAIT_MONTHS} more months, and gambling on a regrade. PSA grades are sticky on resub —
+    upgrade rates used: PSA 9→10 = 10%, PSA 8→9+ = 15%, PSA 7→8+ = 25%. A ${(CRACK_DAMAGE_RISK*100).toFixed(0)}%
+    crack-damage haircut and the same wait discount apply to the crack EV. Cracking only
+    pays off when the PSA 10 / PSA 9 spread is wide enough to overcome those costs —
+    usually only on chase cards with 5-10× spread between adjacent grades.<br>
     Risk-adjusted ranking discounts ROI by variance so a coin-flip can’t win “best” when
     a steadier graded copy delivers nearly the same return without the wait.
   `;
