@@ -6301,8 +6301,18 @@ queueMicrotask(setupMarketplaceWorker);
 //
 // All money displayed in GBP via fmtGBP (which converts USD -> GBP internally).
 
-// Grading economics
-const GRADING_FEE_USD = 20;          // PSA economy tier ≈ $20 / card
+// Grading economics — UK reality, June 2026
+// -----------------------------------------
+// PSA does NOT currently operate a UK drop-off. To grade from the UK you
+// either ship direct to the US (slow + customs hassle on return) or use a
+// domestic intermediary like Ludkins Collectables / GetGraded, who bulk-ship
+// to PSA on your behalf. Either route the all-in cost lands around £40 per
+// card once PSA tier fee (~£15 economy), the intermediary fee (~£15), and
+// insured round-trip shipping (~£10) are added together. Turnaround is
+// typically 6-9 months for the economy tier as of mid-2026.
+const UK_GRADING_ALL_IN_GBP = 40;    // PSA fee + intermediary fee + insured shipping (round trip)
+const UK_GRADING_WAIT_MONTHS = 9;    // typical UK third-party submission cycle
+const OPPORTUNITY_COST_ANNUAL = 0.06; // pre-tax return you could earn elsewhere while capital is locked
 const BUY_SELL_FRICTION = 0.10;      // 10% combined buy + sell fees (fair tier midpoint)
 
 // When you grade a raw card and it ISN'T a PSA 10, the result is spread across
@@ -6334,7 +6344,17 @@ function renderHoldStrategy(card) {
   }
   section.style.display = 'block';
 
-  const gradingFeeUSD = GRADING_FEE_USD;
+  // Convert UK all-in grading cost back to USD for internal arithmetic so the
+  // rest of the math (which works in USD) stays consistent. fxRate is GBP/USD
+  // — so USD = GBP / fxRate.
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const gradingFeeUSD = UK_GRADING_ALL_IN_GBP / fx;
+  const waitYears = UK_GRADING_WAIT_MONTHS / 12;
+  // Opportunity-cost discount applied to the post-grade 5yr value: while the
+  // card sits at PSA for ~9 months your capital is locked. We pretend that
+  // money could have earned ~6% p.a. elsewhere and discount the eventual
+  // value accordingly. Small but it matters for close calls.
+  const waitDiscount = 1 / (1 + OPPORTUNITY_COST_ANNUAL * waitYears);
   const gemRate = (typeof card.g === 'number' && card.g > 0) ? card.g : DEFAULT_GEM_RATE;
   const gemRateSource = (typeof card.g === 'number' && card.g > 0) ? 'tracked' : 'estimated';
 
@@ -6356,11 +6376,36 @@ function renderHoldStrategy(card) {
     + SUBGEM_DISTRIBUTION[8]       * psa8Yr5
     + SUBGEM_DISTRIBUTION[7]       * psa7Yr5
     + SUBGEM_DISTRIBUTION.rawLike  * rawYr5USD;
-  const gradeYr5EV = gemRate * psa10Yr5 + (1 - gemRate) * subgemEV;
+  const gradeYr5EVRaw = gemRate * psa10Yr5 + (1 - gemRate) * subgemEV;
+  // Apply opportunity-cost discount because your capital is locked for the wait.
+  const gradeYr5EV = gradeYr5EVRaw * waitDiscount;
   const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
   const gradeCost = rawUSD + gradingFeeUSD;
   const gradeProfit = gradeSell5EV - gradeCost;
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
+
+  // Per-outcome P&L for the gamble — used both to expose the loss case in the
+  // tile and to render the "What you actually get" probability breakdown.
+  const gradeOutcomes = [
+    { label: 'PSA 10', grade: 10, prob: gemRate,                                yr5: psa10Yr5 },
+    { label: 'PSA 9',  grade: 9,  prob: (1 - gemRate) * SUBGEM_DISTRIBUTION[9],  yr5: psa9Yr5  },
+    { label: 'PSA 8',  grade: 8,  prob: (1 - gemRate) * SUBGEM_DISTRIBUTION[8],  yr5: psa8Yr5  },
+    { label: 'PSA 7',  grade: 7,  prob: (1 - gemRate) * SUBGEM_DISTRIBUTION[7],  yr5: psa7Yr5  },
+    { label: '\u2264PSA 6', grade: 6, prob: (1 - gemRate) * SUBGEM_DISTRIBUTION.rawLike, yr5: rawYr5USD },
+  ];
+  gradeOutcomes.forEach(o => {
+    const sell = o.yr5 * waitDiscount * (1 - BUY_SELL_FRICTION);
+    o.profitUSD = sell - gradeCost;
+    o.roi = gradeCost > 0 ? (o.profitUSD / gradeCost) * 100 : 0;
+  });
+  // Cumulative probability of a loss-making outcome — "odds the gamble doesn't pay".
+  const lossOutcomes = gradeOutcomes.filter(o => o.profitUSD < 0);
+  const lossProb = lossOutcomes.reduce((s, o) => s + o.prob, 0);
+  const lossEV = lossProb > 0
+    ? lossOutcomes.reduce((s, o) => s + o.profitUSD * o.prob, 0) / lossProb
+    : 0;
+  // Cumulative probability of hitting PSA 9 OR 10 — the "good outcome" the user asked about.
+  const goodOutcomeProb = gemRate + (1 - gemRate) * SUBGEM_DISTRIBUTION[9];
 
   // ----- Strategies 3-6: Buy graded at each tier -----
   const gradedStrategies = [7, 8, 9, 10].map(g => {
@@ -6374,7 +6419,7 @@ function renderHoldStrategy(card) {
 
   const strategies = [
     { label: 'Buy Raw',          key: 'raw',      desc: 'Hold ungraded for 5 yrs',                today: rawUSD,    yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20 },
-    { label: 'Buy Raw + Grade',  key: 'gamble',   desc: `EV at ${(gemRate*100).toFixed(0)}% gem rate (${gemRateSource})`, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit,  roi: gradeRoi,  risk: 'high',   variance: 0.70 },
+    { label: 'Buy Raw + Grade',  key: 'gamble',   desc: `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit,  roi: gradeRoi,  risk: 'high',   variance: 0.85, waitMonths: UK_GRADING_WAIT_MONTHS, lossProb, lossEV },
     ...gradedStrategies.map((s, i) => ({
       ...s,
       desc: i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling',
@@ -6425,16 +6470,26 @@ function renderHoldStrategy(card) {
     `;
   } else {
     // Raw-vs-graded headline: which side wins outright?
+    // We also flag the UK wait + loss case whenever the gamble (Buy Raw + Grade)
+    // is the winning raw-side play, because the headline ROI hides the friction.
+    let gambleCaveat = '';
+    if (bestRaw && bestRaw.key === 'gamble') {
+      if (lossProb > 0.01) {
+        gambleCaveat = ` Heads-up: this means shipping to a UK third-party (Ludkins / GetGraded), waiting ~${UK_GRADING_WAIT_MONTHS} months with your capital locked, and accepting a <strong>${(lossProb*100).toFixed(0)}% chance of a sub-PSA 9 outcome that loses money (avg −${fmtGBP(Math.abs(gbpFromUSD(lossEV)))})</strong>.`;
+      } else {
+        gambleCaveat = ` Heads-up: still a ~${UK_GRADING_WAIT_MONTHS}-month UK grading wait with capital locked — every PSA outcome turns a profit on this card, but you forfeit liquidity until the grades come back.`;
+      }
+    }
     let rawVsGradedLine;
     if (bestRaw && bestGraded) {
       const rawScore = bestRaw.riskAdjusted;
       const gradedScore = bestGraded.riskAdjusted;
       if (rawScore > gradedScore + 30) {
-        rawVsGradedLine = `<strong>Buy raw</strong> — <strong>${bestRaw.label}</strong> beats the best graded option (${bestGraded.label}) by a wide margin on risk-adjusted return.`;
+        rawVsGradedLine = `<strong>Buy raw</strong> — <strong>${bestRaw.label}</strong> beats the best graded option (${bestGraded.label}) by a wide margin on risk-adjusted return.${gambleCaveat}`;
       } else if (gradedScore > rawScore + 30) {
-        rawVsGradedLine = `<strong>Buy graded</strong> — <strong>${bestGraded.label}</strong> beats the best raw approach (${bestRaw.label}) on risk-adjusted return.`;
+        rawVsGradedLine = `<strong>Buy graded</strong> — <strong>${bestGraded.label}</strong> beats the best raw approach (${bestRaw.label}) on risk-adjusted return. From the UK, skipping the ~${UK_GRADING_WAIT_MONTHS}-month grading wait is the better play here.`;
       } else {
-        rawVsGradedLine = `<strong>Close call</strong> — ${bestRaw.label} and ${bestGraded.label} are within a few points of each other; pick based on how much capital you want to deploy and your appetite for grading variance.`;
+        rawVsGradedLine = `<strong>Close call</strong> — ${bestRaw.label} and ${bestGraded.label} are within a few points of each other. From the UK, the tie-breaker is usually the ~${UK_GRADING_WAIT_MONTHS}-month grading wait and ${(lossProb*100).toFixed(0)}% loss case on Raw + Grade — the graded copy gives you an instant, certain position.`;
       }
     } else if (bestGraded) {
       rawVsGradedLine = `<strong>Buy graded</strong> — no raw-side option projects positive 5yr ROI for this card; only graded holds make sense.`;
@@ -6494,6 +6549,16 @@ function renderHoldStrategy(card) {
           <span class="hold-tile-k">ROI</span>
           <span class="hold-tile-v ${s.roi >= 0 ? 'hold-pos' : 'hold-neg'}">${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</span>
         </div>
+        ${s.waitMonths ? `
+        <div class="hold-tile-row hold-tile-warn">
+          <span class="hold-tile-k">UK wait</span>
+          <span class="hold-tile-v">~${s.waitMonths} mo locked</span>
+        </div>` : ''}
+        ${s.lossProb !== undefined && s.lossProb > 0 ? `
+        <div class="hold-tile-row hold-tile-warn">
+          <span class="hold-tile-k">Loss case</span>
+          <span class="hold-tile-v hold-neg">${(s.lossProb*100).toFixed(0)}% chance · −${fmtGBP(Math.abs(s.lossEV))}</span>
+        </div>` : ''}
         <div class="hold-tile-foot">
           <span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>
           <span class="hold-verdict ${verdict.c}">${verdict.t}</span>
@@ -6502,12 +6567,61 @@ function renderHoldStrategy(card) {
     `;
   }).join('');
 
+  // ---------- Grading outcome distribution ----------
+  // A focused little table showing what actually happens when you grade:
+  // for each outcome, the probability bar + the realised P&L.
+  const outcomeHost = $('holdOutcomes');
+  if (outcomeHost) {
+    const bestProfit = Math.max(...gradeOutcomes.map(o => o.profitUSD));
+    const rows = gradeOutcomes.map(o => {
+      const profitGBP = gbpFromUSD(o.profitUSD);
+      const sign = profitGBP >= 0 ? '+' : '−';
+      const cls = profitGBP >= 0 ? 'hold-pos' : 'hold-neg';
+      const pct = (o.prob * 100).toFixed(0);
+      const isHero = o.profitUSD === bestProfit && o.profitUSD > 0;
+      return `
+        <div class="hold-out-row ${isHero ? 'hold-out-hero' : ''}">
+          <div class="hold-out-grade">${o.label}</div>
+          <div class="hold-out-prob">
+            <div class="hold-out-bar"><div class="hold-out-bar-fill" style="width:${Math.max(2, o.prob*100)}%"></div></div>
+            <div class="hold-out-prob-num">${pct}%</div>
+          </div>
+          <div class="hold-out-pl ${cls}">${sign}${fmtGBP(Math.abs(profitGBP))}</div>
+          <div class="hold-out-roi ${cls}">${o.roi >= 0 ? '+' : ''}${o.roi.toFixed(0)}%</div>
+        </div>
+      `;
+    }).join('');
+    const goodPct = (goodOutcomeProb*100).toFixed(0);
+    const lossPct = (lossProb*100).toFixed(0);
+    outcomeHost.innerHTML = `
+      <div class="hold-out-head">
+        <div class="hold-out-title">What you actually get when you grade</div>
+        <div class="hold-out-summary">
+          <span class="hold-out-chip hold-out-chip-good">${goodPct}% PSA 9 or 10</span>
+          <span class="hold-out-chip hold-out-chip-bad">${lossPct}% loss case</span>
+          <span class="hold-out-chip hold-out-chip-wait">${UK_GRADING_WAIT_MONTHS} mo wait (UK)</span>
+        </div>
+      </div>
+      <div class="hold-out-grid-head">
+        <span>Outcome</span><span>Probability</span><span>5yr P&amp;L</span><span>ROI</span>
+      </div>
+      ${rows}
+    `;
+  }
+
   // Footnote with assumptions.
   const gemPctStr = (gemRate * 100).toFixed(0);
   $('holdFootnote').innerHTML = `
-    Assumes \u00a3${(gradingFeeUSD * (typeof fxRate === 'number' ? fxRate : 0.79)).toFixed(0)} grading fee (PSA economy tier), ${(BUY_SELL_FRICTION*100).toFixed(0)}% combined buy + sell friction,
-    and ${gemPctStr}% gem rate (${gemRateSource}). The \"Raw + Grade\" cell is an expected value across the full PSA 7/8/9/10 distribution,
-    so it carries the most variance \u2014 think of it as the high-upside lottery ticket of the six options.
-    Risk-adjusted ranking discounts ROI by variance so we don\u2019t recommend a coin-flip as \"best\" when a steadier play has nearly the same return.
+    <strong>UK grading assumptions:</strong> £${UK_GRADING_ALL_IN_GBP} all-in cost per card
+    (PSA economy fee + Ludkins/GetGraded intermediary fee + insured round-trip shipping)
+    and a ~${UK_GRADING_WAIT_MONTHS}-month wait. Capital locked during the wait is discounted at
+    ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a. opportunity cost so the gamble can’t look better
+    than it really is once your money is tied up. Also assumes ${(BUY_SELL_FRICTION*100).toFixed(0)}%
+    combined buy + sell friction and a ${gemPctStr}% gem rate (${gemRateSource}).
+    The “Raw + Grade” row is an EV across the full PSA 7/8/9/10/≤6 distribution — the
+    “loss case” row in that tile tells you the cumulative probability and average
+    £ outcome when you don’t hit PSA 9 or 10.
+    Risk-adjusted ranking discounts ROI by variance so a coin-flip can’t win “best” when
+    a steadier graded copy delivers nearly the same return without the wait.
   `;
 }
