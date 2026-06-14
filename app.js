@@ -6021,6 +6021,139 @@ function renderMarketplaceScan(card, pullCost, desirability) {
   $('marketplaceFootnote').innerHTML = `
     Best place to hunt right now: <strong>${topRow.label}</strong> at ${fmtGBP(topRow.todayUSD)} (deal score ${topRow.score}/100).
     Each search link is pre-filtered to <strong>max price = model fair value</strong>, so any listing you see is at or below the model.
-    Cardmarket prices in EUR (\u22481.09 USD); UK eBay in GBP. Tighter filters appear once Stage B (live worker) is connected.
+    Cardmarket prices in EUR; UK eBay in GBP. Connect a live-scan Worker (gear icon above) to also see real listings ranked by spread vs fair value.
   `;
+
+  // If a live-scan Worker URL is configured, also fan out a fetch for live
+  // listings. Otherwise hide the live-wrap so only deep-links show.
+  if (typeof getMktWorkerUrl === 'function' && getMktWorkerUrl()) {
+    fetchLiveDeals(card);
+  } else if ($('mktLiveWrap')) {
+    $('mktLiveWrap').style.display = 'none';
+  }
 }
+
+// =============================================================
+// Marketplace Live Scan · Cloudflare Worker integration
+// =============================================================
+//
+// When a worker URL is saved in localStorage (`pkm-mkt-worker-url`), every
+// card selection also fans out a /search request to fetch live listings
+// from eBay UK, eBay US, and Cardmarket — merged + ranked by spread vs
+// the model's fair value for the currently-selected grade (default PSA 10
+// because that's the anchor; user could change later).
+
+const MKT_WORKER_KEY = 'pkm-mkt-worker-url';
+
+function getMktWorkerUrl() { return localStorage.getItem(MKT_WORKER_KEY) || ''; }
+function setMktWorkerUrl(url) {
+  if (!url) { localStorage.removeItem(MKT_WORKER_KEY); }
+  else { localStorage.setItem(MKT_WORKER_KEY, url.replace(/\/+$/, '')); }
+  updateMktSettingsLabel();
+}
+function updateMktSettingsLabel() {
+  const lbl = $('mktSettingsLabel');
+  if (!lbl) return;
+  const url = getMktWorkerUrl();
+  lbl.textContent = url ? 'Live scan: ON' : 'Connect live scan';
+  $('mktSettingsBtn')?.classList.toggle('is-active', !!url);
+}
+
+function setupMarketplaceWorker() {
+  updateMktSettingsLabel();
+  $('mktSettingsBtn')?.addEventListener('click', () => {
+    const current = getMktWorkerUrl();
+    const input = prompt(
+      'Paste your Cloudflare Worker URL to enable live eBay + Cardmarket scanning.\n\n' +
+      'Looks like: https://pokemon-marketplace.<your>.workers.dev\n\n' +
+      'Leave empty and press OK to disconnect.',
+      current
+    );
+    if (input === null) return; // cancelled
+    setMktWorkerUrl(input.trim());
+    if (selectedCard && getMktWorkerUrl()) {
+      fetchLiveDeals(selectedCard);
+    } else {
+      $('mktLiveWrap').style.display = 'none';
+    }
+  });
+}
+
+async function fetchLiveDeals(card) {
+  const workerUrl = getMktWorkerUrl();
+  const wrap = $('mktLiveWrap');
+  const status = $('mktLiveStatus');
+  const list = $('mktLiveList');
+  if (!workerUrl || !card) { if (wrap) wrap.style.display = 'none'; return; }
+
+  const pcPsa10 = (typeof livePrice !== 'undefined' && livePrice && livePrice.pcPsa10 > 0) ? livePrice.pcPsa10 : 0;
+  const psa10Price = card.p10 > 0 ? card.p10 : pcPsa10;
+  if (!psa10Price) { wrap.style.display = 'none'; return; }
+
+  // Default to PSA 10 fair value as the cap (broadest reasonable filter).
+  const fairValueGBP = gbpFromUSD(psa10Price);
+  const fxUsdToGbp = (typeof fxRate === 'number' ? fxRate : 0.79);
+  const fxEurToGbp = 0.86;
+  const query = buildSearchQuery(card, 'PSA 10');
+
+  wrap.style.display = 'block';
+  status.textContent = 'Scanning eBay UK + US + Cardmarket…';
+  list.innerHTML = '';
+
+  const url = `${workerUrl}/search?q=${encodeURIComponent(query)}&max=${fairValueGBP.toFixed(2)}&grade=10&fx=${fxUsdToGbp}&fxEur=${fxEurToGbp}`;
+  try {
+    const t0 = performance.now();
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Worker ${res.status}`);
+    const data = await res.json();
+    const took = Math.round(performance.now() - t0);
+    const deals = data.deals || [];
+    const c = data.counts || {};
+    const errStr = (data.errors && data.errors.length) ? ` · errors: ${data.errors.join(', ')}` : '';
+    status.innerHTML = `${deals.length} deals · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${errStr}`;
+    if (deals.length === 0) {
+      list.innerHTML = `<div class="mkt-empty">No live listings under £${fairValueGBP.toFixed(0)} fair value right now. Try widening or use the deep-link buttons below.</div>`;
+      return;
+    }
+    list.innerHTML = deals.map(d => {
+      const sigCls = d.signal === 'STRONG VALUE' ? 'mkt-strong'
+                   : d.signal === 'VALUE'        ? 'mkt-fair'
+                   : d.signal === 'PREMIUM'      ? 'mkt-weak' : 'mkt-fair';
+      const sourceCls = d.source.includes('UK') ? 'src-uk' : d.source.includes('US') ? 'src-us' : 'src-cm';
+      const img = d.image ? `<img class="mkt-deal-img" src="${esc(d.image)}" alt="" onerror="this.style.display='none'">` : '<div class="mkt-deal-img"></div>';
+      return `
+        <a class="mkt-deal" href="${esc(d.url)}" target="_blank" rel="noopener">
+          ${img}
+          <div class="mkt-deal-body">
+            <div class="mkt-deal-title">${esc(d.title)}</div>
+            <div class="mkt-deal-meta">
+              <span class="mkt-src ${sourceCls}">${esc(d.source)}</span>
+              ${d.condition ? `<span>${esc(d.condition)}</span>` : ''}
+              ${d.seller ? `<span>· ${esc(d.seller)}</span>` : ''}
+            </div>
+          </div>
+          <div class="mkt-deal-right">
+            <div class="mkt-deal-price">£${d.priceGBP.toFixed(2)}</div>
+            <div class="mkt-deal-spread ${d.spreadPct >= 0 ? 'pos' : 'neg'}">${d.spreadPct >= 0 ? '↓' : '↑'} ${Math.abs(d.spreadPct).toFixed(0)}% vs fair</div>
+            <span class="mkt-pill ${sigCls}">${esc(d.signal)}</span>
+          </div>
+        </a>
+      `;
+    }).join('');
+  } catch (e) {
+    status.textContent = `Worker error: ${e.message}. Showing deep-links only.`;
+    list.innerHTML = '';
+  }
+}
+
+// Hook live-scan into card selection (no-op if URL not set).
+const _originalRenderMarketplaceScan = renderMarketplaceScan;
+renderMarketplaceScan = function(card, pullCost, des) {
+  _originalRenderMarketplaceScan(card, pullCost, des);
+  if (getMktWorkerUrl()) fetchLiveDeals(card);
+  else if ($('mktLiveWrap')) $('mktLiveWrap').style.display = 'none';
+};
+
+// Boot the settings button once the DOM is ready (init() runs synchronously
+// near the top of this file; we attach in microtask so dependencies exist).
+queueMicrotask(setupMarketplaceWorker);
