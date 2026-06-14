@@ -390,6 +390,7 @@ async function init() {
   setupTop50();
   setupPriceSync();
   setupAcquisition();
+  setupPriceInsight();
   setupPWANav();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
@@ -3243,18 +3244,22 @@ function renderPortfolio() {
     }
 
     return `
-      <div class="portfolio-item" data-id="${p.id}">
-        ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="" onerror="this.style.display='none'">` : '<div class="portfolio-item-img"></div>'}
-        <div class="portfolio-item-info">
-          <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}</div>
-          <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}</div>
-          ${acqLine}
+      <div class="portfolio-item-card" data-id="${p.id}">
+        <div class="portfolio-item" data-id="${p.id}">
+          ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="" onerror="this.style.display='none'">` : '<div class="portfolio-item-img"></div>'}
+          <div class="portfolio-item-info">
+            <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}</div>
+            <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}</div>
+            ${acqLine}
+          </div>
+          <div class="portfolio-item-right">
+            <div class="portfolio-item-price">£${currentGBP.toFixed(2)}</div>
+            ${signal ? `<span class="portfolio-item-signal sig-${signal.signal.toLowerCase().replace('strong ', '')}"> ${signal.signal}</span>` : ''}
+            ${piRenderButton(p.id, currentPrice)}
+          </div>
+          <button class="portfolio-item-remove" data-id="${p.id}" title="Remove">✕</button>
         </div>
-        <div class="portfolio-item-right">
-          <div class="portfolio-item-price">£${currentGBP.toFixed(2)}</div>
-          ${signal ? `<span class="portfolio-item-signal sig-${signal.signal.toLowerCase().replace('strong ', '')}"> ${signal.signal}</span>` : ''}
-        </div>
-        <button class="portfolio-item-remove" data-id="${p.id}" title="Remove">✕</button>
+        ${piRenderPanel(p.id)}
       </div>
     `;
   });
@@ -3272,9 +3277,11 @@ function renderPortfolio() {
   list.querySelectorAll('.portfolio-item').forEach(el => {
     el.addEventListener('click', (e) => {
       if (e.target.closest('.portfolio-item-remove')) return;
+      if (e.target.closest('.pi-toggle')) return;
       selectCard(el.dataset.id);
     });
   });
+  piWireToggles(list);
   list.querySelectorAll('.portfolio-item-remove').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3390,22 +3397,26 @@ function renderWishlist() {
       }
     }
     return `
-      <div class="wishlist-item ${rowClass}" data-id="${w.id}">
-        ${w.img ? `<img class="wishlist-item-img" src="${w.img}" alt="" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
-        <div class="wishlist-item-info">
-          <div class="wishlist-item-name">${esc(w.name)}</div>
-          <div class="wishlist-item-meta">
-            <span>${esc(w.set)}</span>
-            <span class="lang-pill">${w.lang === 'JP' ? '🇯🇵 JP' : '🇬🇧 EN'}</span>
-            <span class="wishlist-alert ${alertClass}">${alertLabel}</span>
+      <div class="wishlist-item-card ${rowClass}" data-id="${w.id}">
+        <div class="wishlist-item ${rowClass}" data-id="${w.id}">
+          ${w.img ? `<img class="wishlist-item-img" src="${w.img}" alt="" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
+          <div class="wishlist-item-info">
+            <div class="wishlist-item-name">${esc(w.name)}</div>
+            <div class="wishlist-item-meta">
+              <span>${esc(w.set)}</span>
+              <span class="lang-pill">${w.lang === 'JP' ? '🇯🇵 JP' : '🇬🇧 EN'}</span>
+              <span class="wishlist-alert ${alertClass}">${alertLabel}</span>
+              ${piRenderButton(w.id, currentUSD)}
+            </div>
           </div>
+          <div class="wishlist-target">
+            <div class="wishlist-current">£${currentGBP.toFixed(2)}</div>
+            <input class="wishlist-target-input" type="number" step="0.01" min="0" value="${target.toFixed(2)}" data-id="${w.id}" title="Target price (GBP)">
+            <div class="wishlist-target-label">Target £</div>
+          </div>
+          <button class="wishlist-remove" data-id="${w.id}" title="Remove">✕</button>
         </div>
-        <div class="wishlist-target">
-          <div class="wishlist-current">£${currentGBP.toFixed(2)}</div>
-          <input class="wishlist-target-input" type="number" step="0.01" min="0" value="${target.toFixed(2)}" data-id="${w.id}" title="Target price (GBP)">
-          <div class="wishlist-target-label">Target £</div>
-        </div>
-        <button class="wishlist-remove" data-id="${w.id}" title="Remove">✕</button>
+        ${piRenderPanel(w.id)}
       </div>
     `;
   });
@@ -3415,9 +3426,11 @@ function renderWishlist() {
   list.querySelectorAll('.wishlist-item').forEach(el => {
     el.addEventListener('click', (e) => {
       if (e.target.closest('.wishlist-remove') || e.target.closest('.wishlist-target-input')) return;
+      if (e.target.closest('.pi-toggle')) return;
       selectCard(el.dataset.id);
     });
   });
+  piWireToggles(list);
   list.querySelectorAll('.wishlist-remove').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -5715,14 +5728,23 @@ function renderPsaGradeRange(card, pullCost, desirability) {
   const section = $('psaRangeSection');
   if (!section || !card) return;
   // Need a PSA 10 anchor price (static p10 or PriceCharting PSA 10) to derive grades.
-  const pcPsa10 = (typeof livePrice !== 'undefined' && livePrice && livePrice.pcPsa10 > 0) ? livePrice.pcPsa10 : 0;
-  const staticPsa10 = card.p10 || 0;
-  const psa10Price = (staticPsa10 > 0) ? staticPsa10 : pcPsa10;
+  const anchor = getPsa10Anchor(card);
+  const psa10Price = anchor.usd;
   if (!psa10Price || psa10Price <= 0) {
     section.style.display = 'none';
     return;
   }
   section.style.display = 'block';
+  const psaAnchorBadge = $('psaAnchorBadge');
+  if (psaAnchorBadge) {
+    if (anchor.source === 'estimated') {
+      psaAnchorBadge.style.display = 'inline-flex';
+      psaAnchorBadge.title = `PSA 10 anchor estimated as raw × ${anchor.multiplier || 2}. Accuracy ±30%.`;
+      psaAnchorBadge.textContent = 'EST. PSA 10';
+    } else {
+      psaAnchorBadge.style.display = 'none';
+    }
+  }
 
   const rawPriceUSD = getCurrentPrice(card);
   const grades = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
@@ -6589,8 +6611,8 @@ const CRACK_DAMAGE_RISK = 0.08;
 function renderHoldStrategy(card) {
   const section = $('holdStrategySection');
   if (!section || !card) return;
-  const pcPsa10 = (typeof livePrice !== 'undefined' && livePrice && livePrice.pcPsa10 > 0) ? livePrice.pcPsa10 : 0;
-  const psa10Price = card.p10 > 0 ? card.p10 : pcPsa10;
+  const anchor = getPsa10Anchor(card);
+  const psa10Price = anchor.usd;
   const rawUSD = getCurrentPrice(card);
 
   // Need both a raw and a PSA 10 anchor to do the comparison.
@@ -6599,6 +6621,19 @@ function renderHoldStrategy(card) {
     return;
   }
   section.style.display = 'block';
+
+  // Surface a small disclosure pill in the section header when the PSA 10
+  // anchor was estimated (rarity-based) rather than tracked or live.
+  const anchorBadge = $('holdAnchorBadge');
+  if (anchorBadge) {
+    if (anchor.source === 'estimated') {
+      anchorBadge.style.display = 'inline-flex';
+      anchorBadge.title = `PSA 10 anchor estimated as raw × ${anchor.multiplier || 2}. Accuracy ±30%.`;
+      anchorBadge.textContent = 'EST. PSA 10';
+    } else {
+      anchorBadge.style.display = 'none';
+    }
+  }
 
   // Convert UK all-in grading cost back to USD for internal arithmetic so the
   // rest of the math (which works in USD) stays consistent. fxRate is GBP/USD
@@ -7550,4 +7585,370 @@ function setupAcquisition() {
   wire('acqSinglePrice', 'singlePriceGBP', v => v === '' ? '' : parseFloat(v));
   wire('acqSingleDate', 'singleDate');
   wire('acqSingleSrc', 'singleWhere');
+}
+
+// =============================================================
+// PSA 10 anchor estimator
+// =============================================================
+// Many cards in the catalog don't have a tracked PSA 10 sale price (card.p10),
+// and live PriceCharting fetches don't always return one either. Without an
+// anchor, the Hold Strategy and PSA Grade Range sections can't compute
+// projections and end up hidden. Instead, estimate PSA 10 from raw market
+// using rarity-based multipliers, and surface a clear "estimated" badge so
+// the user knows the precision is lower.
+
+// Median PSA 10 / raw market ratios observed across modern Pokémon sets.
+// Vintage cards usually exceed these by 2-10× — those almost always have a
+// tracked card.p10 so the estimator is rarely used for them.
+const PSA10_FROM_RAW = {
+  SIR: 2.8,  // Special Illustration Rare — premium chase
+  SAR: 2.6,  // Special Art Rare
+  UR:  2.4,  // Ultra Rare (gold)
+  HR:  2.4,  // Hyper Rare (rainbow)
+  SR:  2.2,  // Secret Rare
+  RR:  1.8,  // Double Rare
+  IR:  2.2,  // Illustration Rare
+  AR:  2.0,  // Art Rare
+  CSR: 2.2,  // Character SR
+  CHR: 1.8,  // Character Rare
+  SHR: 2.5,
+  MHR: 2.5,
+  SHUR:2.6,
+  DR:  1.6,
+  AS:  1.8,
+  PR:  1.8,
+  R:   1.5,
+  U:   1.4,
+  C:   1.3,
+  '':  1.6,
+};
+
+// Returns { usd, source } where source is:
+//   'tracked'   — card.p10 from our static catalog (most accurate)
+//   'live'      — PriceCharting PSA 10 from a live fetch (very accurate)
+//   'estimated' — derived from raw market × rarity multiplier (±30% rule of thumb)
+//   'none'      — could not determine an anchor
+function getPsa10Anchor(card) {
+  if (!card) return { usd: 0, source: 'none' };
+  // Tracked anchor wins
+  if (card.p10 && card.p10 > 0) return { usd: card.p10, source: 'tracked' };
+  // Live PriceCharting PSA 10 from currently-selected card
+  if (typeof livePrice !== 'undefined' && livePrice
+      && selectedCard && card.i === selectedCard.i
+      && livePrice.pcPsa10 > 0) {
+    return { usd: livePrice.pcPsa10, source: 'live' };
+  }
+  // Live cache for non-selected card
+  const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(card.i) : null;
+  if (cached && cached.pcPsa10 > 0) return { usd: cached.pcPsa10, source: 'live' };
+  // Estimate from raw × rarity multiplier
+  const raw = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : (card.p || 0);
+  if (raw > 0) {
+    const mult = PSA10_FROM_RAW[card.rc] || PSA10_FROM_RAW[''];
+    return { usd: raw * mult, source: 'estimated', multiplier: mult };
+  }
+  return { usd: 0, source: 'none' };
+}
+
+// =============================================================
+// Per-card Price Insight — sparkline + buy-window verdict
+// =============================================================
+// For every card in your Portfolio and Wishlist you can open an
+// inline history graph. The chart marks:
+//   ★  the historical low ("ideal buy point" — even if missed)
+//   ▲  the historical high
+//   ●  where the current price sits
+// And we surface one of six verdicts, designed around your ask:
+//   ✓ GOOD ENTRY        — near the floor, stable or stabilising
+//   ⏳ WAIT — FALLING    — still trending down; cheaper days ahead
+//   🔴 TOO LATE          — near the peak with momentum; chasing risk
+//   ⚡ PUMPING — RISKY   — vertical move; mean-reversion likely
+//   ⚠ MISSED THE BOTTOM — well above floor but off the peak; fair
+//   · FAIR PRICE         — sideways, you're paying close to fair value
+
+const PI_CACHE_TTL_MS = 24 * 60 * 60 * 1000;   // 24h cache
+const PI_CACHE_PREFIX = 'pkm-hist-v1-';
+
+function piCacheGet(cardId) {
+  try {
+    const raw = localStorage.getItem(PI_CACHE_PREFIX + cardId);
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    if (!c || !c.ts || (Date.now() - c.ts) > PI_CACHE_TTL_MS) return null;
+    return c.history;
+  } catch { return null; }
+}
+function piCacheSet(cardId, history) {
+  try { localStorage.setItem(PI_CACHE_PREFIX + cardId, JSON.stringify({ ts: Date.now(), history })); } catch {}
+}
+
+// Fetch and normalise the price history series for a card.
+// We reuse the same mycollectrics endpoint the main card view uses,
+// but only keep date + raw price (USD) to keep the cache small.
+async function piFetchHistory(cardId) {
+  const cached = piCacheGet(cardId);
+  if (cached) return cached;
+  const apiUrl = `https://mycollectrics.com/api/card/${cardId}?include=ebay`;
+  const proxyUrl = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(apiUrl)}`;
+  const r = await fetch(proxyUrl);
+  if (!r.ok) throw new Error('history fetch failed (' + r.status + ')');
+  const d = await r.json();
+  const raw = Array.isArray(d.history) ? d.history : [];
+  const cleaned = raw
+    .filter(h => h && h.date && h['raw-price'] > 0)
+    .map(h => ({ date: h.date, raw: +h['raw-price'] }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  piCacheSet(cardId, cleaned);
+  return cleaned;
+}
+
+// Analyse the series and produce a buy-window verdict.
+function piAnalyse(history, currentUsd) {
+  if (!Array.isArray(history) || history.length < 5) return null;
+  const sorted = history.slice().sort((a, b) => a.date.localeCompare(b.date));
+  const prices = sorted.map(p => p.raw);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const minIdx = prices.indexOf(minP);
+  const maxIdx = prices.indexOf(maxP);
+  const lastInHist = prices[prices.length - 1];
+  const last = (currentUsd && currentUsd > 0) ? currentUsd : lastInHist;
+
+  const fromLow  = ((last - minP) / minP) * 100;
+  const fromHigh = ((last - maxP) / maxP) * 100;
+
+  const nowT = new Date(sorted[sorted.length - 1].date).getTime();
+  function idxBefore(days) {
+    const target = nowT - days * 86400000;
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      if (new Date(sorted[i].date).getTime() <= target) return i;
+    }
+    return 0;
+  }
+  const i7  = idxBefore(7);
+  const i30 = idxBefore(30);
+  const i90 = idxBefore(90);
+  const pct = (a, b) => ((a - b) / b) * 100;
+  const d7  = pct(last, sorted[i7].raw);
+  const d30 = pct(last, sorted[i30].raw);
+  const d90 = pct(last, sorted[i90].raw);
+
+  // Verdict ladder
+  let label, cls, summary, action;
+  if (d7 < -3 && d30 < -5 && fromHigh < -15) {
+    label = '⏳ WAIT — STILL FALLING';
+    cls = 'pi-wait';
+    action = 'Wait';
+    summary = `Down <strong>${d7.toFixed(1)}%</strong> in 7d and <strong>${d30.toFixed(1)}%</strong> in 30d. Trend still pointing down — likely cheaper soon. Set a wishlist target near the recent low.`;
+  } else if (fromHigh > -5 && (d7 > 3 || d30 > 10)) {
+    label = '🔴 TOO LATE — AT PEAK';
+    cls = 'pi-late';
+    action = 'Skip';
+    summary = `Within <strong>${Math.abs(fromHigh).toFixed(1)}%</strong> of the all-time high with <strong>+${d30.toFixed(1)}%</strong> over 30d. Buying here means chasing the top — wait for a pullback of at least 10–15%.`;
+  } else if (fromLow < 15 && d7 > -3 && d30 > -10) {
+    label = '✓ GOOD ENTRY';
+    cls = 'pi-good';
+    action = 'Buy';
+    summary = `Sitting just <strong>${fromLow.toFixed(1)}%</strong> above the range low (${fmtGBP(minP)}) and stabilising (7d ${d7 >= 0 ? '+' : ''}${d7.toFixed(1)}%). Good time to buy.`;
+  } else if (d7 > 12) {
+    label = '⚡ PUMPING — RISKY';
+    cls = 'pi-pump';
+    action = 'Wait a week';
+    summary = `Up <strong>+${d7.toFixed(1)}%</strong> in 7d. Vertical moves usually retrace 5–10% within a week or two — be patient unless you must own it now.`;
+  } else if (fromLow >= 15 && fromHigh < -8) {
+    label = '⚠ MISSED THE BOTTOM';
+    cls = 'pi-missed';
+    action = 'Fair';
+    summary = `<strong>${fromLow.toFixed(1)}%</strong> above the floor and <strong>${Math.abs(fromHigh).toFixed(1)}%</strong> off the peak. The ideal entry was at ${fmtGBP(minP)} — still a reasonable buy if you want it long-term, but no urgency.`;
+  } else {
+    label = '· FAIR PRICE';
+    cls = 'pi-fair';
+    action = 'Neutral';
+    summary = `Sideways action: <strong>${d30 >= 0 ? '+' : ''}${d30.toFixed(1)}%</strong> in 30d, <strong>${d7 >= 0 ? '+' : ''}${d7.toFixed(1)}%</strong> in 7d. You're paying close to fair value either way.`;
+  }
+
+  return {
+    label, cls, summary, action,
+    min: { idx: minIdx, price: minP, date: sorted[minIdx].date },
+    max: { idx: maxIdx, price: maxP, date: sorted[maxIdx].date },
+    last, lastDate: sorted[sorted.length - 1].date,
+    fromLow, fromHigh, d7, d30, d90,
+    sorted,
+  };
+}
+
+// SVG sparkline. We render markers separately so the verdict label sits
+// outside the SVG and never collides with the line.
+function piRenderSparkline(an) {
+  const W = 280, H = 64, PAD = 6, AXIS = 0;
+  const sorted = an.sorted;
+  const prices = sorted.map(p => p.raw);
+  const minP = Math.min(...prices), maxP = Math.max(...prices);
+  const range = (maxP - minP) || 1;
+  const plotW = W - PAD * 2;
+  const plotH = H - PAD * 2 - AXIS;
+  const stepX = plotW / (prices.length - 1);
+  const pt = (i) => [PAD + i * stepX, PAD + plotH - ((prices[i] - minP) / range) * plotH];
+
+  let linePath = '';
+  for (let i = 0; i < prices.length; i++) {
+    const [x, y] = pt(i);
+    linePath += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+  }
+  const [endX] = pt(prices.length - 1);
+  const [startX] = pt(0);
+  const areaPath = linePath + `L${endX.toFixed(1)},${(PAD + plotH).toFixed(1)} L${startX.toFixed(1)},${(PAD + plotH).toFixed(1)} Z`;
+
+  const [lowX, lowY]   = pt(an.min.idx);
+  const [highX, highY] = pt(an.max.idx);
+  const [nowX,  nowY]  = pt(prices.length - 1);
+
+  return `
+  <svg class="pi-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Price history sparkline">
+    <path d="${areaPath}" fill="var(--accent)" fill-opacity="0.10"/>
+    <path d="${linePath}" stroke="var(--accent)" stroke-width="1.5" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+    <line x1="${nowX.toFixed(1)}" y1="${(PAD).toFixed(1)}" x2="${nowX.toFixed(1)}" y2="${(PAD + plotH).toFixed(1)}" stroke="var(--accent)" stroke-width="0.5" stroke-dasharray="2,2" opacity="0.4"/>
+    <circle cx="${highX.toFixed(1)}" cy="${highY.toFixed(1)}" r="3.5" fill="var(--red)" stroke="var(--bg)" stroke-width="1.5"/>
+    <circle cx="${lowX.toFixed(1)}" cy="${lowY.toFixed(1)}" r="4" fill="var(--green)" stroke="var(--bg)" stroke-width="1.5"/>
+    <text x="${lowX.toFixed(1)}" y="${(lowY - 6).toFixed(1)}" text-anchor="${lowX > W * 0.7 ? 'end' : (lowX < W * 0.3 ? 'start' : 'middle')}" font-size="9" font-weight="700" fill="var(--green)">★ BUY</text>
+    <circle cx="${nowX.toFixed(1)}" cy="${nowY.toFixed(1)}" r="4" fill="var(--accent)" stroke="var(--bg)" stroke-width="1.5"/>
+  </svg>`;
+}
+
+function piFmtDate(iso) {
+  try { return new Date(iso).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }); }
+  catch { return iso; }
+}
+
+function piRenderInsight(history, currentUsd) {
+  const an = piAnalyse(history, currentUsd);
+  if (!an) {
+    return `<div class="pi-panel-error">Not enough price history yet (need 5+ data points).</div>`;
+  }
+  const spark = piRenderSparkline(an);
+  return `
+    <div class="pi-verdict-row">
+      <span class="pi-verdict-pill ${an.cls}">${an.label}</span>
+      <span class="pi-deltas">
+        <span class="pi-d ${an.d7  >= 0 ? 'pos' : 'neg'}">7d ${an.d7  >= 0 ? '+' : ''}${an.d7.toFixed(1)}%</span>
+        <span class="pi-d ${an.d30 >= 0 ? 'pos' : 'neg'}">30d ${an.d30 >= 0 ? '+' : ''}${an.d30.toFixed(1)}%</span>
+        <span class="pi-d ${an.d90 >= 0 ? 'pos' : 'neg'}">90d ${an.d90 >= 0 ? '+' : ''}${an.d90.toFixed(1)}%</span>
+      </span>
+    </div>
+    <div class="pi-chart-wrap">${spark}</div>
+    <div class="pi-markers-legend">
+      <span><span class="dot dot-low"></span>Best buy ${fmtGBP(an.min.price)} · ${piFmtDate(an.min.date)}</span>
+      <span><span class="dot dot-high"></span>Peak ${fmtGBP(an.max.price)} · ${piFmtDate(an.max.date)}</span>
+      <span><span class="dot dot-now"></span>Now ${fmtGBP(an.last)}</span>
+    </div>
+    <div class="pi-summary">${an.summary}</div>
+  `;
+}
+
+async function piLoadAndRender(cardId, panel, currentUsd) {
+  panel.innerHTML = `<div class="pi-panel-loading">Loading history…</div>`;
+  try {
+    const history = await piFetchHistory(cardId);
+    if (!history || history.length < 5) {
+      panel.innerHTML = `<div class="pi-panel-error">No price history available for this card.</div>`;
+      return;
+    }
+    panel.innerHTML = piRenderInsight(history, currentUsd);
+  } catch (e) {
+    console.warn('Price insight failed for', cardId, e);
+    panel.innerHTML = `<div class="pi-panel-error">Couldn't load history. Try again later.</div>`;
+  }
+}
+
+// Wires up every .pi-toggle / .pi-panel pair under a container.
+// Call after every renderPortfolio() / renderWishlist().
+function piWireToggles(rootEl) {
+  if (!rootEl) return;
+  rootEl.querySelectorAll('.pi-toggle').forEach(btn => {
+    if (btn.dataset.piWired === '1') return;
+    btn.dataset.piWired = '1';
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const id = btn.dataset.id;
+      const card = btn.closest('.portfolio-item-card, .wishlist-item-card, .pi-host');
+      if (!card) return;
+      const panel = card.querySelector(':scope > .pi-panel[data-id="' + id + '"]');
+      if (!panel) return;
+      const isOpen = panel.classList.contains('open');
+      if (isOpen) {
+        panel.classList.remove('open');
+        btn.classList.remove('active');
+        btn.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      panel.classList.add('open');
+      btn.classList.add('active');
+      btn.setAttribute('aria-expanded', 'true');
+      // If already rendered, skip the fetch
+      if (panel.dataset.piLoaded === '1') return;
+      const currentUsd = parseFloat(btn.dataset.currentUsd || '0') || 0;
+      await piLoadAndRender(id, panel, currentUsd);
+      panel.dataset.piLoaded = '1';
+    });
+  });
+}
+
+// Returns the HTML to inject inside each row item.
+// Includes the toggle button and the (initially closed) insight panel.
+function piRenderButton(cardId, currentUsd) {
+  return `<button class="pi-toggle" data-id="${cardId}" data-current-usd="${currentUsd || 0}" title="Show price history and buy-window verdict" aria-expanded="false">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+    Graph
+  </button>`;
+}
+function piRenderPanel(cardId) {
+  return `<div class="pi-panel" data-id="${cardId}"></div>`;
+}
+
+// "Load all graphs" — fetches history for every visible toggle with
+// concurrency 3 so we don't hammer the proxy.
+async function piLoadAllInContainer(rootEl, statusEl) {
+  if (!rootEl) return;
+  const toggles = Array.from(rootEl.querySelectorAll('.pi-toggle'));
+  if (toggles.length === 0) return;
+  let done = 0;
+  const total = toggles.length;
+  if (statusEl) statusEl.textContent = `Loading 0 / ${total}…`;
+  const queue = toggles.slice();
+  const CONCURRENCY = 3;
+  async function worker() {
+    while (queue.length) {
+      const btn = queue.shift();
+      const id = btn.dataset.id;
+      const card = btn.closest('.portfolio-item-card, .wishlist-item-card, .pi-host');
+      const panel = card && card.querySelector(':scope > .pi-panel[data-id="' + id + '"]');
+      if (!panel) { done++; continue; }
+      panel.classList.add('open');
+      btn.classList.add('active');
+      btn.setAttribute('aria-expanded', 'true');
+      if (panel.dataset.piLoaded !== '1') {
+        const currentUsd = parseFloat(btn.dataset.currentUsd || '0') || 0;
+        try { await piLoadAndRender(id, panel, currentUsd); panel.dataset.piLoaded = '1'; }
+        catch {}
+      }
+      done++;
+      if (statusEl) statusEl.textContent = `Loading ${done} / ${total}…`;
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+  if (statusEl) statusEl.textContent = `Loaded ${done} graphs`;
+  setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2500);
+}
+
+function setupPriceInsight() {
+  // Wire the "Load all" buttons (one per panel that has them).
+  const wireLoadAll = (btnId, containerId, statusId) => {
+    const btn = document.getElementById(btnId);
+    const container = document.getElementById(containerId);
+    if (!btn || !container) return;
+    btn.addEventListener('click', () => piLoadAllInContainer(container, statusId ? document.getElementById(statusId) : null));
+  };
+  wireLoadAll('portfolioLoadAllGraphs', 'portfolioList', 'portfolioLoadAllStatus');
+  wireLoadAll('wishlistLoadAllGraphs',  'wishlistList',  'wishlistLoadAllStatus');
 }

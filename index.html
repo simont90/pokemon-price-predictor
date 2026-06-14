@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260614t">
+  <link rel="stylesheet" href="style.css?v=20260614v">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -66,6 +66,9 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             <span class="portfolio-count alerts-count" id="alertsCount" style="display:none">0</span>
           </button>
+          <button class="portfolio-toggle" id="syncToggle" title="Sync across devices — export/import or pair via code" style="display:none">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M3 12a9 9 0 0 0 15 6.7L21 16"/><path d="M16 21h5v-5"/></svg>
+          </button>
           <button class="portfolio-toggle" id="quickLookupToggle" title="Quick Lookup — search live prices for any card">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
           </button>
@@ -85,6 +88,13 @@
           <button class="portfolio-close" id="portfolioClose">✕</button>
         </div>
       </div>
+      <div class="portfolio-subheader">
+        <button class="pi-load-all" id="portfolioLoadAllGraphs" title="Load price history graph &amp; buy-window verdict for every card">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+          Load all graphs
+        </button>
+        <span class="pi-load-status" id="portfolioLoadAllStatus"></span>
+      </div>
       <div class="portfolio-list" id="portfolioList">
         <div class="portfolio-empty">No cards yet. Search and add cards to track your collection.</div>
       </div>
@@ -99,8 +109,124 @@
           <button class="portfolio-close" id="wishlistClose">✕</button>
         </div>
       </div>
+      <div class="portfolio-subheader">
+        <button class="pi-load-all" id="wishlistLoadAllGraphs" title="Load price history graph &amp; buy-window verdict for every card">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+          Load all graphs
+        </button>
+        <span class="pi-load-status" id="wishlistLoadAllStatus"></span>
+      </div>
       <div class="portfolio-list" id="wishlistList">
         <div class="portfolio-empty">No wishlisted cards yet. Open a card and tap the heart icon to add it. Set a target price to get a BUY alert when the market drops below it.</div>
+      </div>
+    </section>
+
+    <!-- Sync Panel (slide-in) — cross-device backup & restore -->
+    <section class="portfolio-panel sync-panel" id="syncPanel" style="display:none">
+      <div class="portfolio-header">
+        <h2>Cross-Device Sync <span class="wishlist-sub">Move your collection between Mac, iPhone &amp; iPad</span></h2>
+        <div class="portfolio-actions">
+          <span class="portfolio-total" id="syncStatus">—</span>
+          <button class="portfolio-close" id="syncClose">✕</button>
+        </div>
+      </div>
+      <div class="sync-body">
+        <div class="sync-tabs" role="tablist">
+          <button class="sync-tab is-active" data-tab="file" type="button" role="tab">File backup</button>
+          <button class="sync-tab" data-tab="cloud" type="button" role="tab">Cloud sync</button>
+        </div>
+
+        <!-- Tab 1: File-based backup (works today, no setup) -->
+        <div class="sync-tab-content sync-tab-file is-active" data-tab="file">
+          <p class="sync-intro">
+            Save your data to a file you can drop in iCloud Drive (Files app). On your iPhone or iPad, open the same file and tap <strong>Import</strong>.
+            <strong>Works today, no account needed.</strong>
+          </p>
+          <div class="sync-stat-row" id="syncStatRow"></div>
+          <div class="sync-actions">
+            <button class="sync-action sync-action-primary" id="syncExportDownload" type="button">
+              <span class="sync-action-ico">↓</span>
+              <span class="sync-action-label">Export to file</span>
+              <span class="sync-action-hint">Downloads a JSON backup. On iOS, choose <em>Save to Files → iCloud Drive</em>.</span>
+            </button>
+            <button class="sync-action" id="syncExportShare" type="button" style="display:none">
+              <span class="sync-action-ico">↑</span>
+              <span class="sync-action-label">Share via…</span>
+              <span class="sync-action-hint">Use the iOS share sheet to AirDrop or save to Files.</span>
+            </button>
+            <button class="sync-action" id="syncExportCopy" type="button">
+              <span class="sync-action-ico">⧉</span>
+              <span class="sync-action-label">Copy as text</span>
+              <span class="sync-action-hint">Paste into Notes, Messages, or email.</span>
+            </button>
+            <label class="sync-action sync-action-import" for="syncImportFile">
+              <span class="sync-action-ico">⤳</span>
+              <span class="sync-action-label">Import from file</span>
+              <span class="sync-action-hint">Pick a backup .json to restore. Will merge or replace.</span>
+              <input type="file" id="syncImportFile" accept="application/json,.json" style="display:none">
+            </label>
+            <button class="sync-action" id="syncImportPaste" type="button">
+              <span class="sync-action-ico">✎</span>
+              <span class="sync-action-label">Paste backup…</span>
+              <span class="sync-action-hint">Paste JSON text you copied from another device.</span>
+            </button>
+          </div>
+
+          <div class="sync-paste-area" id="syncPasteArea" style="display:none">
+            <textarea id="syncPasteInput" placeholder="Paste backup JSON here…" rows="6"></textarea>
+            <div class="sync-paste-actions">
+              <button class="sync-btn" id="syncPasteCancel" type="button">Cancel</button>
+              <button class="sync-btn sync-btn-primary" id="syncPasteImport" type="button">Import</button>
+            </div>
+          </div>
+
+          <div class="sync-merge-mode">
+            <label><input type="radio" name="syncMode" value="merge" checked> <strong>Merge</strong> — add backup data, keep what's already here</label>
+            <label><input type="radio" name="syncMode" value="replace"> <strong>Replace</strong> — wipe local and use only the backup</label>
+          </div>
+
+          <div class="sync-tip">
+            <strong>Tip for iPhone/iPad:</strong> After tapping Export, choose <em>Save to Files</em> and pick <strong>iCloud Drive › Pokemon Predictor</strong>. iCloud syncs it automatically. On another device, tap <em>Import from file</em> and pick the same backup. Or use AirDrop for one-shot transfers.
+          </div>
+        </div>
+
+        <!-- Tab 2: Cloud sync via Cloudflare Worker (coming with marketplace Worker) -->
+        <div class="sync-tab-content sync-tab-cloud" data-tab="cloud" style="display:none">
+          <p class="sync-intro">
+            Full auto-sync via a tiny Cloudflare Worker (free tier, ~15 min setup). Every change is pushed to your private cloud sync store and pulled by your other devices in the background.
+          </p>
+          <div class="sync-cloud-status" id="syncCloudStatus">
+            <span class="sync-cloud-dot"></span>
+            <span class="sync-cloud-text">Not connected</span>
+          </div>
+          <div class="sync-field">
+            <label for="syncEndpoint">Worker URL</label>
+            <input id="syncEndpoint" type="url" class="sync-input" placeholder="https://pokemon-sync.&lt;your-subdomain&gt;.workers.dev" autocomplete="off" inputmode="url">
+          </div>
+          <div class="sync-field">
+            <label for="syncPairCode">Pair code</label>
+            <input id="syncPairCode" type="text" class="sync-input" placeholder="e.g. tomato-bridge-42 or generate one" autocomplete="off">
+            <button class="sync-btn sync-btn-ghost" id="syncGenCode" type="button">Generate</button>
+          </div>
+          <div class="sync-cloud-actions">
+            <button class="sync-btn sync-btn-primary" id="syncCloudConnect" type="button">Connect &amp; sync</button>
+            <button class="sync-btn" id="syncCloudPush" type="button" disabled>Push now</button>
+            <button class="sync-btn" id="syncCloudPull" type="button" disabled>Pull now</button>
+            <button class="sync-btn sync-btn-ghost" id="syncCloudDisconnect" type="button" style="display:none">Disconnect</button>
+          </div>
+          <div class="sync-cloud-log" id="syncCloudLog"></div>
+          <details class="sync-setup">
+            <summary>How to set up the Worker (one-time, 10–15 min)</summary>
+            <ol>
+              <li>Sign in at <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener">dash.cloudflare.com</a> (free).</li>
+              <li>Go to <strong>Workers &amp; Pages › Create application › Create Worker</strong>. Name it <code>pokemon-sync</code>.</li>
+              <li>In <strong>Settings › Variables › KV Namespace Bindings</strong>, add a binding: variable name <code>SYNC</code>, namespace <code>pokemon-sync-store</code> (create it).</li>
+              <li>Paste the Worker code (download below), deploy, copy the <code>workers.dev</code> URL into the field above.</li>
+              <li>On each device: enter the same Worker URL + Pair code. Tap Connect &amp; sync. Done.</li>
+            </ol>
+            <button class="sync-btn" id="syncDownloadWorker" type="button">Download worker.js</button>
+          </details>
+        </div>
       </div>
     </section>
 
@@ -754,7 +880,7 @@
         <section class="card psa-range-card" id="psaRangeSection" style="display:none">
           <div class="psa-range-header">
             <div>
-              <h2>PSA Grade Range · 5yr Forecast</h2>
+              <h2>PSA Grade Range · 5yr Forecast <span class="anchor-badge" id="psaAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span></h2>
               <p class="card-desc">What each PSA grade is worth today, and where the model says it goes over 5 years. Use this to decide if a lower grade is worth picking up.</p>
             </div>
             <button class="watch-btn" id="watchBtn" type="button" title="Add to Watchlist — you'll get an alert when this card hits BUY or STRONG BUY">
@@ -833,7 +959,7 @@
         <section class="card hold-card" id="holdStrategySection" style="display:none">
           <div class="hold-header">
             <div>
-              <h2>Hold Strategy · Raw vs Graded</h2>
+              <h2>Hold Strategy · Raw vs Graded <span class="anchor-badge" id="holdAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span></h2>
               <p class="card-desc">Which version of this card is the best 5-year hold? We compare buying raw (and holding ungraded), buying raw and gambling on grading, and buying already-graded at PSA 7–10 — then highlight the winning play.</p>
             </div>
           </div>
@@ -1241,6 +1367,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260614t"></script>
+  <script src="app.js?v=20260614v"></script>
 </body>
 </html>
