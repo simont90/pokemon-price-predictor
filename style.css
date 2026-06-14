@@ -2598,3 +2598,61 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   .alert-item { grid-template-columns: 42px 1fr; }
   .alert-item-actions { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; }
 }
+
+/* ============================================================
+   Marketplace Scan · eBay UK / US + Cardmarket deep-links
+   ============================================================ */
+.mkt-card { padding: 20px 22px; }
+.mkt-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.mkt-header h2 { margin: 0 0 4px 0; }
+.mkt-legend { display: flex; gap: 6px; flex-wrap: wrap; }
+.mkt-pill {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  font-family: var(--font); white-space: nowrap;
+}
+.mkt-strong { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+.mkt-fair   { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(232,182,52,0.3); }
+.mkt-weak   { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
+
+.mkt-table-wrap { overflow-x: auto; }
+.mkt-table {
+  width: 100%; border-collapse: collapse; font-family: var(--mono);
+  font-size: 13px; min-width: 720px;
+}
+.mkt-table thead th {
+  text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border);
+  color: var(--text-faint); font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.mkt-table tbody td {
+  padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle;
+}
+.mkt-table tbody tr:last-child td { border-bottom: none; }
+.mkt-table tbody tr:hover { background: var(--bg-raised); }
+.mkt-grade { font-weight: 700; color: var(--accent); white-space: nowrap; }
+.mkt-money { font-variant-numeric: tabular-nums; }
+.mkt-yr5 { color: var(--accent); font-weight: 600; }
+.mkt-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px; border-radius: 6px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  color: var(--text); font-family: var(--font); font-size: 11px; font-weight: 600;
+  text-decoration: none; transition: all 0.15s; white-space: nowrap;
+}
+.mkt-link:hover { border-color: var(--accent); color: var(--accent); }
+.mkt-link.mkt-uk:hover { border-color: #1d4ed8; color: #5b8cff; }
+.mkt-link.mkt-us:hover { border-color: #b91c1c; color: #ff7676; }
+.mkt-link.mkt-cm:hover { border-color: #f59e0b; color: #ffc04d; }
+.mkt-footnote {
+  font-size: 11px; color: var(--text-muted); line-height: 1.5;
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+.mkt-footnote strong { color: var(--accent); }
+
+@media (max-width: 720px) {
+  .mkt-header { flex-direction: column; align-items: stretch; }
+}

@@ -1938,6 +1938,7 @@ function selectCard(id) {
   renderCounterpartFlag(card);
   renderPsaGradeRange(card, pullCost, des.total);
   updateWatchButton();
+  renderMarketplaceScan(card, pullCost, des.total);
 
   // Reset market dynamics section
   $('marketSection').style.display = 'none';
@@ -5885,4 +5886,141 @@ function renderTop50(candidates) {
     selectCard(e.currentTarget.dataset.id);
     document.getElementById('selectedCardSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }));
+}
+
+// =============================================================
+// Marketplace Scan · eBay UK + eBay US + Cardmarket deep-links
+// =============================================================
+//
+// For every PSA grade (plus Raw) we know our model's fair value. We build
+// pre-filtered search URLs to all three marketplaces so the user clicks
+// through and only sees listings priced AT OR BELOW our fair value.
+//
+//   * eBay UK / US : LH_BIN=1 (Buy It Now), _udhi=<maxGBP|maxUSD>, _sop=15 (newly listed)
+//   * Cardmarket   : maxPrice (EUR) parameter on /Search
+//
+// A "deal score" is computed per grade based on how liquid that grade typically
+// is and how big the upside is — it's a hint for where to look first.
+//
+// In Stage B we'll add LIVE listings via the Cloudflare Worker (see
+// marketplace-worker/). For now this is a fast, no-backend deep-link UI.
+
+// Approximate FX rates (live FX is fetched elsewhere via fxRate for USD).
+// Cardmarket prices in EUR; eBay UK in GBP; eBay US in USD.
+function gbpFromUSD(usd) { return usd * (typeof fxRate === 'number' ? fxRate : 0.79); }
+function eurFromUSD(usd) { return usd * 0.92; }
+
+function buildEbayUrl(domain, query, maxPriceLocal) {
+  const base = domain === 'uk' ? 'https://www.ebay.co.uk/sch/i.html' : 'https://www.ebay.com/sch/i.html';
+  const params = new URLSearchParams({
+    _nkw: query,
+    LH_BIN: '1',         // Buy It Now only (skip auction-only noise)
+    _sop: '15',          // Sort: newly listed (best chance of mispriced)
+    _udhi: maxPriceLocal.toFixed(2), // max price filter — anything shown is below model
+  });
+  return `${base}?${params.toString()}`;
+}
+
+function buildCardmarketUrl(query, maxPriceEUR) {
+  const params = new URLSearchParams({
+    searchString: query,
+    'idCategory': '6',        // Singles
+    'idGame': '6',            // Pokémon
+    'maxPrice': Math.round(maxPriceEUR).toString(),
+  });
+  return `https://www.cardmarket.com/en/Pokemon/Products/Search?${params.toString()}`;
+}
+
+// Build a search query that's tight enough to find the right card but
+// permissive enough to actually return results. Card name + set, no grade
+// term (we handle grade with the eBay search filter "PSA 10" appended).
+function buildSearchQuery(card, gradeLabel) {
+  const name = (card.n || '').replace(/[^a-zA-Z0-9 \-]/g, ' ').replace(/\s+/g, ' ').trim();
+  const setName = (card.s || '').replace(/[^a-zA-Z0-9 \-]/g, ' ').replace(/\s+/g, ' ').trim();
+  const langTerm = (card.lang === 'JP') ? 'japanese' : '';
+  const gradeTerm = gradeLabel === 'Raw' ? '' : gradeLabel;
+  return [name, setName, langTerm, gradeTerm].filter(Boolean).join(' ');
+}
+
+// Deal score 0-100: how attractive scanning this grade is. Combines three
+// factors so grades meaningfully differentiate (raw vs psa10 should NOT tie):
+//   * Liquidity (35%) — thicker markets mean more listings to find deals in
+//   * Capped ROI (30%) — anything past 200% 5yr ROI tops out
+//   * Absolute £ upside (35%) — a £1000 upside beats a £50 upside even at same %
+function gradeDealScore(grade, todayGBP, fiveYearGBP) {
+  const upsideGBP = Math.max(0, fiveYearGBP - todayGBP);
+  const roi = todayGBP > 0 ? upsideGBP / todayGBP : 0;
+  const liquidity = grade === 10 ? 1.00
+                  : grade === 9  ? 0.90
+                  : grade === 8  ? 0.70
+                  : grade === 7  ? 0.55
+                  : grade === 'Raw' ? 0.80
+                  : 0.45;
+  const roiFactor = Math.min(1, roi / 2.0);          // 200% ROI = max
+  const upsideFactor = Math.min(1, upsideGBP / 800); // £800 upside = max
+  return Math.round(liquidity * 35 + roiFactor * 30 + upsideFactor * 35);
+}
+
+function dealClass(score) {
+  if (score >= 70) return 'mkt-strong';
+  if (score >= 45) return 'mkt-fair';
+  return 'mkt-weak';
+}
+
+function renderMarketplaceScan(card, pullCost, desirability) {
+  const section = $('marketplaceSection');
+  if (!section || !card) return;
+  // Need PSA 10 anchor (same data dependency as PSA range section).
+  const pcPsa10 = (typeof livePrice !== 'undefined' && livePrice && livePrice.pcPsa10 > 0) ? livePrice.pcPsa10 : 0;
+  const psa10Price = card.p10 > 0 ? card.p10 : pcPsa10;
+  if (!psa10Price || psa10Price <= 0) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+
+  const rawPriceUSD = getCurrentPrice(card);
+  const grades = [
+    { label: 'Raw',    g: 'raw', todayUSD: rawPriceUSD || (psa10Price * 0.10) },
+    { label: 'PSA 7',  g: 7,     todayUSD: estimateGradePrice(card, 7, psa10Price) },
+    { label: 'PSA 8',  g: 8,     todayUSD: estimateGradePrice(card, 8, psa10Price) },
+    { label: 'PSA 9',  g: 9,     todayUSD: estimateGradePrice(card, 9, psa10Price) },
+    { label: 'PSA 10', g: 10,    todayUSD: estimateGradePrice(card, 10, psa10Price) },
+  ];
+
+  const rows = grades.map(row => {
+    const todayUSD = row.todayUSD;
+    const todayGBP = gbpFromUSD(todayUSD);
+    const todayEUR = eurFromUSD(todayUSD);
+    // 5-year target for the grade — Raw uses PSA-as-9 growth as a proxy.
+    const projGrade = row.g === 'raw' ? 9 : row.g;
+    const yr5USD = projectGradePrice(card, projGrade, todayUSD, 5);
+    const yr5GBP = gbpFromUSD(yr5USD);
+    const score = gradeDealScore(row.g === 'raw' ? 'Raw' : row.g, todayGBP, yr5GBP);
+    const query = buildSearchQuery(card, row.label);
+    const ebayUk = buildEbayUrl('uk', query, todayGBP);
+    const ebayUs = buildEbayUrl('us', query, todayUSD);
+    const cardmarket = buildCardmarketUrl(query, todayEUR);
+    return { ...row, todayGBP, todayEUR, yr5USD, yr5GBP, score, ebayUk, ebayUs, cardmarket };
+  });
+
+  // Sort by descending deal score so the most attractive grades surface first.
+  rows.sort((a, b) => b.score - a.score);
+
+  const tbody = $('marketplaceTable').querySelector('tbody');
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td class="mkt-grade">${r.label}</td>
+      <td class="mkt-money">${fmtGBP(r.todayUSD)}</td>
+      <td class="mkt-money mkt-yr5">${fmtGBP(r.yr5USD)}</td>
+      <td><a class="mkt-link mkt-uk" href="${esc(r.ebayUk)}" target="_blank" rel="noopener">Search \u2192</a></td>
+      <td><a class="mkt-link mkt-us" href="${esc(r.ebayUs)}" target="_blank" rel="noopener">Search \u2192</a></td>
+      <td><a class="mkt-link mkt-cm" href="${esc(r.cardmarket)}" target="_blank" rel="noopener">Search \u2192</a></td>
+      <td><span class="mkt-pill ${dealClass(r.score)}">${r.score}/100</span></td>
+    </tr>
+  `).join('');
+
+  const topRow = rows[0];
+  $('marketplaceFootnote').innerHTML = `
+    Best place to hunt right now: <strong>${topRow.label}</strong> at ${fmtGBP(topRow.todayUSD)} (deal score ${topRow.score}/100).
+    Each search link is pre-filtered to <strong>max price = model fair value</strong>, so any listing you see is at or below the model.
+    Cardmarket prices in EUR (\u22481.09 USD); UK eBay in GBP. Tighter filters appear once Stage B (live worker) is connected.
+  `;
 }

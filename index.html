@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260614a">
+  <link rel="stylesheet" href="style.css?v=20260614b">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -685,6 +685,38 @@
           <p class="psa-range-footnote" id="psaRangeFootnote"></p>
         </section>
 
+        <!-- Marketplace Scan: eBay UK + eBay US + Cardmarket deep-links per grade with fair-value context -->
+        <section class="card mkt-card" id="marketplaceSection" style="display:none">
+          <div class="mkt-header">
+            <div>
+              <h2>Marketplace Scan · eBay + Cardmarket</h2>
+              <p class="card-desc">Per-grade fair value plus pre-filtered searches across eBay UK, eBay US, and Cardmarket. Listings below the green line are below the model’s fair value — i.e. value buys.</p>
+            </div>
+            <div class="mkt-legend">
+              <span class="mkt-pill mkt-strong">Strong value</span>
+              <span class="mkt-pill mkt-fair">Fair</span>
+              <span class="mkt-pill mkt-weak">Premium</span>
+            </div>
+          </div>
+          <div class="mkt-table-wrap">
+            <table class="mkt-table" id="marketplaceTable">
+              <thead>
+                <tr>
+                  <th>Grade</th>
+                  <th>Fair value (model)</th>
+                  <th>5yr target</th>
+                  <th>eBay UK</th>
+                  <th>eBay US</th>
+                  <th>Cardmarket</th>
+                  <th>Deal score</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="mkt-footnote" id="marketplaceFootnote"></p>
+        </section>
+
         <!-- Rip or Buy -->
         <section class="card rip-card" id="ripSection" style="display:none">
           <div class="rip-header">
@@ -1025,6 +1057,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260614a"></script>
+  <script src="app.js?v=20260614b"></script>
 </body>
 </html>
