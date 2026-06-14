@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260504g">
+  <link rel="stylesheet" href="style.css?v=20260614a">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -62,6 +62,10 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
             <span class="portfolio-count" id="portfolioCount" style="display:none">0</span>
           </button>
+          <button class="portfolio-toggle alerts-toggle" id="alertsToggle" title="Watchlist alerts — cards now making logical &amp; financial sense">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="portfolio-count alerts-count" id="alertsCount" style="display:none">0</span>
+          </button>
           <button class="portfolio-toggle" id="quickLookupToggle" title="Quick Lookup — search live prices for any card">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
           </button>
@@ -97,6 +101,25 @@
       </div>
       <div class="portfolio-list" id="wishlistList">
         <div class="portfolio-empty">No wishlisted cards yet. Open a card and tap the heart icon to add it. Set a target price to get a BUY alert when the market drops below it.</div>
+      </div>
+    </section>
+
+    <!-- Watchlist Alerts Panel (slide-in) — cards you're keeping an eye on that
+         have crossed into BUY / STRONG BUY signal territory -->
+    <section class="portfolio-panel alerts-panel" id="alertsPanel" style="display:none">
+      <div class="portfolio-header">
+        <h2>Watchlist Alerts <span class="wishlist-sub">Cards now making logical &amp; financial sense</span></h2>
+        <div class="portfolio-actions">
+          <span class="portfolio-total" id="alertsTotal">0 active</span>
+          <button class="portfolio-close" id="alertsClose">✕</button>
+        </div>
+      </div>
+      <div class="alerts-tab-row">
+        <button class="alerts-tab is-active" data-tab="active" id="alertsTabActive">Active alerts</button>
+        <button class="alerts-tab" data-tab="watching" id="alertsTabWatching">All watched</button>
+      </div>
+      <div class="portfolio-list" id="alertsList">
+        <div class="portfolio-empty">Nothing on your watchlist yet. Open a card and tap “Watch this card” to start tracking it. You’ll see a notification here the moment the model flips it to BUY or STRONG BUY.</div>
       </div>
     </section>
 
@@ -631,6 +654,37 @@
           <div class="grade-content" id="gradeContent"></div>
         </section>
 
+        <!-- PSA 1-10 Grade Range — estimated values + 5yr projections per grade -->
+        <section class="card psa-range-card" id="psaRangeSection" style="display:none">
+          <div class="psa-range-header">
+            <div>
+              <h2>PSA Grade Range · 5yr Forecast</h2>
+              <p class="card-desc">What each PSA grade is worth today, and where the model says it goes over 5 years. Use this to decide if a lower grade is worth picking up.</p>
+            </div>
+            <button class="watch-btn" id="watchBtn" type="button" title="Add to Watchlist — you'll get an alert when this card hits BUY or STRONG BUY">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <span id="watchBtnLabel">Watch this card</span>
+            </button>
+          </div>
+          <div class="psa-range-grid">
+            <table class="psa-range-table" id="psaRangeTable">
+              <thead>
+                <tr>
+                  <th>Grade</th>
+                  <th>Today</th>
+                  <th>Yr 1</th>
+                  <th>Yr 3</th>
+                  <th>Yr 5</th>
+                  <th>5yr ROI</th>
+                  <th>Verdict</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="psa-range-footnote" id="psaRangeFootnote"></p>
+        </section>
+
         <!-- Rip or Buy -->
         <section class="card rip-card" id="ripSection" style="display:none">
           <div class="rip-header">
@@ -716,6 +770,54 @@
           </div>
         </details>
       </div>
+
+      <!-- Top 50 Picks: cards-by-grade likely to outperform over 5 years -->
+      <section class="card top50-card" id="top50Section">
+        <div class="top50-header">
+          <div>
+            <h2>Top 50 Picks · Best 5yr ROI by Grade</h2>
+            <p class="card-desc">Highest-conviction cards and the PSA grade that gives the strongest projected return over 5 years. Filtered to cards the model thinks are at fair value or undervalued.</p>
+          </div>
+          <div class="top50-actions">
+            <select id="top50Sort" class="top50-sort" title="Sort by">
+              <option value="roi">5yr ROI (high to low)</option>
+              <option value="upside">Absolute upside (£)</option>
+              <option value="signal">Signal score</option>
+              <option value="value">Lowest entry price</option>
+            </select>
+            <select id="top50Lang" class="top50-sort" title="Language">
+              <option value="all">All languages</option>
+              <option value="EN">English only</option>
+              <option value="JP">Japanese only</option>
+            </select>
+            <button class="top50-refresh" id="top50Refresh" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+              Run scan
+            </button>
+          </div>
+        </div>
+        <div class="top50-status" id="top50Status">Click “Run scan” to rank cards by 5‑year ROI across PSA grades.</div>
+        <div class="top50-results" id="top50Results" style="display:none">
+          <div class="top50-table-wrap">
+            <table class="top50-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Card</th>
+                  <th>Set</th>
+                  <th>Best Grade</th>
+                  <th>Entry</th>
+                  <th>5yr Target</th>
+                  <th>5yr ROI</th>
+                  <th>Signal</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="top50TableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </main>
 
     <div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div><p>Loading card database...</p></div>
@@ -923,6 +1025,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260504g"></script>
+  <script src="app.js?v=20260614a"></script>
 </body>
 </html>

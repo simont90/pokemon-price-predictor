@@ -386,6 +386,8 @@ async function init() {
   setupManualAdd();
   setupEditCard();
   setupImageLightbox();
+  setupWatchlist();
+  setupTop50();
   setupPWANav();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
@@ -1934,6 +1936,8 @@ function selectCard(id) {
   updateWishlistButton();
   updateCompareButton();
   renderCounterpartFlag(card);
+  renderPsaGradeRange(card, pullCost, des.total);
+  updateWatchButton();
 
   // Reset market dynamics section
   $('marketSection').style.display = 'none';
@@ -1943,6 +1947,7 @@ function selectCard(id) {
   $('marketTrend').textContent = '';
   $('marketTrend').className = 'market-trend-badge';
   $('gradeSection').style.display = 'none';
+  // PSA range section is recomputed in renderPsaGradeRange()
 
   // Reset price history section
   if (card.mi) {
@@ -3172,7 +3177,7 @@ function setupWishlist() {
 
 function toggleSidePanel(id) {
   // Close the others when one opens
-  ['portfolioPanel', 'wishlistPanel', 'comparePanel'].forEach(p => {
+  ['portfolioPanel', 'wishlistPanel', 'comparePanel', 'alertsPanel'].forEach(p => {
     const el = document.getElementById(p);
     if (!el) return;
     if (p === id) {
@@ -5405,3 +5410,479 @@ function setupPWANav() {
 
 // ---- Boot ----
 init();
+
+// =============================================================
+// PSA 1-10 Grade Range · Forecast across grades
+// =============================================================
+//
+// What this does
+// ---------------
+// For the currently-selected card, estimates a market price for each PSA
+// grade (1 through 10) AND projects each one 1/3/5 years forward using the
+// same forecasting model that powers the headline 5yr forecast (rarity rate
+// × character premium × age multiplier × market momentum). Lower grades
+// appreciate slightly slower than gem mint copies — historical PSA data
+// supports a small "grade growth premium" for PSA 9/10 vs lower grades, so we
+// scale the annual growth rate by GRADE_GROWTH_PREMIUM[g].
+//
+// The price ratio of each PSA grade vs PSA 10 is calibrated from typical
+// modern-era market data (PSA 10 = 1.0×). PSA 9 is roughly 30-40% of PSA 10;
+// PSA 8 about 15-20%; lower grades drop off quickly. These are reasonable
+// defaults — for any individual card the ratio varies, but they're good
+// enough to drive a "should I buy a PSA 7 instead?" decision.
+
+// Price ratio of each grade vs PSA 10 (PSA 10 = 1.0).
+const PSA_RATIOS = {
+  10: 1.00,
+  9:  0.35,
+  8:  0.18,
+  7:  0.11,
+  6:  0.07,
+  5:  0.055,
+  4:  0.045,
+  3:  0.035,
+  2:  0.028,
+  1:  0.022,
+};
+
+// Annual growth premium per grade. PSA 10s appreciate faster than ungraded;
+// low grades appreciate slower (less collector demand, more supply churn).
+const GRADE_GROWTH_PREMIUM = {
+  10: 1.15,
+  9:  1.05,
+  8:  0.95,
+  7:  0.85,
+  6:  0.78,
+  5:  0.72,
+  4:  0.68,
+  3:  0.65,
+  2:  0.62,
+  1:  0.60,
+};
+
+// Compute estimated price for a single PSA grade.
+function estimateGradePrice(card, grade, psa10Price) {
+  if (!psa10Price || psa10Price <= 0) return 0;
+  return psa10Price * (PSA_RATIOS[grade] || 0);
+}
+
+// Project a grade's price forward `years`, using the same base rate the
+// 5yr forecast uses, scaled by the grade-growth premium.
+function projectGradePrice(card, grade, currentGradePrice, years) {
+  if (!currentGradePrice) return 0;
+  const rarityRate = (RARITY_RATES[card.rc] || RARITY_RATES['']).base;
+  const charMult = getCharacterMultiplier(card.n);
+  const ageMonths = getSetAgeMonths(card.sc);
+  const ageMult = getAgeMultiplier(ageMonths, years);
+  const annualRate = rarityRate * charMult * ageMult * (GRADE_GROWTH_PREMIUM[grade] || 1);
+  const momentum = getMarketMomentum();
+  // Momentum fade: full impact yr1, half yr2, neutral yr3+
+  const momFade = years === 1 ? momentum.mult : years === 2 ? (1 + (momentum.mult - 1) * 0.5) : 1.0;
+  const adjRate = annualRate * momFade;
+  return currentGradePrice * Math.pow(1 + adjRate, years);
+}
+
+// Render the PSA 1-10 grade range table on the selected card.
+function renderPsaGradeRange(card, pullCost, desirability) {
+  const section = $('psaRangeSection');
+  if (!section || !card) return;
+  // Need a PSA 10 anchor price (static p10 or PriceCharting PSA 10) to derive grades.
+  const pcPsa10 = (typeof livePrice !== 'undefined' && livePrice && livePrice.pcPsa10 > 0) ? livePrice.pcPsa10 : 0;
+  const staticPsa10 = card.p10 || 0;
+  const psa10Price = (staticPsa10 > 0) ? staticPsa10 : pcPsa10;
+  if (!psa10Price || psa10Price <= 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+
+  const rawPriceUSD = getCurrentPrice(card);
+  const grades = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+  const rows = grades.map(g => {
+    const todayUSD = estimateGradePrice(card, g, psa10Price);
+    const yr1USD = projectGradePrice(card, g, todayUSD, 1);
+    const yr3USD = projectGradePrice(card, g, todayUSD, 3);
+    const yr5USD = projectGradePrice(card, g, todayUSD, 5);
+    const roi5 = todayUSD > 0 ? ((yr5USD - todayUSD) / todayUSD) * 100 : 0;
+    // Verdict: compare 5yr value to today's entry + small assumed friction
+    // (5% buy/sell fees). For ungraded raw we also subtract the £20 grading fee.
+    let verdict, verdictClass;
+    if (roi5 >= 80) { verdict = 'Strong pick'; verdictClass = 'psa-v-strong'; }
+    else if (roi5 >= 40) { verdict = 'Worth a look'; verdictClass = 'psa-v-good'; }
+    else if (roi5 >= 15) { verdict = 'Fair'; verdictClass = 'psa-v-fair'; }
+    else { verdict = 'Skip'; verdictClass = 'psa-v-skip'; }
+    return { g, todayUSD, yr1USD, yr3USD, yr5USD, roi5, verdict, verdictClass };
+  });
+
+  const tbody = $('psaRangeTable').querySelector('tbody');
+  // Cell highlighting: emphasise PSA 10 row + the grade with highest 5yr ROI.
+  const bestRoiIdx = rows.reduce((bestI, r, i, arr) => r.roi5 > arr[bestI].roi5 ? i : bestI, 0);
+  tbody.innerHTML = rows.map((r, i) => {
+    const isBest = i === bestRoiIdx;
+    const isPsa10 = r.g === 10;
+    const roiSign = r.roi5 >= 0 ? '+' : '';
+    return `<tr class="${isPsa10 ? 'psa-row-10' : ''} ${isBest ? 'psa-row-best' : ''}">
+      <td class="psa-g">PSA ${r.g}${isBest ? ' <span class="psa-best-pill">Best ROI</span>' : ''}</td>
+      <td class="psa-money">${fmtGBP(r.todayUSD)}</td>
+      <td class="psa-money">${fmtGBP(r.yr1USD)}</td>
+      <td class="psa-money">${fmtGBP(r.yr3USD)}</td>
+      <td class="psa-money psa-yr5">${fmtGBP(r.yr5USD)}</td>
+      <td class="psa-roi ${r.roi5 >= 0 ? 'psa-roi-pos' : 'psa-roi-neg'}">${roiSign}${r.roi5.toFixed(0)}%</td>
+      <td><span class="psa-verdict ${r.verdictClass}">${r.verdict}</span></td>
+    </tr>`;
+  }).join('');
+
+  const rateLabel = (RARITY_RATES[card.rc] || RARITY_RATES['']).label;
+  const annualPctAt10 = (((rows[0].yr1USD / rows[0].todayUSD) - 1) * 100).toFixed(1);
+  const bestRow = rows[bestRoiIdx];
+  const rawPart = (rawPriceUSD && !isNaN(rawPriceUSD) && rawPriceUSD > 0) ? ` · raw ≈ ${fmtGBP(rawPriceUSD)}` : '';
+  $('psaRangeFootnote').innerHTML = `
+    Anchored on PSA 10 = ${fmtGBP(psa10Price)}${rawPart} · ${rateLabel} base rate ·
+    Expected ${annualPctAt10}% annual growth at PSA 10.
+    Model suggests <strong>PSA ${bestRow.g}</strong> offers the strongest 5yr ROI (${bestRow.roi5 >= 0 ? '+' : ''}${bestRow.roi5.toFixed(0)}%).
+    Ratios are typical-modern; individual cards can deviate ±30%.
+  `;
+}
+
+// =============================================================
+// Watchlist (memory: cards you're keeping an eye on)
+// =============================================================
+//
+// Distinct from Wishlist (which tracks a target buy price). The Watchlist is
+// signal-driven: you save a card and we tell you the moment the model flips
+// it to BUY or STRONG BUY. We also remember the signal state at the time you
+// added it, so we can detect *transitions* (HOLD → BUY) rather than just
+// listing all currently-BUY cards (which would be noise).
+//
+// Schema (localStorage `pkm-watchlist-v1`):
+//   { id, name, set, lang, img, addedAt, addedSignal, addedScore,
+//     lastNotifiedSignal, lastNotifiedAt, addedPriceUSD }
+
+const WATCHLIST_KEY = 'pkm-watchlist-v1';
+const WATCHLIST_ALERT_DISMISS_KEY = 'pkm-watchlist-dismissed-v1';
+let watchlist = [];
+try { watchlist = JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]'); } catch { watchlist = []; }
+// Active alerts the user has dismissed (cardId -> signal they dismissed for).
+// If the signal flips back and then to BUY again we re-alert.
+let dismissedAlerts = {};
+try { dismissedAlerts = JSON.parse(localStorage.getItem(WATCHLIST_ALERT_DISMISS_KEY) || '{}'); } catch { dismissedAlerts = {}; }
+
+function saveWatchlist() { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist)); }
+function saveDismissed() { localStorage.setItem(WATCHLIST_ALERT_DISMISS_KEY, JSON.stringify(dismissedAlerts)); }
+
+function isWatched(cardId) { return watchlist.some(w => w.id === cardId); }
+
+function toggleCardInWatchlist() {
+  if (!selectedCard) return;
+  const id = selectedCard.i;
+  const idx = watchlist.findIndex(w => w.id === id);
+  if (idx >= 0) {
+    watchlist.splice(idx, 1);
+    delete dismissedAlerts[id];
+    saveDismissed();
+  } else {
+    const pull = (function () {
+      try { return calcPullCost().pullCost; } catch { return 7.65; }
+    })();
+    const des = autoFillDesirability(selectedCard, pull).total;
+    const sig = computeSignal(selectedCard, pull, des);
+    watchlist.push({
+      id,
+      name: selectedCard.n,
+      set: selectedCard.s,
+      lang: selectedCard.lang || 'EN',
+      img: getCardImg(selectedCard),
+      addedAt: new Date().toISOString(),
+      addedSignal: sig?.signal || 'HOLD',
+      addedScore: sig?.score || 0,
+      addedPriceUSD: getCurrentPrice(selectedCard),
+      lastNotifiedSignal: sig?.signal || 'HOLD',
+      lastNotifiedAt: new Date().toISOString(),
+    });
+  }
+  saveWatchlist();
+  updateWatchButton();
+  refreshAlerts();
+}
+
+function updateWatchButton() {
+  const btn = $('watchBtn');
+  if (!btn) return;
+  if (!selectedCard) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  const watched = isWatched(selectedCard.i);
+  btn.classList.toggle('is-watching', watched);
+  const label = $('watchBtnLabel');
+  if (label) label.textContent = watched ? 'Watching · tap to stop' : 'Watch this card';
+}
+
+// Recompute current signal for every watched card and surface those that have
+// transitioned into BUY / STRONG BUY territory since they were last seen.
+function computeActiveAlerts() {
+  if (!cardData) return [];
+  const out = [];
+  for (const w of watchlist) {
+    const card = cardData.cards.find(c => c.i === w.id);
+    if (!card) continue;
+    const pull = (function () {
+      try {
+        if (setsData && setsData[card.sc]) {
+          const set = setsData[card.sc];
+          const rarity = set.rarities?.[card.rc];
+          if (rarity && rarity.pullRate > 0) {
+            const packsPerHit = Math.round(1 / rarity.pullRate);
+            return (packsPerHit * rarity.count) / 100;
+          }
+        }
+      } catch {}
+      return 7.65;
+    })();
+    const des = autoFillDesirability(card, pull).total;
+    const sig = computeSignal(card, pull, des);
+    if (!sig) continue;
+    const currentPriceUSD = getCurrentPrice(card);
+    const isPositive = sig.signal === 'BUY' || sig.signal === 'STRONG BUY';
+    const wasPositive = w.addedSignal === 'BUY' || w.addedSignal === 'STRONG BUY';
+    // "Makes financial sense" = signal is BUY/STRONG BUY now AND the user
+    // wasn't already seeing that when they added it (so it's a real change).
+    // Also flag if the price has dropped 10%+ from added price even at HOLD.
+    const transitioned = isPositive && !wasPositive;
+    const priceDropPct = w.addedPriceUSD > 0 ? ((w.addedPriceUSD - currentPriceUSD) / w.addedPriceUSD) * 100 : 0;
+    const bigDrop = priceDropPct >= 10;
+    const triggered = transitioned || bigDrop;
+    out.push({
+      ...w,
+      card,
+      signal: sig.signal,
+      score: sig.score,
+      reasons: sig.reasons || [],
+      currentPriceUSD,
+      currentPriceGBP: usdToGbp(currentPriceUSD),
+      priceDropPct,
+      triggered,
+      transitioned,
+      bigDrop,
+      dismissedFor: dismissedAlerts[w.id] || null,
+    });
+  }
+  return out;
+}
+
+function setupWatchlist() {
+  $('watchBtn')?.addEventListener('click', toggleCardInWatchlist);
+  $('alertsToggle')?.addEventListener('click', () => {
+    toggleSidePanel('alertsPanel');
+    if ($('alertsPanel').style.display === 'block') refreshAlerts();
+  });
+  $('alertsClose')?.addEventListener('click', () => { $('alertsPanel').style.display = 'none'; });
+  $('alertsTabActive')?.addEventListener('click', () => switchAlertsTab('active'));
+  $('alertsTabWatching')?.addEventListener('click', () => switchAlertsTab('watching'));
+  // Recompute the badge count every time the panel re-opens, and once at boot
+  // so users see notifications immediately if a card has moved while they
+  // were away.
+  refreshAlerts();
+}
+
+let _alertsTab = 'active';
+function switchAlertsTab(tab) {
+  _alertsTab = tab;
+  $('alertsTabActive')?.classList.toggle('is-active', tab === 'active');
+  $('alertsTabWatching')?.classList.toggle('is-active', tab === 'watching');
+  renderAlertsList();
+}
+
+function refreshAlerts() {
+  renderAlertsList();
+  updateAlertsBadge();
+}
+
+function updateAlertsBadge() {
+  const alerts = computeActiveAlerts().filter(a => a.triggered && a.dismissedFor !== a.signal);
+  const badge = $('alertsCount');
+  if (!badge) return;
+  if (alerts.length === 0) {
+    badge.style.display = 'none';
+  } else {
+    badge.style.display = 'flex';
+    badge.textContent = String(alerts.length);
+  }
+  const total = $('alertsTotal');
+  if (total) total.textContent = `${alerts.length} active`;
+}
+
+function renderAlertsList() {
+  const list = $('alertsList');
+  if (!list) return;
+  if (watchlist.length === 0) {
+    list.innerHTML = `<div class="portfolio-empty">Nothing on your watchlist yet. Open a card and tap “Watch this card” to start tracking it. You’ll see a notification here the moment the model flips it to BUY or STRONG BUY.</div>`;
+    return;
+  }
+  const alerts = computeActiveAlerts();
+  let shown = alerts;
+  if (_alertsTab === 'active') shown = alerts.filter(a => a.triggered && a.dismissedFor !== a.signal);
+  if (shown.length === 0) {
+    list.innerHTML = _alertsTab === 'active'
+      ? `<div class="portfolio-empty">No new alerts. You’re watching ${watchlist.length} card${watchlist.length === 1 ? '' : 's'} — switch to “All watched” to review them.</div>`
+      : `<div class="portfolio-empty">Watchlist is empty.</div>`;
+    return;
+  }
+  // Sort active alerts by signal score desc (STRONG BUY first), then price drop
+  shown.sort((a, b) => (b.score - a.score) || (b.priceDropPct - a.priceDropPct));
+
+  list.innerHTML = shown.map(a => {
+    const sigClass = a.signal === 'STRONG BUY' ? 'sig-strong' : a.signal === 'BUY' ? 'sig-buy' : a.signal === 'SELL' ? 'sig-sell' : 'sig-hold';
+    const dropStr = a.priceDropPct > 0 ? `<span class="alert-drop">↓${a.priceDropPct.toFixed(1)}% from added</span>` : '';
+    const trigBits = [];
+    if (a.transitioned) trigBits.push(`Signal flipped <strong>${a.addedSignal}</strong> → <strong>${a.signal}</strong>`);
+    if (a.bigDrop) trigBits.push(`Price down <strong>${a.priceDropPct.toFixed(1)}%</strong>`);
+    if (!trigBits.length) trigBits.push(`Signal: <strong>${a.signal}</strong>`);
+    const reasons = a.reasons.length ? `<div class="alert-reasons">${a.reasons.map(r => `<span>${esc(r)}</span>`).join(' · ')}</div>` : '';
+    return `
+      <div class="alert-item" data-id="${a.id}">
+        ${a.img ? `<img class="alert-item-img" src="${a.img}" alt="" onerror="this.style.display='none'">` : '<div class="alert-item-img"></div>'}
+        <div class="alert-item-info">
+          <div class="alert-item-name">${esc(a.name)} ${a.lang === 'JP' ? '<span class="lang-pill">🇯🇵 JP</span>' : ''}</div>
+          <div class="alert-item-meta"><span>${esc(a.set)}</span> ${dropStr}</div>
+          <div class="alert-trigger">${trigBits.join(' · ')}</div>
+          ${reasons}
+        </div>
+        <div class="alert-item-actions">
+          <div class="alert-prices">
+            <div class="alert-current">£${a.currentPriceGBP.toFixed(2)}</div>
+            <div class="alert-added">added @ £${usdToGbp(a.addedPriceUSD).toFixed(2)}</div>
+          </div>
+          <div class="alert-signal-badge ${sigClass}">${a.signal}</div>
+          <div class="alert-btns">
+            <button class="alert-mini-btn alert-open" data-id="${a.id}" title="Open card">Open</button>
+            <button class="alert-mini-btn alert-dismiss" data-id="${a.id}" data-signal="${a.signal}" title="Dismiss this alert until the signal changes again">Dismiss</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  list.querySelectorAll('.alert-open').forEach(b => b.addEventListener('click', (e) => {
+    const id = e.currentTarget.dataset.id;
+    selectCard(id);
+    $('alertsPanel').style.display = 'none';
+  }));
+  list.querySelectorAll('.alert-dismiss').forEach(b => b.addEventListener('click', (e) => {
+    const id = e.currentTarget.dataset.id;
+    const signal = e.currentTarget.dataset.signal;
+    dismissedAlerts[id] = signal;
+    saveDismissed();
+    refreshAlerts();
+  }));
+}
+
+// =============================================================
+// Top 50 Ranker · cards-by-grade best 5yr ROI
+// =============================================================
+//
+// Scans the full card DB, considers grades 6-10 for each card with a known
+// PSA 10 price, projects each combo 5 years forward, filters down to cards
+// where the model considers them fair or undervalued (score >= 0), and
+// returns the top 50 by 5yr ROI.
+
+function setupTop50() {
+  $('top50Refresh')?.addEventListener('click', runTop50);
+  $('top50Sort')?.addEventListener('change', () => { if (_lastTop50) renderTop50(_lastTop50); });
+  $('top50Lang')?.addEventListener('change', () => { if (_lastTop50) renderTop50(_lastTop50); });
+}
+
+let _lastTop50 = null;
+
+function runTop50() {
+  if (!cardData || !cardData.cards) return;
+  const btn = $('top50Refresh');
+  if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
+  $('top50Status').textContent = `Scanning ${cardData.cards.length.toLocaleString()} cards across PSA grades…`;
+
+  // Defer to next frame so the status text actually paints.
+  requestAnimationFrame(() => {
+    const candidates = [];
+    const grades = [6, 7, 8, 9, 10];
+    for (const c of cardData.cards) {
+      const psa10 = c.p10 || 0;
+      if (psa10 <= 0) continue; // need a PSA 10 anchor
+      // Pull cost
+      let pullCost = 7.65;
+      if (setsData && setsData[c.sc]) {
+        const set = setsData[c.sc];
+        const rarity = set.rarities?.[c.rc];
+        if (rarity && rarity.pullRate > 0) {
+          const packsPerHit = Math.round(1 / rarity.pullRate);
+          pullCost = (packsPerHit * rarity.count) / 100;
+        }
+      }
+      const des = autoFillDesirability(c, pullCost).total;
+      const sig = computeSignal(c, pullCost, des);
+      // Filter out clear SELL / overpriced cards
+      if (!sig || sig.score < 0) continue;
+
+      let best = null;
+      for (const g of grades) {
+        const todayUSD = estimateGradePrice(c, g, psa10);
+        if (todayUSD < 5) continue; // skip noise / micro-entries
+        const yr5USD = projectGradePrice(c, g, todayUSD, 5);
+        const roi5 = ((yr5USD - todayUSD) / todayUSD) * 100;
+        const upsideUSD = yr5USD - todayUSD;
+        if (!best || roi5 > best.roi5) best = { g, todayUSD, yr5USD, roi5, upsideUSD };
+      }
+      if (!best || best.roi5 < 20) continue; // require non-trivial upside
+
+      candidates.push({
+        card: c,
+        bestGrade: best.g,
+        todayUSD: best.todayUSD,
+        yr5USD: best.yr5USD,
+        roi5: best.roi5,
+        upsideUSD: best.upsideUSD,
+        signal: sig.signal,
+        score: sig.score,
+      });
+    }
+    _lastTop50 = candidates;
+    renderTop50(candidates);
+    if (btn) { btn.disabled = false; btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> Run scan`; }
+  });
+}
+
+function renderTop50(candidates) {
+  const sortBy = $('top50Sort')?.value || 'roi';
+  const lang = $('top50Lang')?.value || 'all';
+  let rows = candidates.slice();
+  if (lang !== 'all') rows = rows.filter(r => (r.card.lang || 'EN') === lang);
+  if (sortBy === 'roi') rows.sort((a, b) => b.roi5 - a.roi5);
+  else if (sortBy === 'upside') rows.sort((a, b) => b.upsideUSD - a.upsideUSD);
+  else if (sortBy === 'signal') rows.sort((a, b) => (b.score - a.score) || (b.roi5 - a.roi5));
+  else if (sortBy === 'value') rows.sort((a, b) => a.todayUSD - b.todayUSD);
+  rows = rows.slice(0, 50);
+
+  $('top50Status').textContent = candidates.length === 0
+    ? 'No candidates found. Try after live prices load — the ranker needs PSA 10 anchors.'
+    : `Scanned ${candidates.length.toLocaleString()} eligible cards. Showing top ${rows.length} sorted by ${sortBy === 'roi' ? '5yr ROI' : sortBy === 'upside' ? 'absolute upside' : sortBy === 'signal' ? 'signal score' : 'lowest entry price'}.`;
+  const wrap = $('top50Results');
+  if (!wrap) return;
+  if (rows.length === 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+
+  $('top50TableBody').innerHTML = rows.map((r, i) => {
+    const sigClass = r.signal === 'STRONG BUY' ? 'sig-strong' : r.signal === 'BUY' ? 'sig-buy' : 'sig-hold';
+    return `<tr data-id="${r.card.i}" class="top50-row">
+      <td class="t50-rank">${i + 1}</td>
+      <td class="t50-name">${esc(r.card.n)} ${(r.card.lang || 'EN') === 'JP' ? '<span class="lang-pill">🇯🇵</span>' : ''}</td>
+      <td class="t50-set">${esc(r.card.s || '—')}</td>
+      <td class="t50-grade">PSA ${r.bestGrade}</td>
+      <td class="t50-money">${fmtGBP(r.todayUSD)}</td>
+      <td class="t50-money t50-yr5">${fmtGBP(r.yr5USD)}</td>
+      <td class="t50-roi">+${r.roi5.toFixed(0)}%</td>
+      <td><span class="alert-signal-badge ${sigClass}">${r.signal}</span></td>
+      <td><button class="t50-open" data-id="${r.card.i}">Open</button></td>
+    </tr>`;
+  }).join('');
+
+  document.querySelectorAll('#top50TableBody .t50-open').forEach(b => b.addEventListener('click', (e) => {
+    selectCard(e.currentTarget.dataset.id);
+    document.getElementById('selectedCardSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+}
