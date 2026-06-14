@@ -1351,6 +1351,28 @@ body {
   max-width: 100vw;
 }
 
+/* =====================================================================
+   Belt + braces: stop intrinsic min-content from forcing horizontal
+   overflow on phones. Without these, range inputs, long unbreakable
+   text, and grid children with content-sized columns can push the
+   page wider than the viewport. We allow grid/flex children to shrink
+   below their content min-width, and force range inputs to respect
+   their container width.
+   ===================================================================== */
+.main, .main > *, .card, .card > *, .inputs-column, .inputs-column > *,
+.selected-card-header, .selected-card-header > *,
+.signal-badge-wrap, .slider-group, .slider-row, .slider-header,
+.input-row, .input-row > *,
+.hold-card, .hold-card > *, .hold-recommendation, .hold-grid, .hold-tile,
+.hold-outcomes, .hold-out-row, .hold-out-head, .hold-out-summary {
+  min-width: 0;
+}
+.slider, input[type="range"] { width: 100%; max-width: 100%; min-width: 0; }
+.signal-badge-wrap { flex-wrap: wrap; min-width: 0; }
+.signal-badge-wrap > * { min-width: 0; max-width: 100%; }
+.input-hint { word-break: break-word; overflow-wrap: anywhere; }
+.pull-cost-packs { word-break: break-word; overflow-wrap: anywhere; }
+
 /* Respect notch on the sides of the app shell */
 .app {
   padding-left: max(20px, env(safe-area-inset-left));
@@ -1474,6 +1496,26 @@ textarea, select {
   .predicted-price { font-size: 56px; }
   .max-price { font-size: 44px; }
   .live-main-price { font-size: 36px; }
+}
+
+/* ================================================================
+   27" Apple Studio Display via Mac mini (CSS ≈ 2560px wide)
+   At this width a 1400px container leaves huge dead margins. We
+   let the app stretch to 1680px at 1920px+, and 1920px at 2200px+,
+   then bump heading sizes a touch so the page doesn’t feel hollow.
+   ================================================================ */
+@media (min-width: 1920px) {
+  .app { max-width: 1680px; padding-left: 40px; padding-right: 40px; }
+  .main { gap: 36px; padding: 32px 0 56px; }
+  .card { padding: 26px; }
+  .predicted-price { font-size: 64px; }
+  .max-price { font-size: 48px; }
+  .live-main-price { font-size: 40px; }
+}
+@media (min-width: 2200px) {
+  .app { max-width: 1920px; padding-left: 48px; padding-right: 48px; }
+  .main { gap: 44px; }
+  .card { padding: 30px; }
 }
 
 /* Always allow grid children to shrink past content min-content */
@@ -2821,8 +2863,8 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: 12px;
 }
-.hold-tile-k { color: var(--text-muted); font-family: var(--font); }
-.hold-tile-v { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.hold-tile-k { color: var(--text-muted); font-family: var(--font); flex: 0 1 auto; min-width: 0; }
+.hold-tile-v { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; flex: 0 0 auto; }
 .hold-tile-target { color: var(--accent); }
 .hold-pos { color: #86efac; }
 .hold-neg { color: #fca5a5; }
@@ -2914,12 +2956,87 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .hold-out-pl.hold-pos, .hold-out-roi.hold-pos { color: #86efac; }
 .hold-out-pl.hold-neg, .hold-out-roi.hold-neg { color: #fca5a5; }
 
-@media (max-width: 560px) {
-  .hold-out-grid-head, .hold-out-row { grid-template-columns: 56px 1fr 80px 56px; gap: 8px; }
-  .hold-out-prob { grid-template-columns: 1fr 34px; }
+/* ================================================================
+   Hold Strategy · device-aware responsive ladder
+   Targets: iPhone 15 Pro Max (430), iPad mini portrait (744),
+            iPad mini landscape / iPad Pro 11 (1024-1133),
+            iPad Pro 12.9 portrait (1024), landscape (1366),
+            27" Apple Studio Display via Mac mini (1920+).
+   ================================================================ */
+
+/* Fluid type for the verdict and section heading — scales smoothly
+   between phone and desktop without snapping at breakpoints. */
+.hold-card h2 { font-size: clamp(18px, 1.4vw + 14px, 24px); }
+.hold-rec-line { font-size: clamp(13px, 0.4vw + 12px, 15.5px); }
+.hold-rec-line-sub { font-size: clamp(11.5px, 0.3vw + 11px, 13.5px); }
+.hold-tile-title { font-size: clamp(13px, 0.3vw + 12px, 15.5px); }
+.hold-tile-row { font-size: clamp(11.5px, 0.25vw + 11px, 13.5px); }
+.hold-out-grade { font-size: clamp(12px, 0.3vw + 11px, 14px); }
+.hold-out-row { font-size: clamp(11.5px, 0.25vw + 11px, 13.5px); }
+
+/* iPhone 15 Pro Max & similar small phones — single column,
+   recommendation stacks, outcome table compresses. */
+@media (max-width: 480px) {
+  .hold-grid { grid-template-columns: 1fr; gap: 10px; }
+  .hold-recommendation { grid-template-columns: 1fr; gap: 8px; padding: 12px 14px; }
+  .hold-out-grid-head, .hold-out-row { grid-template-columns: 50px 1fr 78px 54px; gap: 6px; }
+  .hold-out-prob { grid-template-columns: 1fr 30px; gap: 6px; }
+  .hold-outcomes { padding: 12px 14px; }
+  .hold-out-head { gap: 8px; }
+  .hold-out-summary { width: 100%; }
+  .hold-out-chip { font-size: 9px; padding: 2px 6px; }
+  .hold-tile { padding: 12px; }
+  .hold-tile-foot { gap: 4px; }
+  .hold-winner-tag { font-size: 9px; padding: 2px 7px; }
 }
 
-@media (max-width: 720px) {
-  .hold-recommendation { grid-template-columns: 1fr; gap: 8px; }
-  .hold-grid { grid-template-columns: 1fr 1fr; }
+/* Small landscape / phablet middle ground — 2 columns. */
+@media (min-width: 481px) and (max-width: 743px) {
+  .hold-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hold-recommendation { grid-template-columns: auto 1fr; gap: 10px; }
+}
+
+/* iPad mini portrait (744-1023) — 3 columns fit comfortably,
+   .main is single-column at this range so we have full card width. */
+@media (min-width: 744px) and (max-width: 1023px) {
+  .hold-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .hold-out-grid-head, .hold-out-row { grid-template-columns: 80px 1fr 120px 80px; gap: 12px; }
+}
+
+/* iPad mini landscape & iPad Pro 11" portrait (1024-1193)
+   .main becomes 2-column here, so each card is narrower — 2 col grid. */
+@media (min-width: 1024px) and (max-width: 1193px) {
+  .hold-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .hold-out-grid-head, .hold-out-row { grid-template-columns: 70px 1fr 100px 70px; }
+}
+
+/* iPad Pro 12.9" portrait + similar (1194-1365). Still 2-col main,
+   slightly more breathing room. */
+@media (min-width: 1194px) and (max-width: 1365px) {
+  .hold-grid { grid-template-columns: 1fr 1fr; gap: 14px; }
+}
+
+/* iPad Pro 12.9" landscape (1366-1599) — 3 columns. */
+@media (min-width: 1366px) and (max-width: 1599px) {
+  .hold-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+}
+
+/* 27" Apple Studio Display via Mac mini (1600+ down to 1919px,
+   where the .main is 2-col so each card has ~800px to play with).
+   Lay all six strategies out in a single row for an at-a-glance read. */
+@media (min-width: 1600px) and (max-width: 1919px) {
+  .hold-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .hold-tile { padding: 16px; }
+}
+
+/* Full 27" Studio Display (1920+). The Hold Strategy card lives inside the
+   right column of .main (2-col layout at this width), so its usable width is
+   ~890px, not 1920px. Six tiles in that width are too cramped — three
+   columns at ~280px each is the sweet spot. */
+@media (min-width: 1920px) {
+  .hold-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .hold-tile { padding: 16px; }
+  .hold-tile-row { font-size: 13.5px; }
+  .hold-outcomes { padding: 18px 22px; }
+  .hold-out-grid-head, .hold-out-row { grid-template-columns: 100px 1fr 140px 90px; gap: 16px; }
 }
