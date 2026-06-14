@@ -1239,13 +1239,93 @@ function scorePCProduct(product, card) {
   return score;
 }
 
+// Public CORS proxies rotate in and out of working order constantly. We try a
+// chain until one returns valid JSON, then cache the winner in localStorage so
+// subsequent calls go straight to it. If a cached proxy starts failing we
+// invalidate and re-walk the chain. Users can also paste their own proxy (e.g.
+// a Cloudflare Worker) via window.localStorage.pcProxyOverride.
+const PC_PROXIES = [
+  // {fn}: builds the proxy URL from a target URL. {parse}: extracts the JSON.
+  { name: 'codetabs',     fn: u => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`, parse: r => r.json() },
+  { name: 'allorigins',   fn: u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,        parse: r => r.json() },
+  { name: 'corsproxy.io', fn: u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,                 parse: r => r.json() },
+  { name: 'cors.eu.org',  fn: u => `https://cors.eu.org/${u}`,                                          parse: r => r.json() },
+  { name: 'thingproxy',   fn: u => `https://thingproxy.freeboard.io/fetch/${u}`,                         parse: r => r.json() },
+];
+
+function pcProxyOverride() {
+  // User can paste their own proxy template containing '{URL}' (encoded) or
+  // '{RAWURL}' (unencoded). Set via the console:
+  //   localStorage.pcProxyOverride = 'https://my-worker.dev/?url={URL}'
+  try { return localStorage.getItem('pcProxyOverride') || ''; } catch { return ''; }
+}
+function cachedPcProxy() {
+  try { return localStorage.getItem('pcProxyWinner') || ''; } catch { return ''; }
+}
+function setCachedPcProxy(name) {
+  try { localStorage.setItem('pcProxyWinner', name); } catch {}
+}
+function clearCachedPcProxy() {
+  try { localStorage.removeItem('pcProxyWinner'); } catch {}
+}
+
 async function pcSearchRaw(query) {
   const pcUrl = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(query)}&format=json`;
-  const proxyUrl = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(pcUrl)}`;
-  const r = await fetch(proxyUrl);
-  if (!r.ok) throw new Error(`PriceCharting ${r.status}`);
-  const data = await r.json();
-  return data.products || [];
+
+  // Build the ordered list to try — user override first, then cached winner,
+  // then the rest in declared order. De-dup.
+  const seen = new Set();
+  const chain = [];
+  const override = pcProxyOverride();
+  if (override) {
+    chain.push({
+      name: 'override',
+      fn: u => override.includes('{RAWURL}')
+        ? override.replace('{RAWURL}', u)
+        : override.replace('{URL}', encodeURIComponent(u)),
+      parse: r => r.json(),
+    });
+    seen.add('override');
+  }
+  const cached = cachedPcProxy();
+  if (cached) {
+    const p = PC_PROXIES.find(x => x.name === cached);
+    if (p && !seen.has(p.name)) { chain.push(p); seen.add(p.name); }
+  }
+  for (const p of PC_PROXIES) {
+    if (!seen.has(p.name)) { chain.push(p); seen.add(p.name); }
+  }
+
+  // Per-proxy timeout via AbortController so a single hanging proxy can't
+  // freeze the whole chain. 6s is enough for any healthy proxy to respond.
+  const PROXY_TIMEOUT_MS = 6000;
+  const fetchWithTimeout = (url) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), PROXY_TIMEOUT_MS);
+    return fetch(url, { method: 'GET', signal: ctrl.signal })
+      .finally(() => clearTimeout(t));
+  };
+
+  const errors = [];
+  for (const p of chain) {
+    try {
+      const r = await fetchWithTimeout(p.fn(pcUrl));
+      if (!r.ok) { errors.push(`${p.name} ${r.status}`); continue; }
+      const data = await p.parse(r);
+      if (data && Array.isArray(data.products)) {
+        if (p.name !== cached) setCachedPcProxy(p.name);
+        return data.products;
+      }
+      errors.push(`${p.name} no-products`);
+    } catch (e) {
+      errors.push(`${p.name} ${e && e.name === 'AbortError' ? 'timeout' : (e && e.message) || 'err'}`);
+    }
+  }
+  // All proxies failed — forget the cached winner so next attempt re-walks the chain.
+  clearCachedPcProxy();
+  const err = new Error('All proxies failed: ' + errors.join('; '));
+  err.allProxiesFailed = true;
+  throw err;
 }
 
 function productToPC(p) {
@@ -4189,6 +4269,25 @@ function setupValuePicks() {
 function openQuickLookup() {
   $('qlOverlay').style.display = '';
   $('qlModal').style.display = '';
+  // Pre-render the external search links so the user can jump to TCG Collector
+  // / eBay / Cardmarket without having to run the inline PriceCharting search
+  // first — important because the PC proxies are flaky.
+  const input = $('qlInput');
+  const isJP = $('qlJP') && $('qlJP').checked;
+  const seed = (input && input.value.trim()) || '';
+  if (seed) {
+    $('qlResults').innerHTML = renderExternalLinks(seed, isJP, {
+      heading: 'Jump to a marketplace, or hit Search for PriceCharting prices:',
+    });
+  } else {
+    $('qlResults').innerHTML = `
+      <div class="ql-ext-panel">
+        <div class="ql-ext-head">
+          <span class="ql-ext-title">Type a card name above</span>
+          <span class="ql-ext-sub">Press Search for live PriceCharting prices, or use the marketplace links that appear here once you start typing.</span>
+        </div>
+      </div>`;
+  }
   // Focus the input on next tick so the keyboard pops on iOS
   setTimeout(() => $('qlInput').focus(), 50);
 }
@@ -4197,10 +4296,51 @@ function closeQuickLookup() {
   $('qlModal').style.display = 'none';
 }
 
+// Build deep-links to external card-search sites so the user can fall back to
+// manual searching whenever the inline pricing fetch breaks (CORS proxies are
+// flaky). These open in a new tab.
+function buildExternalSearchLinks(query, isJP) {
+  const q = encodeURIComponent(query);
+  const qPlus = encodeURIComponent(query).replace(/%20/g, '+');
+  // TCG Collector — single-card search, switches to JP catalog when needed.
+  const tcgcUrl = isJP
+    ? `https://www.tcgcollector.com/cards/jp?cardName=${q}`
+    : `https://www.tcgcollector.com/cards/intl?cardName=${q}`;
+  return [
+    { label: 'TCG Collector',  href: tcgcUrl,                                                                  hint: 'card data + market price' },
+    { label: 'PriceCharting',  href: `https://www.pricecharting.com/search-products?type=prices&q=${qPlus}`,    hint: 'PSA 9/10 history' },
+    { label: 'eBay UK',        href: `https://www.ebay.co.uk/sch/i.html?_nkw=${qPlus}&_sacat=183454`,           hint: 'live UK listings' },
+    { label: 'eBay US',        href: `https://www.ebay.com/sch/i.html?_nkw=${qPlus}&_sacat=183454`,             hint: 'live US listings' },
+    { label: 'Cardmarket',     href: `https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${q}`, hint: 'EU singles' },
+  ];
+}
+
+function renderExternalLinks(query, isJP, opts) {
+  const links = buildExternalSearchLinks(query, isJP);
+  const heading = (opts && opts.heading) || 'Search this card on:';
+  const subline = (opts && opts.subline) || '';
+  return `
+    <div class="ql-ext-panel ${opts && opts.fallback ? 'ql-ext-panel-fallback' : ''}">
+      <div class="ql-ext-head">
+        <span class="ql-ext-title">${escapeHtml(heading)}</span>
+        ${subline ? `<span class="ql-ext-sub">${escapeHtml(subline)}</span>` : ''}
+      </div>
+      <div class="ql-ext-links">
+        ${links.map(l => `
+          <a class="ql-ext-link" href="${l.href}" target="_blank" rel="noopener">
+            <span class="ql-ext-link-label">${escapeHtml(l.label)}</span>
+            <span class="ql-ext-link-hint">${escapeHtml(l.hint)}</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+          </a>`).join('')}
+      </div>
+    </div>`;
+}
+
 async function runQuickLookup() {
   const raw = $('qlInput').value.trim();
   if (!raw) {
     $('qlStatus').textContent = 'Type a card name (e.g. "Charizard ex 125 obsidian flames")';
+    $('qlResults').innerHTML = '';
     return;
   }
   const isJP = $('qlJP').checked;
@@ -4210,14 +4350,31 @@ async function runQuickLookup() {
   try {
     const products = await pcSearchRaw(query);
     if (!products || products.length === 0) {
-      $('qlStatus').textContent = 'No matches — try a different name or number';
+      $('qlStatus').textContent = 'No matches on PriceCharting — try a different name, or use the links below';
+      $('qlResults').innerHTML = renderExternalLinks(raw, isJP, {
+        heading: 'No PriceCharting matches — try one of these instead:',
+        subline: 'TCG Collector is best for hard-to-match modern English cards',
+        fallback: true,
+      });
       return;
     }
     $('qlStatus').textContent = `${products.length} match${products.length === 1 ? '' : 'es'}`;
-    $('qlResults').innerHTML = products.slice(0, 50).map(p => renderQLCard(p)).join('');
+    // Always render external search links at the top so the user can jump out
+    // to TCG Collector / eBay / Cardmarket even when PC returned results.
+    $('qlResults').innerHTML =
+      renderExternalLinks(raw, isJP, { heading: 'Also search on:' }) +
+      products.slice(0, 50).map(p => renderQLCard(p)).join('');
   } catch (e) {
-    $('qlStatus').textContent = 'Search failed — try again in a moment';
     console.warn('Quick Lookup error:', e);
+    const failedAll = e && e.allProxiesFailed;
+    $('qlStatus').textContent = failedAll
+      ? 'Live PriceCharting fetch is down (CORS proxies all rate-limited). Use the links below to search directly.'
+      : 'Search failed — try again in a moment, or use the links below.';
+    $('qlResults').innerHTML = renderExternalLinks(raw, isJP, {
+      heading: failedAll ? 'PriceCharting proxy is down — search directly here:' : 'Or search this card here:',
+      subline: 'TCG Collector handles hard-to-match modern cards best. eBay sold listings give you live UK/US comps.',
+      fallback: true,
+    });
   }
 }
 
@@ -4265,7 +4422,35 @@ function setupQuickLookup() {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); runQuickLookup(); }
     });
+    // Live-update the external-search-links panel as the user types, but only
+    // when the result area currently shows the pre-search seed panel (no PC
+    // results yet). Otherwise typing would clobber the search results.
+    input.addEventListener('input', () => {
+      const results = $('qlResults');
+      if (!results) return;
+      // Only refresh if the only child is the ext panel (no .ql-card results below).
+      const hasResults = results.querySelector('.ql-card');
+      if (hasResults) return;
+      const isJP = $('qlJP') && $('qlJP').checked;
+      const seed = input.value.trim();
+      if (seed) {
+        results.innerHTML = renderExternalLinks(seed, isJP, {
+          heading: 'Jump to a marketplace, or hit Search for PriceCharting prices:',
+        });
+      }
+    });
   }
+  const jp = $('qlJP');
+  if (jp) jp.addEventListener('change', () => {
+    const results = $('qlResults');
+    if (!results || results.querySelector('.ql-card')) return;
+    const seed = input && input.value.trim();
+    if (seed) {
+      results.innerHTML = renderExternalLinks(seed, jp.checked, {
+        heading: 'Jump to a marketplace, or hit Search for PriceCharting prices:',
+      });
+    }
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('qlModal').style.display !== 'none') closeQuickLookup();
   });
