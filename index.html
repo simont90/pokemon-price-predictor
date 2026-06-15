@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260614v">
+  <link rel="stylesheet" href="style.css?v=20260614x">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -78,6 +78,25 @@
         </div>
       </div>
     </header>
+
+    <!-- Top-level Page Nav (Predict · Discover · Tools) -->
+    <nav class="page-nav" id="pageNav" aria-label="Section navigation">
+      <button class="page-nav-btn" data-page="predict" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+        <span>Predict</span>
+        <span class="page-nav-sub">Search · analyse a card</span>
+      </button>
+      <button class="page-nav-btn" data-page="discover" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.39 4.84L20 8l-4 3.9.94 5.5L12 14.77 7.06 17.4 8 11.9 4 8l5.61-1.16L12 2z"/></svg>
+        <span>Discover</span>
+        <span class="page-nav-sub">Underrated picks · scans</span>
+      </button>
+      <button class="page-nav-btn" data-page="tools" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        <span>Tools</span>
+        <span class="page-nav-sub">Price sync · settings</span>
+      </button>
+    </nav>
 
     <!-- Portfolio Panel (slide-in) -->
     <section class="portfolio-panel" id="portfolioPanel" style="display:none">
@@ -484,6 +503,7 @@
     </section>
 
     <!-- Search -->
+    <div class="page" id="pagePredict" data-page="predict">
     <section class="search-section">
       <div class="search-container">
         <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -1113,7 +1133,72 @@
         </details>
       </div>
 
-      <!-- Top 50 Picks: cards-by-grade likely to outperform over 5 years -->
+    </main>
+    </div><!-- /#pagePredict -->
+
+    <!-- ==== Discover Page ==== -->
+    <div class="page" id="pageDiscover" data-page="discover" style="display:none">
+      <section class="page-intro">
+        <h2 class="page-intro-title">Discover · Agentic Underrated Picks</h2>
+        <p class="page-intro-sub">Cards the model thinks the market hasn't caught up to yet — across Raw and every PSA grade. Higher signal = bigger gap between fundamentals and current price.</p>
+      </section>
+
+      <!-- Underrated Engine (NEW) -->
+      <section class="card underrated-card" id="underratedSection">
+        <div class="section-header">
+          <h2><span class="ur-icon">⚡</span> Underrated Engine</h2>
+          <p class="ur-sub">Pick a format. The engine scans 26k+ cards and ranks the most underrated for that grade — based on market vs model fair value, character pull, set age, and 5yr projected ROI.</p>
+        </div>
+
+        <div class="ur-controls">
+          <div class="ur-format-row" id="urFormatRow" role="tablist" aria-label="Format">
+            <button class="ur-fmt-btn active" data-fmt="raw"  type="button" role="tab">Raw</button>
+            <button class="ur-fmt-btn"        data-fmt="10"   type="button" role="tab">PSA 10</button>
+            <button class="ur-fmt-btn"        data-fmt="9"    type="button" role="tab">PSA 9</button>
+            <button class="ur-fmt-btn"        data-fmt="8"    type="button" role="tab">PSA 8</button>
+            <button class="ur-fmt-btn"        data-fmt="7"    type="button" role="tab">PSA 7</button>
+            <button class="ur-fmt-btn"        data-fmt="6"    type="button" role="tab">PSA 6</button>
+            <button class="ur-fmt-btn"        data-fmt="low"  type="button" role="tab">PSA 1-5</button>
+          </div>
+          <div class="ur-filter-row">
+            <div class="ur-lang-group" role="group" aria-label="Language">
+              <button class="ur-lang-btn active" data-lang="all" type="button">All</button>
+              <button class="ur-lang-btn"        data-lang="EN"  type="button">EN</button>
+              <button class="ur-lang-btn"        data-lang="JP"  type="button">JP</button>
+            </div>
+            <div class="ur-range-group">
+              <label for="urMaxPrice" class="ur-range-lbl">Max entry <span id="urMaxPriceVal">£500</span></label>
+              <input type="range" id="urMaxPrice" min="10" max="2000" step="10" value="500">
+            </div>
+            <button class="ur-run-btn" id="urRunBtn" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+              Run scan
+            </button>
+          </div>
+        </div>
+
+        <div class="ur-status" id="urStatus">Pick a format and hit <strong>Run scan</strong>. Raw scan is instant; PSA grades require a PSA 10 anchor and may show fewer matches if live prices haven't synced yet.</div>
+        <div class="ur-summary" id="urSummary" style="display:none"></div>
+        <div class="ur-list" id="urList"></div>
+        <p class="ur-disclaimer">Underrated Score = market discount × character premium × set-age maturity × 5yr ROI projection. Grading cost (~£25) is factored in for PSA grades. Not financial advice.</p>
+      </section>
+
+      <!-- (valuePicksSection and top50Section get moved here on init) -->
+      <div id="discoverMount"></div>
+    </div><!-- /#pageDiscover -->
+
+    <!-- ==== Tools Page ==== -->
+    <div class="page" id="pageTools" data-page="tools" style="display:none">
+      <section class="page-intro">
+        <h2 class="page-intro-title">Tools</h2>
+        <p class="page-intro-sub">Refresh prices and inspect how the model works under the hood.</p>
+      </section>
+      <!-- (priceSyncSection and how-card get moved here on init) -->
+      <div id="toolsMount"></div>
+    </div><!-- /#pageTools -->
+
+    <!-- Vestigial main close to keep DOM well-formed. Hidden Top 50 placeholder below is moved at init. -->
+    <main style="display:none">
       <section class="card top50-card" id="top50Section">
         <div class="top50-header">
           <div>
@@ -1166,6 +1251,64 @@
 
     <footer class="footer"><p>Live prices via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> + <a href="https://tcgdex.net" target="_blank">TCGdex</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
   </div>
+
+  <!-- Ask the Predictor — floating AI chatbot -->
+  <button class="ai-chat-btn" id="aiChatBtn" title="Ask the Predictor — AI assistant for your collection" aria-label="Open AI assistant">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      <circle cx="8.5" cy="10.5" r="0.9" fill="currentColor" stroke="none"/>
+      <circle cx="12"   cy="10.5" r="0.9" fill="currentColor" stroke="none"/>
+      <circle cx="15.5" cy="10.5" r="0.9" fill="currentColor" stroke="none"/>
+    </svg>
+    <span class="fab-label">Ask</span>
+  </button>
+
+  <aside class="ai-chat-panel" id="aiChatPanel" style="display:none" role="dialog" aria-modal="false" aria-labelledby="aiChatTitle">
+    <header class="ai-chat-header">
+      <div class="ai-chat-title-block">
+        <h3 id="aiChatTitle">Ask the Predictor</h3>
+        <span class="ai-chat-sub">Sees your portfolio, wishlist &amp; market in real time</span>
+      </div>
+      <div class="ai-chat-header-actions">
+        <button class="ai-chat-icon-btn" id="aiChatSettings" title="Settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="ai-chat-icon-btn" id="aiChatClear" title="Clear chat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>
+        <button class="ai-chat-icon-btn ai-chat-close-btn" id="aiChatClose" title="Close">✕</button>
+      </div>
+    </header>
+
+    <div class="ai-chat-settings" id="aiChatSettingsPanel" style="display:none">
+      <label class="ai-chat-field">
+        <span>Provider</span>
+        <select id="aiChatProvider">
+          <option value="perplexity">Perplexity Sonar</option>
+          <option value="openai">OpenAI (GPT-4o mini)</option>
+        </select>
+      </label>
+      <label class="ai-chat-field">
+        <span>API key</span>
+        <input id="aiChatKey" type="password" placeholder="Paste your API key…" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="ai-chat-settings-actions">
+        <button class="ai-chat-save" id="aiChatSaveKey">Save</button>
+        <a class="ai-chat-help" id="aiChatKeyHelp" href="https://www.perplexity.ai/account/api" target="_blank" rel="noopener">Get a key at perplexity.ai/account/api</a>
+      </div>
+      <p class="ai-chat-privacy">Your key never leaves your browser. Requests go straight from your device to the provider.</p>
+    </div>
+
+    <div class="ai-chat-messages" id="aiChatMessages"></div>
+
+    <form class="ai-chat-form" id="aiChatForm">
+      <textarea id="aiChatInput" rows="1" placeholder="Ask about your portfolio, market timing, what's underrated…"></textarea>
+      <button class="ai-chat-send" type="submit" title="Send (Enter)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </form>
+  </aside>
+
   <!-- Floating Filter Button -->
   <button class="filter-fab" id="filterFab" title="Card Screener">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
@@ -1367,6 +1510,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260614v"></script>
+  <script src="app.js?v=20260614x"></script>
 </body>
 </html>

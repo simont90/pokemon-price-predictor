@@ -391,6 +391,9 @@ async function init() {
   setupPriceSync();
   setupAcquisition();
   setupPriceInsight();
+  setupAiChat();
+  setupPageNav();
+  setupUnderrated();
   setupPWANav();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
@@ -7951,4 +7954,906 @@ function setupPriceInsight() {
   };
   wireLoadAll('portfolioLoadAllGraphs', 'portfolioList', 'portfolioLoadAllStatus');
   wireLoadAll('wishlistLoadAllGraphs',  'wishlistList',  'wishlistLoadAllStatus');
+}
+
+// =============================================================
+// Ask-the-Predictor — in-app AI chatbot
+// =============================================================
+// A floating "Ask AI" widget that knows about your portfolio,
+// wishlist, watchlist and the cards you've recently viewed, and
+// can answer freeform questions about the market, what's
+// underrated, what to grade, what to sell, etc.
+//
+// Key choices:
+//   - Your API key never leaves the browser. We POST directly
+//     to your chosen provider (Perplexity Sonar by default).
+//   - Each turn we rebuild a fresh context summary from your
+//     local data so answers reflect the latest state.
+//   - We also pre-rank candidate picks with our existing scanner
+//     so the bot has solid data to reason over when asked.
+
+const AI_KEY_STORAGE   = 'pkm-ai-chat-key-v1';
+const AI_PROV_STORAGE  = 'pkm-ai-chat-provider-v1';
+const AI_HIST_STORAGE  = 'pkm-ai-chat-history-v1';
+const AI_HISTORY_MAX   = 20;
+
+const AI_PROVIDERS = {
+  perplexity: {
+    label: 'Perplexity Sonar',
+    endpoint: 'https://api.perplexity.ai/chat/completions',
+    model: 'sonar',
+    keyHelp: 'Get a key at perplexity.ai/account/api',
+    keyUrl: 'https://www.perplexity.ai/account/api',
+  },
+  openai: {
+    label: 'OpenAI (GPT-4o mini)',
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4o-mini',
+    keyHelp: 'Get a key at platform.openai.com/api-keys',
+    keyUrl: 'https://platform.openai.com/api-keys',
+  },
+};
+
+let aiChatHistory = [];
+try { aiChatHistory = JSON.parse(localStorage.getItem(AI_HIST_STORAGE) || '[]') || []; }
+catch { aiChatHistory = []; }
+
+function aiSaveHistory() {
+  try { localStorage.setItem(AI_HIST_STORAGE, JSON.stringify(aiChatHistory.slice(-AI_HISTORY_MAX))); }
+  catch {}
+}
+function aiGetProvider() {
+  return localStorage.getItem(AI_PROV_STORAGE) || 'perplexity';
+}
+function aiSetProvider(p) {
+  if (AI_PROVIDERS[p]) localStorage.setItem(AI_PROV_STORAGE, p);
+}
+function aiGetKey() {
+  return localStorage.getItem(AI_KEY_STORAGE) || '';
+}
+function aiSetKey(k) {
+  if (k && k.trim()) localStorage.setItem(AI_KEY_STORAGE, k.trim());
+  else localStorage.removeItem(AI_KEY_STORAGE);
+}
+
+// ---- Context builder ----
+// We assemble a compact JSON-ish summary of the user's collection
+// and the market so the LLM has fresh data on every turn. We keep
+// it short — under ~3k tokens — so each call stays cheap.
+function aiBuildContext() {
+  const ctx = { now: new Date().toISOString(), fx_usd_per_gbp: (typeof fxRate === 'number' ? fxRate : null) };
+
+  // Portfolio summary + top 10 cards by current value
+  try {
+    if (Array.isArray(portfolio) && portfolio.length) {
+      let totalGBP = 0, totalCost = 0, hasCost = 0;
+      const items = portfolio.map(p => {
+        const card = cardData && cardData.cards.find(c => c.i === p.id);
+        const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(p.id) : null;
+        const usd = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
+        const gbp = usdToGbp(usd);
+        totalGBP += gbp;
+        const acqCost = (typeof getAcqCostBasisGBP === 'function') ? getAcqCostBasisGBP(p.id) : 0;
+        if (acqCost > 0) { totalCost += acqCost; hasCost++; }
+        return { id: p.id, name: p.name, set: p.set, price_gbp: +gbp.toFixed(2), cost_gbp: acqCost > 0 ? +acqCost.toFixed(2) : null };
+      });
+      items.sort((a, b) => b.price_gbp - a.price_gbp);
+      ctx.portfolio = {
+        count: portfolio.length,
+        total_value_gbp: +totalGBP.toFixed(2),
+        total_cost_gbp: hasCost ? +totalCost.toFixed(2) : null,
+        pl_gbp: hasCost ? +(totalGBP - totalCost).toFixed(2) : null,
+        top_cards: items.slice(0, 10),
+      };
+    }
+  } catch (e) { console.warn('ctx portfolio', e); }
+
+  // Wishlist
+  try {
+    if (Array.isArray(wishlist) && wishlist.length) {
+      ctx.wishlist = wishlist.slice(0, 10).map(w => {
+        const card = cardData && cardData.cards.find(c => c.i === w.id);
+        const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(w.id) : null;
+        const usd = cached ? (cached.pcUngraded || cached.market || cached.mid || (card ? card.p : 0)) : (card ? card.p : 0);
+        return {
+          id: w.id, name: w.name, set: w.set, lang: w.lang || 'EN',
+          current_gbp: +usdToGbp(usd).toFixed(2),
+          target_gbp: w.targetGBP || null,
+        };
+      });
+    }
+  } catch (e) { console.warn('ctx wishlist', e); }
+
+  // Watchlist
+  try {
+    if (Array.isArray(watchlist) && watchlist.length) {
+      ctx.watchlist = watchlist.slice(0, 10).map(w => ({ id: w.id, name: w.name, added: w.addedDate }));
+    }
+  } catch (e) { console.warn('ctx watchlist', e); }
+
+  // Selected card snapshot
+  try {
+    if (selectedCard) {
+      const c = selectedCard;
+      const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(c.i) : null;
+      const usd = cached ? (cached.pcUngraded || cached.market || cached.mid || c.p) : c.p;
+      const anchor = (typeof getPsa10Anchor === 'function') ? getPsa10Anchor(c) : { usd: 0, source: 'none' };
+      ctx.selected_card = {
+        id: c.i, name: c.n, set: c.s, number: c.cn, rarity: c.rc, lang: c.lang || 'EN',
+        raw_gbp: +usdToGbp(usd).toFixed(2),
+        psa10_gbp: anchor.usd ? +usdToGbp(anchor.usd).toFixed(2) : null,
+        psa10_source: anchor.source,
+      };
+    }
+  } catch (e) { console.warn('ctx selected', e); }
+
+  // Top value picks — pre-ranked so the bot can answer
+  // "what's underrated" without us building a separate page
+  try {
+    if (typeof scanValuePicks === 'function') {
+      const top = scanValuePicks('all').slice(0, 8).map(p => ({
+        id: p.card.i, name: p.card.n, set: p.card.s,
+        raw_gbp: +usdToGbp(p.marketPrice).toFixed(2),
+        target_gbp: +usdToGbp(p.targetPrice).toFixed(2),
+        upside_pct: +p.upside,
+        reasons: p.reasons,
+        signal: p.signal,
+      }));
+      if (top.length) ctx.value_picks = top;
+    }
+  } catch (e) { console.warn('ctx value_picks', e); }
+
+  return ctx;
+}
+
+function aiSystemPrompt(ctx) {
+  return `You are "Ask the Predictor", an expert Pokemon TCG market analyst built into the user's collection-tracking app.
+
+ROLE: Give crisp, data-driven advice on buying, selling, grading and timing the Pokemon TCG market. Be opinionated but honest about uncertainty. Optimise for actionable signal, not generic advice.
+
+USER CONTEXT (always reflects their latest local state — do not ask for it):
+\`\`\`json
+${JSON.stringify(ctx, null, 2)}
+\`\`\`
+
+PRINCIPLES:
+- Prices are in GBP. The user is UK-based. Mention import VAT/fees when discussing US/JP purchases.
+- "Underrated" means strong fundamentals (rarity, character demand, set age) at a depressed current price.
+- "Graded upside" = PSA 10 / raw multiplier. Anything >2.5x is interesting; >4x is exceptional.
+- When suggesting picks, prefer cards from value_picks above where relevant — they're pre-screened.
+- For sell/hold/grade questions, balance: gem rate, grading cost (~£25), opportunity cost.
+- Keep replies tight: 3-6 short paragraphs or a focused table. No filler.
+- Use **bold** sparingly for emphasis. Bullet lists are fine. Never invent prices not in context.
+- If asked something not about Pokemon TCG or the user's data, gently redirect.`;
+}
+
+// ---- LLM client (streaming) ----
+async function aiStreamChat({ provider, key, messages, onToken, onDone, onError }) {
+  const cfg = AI_PROVIDERS[provider];
+  if (!cfg) { onError('Unknown provider'); return; }
+  const body = {
+    model: cfg.model,
+    messages,
+    stream: true,
+    temperature: 0.4,
+  };
+  let res;
+  try {
+    res = await fetch(cfg.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + key,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    onError('Network error: ' + (e.message || e));
+    return;
+  }
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.text()).slice(0, 400); } catch {}
+    onError(`${cfg.label} returned ${res.status}. ${detail}`);
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let full = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') { onDone(full); return; }
+        try {
+          const j = JSON.parse(data);
+          const delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+          if (delta) { full += delta; onToken(delta); }
+        } catch {}
+      }
+    }
+    onDone(full);
+  } catch (e) {
+    onError('Stream error: ' + (e.message || e));
+  }
+}
+
+// ---- Markdown lite ----
+// Just enough to keep replies readable. We escape first, then add
+// **bold**, `code`, links, and turn blank lines into paragraphs.
+function aiMdRender(text) {
+  const escMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
+  let s = String(text || '').replace(/[&<>]/g, ch => escMap[ch]);
+  // Code blocks (triple backtick)
+  s = s.replace(/```([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`);
+  // Inline code
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Bold **text**
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Links [text](url)
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Lists — lines starting with "- " or "* "
+  s = s.replace(/(^|\n)([\-\*] .+(\n[\-\*] .+)*)/g, (_, pre, block) => {
+    const items = block.split(/\n/).map(line => '<li>' + line.replace(/^[\-\*] /, '') + '</li>').join('');
+    return pre + '<ul>' + items + '</ul>';
+  });
+  // Paragraphs — double newline
+  s = s.split(/\n{2,}/).map(p => p.includes('<ul>') || p.includes('<pre>') ? p : '<p>' + p.replace(/\n/g, '<br>') + '</p>').join('');
+  return s;
+}
+
+// ---- UI ----
+function aiRenderHistory() {
+  const list = document.getElementById('aiChatMessages');
+  if (!list) return;
+  if (aiChatHistory.length === 0) {
+    list.innerHTML = `
+      <div class="ai-welcome">
+        <div class="ai-welcome-title">Ask the Predictor</div>
+        <div class="ai-welcome-sub">An AI analyst with live access to your collection, wishlist, watchlist and the market.</div>
+        <div class="ai-welcome-suggest">Try one of these to get started:</div>
+        <div class="ai-quick-grid">
+          <button class="ai-quick" data-prompt="What are the most underrated cards I should look at right now — both raw and graded — with high growth potential?">What's underrated right now?</button>
+          <button class="ai-quick" data-prompt="Analyse my portfolio. Which cards should I consider selling, holding or grading?">Analyse my portfolio</button>
+          <button class="ai-quick" data-prompt="Which wishlist cards are closest to a good buying window? Should I lower or raise any of my targets?">Wishlist buy timing</button>
+          <button class="ai-quick" data-prompt="What's the smartest £100 spend in the modern era this week?">Best £100 spend this week</button>
+        </div>
+      </div>`;
+    return;
+  }
+  list.innerHTML = aiChatHistory.map(m => {
+    if (m.role === 'user') {
+      const safe = String(m.content || '').replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]);
+      return `<div class="ai-msg ai-msg-user"><div class="ai-msg-content">${safe.replace(/\n/g, '<br>')}</div></div>`;
+    }
+    return `<div class="ai-msg ai-msg-bot"><div class="ai-msg-content">${aiMdRender(m.content)}</div></div>`;
+  }).join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+function aiAppendStreamMessage() {
+  const list = document.getElementById('aiChatMessages');
+  const div = document.createElement('div');
+  div.className = 'ai-msg ai-msg-bot';
+  div.innerHTML = '<div class="ai-msg-content"><span class="ai-cursor"></span></div>';
+  list.appendChild(div);
+  list.scrollTop = list.scrollHeight;
+  return div.querySelector('.ai-msg-content');
+}
+
+function aiToggleSettings(show) {
+  const s = document.getElementById('aiChatSettingsPanel');
+  if (!s) return;
+  s.style.display = (show === undefined ? (s.style.display === 'none' ? 'block' : 'none') : (show ? 'block' : 'none'));
+}
+
+function aiOpenPanel() {
+  const panel = document.getElementById('aiChatPanel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  setTimeout(() => panel.classList.add('open'), 10);
+  aiRenderHistory();
+  // First-time? Force settings open
+  if (!aiGetKey()) aiToggleSettings(true);
+  const input = document.getElementById('aiChatInput');
+  if (input) setTimeout(() => input.focus(), 200);
+}
+function aiClosePanel() {
+  const panel = document.getElementById('aiChatPanel');
+  if (!panel) return;
+  panel.classList.remove('open');
+  setTimeout(() => { panel.style.display = 'none'; }, 200);
+}
+
+async function aiSubmit(userText) {
+  const text = (userText || '').trim();
+  if (!text) return;
+  const key = aiGetKey();
+  if (!key) {
+    aiToggleSettings(true);
+    const k = document.getElementById('aiChatKey');
+    if (k) k.focus();
+    return;
+  }
+
+  aiChatHistory.push({ role: 'user', content: text });
+  aiSaveHistory();
+  aiRenderHistory();
+
+  const ctx = aiBuildContext();
+  const sys = aiSystemPrompt(ctx);
+  // Keep only the recent conversation (last 10 turns) to control cost
+  const recent = aiChatHistory.slice(-10);
+  const messages = [
+    { role: 'system', content: sys },
+    ...recent.map(m => ({ role: m.role, content: m.content })),
+  ];
+
+  const target = aiAppendStreamMessage();
+  let full = '';
+  await aiStreamChat({
+    provider: aiGetProvider(),
+    key,
+    messages,
+    onToken: (tok) => {
+      full += tok;
+      target.innerHTML = aiMdRender(full);
+      target.parentElement.parentElement.scrollTop = target.parentElement.parentElement.scrollHeight;
+    },
+    onDone: (whole) => {
+      aiChatHistory.push({ role: 'assistant', content: whole });
+      aiSaveHistory();
+      target.innerHTML = aiMdRender(whole);
+    },
+    onError: (err) => {
+      target.innerHTML = `<p style="color:var(--red)">${aiMdRender('**Error:** ' + err)}</p>`;
+    },
+  });
+}
+
+function aiSetupQuickPrompts() {
+  document.body.addEventListener('click', (e) => {
+    const q = e.target.closest && e.target.closest('.ai-quick');
+    if (!q) return;
+    e.preventDefault();
+    const prompt = q.dataset.prompt || q.textContent;
+    aiSubmit(prompt);
+  });
+}
+
+function setupAiChat() {
+  const btn = document.getElementById('aiChatBtn');
+  const close = document.getElementById('aiChatClose');
+  const settingsBtn = document.getElementById('aiChatSettings');
+  const clearBtn = document.getElementById('aiChatClear');
+  const saveBtn = document.getElementById('aiChatSaveKey');
+  const provSel = document.getElementById('aiChatProvider');
+  const keyInput = document.getElementById('aiChatKey');
+  const helpLink = document.getElementById('aiChatKeyHelp');
+  const form = document.getElementById('aiChatForm');
+  const input = document.getElementById('aiChatInput');
+  if (!btn || !form) return;
+
+  btn.addEventListener('click', aiOpenPanel);
+  close && close.addEventListener('click', aiClosePanel);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('aiChatPanel').classList.contains('open')) aiClosePanel();
+  });
+  settingsBtn && settingsBtn.addEventListener('click', () => aiToggleSettings());
+  clearBtn && clearBtn.addEventListener('click', () => {
+    if (!confirm('Clear chat history?')) return;
+    aiChatHistory = [];
+    aiSaveHistory();
+    aiRenderHistory();
+  });
+
+  // Initialise provider + key form
+  function refreshProviderUI() {
+    const p = aiGetProvider();
+    if (provSel) provSel.value = p;
+    if (keyInput) keyInput.value = aiGetKey();
+    if (helpLink) {
+      const cfg = AI_PROVIDERS[p];
+      helpLink.textContent = cfg.keyHelp;
+      helpLink.href = cfg.keyUrl;
+    }
+  }
+  provSel && provSel.addEventListener('change', () => {
+    aiSetProvider(provSel.value);
+    refreshProviderUI();
+  });
+  saveBtn && saveBtn.addEventListener('click', () => {
+    aiSetKey(keyInput.value);
+    aiToggleSettings(false);
+  });
+  refreshProviderUI();
+
+  // Auto-grow textarea
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(140, input.scrollHeight) + 'px';
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const v = input.value;
+      input.value = '';
+      input.style.height = 'auto';
+      aiSubmit(v);
+    }
+  });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = input.value;
+    input.value = '';
+    input.style.height = 'auto';
+    aiSubmit(v);
+  });
+
+  aiSetupQuickPrompts();
+}
+
+// =============================================================
+// Page Nav — top-level routing (Predict · Discover · Tools)
+// =============================================================
+// On init we relocate a handful of sections out of the legacy single-page
+// layout into dedicated page containers so each top-level tab feels like
+// its own page without us having to rewrite the entire DOM.
+
+function setupPageNav() {
+  // --- Relocate existing sections into their target pages -----------
+  const discoverMount = document.getElementById('discoverMount');
+  const toolsMount = document.getElementById('toolsMount');
+  if (discoverMount) {
+    // Order: existing Top 10 Value Picks, then Top 50 by Grade.
+    const vp = document.getElementById('valuePicksSection');
+    const t50 = document.getElementById('top50Section');
+    if (vp) discoverMount.appendChild(vp);
+    if (t50) discoverMount.appendChild(t50);
+  }
+  if (toolsMount) {
+    const ps = document.getElementById('priceSyncSection');
+    const how = document.querySelector('.inputs-column .how-card') || document.querySelector('details.how-card');
+    if (ps) toolsMount.appendChild(ps);
+    if (how) toolsMount.appendChild(how);
+  }
+
+  // --- Wire the tab buttons + hash routing --------------------------
+  const buttons = Array.from(document.querySelectorAll('.page-nav-btn'));
+  const pages = {
+    predict: document.getElementById('pagePredict'),
+    discover: document.getElementById('pageDiscover'),
+    tools: document.getElementById('pageTools'),
+  };
+
+  function go(page) {
+    if (!pages[page]) page = 'predict';
+    Object.entries(pages).forEach(([k, el]) => { if (el) el.style.display = (k === page) ? '' : 'none'; });
+    buttons.forEach(b => b.classList.toggle('active', b.dataset.page === page));
+    // Hide the floating Filter FAB outside the Predict page — the screener
+    // only makes sense on Predict (acts on the search index).
+    const fab = document.getElementById('filterFab');
+    if (fab) fab.style.display = (page === 'predict') ? '' : 'none';
+    // When the user lands on Discover for the first time and the Underrated
+    // engine has never been run, auto-kick a Raw scan so they see something.
+    if (page === 'discover' && !window._urRanOnce) {
+      window._urRanOnce = true;
+      setTimeout(() => { try { urRunScan(); } catch (e) { /* defer until data ready */ } }, 100);
+    }
+    // Persist + sync hash
+    try { if (location.hash.replace('#', '') !== page) history.replaceState(null, '', '#' + page); } catch (e) {}
+    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  }
+
+  buttons.forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
+  window.addEventListener('hashchange', () => go((location.hash || '#predict').replace('#', '')));
+
+  // Initial route — default to Predict.
+  const initial = (location.hash || '#predict').replace('#', '');
+  go(['predict', 'discover', 'tools'].includes(initial) ? initial : 'predict');
+}
+
+// =============================================================
+// Underrated Engine — agentic ranker across Raw + PSA 1-10
+// =============================================================
+// Distinct from the existing Value Picks (which scores Raw only against the
+// modelled fair value) and the Top 50 by Grade (which optimises 5yr ROI).
+// The Underrated Engine answers a specific question:
+//
+//   "For a given format (Raw, or PSA grade X), which cards are most
+//    underrated right now — i.e. trading well below where the fundamentals
+//    say they should be, with momentum + setup supporting a re-rating?"
+//
+// Composite score per (card, format):
+//   underratedScore = discountFactor       // how far below fair value
+//                   * characterPremium     // popularity tailwind
+//                   * setAgeFactor         // mature sets tighten supply
+//                   * rarityFactor         // chase pull
+//                   * roiFactor            // 5yr projected ROI (annualised)
+//                   * liquidityFactor      // we have data confidence
+//
+// Grading cost (~£25 = $30) is subtracted from PSA entry prices so the
+// "would I actually buy this graded?" maths is honest.
+
+const UR_GRADING_COST_USD = 30;
+const UR_PAGE_SIZE = 30;
+
+let _urFmt = 'raw';
+let _urLang = 'all';
+let _urMaxGBP = 500;
+let _urLastResults = [];
+
+function setupUnderrated() {
+  const fmtRow = document.getElementById('urFormatRow');
+  if (fmtRow) {
+    fmtRow.addEventListener('click', (e) => {
+      const btn = e.target.closest('.ur-fmt-btn');
+      if (!btn) return;
+      fmtRow.querySelectorAll('.ur-fmt-btn').forEach(b => b.classList.toggle('active', b === btn));
+      _urFmt = btn.dataset.fmt;
+      urRunScan();
+    });
+  }
+  document.querySelectorAll('.ur-lang-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.ur-lang-btn').forEach(x => x.classList.toggle('active', x === b));
+      _urLang = b.dataset.lang;
+      urRunScan();
+    });
+  });
+  const maxInput = document.getElementById('urMaxPrice');
+  const maxVal = document.getElementById('urMaxPriceVal');
+  if (maxInput) {
+    maxInput.addEventListener('input', () => {
+      _urMaxGBP = parseInt(maxInput.value, 10) || 500;
+      if (maxVal) maxVal.textContent = '£' + _urMaxGBP.toLocaleString('en-GB');
+    });
+    maxInput.addEventListener('change', () => urRunScan());
+  }
+  const runBtn = document.getElementById('urRunBtn');
+  if (runBtn) runBtn.addEventListener('click', () => urRunScan());
+}
+
+// USD→GBP for the max-price filter. We use the live fxRate when available.
+function _urGbpFromUsd(usd) {
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  return usd * fx;
+}
+
+// Convert format key to grade number or 'raw' / 'low'.
+function _urFmtToGrades(fmt) {
+  if (fmt === 'raw') return null; // raw handled separately
+  if (fmt === 'low') return [5, 4, 3, 2, 1]; // PSA 1-5 — pick best
+  const g = parseInt(fmt, 10);
+  return [g];
+}
+
+function urRunScan() {
+  const list = document.getElementById('urList');
+  const status = document.getElementById('urStatus');
+  const summary = document.getElementById('urSummary');
+  const runBtn = document.getElementById('urRunBtn');
+  if (!list || !cardData || !cardData.cards) return;
+  if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Scanning…'; }
+  status.innerHTML = `Scanning <strong>${cardData.cards.length.toLocaleString()}</strong> cards for underrated ${_urFmt === 'raw' ? 'raw' : _urFmt === 'low' ? 'PSA 1-5' : 'PSA ' + _urFmt} opportunities…`;
+  list.innerHTML = '';
+  summary.style.display = 'none';
+
+  // Defer one frame so the status repaints before we churn through 26k cards.
+  requestAnimationFrame(() => {
+    const results = (_urFmt === 'raw') ? urScanRaw() : urScanGrade(_urFmt);
+    _urLastResults = results;
+    urRender(results);
+    if (runBtn) {
+      runBtn.disabled = false;
+      runBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> Run scan`;
+    }
+  });
+}
+
+// --- RAW scanner --------------------------------------------------
+//
+// Fair value is computed by *calibrating* the desirability against the
+// market price (same trick scanValuePicks uses), then nudging it up by a
+// modest character premium. This avoids the trap of the auto-filled
+// desirability returning "this Pikachu V is worth $500" when the market
+// clearly says $3 (the model just hasn't learned about promo distribution).
+//
+// Discount is capped at 2.5× so we never claim 100× upside on Celebrations
+// promos — those gaps are real-world supply quirks, not opportunities.
+function urScanRaw() {
+  const out = [];
+  for (const c of cardData.cards) {
+    if (_urLang !== 'all' && (c.lang || 'EN') !== _urLang) continue;
+    const market = c.p;
+    if (!market || market < 5) continue; // skip bulk
+    if (_urGbpFromUsd(market) > _urMaxGBP) continue;
+
+    let pullCost = 7.65;
+    if (setsData && setsData[c.sc]) {
+      const set = setsData[c.sc];
+      const rarity = set.rarities?.[c.rc];
+      if (rarity && rarity.pullRate > 0) {
+        const packsPerHit = Math.round(1 / rarity.pullRate);
+        pullCost = (packsPerHit * rarity.count) / 100;
+      }
+    }
+
+    // --- Calibrated fair value (market-implied desirability + char boost) ---
+    let impliedDes;
+    try {
+      const sf = Math.pow(PULL_MULT, pullCost);
+      impliedDes = Math.log(market / (BASE * sf)) / Math.log(DES_MULT);
+    } catch (e) { continue; }
+    if (!isFinite(impliedDes) || impliedDes < 1) continue;
+
+    const charMult = getCharacterMultiplier(c.n);
+    const charBoost = Math.min(0.8, (charMult - 1) * 1.2);
+    const modelDes = Math.min(10, impliedDes + charBoost);
+    let fairUsd = 0;
+    try { fairUsd = predictPrice(pullCost, modelDes).priceUSD || 0; } catch (e) { continue; }
+    if (fairUsd <= market * 1.10) continue; // need at least 10% upside
+
+    // Display discount capped at 2.5× to avoid "+1800%" stupidity. Score
+    // uses log-discount so big underpricings count without saturating.
+    const rawDiscount = fairUsd / market;
+    const discount = Math.min(rawDiscount, 2.5);
+    const logDiscount = Math.log(rawDiscount); // 0 at parity, grows slowly
+
+    const rarityRate = (RARITY_RATES[c.rc] || RARITY_RATES['']).base;
+    if (rarityRate < 0.05) continue; // commons rarely move
+
+    const ageMonths = getSetAgeMonths(c.sc);
+    const ageFactor = ageMonths > 48 ? 1.30 : ageMonths > 24 ? 1.12 : ageMonths < 6 ? 0.85 : 1.0;
+
+    // 5yr projection — use PSA 9 trajectory deflated back to raw growth rate
+    let yr5Usd = market;
+    try {
+      const proj = projectGradePrice(c, 9, market, 5) / (GRADE_GROWTH_PREMIUM[9] || 1.05);
+      yr5Usd = isFinite(proj) ? proj : market;
+    } catch (e) {}
+    const roi5 = Math.max(0, (yr5Usd - market) / market);
+    const roiFactor = 1 + Math.min(roi5, 2.5) * 0.6;
+
+    // PSA 10 grading lever — if we have an anchor and grading yields a good
+    // return, that's a strong underrated signal for the raw copy.
+    let gradeLever = 1.0;
+    let gradeRoi = 0;
+    if (c.p10 && c.p10 > 0) {
+      gradeRoi = (c.p10 - market - UR_GRADING_COST_USD) / (market + UR_GRADING_COST_USD);
+      gradeLever = 1 + Math.max(0, Math.min(gradeRoi, 4)) * 0.4;
+    }
+
+    // Composite signal — log-discount keeps things in a sensible range.
+    const score = (1 + logDiscount * 2.5)
+                * Math.max(1, charMult)
+                * ageFactor
+                * (1 + rarityRate * 1.5)
+                * roiFactor
+                * gradeLever;
+
+    const reasons = urReasonsRaw(c, { discount, charMult, ageMonths, rarityRate, roi5, gradeRoi });
+
+    out.push({
+      card: c,
+      format: 'Raw',
+      marketUsd: market,
+      fairUsd: market * discount, // capped fair (display)
+      effectiveUsd: market,
+      upsidePct: (discount - 1) * 100,
+      roi5Pct: roi5 * 100,
+      yr5Usd,
+      score,
+      gradeRoi,
+      reasons,
+      signal: rawDiscount >= 1.8 || gradeRoi >= 1.5 ? 'STRONG BUY' : 'BUY',
+    });
+  }
+  out.sort((a, b) => b.score - a.score);
+  return urDiversifyAndCap(out);
+}
+
+// --- PSA grade scanner --------------------------------------------
+function urScanGrade(fmt) {
+  const grades = _urFmtToGrades(fmt);
+  if (!grades) return [];
+  const out = [];
+  for (const c of cardData.cards) {
+    if (_urLang !== 'all' && (c.lang || 'EN') !== _urLang) continue;
+    const anchor = getPsa10Anchor(c);
+    const psa10 = anchor && anchor.usd;
+    if (!psa10 || psa10 <= 0) continue;
+
+    // Pick the best grade in the requested band — for "low" we pick whichever
+    // of PSA 1-5 has the strongest underrated score.
+    let best = null;
+    for (const g of grades) {
+      const todayUsd = estimateGradePrice(c, g, psa10);
+      if (todayUsd < 4) continue;
+      const effectiveUsd = todayUsd + UR_GRADING_COST_USD; // honest cost-of-acquisition
+      if (_urGbpFromUsd(effectiveUsd) > _urMaxGBP) continue;
+
+      const yr5Usd = projectGradePrice(c, g, todayUsd, 5);
+      if (!yr5Usd || yr5Usd <= effectiveUsd) continue;
+      const roi5 = (yr5Usd - effectiveUsd) / effectiveUsd;
+
+      // "Fair value" for a graded copy = projected 1yr price (proxy for
+      // where the market should re-rate to given fundamentals).
+      const yr1Usd = projectGradePrice(c, g, todayUsd, 1);
+      const fairUsdRaw = Math.max(yr1Usd, todayUsd);
+      if (fairUsdRaw <= effectiveUsd * 1.05) continue; // need at least 5% near-term upside
+
+      // Cap PSA discount at 2.0× — graded markets are more efficient than raw.
+      const discount = Math.min(fairUsdRaw / effectiveUsd, 2.0);
+      const fairUsd = effectiveUsd * discount;
+      const charMult = getCharacterMultiplier(c.n);
+      const rarityRate = (RARITY_RATES[c.rc] || RARITY_RATES['']).base;
+      const ageMonths = getSetAgeMonths(c.sc);
+      const ageFactor = ageMonths > 48 ? 1.30 : ageMonths > 24 ? 1.12 : ageMonths < 6 ? 0.85 : 1.0;
+      const roiFactor = 1 + Math.max(0, Math.min(roi5, 3)) * 0.7;
+      // PSA grade trust: PSA 10 is the most liquid, PSA 6 is thin.
+      const gradeLiquidity = g >= 9 ? 1.15 : g >= 8 ? 1.05 : g >= 7 ? 0.95 : 0.85;
+
+      const score = discount * Math.max(1, charMult) * ageFactor * (1 + rarityRate) * roiFactor * gradeLiquidity;
+
+      const cand = {
+        card: c,
+        grade: g,
+        format: 'PSA ' + g,
+        marketUsd: todayUsd,
+        effectiveUsd,
+        fairUsd,
+        yr5Usd,
+        roi5Pct: Math.min(roi5, 5) * 100,
+        upsidePct: (discount - 1) * 100,
+        score,
+        reasons: urReasonsGrade(c, { discount, charMult, ageMonths, rarityRate, roi5: Math.min(roi5, 5), g, anchor }),
+        signal: roi5 > 1.5 ? 'STRONG BUY' : 'BUY',
+      };
+      if (!best || cand.score > best.score) best = cand;
+    }
+    if (best) out.push(best);
+  }
+  out.sort((a, b) => b.score - a.score);
+  return urDiversifyAndCap(out);
+}
+
+// Diversify so the list isn't 30× Charizard.
+function urDiversifyAndCap(scored) {
+  const result = [];
+  const charCount = {};
+  for (const p of scored) {
+    const base = p.card.n
+      .replace(/ ex$/i, '').replace(/ V$/i, '').replace(/ VMAX$/i, '').replace(/ VSTAR$/i, '')
+      .replace(/ GX$/i, '').replace(/ EX$/i, '').replace(/ \(JP\)$/i, '').trim().toLowerCase();
+    charCount[base] = (charCount[base] || 0) + 1;
+    if (charCount[base] <= 3) result.push(p);
+    if (result.length >= UR_PAGE_SIZE) break;
+  }
+  return result;
+}
+
+function urReasonsRaw(c, ctx) {
+  const r = [];
+  const pct = ((ctx.discount - 1) * 100).toFixed(0);
+  if (ctx.discount >= 2.0) r.push(`<strong>+${pct}% vs fair value</strong>`);
+  else r.push(`+${pct}% vs fair value`);
+  if (ctx.gradeRoi >= 1.5) r.push(`<strong>PSA 10 lever ${(1 + ctx.gradeRoi).toFixed(1)}×</strong>`);
+  else if (ctx.gradeRoi >= 0.5) r.push(`Grading ROI +${(ctx.gradeRoi * 100).toFixed(0)}%`);
+  if (ctx.charMult >= 1.4) r.push('Fan favourite');
+  else if (ctx.charMult >= 1.2) r.push('Popular character');
+  if (ctx.ageMonths > 36) r.push('Mature set');
+  else if (ctx.ageMonths < 6) r.push('Fresh print run');
+  if (ctx.rarityRate >= 0.2) r.push('Chase pull');
+  if (ctx.roi5 >= 1) r.push(`<strong>5yr ROI +${(ctx.roi5 * 100).toFixed(0)}%</strong>`);
+  else if (ctx.roi5 >= 0.4) r.push(`5yr ROI +${(ctx.roi5 * 100).toFixed(0)}%`);
+  return r.join(' · ');
+}
+
+function urReasonsGrade(c, ctx) {
+  const r = [];
+  r.push(`<strong>PSA ${ctx.g}</strong>`);
+  if (ctx.anchor && ctx.anchor.source === 'estimated') r.push('EST. anchor');
+  if (ctx.discount >= 1.3) r.push(`Underpriced vs 1yr projection (+${((ctx.discount - 1) * 100).toFixed(0)}%)`);
+  if (ctx.charMult >= 1.4) r.push('Fan favourite');
+  else if (ctx.charMult >= 1.2) r.push('Popular character');
+  if (ctx.ageMonths > 36) r.push('Mature set');
+  if (ctx.rarityRate >= 0.2) r.push('Chase pull');
+  if (ctx.roi5 >= 1) r.push(`<strong>5yr ROI +${(ctx.roi5 * 100).toFixed(0)}%</strong> (after grading)`);
+  else r.push(`5yr ROI +${(ctx.roi5 * 100).toFixed(0)}% (after grading)`);
+  return r.join(' · ');
+}
+
+function urRender(results) {
+  const list = document.getElementById('urList');
+  const status = document.getElementById('urStatus');
+  const summary = document.getElementById('urSummary');
+  if (!list) return;
+
+  const fmtLabel = _urFmt === 'raw' ? 'raw' : _urFmt === 'low' ? 'PSA 1-5' : 'PSA ' + _urFmt;
+
+  if (!results.length) {
+    list.innerHTML = '';
+    list.appendChild(Object.assign(document.createElement('div'), {
+      className: 'ur-empty',
+      innerHTML: `No underrated <strong>${fmtLabel}</strong> picks found at your filters. ${_urFmt !== 'raw' ? 'PSA grades need a PSA 10 anchor — try running Price Sync first, or lower the language filter.' : 'Try raising the max-entry slider or switching language filter.'}`,
+    }));
+    status.innerHTML = `Scan complete · <strong>0 matches</strong>. Try a different format or relax filters.`;
+    summary.style.display = 'none';
+    return;
+  }
+
+  // Summary block (top of the list)
+  const avgUpside = results.reduce((s, p) => s + p.upsidePct, 0) / results.length;
+  const top = results[0];
+  const totalUpsideGbp = results.slice(0, 10).reduce((s, p) => s + _urGbpFromUsd(p.fairUsd - p.effectiveUsd), 0);
+  summary.style.display = '';
+  summary.innerHTML = `
+    <div class="ur-summary-stat"><span class="ur-summary-num">${results.length}</span><span class="ur-summary-lbl">Underrated · ${fmtLabel}</span></div>
+    <div class="ur-summary-stat"><span class="ur-summary-num">+${avgUpside.toFixed(0)}%</span><span class="ur-summary-lbl">Avg upside</span></div>
+    <div class="ur-summary-stat"><span class="ur-summary-num">+${top.upsidePct.toFixed(0)}%</span><span class="ur-summary-lbl">Best pick</span></div>
+    <div class="ur-summary-stat"><span class="ur-summary-num">£${totalUpsideGbp.toFixed(0)}</span><span class="ur-summary-lbl">Top-10 modelled upside</span></div>
+  `;
+
+  status.innerHTML = `Found <strong>${results.length}</strong> underrated ${fmtLabel} cards · ranked by composite signal (discount × character × age × ROI).`;
+
+  list.innerHTML = results.map((p, i) => {
+    const c = p.card;
+    const isJP = (c.lang || 'EN') === 'JP';
+    const rankCls = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+    const upsideCls = p.upsidePct >= 100 ? 'lg' : '';
+    const langPill = isJP
+      ? '<span class="ur-lang-pill jp">JP</span>'
+      : '<span class="ur-lang-pill">EN</span>';
+    const fairBlock = _urFmt === 'raw'
+      ? `<div class="ur-fair">Fair: ${fmtGBP(p.fairUsd)}</div>`
+      : `<div class="ur-fair">1yr: ${fmtGBP(p.fairUsd)} · 5yr: ${fmtGBP(p.yr5Usd)}</div>`;
+    const marketBlock = _urFmt === 'raw'
+      ? `<div class="ur-market">Now: <strong>${fmtGBP(p.marketUsd)}</strong></div>`
+      : `<div class="ur-market">${p.format}: <strong>${fmtGBP(p.marketUsd)}</strong></div>`;
+    return `
+      <div class="ur-row" data-id="${esc(c.i)}">
+        <div class="ur-rank ${rankCls}">${i + 1}</div>
+        <img class="ur-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="this.style.opacity=0">
+        <div class="ur-info">
+          <div class="ur-name">${esc(c.n)} ${langPill}</div>
+          <div class="ur-meta">${esc(c.s || '—')} · ${esc((RARITY_RATES[c.rc] || RARITY_RATES['']).label || 'Rare')}</div>
+          <div class="ur-reasons">${p.reasons}</div>
+        </div>
+        <div class="ur-values">
+          ${marketBlock}
+          ${fairBlock}
+          <div class="ur-upside ${upsideCls}">↑ ${p.upsidePct.toFixed(0)}%</div>
+        </div>
+        <div class="ur-score" title="Composite Underrated Score">
+          <span class="ur-score-val">${p.score.toFixed(1)}</span>
+          <span class="ur-score-lbl">Score</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  list.querySelectorAll('.ur-row').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.id;
+      if (!id) return;
+      // Switch to Predict tab and select the card.
+      const predictBtn = document.querySelector('.page-nav-btn[data-page="predict"]');
+      if (predictBtn) predictBtn.click();
+      setTimeout(() => {
+        try {
+          selectCard(id);
+          document.getElementById('selectedCardSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (e) {}
+      }, 80);
+    });
+  });
 }
