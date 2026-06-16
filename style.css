@@ -2885,6 +2885,48 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .mkt-live-list { display: flex; flex-direction: column; gap: 6px; }
 
+/* Refresh button (top-right of Live deals header) ------------------------ */
+.mkt-refresh-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; background: var(--bg); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  cursor: pointer; transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.mkt-refresh-btn:hover:not(:disabled) {
+  color: var(--green); border-color: var(--green-border); background: rgba(255,255,255,0.02);
+}
+.mkt-refresh-btn:disabled { opacity: 0.7; cursor: progress; }
+.mkt-refresh-ico { display: inline-block; font-size: 13px; line-height: 1; }
+.mkt-refresh-btn.is-spinning .mkt-refresh-ico { animation: mkt-refresh-spin 0.9s linear infinite; }
+@keyframes mkt-refresh-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+/* 5yr ROI projection per listing */
+.mkt-deal-roi5 {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em; opacity: 0.9;
+}
+.mkt-deal-roi5.pos { color: var(--green); }
+.mkt-deal-roi5.neg { color: var(--red); }
+
+/* Capital-risk pill (LOW / MEDIUM / HIGH) per listing */
+.mkt-risk {
+  display: inline-block; padding: 2px 7px; border-radius: 999px;
+  font-family: var(--mono); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.08em; line-height: 1.4;
+  border: 1px solid transparent;
+}
+.mkt-risk-low {
+  color: #6fcf97; background: rgba(111,207,151,0.10); border-color: rgba(111,207,151,0.35);
+}
+.mkt-risk-medium {
+  color: #f2c14e; background: rgba(242,193,78,0.10); border-color: rgba(242,193,78,0.40);
+}
+.mkt-risk-high {
+  color: #e87979; background: rgba(232,121,121,0.10); border-color: rgba(232,121,121,0.40);
+}
+
 /* Grade tabs (Raw · PSA 7 · PSA 8 · PSA 9 · PSA 10) ------------------------ */
 .mkt-grade-tabs {
   display: flex; gap: 4px; margin: 0 0 10px;

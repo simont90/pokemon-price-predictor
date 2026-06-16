@@ -7042,6 +7042,77 @@ function mktIsJunk(deal, card, requiredTokens, gradeFilter, fairValueGBP) {
   return false;
 }
 
+// Marketplace scan: how far above fair value to look for listings. The worker
+// hard-caps eBay queries with `max`, so to surface over-market listings we
+// inflate the cap and re-score the spread + risk client-side using the true
+// fair value.
+const MKT_OVER_MARKET_CAP_MULT = 2.0;     // search up to 200% of fair value
+const MKT_RISK_OVER_LOW_PCT    = 10;      // ≤ 10% over fair = low (with hold premium)
+const MKT_RISK_OVER_MED_PCT    = 40;      // ≤ 40% over fair = medium (still defensible)
+const MKT_RISK_LOW_ROI_FLOOR   = 50;      // 5yr ROI ≥ 50% can rescue a slight overpay to low
+const MKT_RISK_MED_ROI_FLOOR   = 0;       // 5yr ROI must at least break even for medium
+
+// Score a listing client-side using the true fair value (so we can include
+// above-market listings the worker would otherwise tag as junk premiums).
+// Returns updated spread + signal + 5yr projection + risk band.
+function mktScoreDeal(deal, card, gradeKey, fairValueGBP, fxUsdToGbp) {
+  const priceGBP = (typeof deal.priceGBP === 'number') ? deal.priceGBP : 0;
+  const fair = fairValueGBP > 0 ? fairValueGBP : 0;
+  // Spread sign convention matches the existing UI: positive = below fair.
+  const spreadPct = (priceGBP > 0 && fair > 0)
+    ? ((fair - priceGBP) / fair) * 100
+    : 0;
+  const overPct = (priceGBP > 0 && fair > 0 && priceGBP > fair)
+    ? ((priceGBP - fair) / fair) * 100
+    : 0;
+
+  // Re-derive the existing VALUE / STRONG VALUE / FAIR / PREMIUM signal so
+  // colour-coding stays consistent now that we're surfacing over-market deals.
+  let signal;
+  if (spreadPct >= 25)      signal = 'STRONG VALUE';
+  else if (spreadPct >= 8)  signal = 'VALUE';
+  else if (spreadPct >= -5) signal = 'FAIR';
+  else                      signal = 'PREMIUM';
+
+  // 5yr ROI projection using the listing price as the entry point. Mirrors
+  // computeHoldCore's raw / graded math but anchored on the actual listing.
+  let roi5 = null, profitGBP = null, sellGBP = null;
+  if (priceGBP > 0 && typeof projectGradePrice === 'function' && fxUsdToGbp > 0) {
+    const priceUSD = priceGBP / fxUsdToGbp;
+    let yr5USD = 0;
+    if (gradeKey === 'raw') {
+      const premium = (typeof GRADE_GROWTH_PREMIUM !== 'undefined' && GRADE_GROWTH_PREMIUM[9]) || 1;
+      yr5USD = projectGradePrice(card, 9, priceUSD, 5) / premium;
+    } else {
+      const g = parseInt(gradeKey, 10);
+      if (g >= 7 && g <= 10) yr5USD = projectGradePrice(card, g, priceUSD, 5);
+    }
+    if (yr5USD > 0) {
+      const friction = (typeof BUY_SELL_FRICTION === 'number') ? BUY_SELL_FRICTION : 0.10;
+      const sellUSD = yr5USD * (1 - friction);
+      sellGBP = sellUSD * fxUsdToGbp;
+      profitGBP = sellGBP - priceGBP;
+      roi5 = (profitGBP / priceGBP) * 100;
+    }
+  }
+
+  // Risk band: at/below fair is always low. Slight overpay is rescued by a
+  // strong 5yr ROI. Beyond ~40% over fair, OR if the 5yr hold doesn't even
+  // recoup the entry, we call it high risk — "crazy overpriced".
+  let risk;
+  if (overPct <= 0) {
+    risk = 'low';
+  } else if (overPct <= MKT_RISK_OVER_LOW_PCT && roi5 !== null && roi5 >= MKT_RISK_LOW_ROI_FLOOR) {
+    risk = 'low';
+  } else if (overPct <= MKT_RISK_OVER_MED_PCT && roi5 !== null && roi5 > MKT_RISK_MED_ROI_FLOOR) {
+    risk = 'medium';
+  } else {
+    risk = 'high';
+  }
+
+  return { spreadPct, overPct, signal, roi5, profitGBP, sellGBP, risk };
+}
+
 // Build the HTML for a single deal card. Shared by every grade panel.
 // `meta` carries the origin-card context (fromCardId, fromGrade) plus an
 // optional `claimed` flag for listings that were reassigned IN to this card.
@@ -7084,7 +7155,9 @@ function mktRenderDealCard(d, meta) {
       <div class="mkt-deal-right">
         <div class="mkt-deal-price">£${d.priceGBP.toFixed(2)}</div>
         <div class="mkt-deal-spread ${d.spreadPct >= 0 ? 'pos' : 'neg'}">${d.spreadPct >= 0 ? '↓' : '↑'} ${Math.abs(d.spreadPct).toFixed(0)}% vs fair</div>
+        ${typeof d.roi5 === 'number' ? `<div class="mkt-deal-roi5 ${d.roi5 >= 0 ? 'pos' : 'neg'}" title="Projected 5-year ROI at this entry price">5yr ${d.roi5 >= 0 ? '+' : ''}${d.roi5.toFixed(0)}%</div>` : ''}
         <span class="mkt-pill ${sigCls}">${esc(d.signal)}</span>
+        ${d.risk ? `<span class="mkt-risk mkt-risk-${d.risk}" title="Capital risk band based on % over fair value and 5-year hold ROI">${d.risk.toUpperCase()} RISK</span>` : ''}
         <div class="mkt-deal-actions">
           <button type="button" class="mkt-deal-reassign" data-payload="${enc}" title="Wrong card? Move this listing" aria-label="Move this listing to a different card">⇄ Move</button>
           <button type="button" class="mkt-deal-dismiss" data-payload="${enc}" title="Not relevant — hide this listing for this card + grade" aria-label="Dismiss this listing">✕ Dismiss</button>
@@ -7108,8 +7181,11 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     return 0;
   }
   const fairValueGBP = gbpFromUSD(g.fairUSD);
+  // Search up to 2× fair value so above-market listings come back — we re-score
+  // them client-side with mktScoreDeal and let the user judge with the risk pill.
+  const scanCapGBP = fairValueGBP * MKT_OVER_MARKET_CAP_MULT;
   const query = buildSearchQuery(card, g.queryGrade);
-  const url = `${workerUrl}/search?q=${encodeURIComponent(query)}&max=${fairValueGBP.toFixed(2)}&grade=${g.workerGrade}&fx=${fxUsdToGbp}&fxEur=${fxEurToGbp}`;
+  const url = `${workerUrl}/search?q=${encodeURIComponent(query)}&max=${scanCapGBP.toFixed(2)}&grade=${g.workerGrade}&fx=${fxUsdToGbp}&fxEur=${fxEurToGbp}`;
   try {
     const t0 = performance.now();
     const res = await fetch(url);
@@ -7120,6 +7196,16 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     const took = Math.round(performance.now() - t0);
     const rawDeals = data.deals || [];
     let deals = rawDeals.filter(d => !mktIsJunk(d, card, required, g.workerGrade, fairValueGBP));
+    // Re-score each deal against the true fair value (the worker's spread/signal
+    // was relative to the inflated scan cap). Adds 5yr ROI projection and
+    // low/medium/high risk band based on % over fair + hold economics.
+    deals = deals.map(d => {
+      const sc = mktScoreDeal(d, card, g.workerGrade, fairValueGBP, fxUsdToGbp);
+      return { ...d, spreadPct: sc.spreadPct, signal: sc.signal, overPct: sc.overPct, roi5: sc.roi5, risk: sc.risk };
+    });
+    // Sort by spread — best value deals first, then mediums, then high-risk
+    // premiums at the bottom so the user always sees the best buys up top.
+    deals.sort((a, b) => (b.spreadPct ?? -999) - (a.spreadPct ?? -999));
     // Apply user reassignments: hide URLs the user has moved AWAY from this
     // card+grade, and surface URLs they've moved TO this card+grade.
     const hiddenUrls = reassignmentsFromCard(card.i, g.workerGrade);
@@ -7133,7 +7219,13 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     const visibleAfterDismiss = deals.filter(d => !dismissedUrls.has(d.url));
     const dismissedCount = deals.length - visibleAfterDismiss.length;
     deals = visibleAfterDismiss;
-    const claimed = reassignmentsToCard(card.i, g.workerGrade);
+    let claimed = reassignmentsToCard(card.i, g.workerGrade);
+    // Re-score claimed listings against this card's fair value too, so the
+    // 5yr ROI + risk pill render consistently across moved-in and native deals.
+    claimed = claimed.map(rec => {
+      const sc = mktScoreDeal(rec, card, g.workerGrade, fairValueGBP, fxUsdToGbp);
+      return { ...rec, spreadPct: sc.spreadPct, signal: sc.signal, overPct: sc.overPct, roi5: sc.roi5, risk: sc.risk };
+    });
     // Deduplicate — in the rare case the worker also returned a claimed URL,
     // the claim record wins (it has the user-edited context).
     const claimedUrls = new Set(claimed.map(c => c.url));
@@ -7152,10 +7244,13 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     const filterStr = parts.length ? ` · ${parts.join(' / ')}` : '';
     const totalShown = deals.length + claimed.length;
     if (badge) badge.textContent = String(totalShown);
-    if (status) status.innerHTML = `${totalShown} clean · £${fairValueGBP.toFixed(0)} cap · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}${dismissedPill ? ' · ' + dismissedPill : ''}`;
+    // Count how many of the visible deals are above market (for status hint).
+    const overCount = deals.filter(d => (d.overPct || 0) > 0).length;
+    const overStr = overCount > 0 ? ` · ${overCount} above market` : '';
+    if (status) status.innerHTML = `${totalShown} clean · £${fairValueGBP.toFixed(0)} fair value${overStr} · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}${dismissedPill ? ' · ' + dismissedPill : ''}`;
     if (list) {
       if (totalShown === 0) {
-        list.innerHTML = `<div class="mkt-empty">No clean ${g.label} listings under £${fairValueGBP.toFixed(0)} fair value right now${filteredCount > 0 ? ` (${filteredCount} junk filtered)` : ''}. Try the deep-link buttons below.</div>`;
+        list.innerHTML = `<div class="mkt-empty">No clean ${g.label} listings within 2× fair value (£${fairValueGBP.toFixed(0)}) right now${filteredCount > 0 ? ` (${filteredCount} junk filtered)` : ''}. Try the deep-link buttons below.</div>`;
       } else {
         const meta = { fromCardId: card.i, fromGrade: g.workerGrade };
         const claimedHtml = claimed.map(rec => mktRenderDealCard(rec, { ...meta, claimed: true })).join('');
@@ -7245,12 +7340,36 @@ async function fetchLiveDeals(card) {
 }
 
 // Hook live-scan into card selection (no-op if URL not set).
+// Track the most recently scanned card so the Refresh button can re-run it.
+let mktLastScannedCard = null;
 const _originalRenderMarketplaceScan = renderMarketplaceScan;
 renderMarketplaceScan = function(card, pullCost, des) {
   _originalRenderMarketplaceScan(card, pullCost, des);
+  mktLastScannedCard = card || null;
   if (getMktWorkerUrl()) fetchLiveDeals(card);
   else if ($('mktLiveWrap')) $('mktLiveWrap').style.display = 'none';
 };
+
+// Wire the Refresh button. Re-runs fetchLiveDeals for the currently selected
+// card. Adds a spinning state on the icon while the scan is in-flight.
+function setupMktRefreshBtn() {
+  const btn = $('mktRefreshBtn');
+  if (!btn || btn.dataset.bound) return;
+  btn.dataset.bound = '1';
+  btn.addEventListener('click', async () => {
+    const card = mktLastScannedCard || (typeof selectedCard !== 'undefined' ? selectedCard : null);
+    if (!card || !getMktWorkerUrl()) return;
+    btn.classList.add('is-spinning');
+    btn.disabled = true;
+    try {
+      await fetchLiveDeals(card);
+    } finally {
+      btn.classList.remove('is-spinning');
+      btn.disabled = false;
+    }
+  });
+}
+queueMicrotask(setupMktRefreshBtn);
 
 // Boot the settings button once the DOM is ready (init() runs synchronously
 // near the top of this file; we attach in microtask so dependencies exist).
