@@ -10223,3 +10223,547 @@ function setupCollapsibleSections() {
     }
   });
 }
+
+// =============================================================================
+// Cross-Device Sync · file backup + Cloudflare KV cloud sync
+// =============================================================================
+// Two-mode sync system:
+//   • File backup — Export/import a JSON snapshot. Works today, no setup, ideal
+//     for AirDrop / iCloud Drive transfers between Mac, iPhone, and iPad.
+//   • Cloud sync   — Uses the marketplace worker's KV-backed /sync endpoint.
+//     User picks a long random pair code once, enters it on each device, and
+//     local changes auto-push (debounced) while remote changes pull on focus.
+//
+// The list of keys we sync is conservative: only user-created or
+// user-intentionally-edited data. We exclude price caches, FX rate cache, and
+// any device-local UI state so devices stay independent on those.
+// -----------------------------------------------------------------------------
+
+const SYNC_KEYS = [
+  'pkm-portfolio',                  // My Collection
+  'pkm-wishlist',                   // Wishlist
+  'pkm-compare',                    // Compare slots
+  'pkm-watchlist-v1',               // Watchlist (alerts)
+  'pkm-mkt-reassignments',          // Listing reassignments
+  'pkm-mkt-dismissals',             // Listing dismissals
+  'pkm-counterpart-overrides-v1',   // EN<->JP counterpart overrides
+  'pkm-pc-overrides-v1',            // PriceCharting overrides
+  'pkm-user-cards-v1',              // User-added cards
+  'pkm-card-overrides-v1',          // Card metadata overrides
+];
+
+const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
+const SYNC_ENDPOINT_KEY  = 'pkm-sync-endpoint';
+const SYNC_META_KEY      = 'pkm-sync-meta';        // { lastPush, lastPull, lastErr }
+const SYNC_LAST_HASH_KEY = 'pkm-sync-last-hash';   // payload hash of last successful push
+
+// ---- helpers ----------------------------------------------------------------
+function syncGetPairCode()   { try { return localStorage.getItem(SYNC_PAIR_CODE_KEY) || ''; } catch { return ''; } }
+function syncSetPairCode(c)  { try { c ? localStorage.setItem(SYNC_PAIR_CODE_KEY, c) : localStorage.removeItem(SYNC_PAIR_CODE_KEY); } catch {} }
+function syncGetEndpoint()   {
+  try {
+    return localStorage.getItem(SYNC_ENDPOINT_KEY)
+      || (typeof getMktWorkerUrl === 'function' ? getMktWorkerUrl() : '');
+  } catch { return ''; }
+}
+function syncSetEndpoint(u)  { try { u ? localStorage.setItem(SYNC_ENDPOINT_KEY, u.replace(/\/+$/, '')) : localStorage.removeItem(SYNC_ENDPOINT_KEY); } catch {} }
+function syncGetMeta()       { try { return JSON.parse(localStorage.getItem(SYNC_META_KEY) || '{}'); } catch { return {}; } }
+function syncSetMeta(meta)   { try { localStorage.setItem(SYNC_META_KEY, JSON.stringify({ ...syncGetMeta(), ...meta })); } catch {} }
+
+// 24 bytes of crypto-random → URL-safe base64 (~32 chars). Stays inside the
+// worker's [16,64] character validation window.
+function syncGenerateCode() {
+  const a = new Uint8Array(24);
+  (self.crypto || window.crypto).getRandomValues(a);
+  let s = ''; for (const b of a) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+// Build the snapshot we send (or save to file). Includes a version flag so a
+// future migration can recognise older blobs and a per-device id for diagnostics.
+function syncBuildPayload() {
+  const data = {};
+  for (const k of SYNC_KEYS) {
+    try {
+      const v = localStorage.getItem(k);
+      if (v !== null) data[k] = v;
+    } catch {}
+  }
+  return {
+    v: 1,
+    ts: Date.now(),
+    device: (navigator.userAgent || '').slice(0, 80),
+    keys: Object.keys(data).length,
+    data,
+  };
+}
+
+// Apply an incoming snapshot to localStorage and refresh in-memory state.
+// mode: 'replace' overwrites the listed keys, 'merge' merges arrays by id /
+// preserves whichever side has the longer entry. For per-key merge we keep it
+// simple: arrays are unioned by id, objects are shallow-merged, scalars use
+// the remote value.
+function syncApplyPayload(payload, mode) {
+  if (!payload || !payload.data) return { applied: 0, keys: [] };
+  const applied = [];
+  for (const k of SYNC_KEYS) {
+    if (!(k in payload.data)) continue;
+    try {
+      const remoteRaw = payload.data[k];
+      if (mode === 'replace') {
+        localStorage.setItem(k, remoteRaw);
+        applied.push(k);
+        continue;
+      }
+      // merge — best effort union for arrays / shallow-merge for objects
+      const local = JSON.parse(localStorage.getItem(k) || 'null');
+      let remote;
+      try { remote = JSON.parse(remoteRaw); } catch { remote = remoteRaw; }
+      let merged = remote;
+      if (Array.isArray(local) && Array.isArray(remote)) {
+        const byId = new Map();
+        for (const item of local) {
+          const id = (item && (item.id || item.i || item.url)) || JSON.stringify(item);
+          byId.set(id, item);
+        }
+        for (const item of remote) {
+          const id = (item && (item.id || item.i || item.url)) || JSON.stringify(item);
+          // Remote wins on conflict if it has a newer ts, otherwise keep local
+          const existing = byId.get(id);
+          if (!existing) byId.set(id, item);
+          else if (item && existing && item.ts && existing.ts && item.ts > existing.ts) byId.set(id, item);
+        }
+        merged = Array.from(byId.values());
+      } else if (local && typeof local === 'object' && remote && typeof remote === 'object') {
+        merged = { ...local, ...remote };
+      }
+      localStorage.setItem(k, JSON.stringify(merged));
+      applied.push(k);
+    } catch (e) { /* skip corrupted key */ }
+  }
+  // Refresh module-level state so the UI sees the new data without a full reload.
+  try {
+    if (typeof portfolio !== 'undefined') portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
+    if (typeof wishlist !== 'undefined') wishlist = JSON.parse(localStorage.getItem('pkm-wishlist') || '[]');
+    if (typeof compareSlots !== 'undefined') compareSlots = JSON.parse(localStorage.getItem('pkm-compare') || '[null, null]');
+    if (typeof watchlist !== 'undefined') watchlist = JSON.parse(localStorage.getItem('pkm-watchlist-v1') || '[]');
+  } catch {}
+  // Trigger re-render of any visible panels.
+  try { typeof renderPortfolio === 'function' && renderPortfolio(); } catch {}
+  try { typeof renderWishlist  === 'function' && renderWishlist();  } catch {}
+  try { typeof renderCompare   === 'function' && renderCompare();   } catch {}
+  try { typeof renderWatchlist === 'function' && renderWatchlist(); } catch {}
+  try { typeof renderAlerts    === 'function' && renderAlerts();    } catch {}
+  return { applied: applied.length, keys: applied };
+}
+
+// Cheap content hash so we skip pushes when nothing has changed since last push.
+async function syncHashPayload(payload) {
+  const json = JSON.stringify(payload.data);
+  const buf = new TextEncoder().encode(json);
+  const digest = await (self.crypto || window.crypto).subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest)).slice(0, 12).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ---- Cloud sync (KV-backed worker) ------------------------------------------
+async function syncCloudPush({ silent } = {}) {
+  const endpoint = syncGetEndpoint();
+  const code = syncGetPairCode();
+  if (!endpoint || !code) return { ok: false, error: 'Endpoint or pair code missing' };
+  const payload = syncBuildPayload();
+  const hash = await syncHashPayload(payload);
+  const lastHash = (() => { try { return localStorage.getItem(SYNC_LAST_HASH_KEY) || ''; } catch { return ''; } })();
+  if (silent && hash === lastHash) return { ok: true, skipped: true };
+  try {
+    const res = await fetch(`${endpoint}/sync?key=${encodeURIComponent(code)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      const err = `HTTP ${res.status} ${txt.slice(0, 140)}`;
+      syncSetMeta({ lastErr: err, lastErrAt: Date.now() });
+      syncUpdateStatus(); syncUpdateCloudLog(`Push failed: ${err}`, 'err');
+      return { ok: false, error: err };
+    }
+    const j = await res.json().catch(() => ({}));
+    try { localStorage.setItem(SYNC_LAST_HASH_KEY, hash); } catch {}
+    syncSetMeta({ lastPush: Date.now(), lastPushBytes: j.bytes || 0, lastErr: null });
+    syncUpdateStatus(); syncUpdateCloudLog(`Pushed ${j.bytes || '?'} bytes (${payload.keys} keys).`, 'ok');
+    return { ok: true, ts: j.ts, bytes: j.bytes };
+  } catch (e) {
+    const err = e.message || String(e);
+    syncSetMeta({ lastErr: err, lastErrAt: Date.now() });
+    syncUpdateStatus(); syncUpdateCloudLog(`Push error: ${err}`, 'err');
+    return { ok: false, error: err };
+  }
+}
+
+async function syncCloudPull({ mode } = {}) {
+  const endpoint = syncGetEndpoint();
+  const code = syncGetPairCode();
+  if (!endpoint || !code) return { ok: false, error: 'Endpoint or pair code missing' };
+  try {
+    const res = await fetch(`${endpoint}/sync?key=${encodeURIComponent(code)}`);
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      const err = `HTTP ${res.status} ${txt.slice(0, 140)}`;
+      syncSetMeta({ lastErr: err, lastErrAt: Date.now() });
+      syncUpdateStatus(); syncUpdateCloudLog(`Pull failed: ${err}`, 'err');
+      return { ok: false, error: err };
+    }
+    const j = await res.json().catch(() => ({}));
+    if (!j || !j.data) {
+      syncSetMeta({ lastPull: Date.now(), lastErr: null });
+      syncUpdateStatus(); syncUpdateCloudLog('Pulled — remote store is empty yet.', 'info');
+      return { ok: true, applied: 0, empty: true };
+    }
+    const mergeMode = mode || syncReadMergeMode() || 'merge';
+    const result = syncApplyPayload(j, mergeMode);
+    syncSetMeta({ lastPull: Date.now(), lastErr: null, lastPullKeys: result.applied, lastPullMode: mergeMode });
+    syncUpdateStatus(); syncUpdateCloudLog(`Pulled ${result.applied} keys (${mergeMode}).`, 'ok');
+    return { ok: true, ...result, ts: j.ts };
+  } catch (e) {
+    const err = e.message || String(e);
+    syncSetMeta({ lastErr: err, lastErrAt: Date.now() });
+    syncUpdateStatus(); syncUpdateCloudLog(`Pull error: ${err}`, 'err');
+    return { ok: false, error: err };
+  }
+}
+
+// Wired into every save path that mutates a synced key. Debounced 4s so a burst
+// of edits (e.g. dragging multiple cards) becomes one push.
+let _syncPushTimer = null;
+function syncSchedulePush() {
+  if (!syncGetPairCode() || !syncGetEndpoint()) return;
+  clearTimeout(_syncPushTimer);
+  _syncPushTimer = setTimeout(() => syncCloudPush({ silent: true }), 4000);
+}
+
+// Patch known save functions so any data change auto-pushes. Done via wrappers
+// so the original behaviour is preserved untouched.
+function syncInstallAutoPushHooks() {
+  const wrap = (name) => {
+    if (typeof window[name] !== 'function') return;
+    const orig = window[name];
+    window[name] = function() { const r = orig.apply(this, arguments); syncSchedulePush(); return r; };
+  };
+  // Functions defined at module scope aren't on window; patch the localStorage
+  // setter instead for total coverage of all SYNC_KEYS.
+  const origSet = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(k, v) {
+    origSet(k, v);
+    if (SYNC_KEYS.includes(k)) syncSchedulePush();
+  };
+}
+
+// ---- File backup ------------------------------------------------------------
+function syncFileExportJson() {
+  const payload = syncBuildPayload();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `pokemon-predictor-backup-${ts}.json`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  return { ok: true, filename, bytes: blob.size, keys: payload.keys };
+}
+
+async function syncFileShare() {
+  if (!navigator.share) return { ok: false, error: 'Share API not available' };
+  const payload = syncBuildPayload();
+  try {
+    const file = new File([JSON.stringify(payload, null, 2)], `pokemon-predictor-backup.json`, { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Pokémon Predictor Backup' });
+      return { ok: true };
+    }
+    await navigator.share({ title: 'Pokémon Predictor Backup', text: JSON.stringify(payload) });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function syncFileCopy() {
+  const payload = syncBuildPayload();
+  const json = JSON.stringify(payload, null, 2);
+  try {
+    await navigator.clipboard.writeText(json);
+    return { ok: true, bytes: json.length };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function syncFileImportFromText(text, mode) {
+  try {
+    const payload = JSON.parse(text);
+    if (!payload || typeof payload !== 'object' || !payload.data) {
+      return { ok: false, error: 'Not a valid backup file (missing data)' };
+    }
+    const result = syncApplyPayload(payload, mode || syncReadMergeMode() || 'merge');
+    syncSetMeta({ lastImport: Date.now(), lastImportKeys: result.applied });
+    syncUpdateStatus();
+    return { ok: true, ...result };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function syncFileImportFromFile(file, mode) {
+  if (!file) return { ok: false, error: 'No file picked' };
+  const text = await file.text();
+  return syncFileImportFromText(text, mode);
+}
+
+function syncReadMergeMode() {
+  const sel = document.querySelector('input[name="syncMode"]:checked');
+  return sel ? sel.value : 'merge';
+}
+
+// ---- UI wiring --------------------------------------------------------------
+function syncFmtTimeAgo(ts) {
+  if (!ts) return 'never';
+  const secs = Math.round((Date.now() - ts) / 1000);
+  if (secs < 5)   return 'just now';
+  if (secs < 60)  return `${secs}s ago`;
+  if (secs < 3600) return `${Math.round(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.round(secs / 3600)}h ago`;
+  return new Date(ts).toLocaleString();
+}
+
+function syncUpdateStatus() {
+  const el = document.getElementById('syncStatus');
+  const meta = syncGetMeta();
+  const code = syncGetPairCode();
+  const last = Math.max(meta.lastPush || 0, meta.lastPull || 0);
+  if (el) {
+    if (!code) el.textContent = 'Not paired';
+    else if (meta.lastErr) el.textContent = `Error · ${meta.lastErr.slice(0, 60)}`;
+    else el.textContent = last ? `Synced ${syncFmtTimeAgo(last)}` : `Paired · awaiting first sync`;
+  }
+  // Stat row
+  const row = document.getElementById('syncStatRow');
+  if (row) {
+    const counts = SYNC_KEYS.reduce((acc, k) => {
+      try {
+        const v = JSON.parse(localStorage.getItem(k) || 'null');
+        acc[k] = Array.isArray(v) ? v.length : (v && typeof v === 'object' ? Object.keys(v).length : (v ? 1 : 0));
+      } catch { acc[k] = 0; }
+      return acc;
+    }, {});
+    row.innerHTML = `
+      <span class="sync-stat"><strong>${counts['pkm-portfolio'] || 0}</strong> collection</span>
+      <span class="sync-stat"><strong>${counts['pkm-wishlist'] || 0}</strong> wishlist</span>
+      <span class="sync-stat"><strong>${counts['pkm-watchlist-v1'] || 0}</strong> watchlist</span>
+      <span class="sync-stat"><strong>${counts['pkm-mkt-reassignments'] || 0}</strong> reassignments</span>
+      <span class="sync-stat"><strong>${counts['pkm-mkt-dismissals'] || 0}</strong> dismissals</span>
+    `;
+  }
+  // Cloud status pill
+  const cloudStatus = document.getElementById('syncCloudStatus');
+  if (cloudStatus) {
+    const txt = cloudStatus.querySelector('.sync-cloud-text');
+    cloudStatus.classList.toggle('is-connected', !!code && !meta.lastErr);
+    cloudStatus.classList.toggle('is-error', !!meta.lastErr);
+    if (txt) {
+      if (meta.lastErr) txt.textContent = `Error: ${meta.lastErr.slice(0, 80)}`;
+      else if (code && last) txt.textContent = `Connected · last sync ${syncFmtTimeAgo(last)}`;
+      else if (code) txt.textContent = `Connected · awaiting first sync`;
+      else txt.textContent = `Not connected`;
+    }
+  }
+  // Enable / disable cloud buttons
+  const enable = !!(syncGetPairCode() && syncGetEndpoint());
+  ['syncCloudPush', 'syncCloudPull'].forEach(id => {
+    const b = document.getElementById(id); if (b) b.disabled = !enable;
+  });
+  const dis = document.getElementById('syncCloudDisconnect');
+  if (dis) dis.style.display = enable ? '' : 'none';
+}
+
+function syncUpdateCloudLog(msg, kind) {
+  const log = document.getElementById('syncCloudLog');
+  if (!log) return;
+  const line = document.createElement('div');
+  line.className = `sync-log-line sync-log-${kind || 'info'}`;
+  const stamp = new Date().toLocaleTimeString();
+  line.textContent = `[${stamp}] ${msg}`;
+  log.prepend(line);
+  // Keep only last 8 lines
+  while (log.children.length > 8) log.removeChild(log.lastChild);
+}
+
+function syncOpenPanel() {
+  const p = document.getElementById('syncPanel'); if (!p) return;
+  p.style.display = '';
+  // Populate fields with current state
+  const ep = document.getElementById('syncEndpoint');
+  const pc = document.getElementById('syncPairCode');
+  if (ep) ep.value = syncGetEndpoint() || (typeof MKT_WORKER_DEFAULT === 'string' ? MKT_WORKER_DEFAULT : '');
+  if (pc) pc.value = syncGetPairCode();
+  syncUpdateStatus();
+}
+function syncClosePanel() {
+  const p = document.getElementById('syncPanel'); if (p) p.style.display = 'none';
+}
+
+function syncBindOnce() {
+  // Show the toggle button (it's hidden by default in the HTML)
+  const toggle = document.getElementById('syncToggle');
+  if (toggle) {
+    toggle.style.display = '';
+    toggle.addEventListener('click', () => {
+      const panel = document.getElementById('syncPanel');
+      if (!panel) return;
+      if (panel.style.display === 'none' || !panel.style.display) syncOpenPanel();
+      else syncClosePanel();
+    });
+  }
+  document.getElementById('syncClose')?.addEventListener('click', syncClosePanel);
+
+  // Tab switching
+  document.querySelectorAll('.sync-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.tab;
+      document.querySelectorAll('.sync-tab').forEach(t => t.classList.toggle('is-active', t === tab));
+      document.querySelectorAll('.sync-tab-content').forEach(c => {
+        const active = c.dataset.tab === target;
+        c.classList.toggle('is-active', active);
+        c.style.display = active ? '' : 'none';
+      });
+    });
+  });
+
+  // File-backup buttons
+  document.getElementById('syncExportDownload')?.addEventListener('click', () => {
+    const r = syncFileExportJson();
+    syncUpdateCloudLog(`Exported ${r.filename} (${r.bytes} bytes, ${r.keys} keys).`, 'ok');
+  });
+  // Show share button only if Web Share API supports files
+  if (navigator.share) {
+    const sb = document.getElementById('syncExportShare');
+    if (sb) {
+      sb.style.display = '';
+      sb.addEventListener('click', async () => {
+        const r = await syncFileShare();
+        if (!r.ok) alert(`Share failed: ${r.error}`);
+      });
+    }
+  }
+  document.getElementById('syncExportCopy')?.addEventListener('click', async () => {
+    const r = await syncFileCopy();
+    syncUpdateCloudLog(r.ok ? `Copied ${r.bytes} bytes to clipboard.` : `Copy failed: ${r.error}`, r.ok ? 'ok' : 'err');
+  });
+  document.getElementById('syncImportFile')?.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    const mode = syncReadMergeMode();
+    const r = await syncFileImportFromFile(file, mode);
+    e.target.value = '';
+    alert(r.ok ? `Imported ${r.applied} keys (${mode}).` : `Import failed: ${r.error}`);
+    syncUpdateStatus();
+  });
+  document.getElementById('syncImportPaste')?.addEventListener('click', () => {
+    const a = document.getElementById('syncPasteArea'); if (a) a.style.display = '';
+  });
+  document.getElementById('syncPasteCancel')?.addEventListener('click', () => {
+    const a = document.getElementById('syncPasteArea'); if (a) a.style.display = 'none';
+  });
+  document.getElementById('syncPasteImport')?.addEventListener('click', async () => {
+    const inp = document.getElementById('syncPasteInput'); if (!inp) return;
+    const mode = syncReadMergeMode();
+    const r = await syncFileImportFromText(inp.value, mode);
+    alert(r.ok ? `Imported ${r.applied} keys (${mode}).` : `Import failed: ${r.error}`);
+    if (r.ok) { inp.value = ''; const a = document.getElementById('syncPasteArea'); if (a) a.style.display = 'none'; }
+    syncUpdateStatus();
+  });
+
+  // Cloud-sync buttons
+  document.getElementById('syncGenCode')?.addEventListener('click', () => {
+    const code = syncGenerateCode();
+    const pc = document.getElementById('syncPairCode'); if (pc) pc.value = code;
+  });
+  document.getElementById('syncCloudConnect')?.addEventListener('click', async () => {
+    const ep = (document.getElementById('syncEndpoint')?.value || '').trim();
+    const pc = (document.getElementById('syncPairCode')?.value || '').trim();
+    if (!ep) return alert('Worker URL is required');
+    if (!/^[A-Za-z0-9_-]{16,64}$/.test(pc)) return alert('Pair code must be 16-64 letters/digits/_/- (tap Generate for one).');
+    syncSetEndpoint(ep);
+    syncSetPairCode(pc);
+    syncUpdateStatus();
+    syncUpdateCloudLog(`Saved endpoint + pair code. Pulling existing remote data…`, 'info');
+    const pull = await syncCloudPull({ mode: 'merge' });
+    if (pull.ok && pull.empty) {
+      syncUpdateCloudLog(`Remote is empty — pushing local snapshot to seed it.`, 'info');
+      await syncCloudPush();
+    } else if (pull.ok) {
+      // Also push so this device's deltas merge back up.
+      await syncCloudPush();
+    }
+  });
+  document.getElementById('syncCloudPush')?.addEventListener('click', async () => {
+    const r = await syncCloudPush();
+    if (!r.ok) alert(`Push failed: ${r.error}`);
+  });
+  document.getElementById('syncCloudPull')?.addEventListener('click', async () => {
+    const r = await syncCloudPull();
+    if (!r.ok) alert(`Pull failed: ${r.error}`);
+  });
+  document.getElementById('syncCloudDisconnect')?.addEventListener('click', () => {
+    if (!confirm('Disconnect from cloud sync? Local data is kept; remote blob is left in place.')) return;
+    syncSetPairCode('');
+    // Wipe any lingering sync state so the UI returns to a clean "Not paired" view.
+    try {
+      localStorage.removeItem(SYNC_META_KEY);
+      localStorage.removeItem(SYNC_LAST_HASH_KEY);
+    } catch {}
+    if (_syncPushTimer) { clearTimeout(_syncPushTimer); _syncPushTimer = null; }
+    syncUpdateStatus();
+    syncUpdateCloudLog('Disconnected. Local data unchanged.', 'info');
+  });
+
+  // Download paste-ready worker source so the user can drop it into Cloudflare.
+  document.getElementById('syncDownloadWorker')?.addEventListener('click', async () => {
+    try {
+      const res = await fetch('worker-paste-this.js', { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      const blob = new Blob([text], { type: 'application/javascript' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'worker-paste-this.js';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+      syncUpdateCloudLog('Downloaded worker source. Paste into your Cloudflare worker editor.', 'ok');
+    } catch (e) {
+      syncUpdateCloudLog('Could not download worker source: ' + (e.message || e), 'err');
+    }
+  });
+
+  // Pull on focus so a return visit picks up changes from other devices.
+  let lastFocusPull = 0;
+  window.addEventListener('focus', () => {
+    if (!syncGetPairCode() || !syncGetEndpoint()) return;
+    if (Date.now() - lastFocusPull < 30_000) return;
+    lastFocusPull = Date.now();
+    syncCloudPull({ mode: 'merge' });
+  });
+
+  syncInstallAutoPushHooks();
+  syncUpdateStatus();
+
+  // Pull once on cold boot if already paired so the device starts fresh.
+  if (syncGetPairCode() && syncGetEndpoint()) {
+    setTimeout(() => syncCloudPull({ mode: 'merge' }), 800);
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', syncBindOnce);
+} else {
+  syncBindOnce();
+}

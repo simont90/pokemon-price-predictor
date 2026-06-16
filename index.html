@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260616m">
+  <link rel="stylesheet" href="style.css?v=20260616n">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -220,7 +220,7 @@
           </div>
           <div class="sync-field">
             <label for="syncEndpoint">Worker URL</label>
-            <input id="syncEndpoint" type="url" class="sync-input" placeholder="https://pokemon-sync.&lt;your-subdomain&gt;.workers.dev" autocomplete="off" inputmode="url">
+            <input id="syncEndpoint" type="url" class="sync-input" placeholder="https://pokemon-marketplace.&lt;your-subdomain&gt;.workers.dev" autocomplete="off" inputmode="url">
           </div>
           <div class="sync-field">
             <label for="syncPairCode">Pair code</label>
@@ -238,9 +238,10 @@
             <summary>How to set up the Worker (one-time, 10–15 min)</summary>
             <ol>
               <li>Sign in at <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener">dash.cloudflare.com</a> (free).</li>
-              <li>Go to <strong>Workers &amp; Pages › Create application › Create Worker</strong>. Name it <code>pokemon-sync</code>.</li>
-              <li>In <strong>Settings › Variables › KV Namespace Bindings</strong>, add a binding: variable name <code>SYNC</code>, namespace <code>pokemon-sync-store</code> (create it).</li>
-              <li>Paste the Worker code (download below), deploy, copy the <code>workers.dev</code> URL into the field above.</li>
+              <li>If your marketplace worker is already deployed (<code>pokemon-marketplace.&lt;you&gt;.workers.dev</code>), reuse it — just bind a KV namespace. Otherwise create a new Worker named <code>pokemon-marketplace</code> and paste the bundled code.</li>
+              <li>In <strong>Workers &amp; Pages › KV</strong> create a namespace called <code>pokemon-sync</code>.</li>
+              <li>Open your Worker → <strong>Settings › Variables › KV Namespace Bindings</strong>, add: variable name <code>SYNC_KV</code>, bind to namespace <code>pokemon-sync</code>.</li>
+              <li>Re-deploy (paste the latest <code>worker-paste-this.js</code> below), then copy the <code>workers.dev</code> URL into the field above.</li>
               <li>On each device: enter the same Worker URL + Pair code. Tap Connect &amp; sync. Done.</li>
             </ol>
             <button class="sync-btn" id="syncDownloadWorker" type="button">Download worker.js</button>
@@ -1574,6 +1575,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260616m"></script>
+  <script src="app.js?v=20260616n"></script>
 </body>
 </html>
