@@ -6315,19 +6315,38 @@ function renderMarketplaceScan(card, pullCost, desirability) {
   // Sort by descending deal score so the most attractive grades surface first.
   rows.sort((a, b) => b.score - a.score);
 
-  const tbody = $('marketplaceTable').querySelector('tbody');
-  tbody.innerHTML = rows.map((r, idx) => `
-    <tr data-mkt-row="${idx}" data-grade="${r.label}">
-      <td class="mkt-grade">${r.label}</td>
-      <td class="mkt-money">${fmtGBP(r.todayUSD)}</td>
-      <td class="mkt-money mkt-yr5">${fmtGBP(r.yr5USD)}</td>
-      <td><a class="mkt-link mkt-uk" href="${esc(r.ebayUk)}" target="_blank" rel="noopener">Search \u2192</a></td>
-      <td><a class="mkt-link mkt-us" href="${esc(r.ebayUs)}" target="_blank" rel="noopener">Search \u2192</a></td>
-      <td class="mkt-cm-cell"><a class="mkt-link mkt-cm" href="${esc(r.cardmarket)}" target="_blank" rel="noopener">Search \u2192</a></td>
-      <td class="mkt-tcg-cell"><a class="mkt-link mkt-tcg" href="${esc(r.tcgplayer)}" target="_blank" rel="noopener">Search \u2192</a></td>
-      <td><span class="mkt-pill ${dealClass(r.score)}">${r.score}/100</span></td>
-    </tr>
-  `).join('');
+  // Render one stacked panel per grade. Each panel groups the fair-value
+  // metrics on the left with the four marketplace search buttons on the right,
+  // so users can scan a grade and jump to the right marketplace in one motion.
+  const grid = $('marketplaceGrades');
+  if (grid) {
+    grid.innerHTML = rows.map((r, idx) => `
+      <div class="mkt-grade-card" data-mkt-row="${idx}" data-grade="${r.label}">
+        <div class="mkt-grade-summary">
+          <div class="mkt-grade-head">
+            <span class="mkt-grade-label">${r.label}</span>
+            <span class="mkt-pill ${dealClass(r.score)}" title="Deal score \u2014 higher means more attractive hunting ground">${r.score}/100</span>
+          </div>
+          <div class="mkt-grade-metrics">
+            <div class="mkt-grade-metric">
+              <span class="mkt-grade-metric-label">Fair value</span>
+              <span class="mkt-money">${fmtGBP(r.todayUSD)}</span>
+            </div>
+            <div class="mkt-grade-metric">
+              <span class="mkt-grade-metric-label">5yr target</span>
+              <span class="mkt-money mkt-yr5">${fmtGBP(r.yr5USD)}</span>
+            </div>
+          </div>
+        </div>
+        <div class="mkt-grade-links">
+          <a class="mkt-link mkt-uk"  href="${esc(r.ebayUk)}"     target="_blank" rel="noopener"><span class="mkt-link-src src-uk">eBay UK</span><span class="mkt-link-go">Search \u2192</span></a>
+          <a class="mkt-link mkt-us"  href="${esc(r.ebayUs)}"     target="_blank" rel="noopener"><span class="mkt-link-src src-us">eBay US</span><span class="mkt-link-go">Search \u2192</span></a>
+          <a class="mkt-link mkt-cm  mkt-cm-cell"  href="${esc(r.cardmarket)}" target="_blank" rel="noopener"><span class="mkt-link-src src-cm">Cardmarket</span><span class="mkt-link-go">Search \u2192</span></a>
+          <a class="mkt-link mkt-tcg mkt-tcg-cell" href="${esc(r.tcgplayer)}"  target="_blank" rel="noopener"><span class="mkt-link-src src-tcg">TCGplayer</span><span class="mkt-link-go">Search \u2192</span></a>
+        </div>
+      </div>
+    `).join('');
+  }
 
   const topRow = rows[0];
   $('marketplaceFootnote').innerHTML = `
@@ -6367,17 +6386,27 @@ async function upgradeMarketplaceLinks(card, rows) {
   if (!selectedCard || selectedCard.i !== cardIdForFetch) return;
   if (!data) return;
 
-  const table = $('marketplaceTable');
-  if (!table) return;
+  // Both selectors live inside the grade-cards grid now. Selectors retain the
+  // same .mkt-cm-cell / .mkt-tcg-cell hooks so this stays a CSS-only refactor.
+  const root = $('marketplaceGrades');
+  if (!root) return;
 
   if (data.cardmarketUrl) {
-    table.querySelectorAll('.mkt-cm-cell').forEach(td => {
-      td.innerHTML = `<a class="mkt-link mkt-cm mkt-direct" href="${esc(data.cardmarketUrl)}" target="_blank" rel="noopener" title="Direct product page on Cardmarket">Product page \u2192</a>`;
+    root.querySelectorAll('.mkt-cm-cell').forEach(a => {
+      a.setAttribute('href', data.cardmarketUrl);
+      a.classList.add('mkt-direct');
+      a.title = 'Direct product page on Cardmarket';
+      const go = a.querySelector('.mkt-link-go');
+      if (go) go.textContent = 'Product page \u2192';
     });
   }
   if (data.tcgplayerUrl) {
-    table.querySelectorAll('.mkt-tcg-cell').forEach(td => {
-      td.innerHTML = `<a class="mkt-link mkt-tcg mkt-direct" href="${esc(data.tcgplayerUrl)}" target="_blank" rel="noopener" title="Direct product page on TCGplayer">Product page \u2192</a>`;
+    root.querySelectorAll('.mkt-tcg-cell').forEach(a => {
+      a.setAttribute('href', data.tcgplayerUrl);
+      a.classList.add('mkt-direct');
+      a.title = 'Direct product page on TCGplayer';
+      const go = a.querySelector('.mkt-link-go');
+      if (go) go.textContent = 'Product page \u2192';
     });
   }
 

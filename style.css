@@ -2758,6 +2758,77 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .mkt-footnote strong { color: var(--accent); }
 
+/* Per-grade marketplace cards ----------------------------------------------
+   Replaces the old marketplaceTable with a vertical stack of grade panels.
+   Each card: head row (grade + deal score) → metrics row (fair / 5yr) →
+   four marketplace search/product-page buttons. */
+.mkt-grades {
+  display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 4px;
+}
+.mkt-grade-card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.15s, transform 0.15s;
+}
+.mkt-grade-card:hover { border-color: var(--accent-dim, var(--border)); }
+.mkt-grade-card:first-child {
+  /* Top-scoring grade gets a subtle accent rail — it's the recommended hunt. */
+  border-left: 3px solid var(--accent);
+}
+.mkt-grade-summary {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.mkt-grade-head {
+  display: flex; align-items: center; gap: 10px;
+  min-width: 130px;
+}
+.mkt-grade-label {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  color: var(--accent); letter-spacing: 0.03em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.mkt-grade-metrics {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px;
+}
+.mkt-grade-metric { display: flex; flex-direction: column; gap: 2px; }
+.mkt-grade-metric-label {
+  font-family: var(--mono); font-size: 9px; font-weight: 600;
+  color: var(--text-faint); letter-spacing: 0.06em; text-transform: uppercase;
+}
+.mkt-grade-metric .mkt-money {
+  font-family: var(--mono); font-size: 15px; font-weight: 700;
+  color: var(--text); font-variant-numeric: tabular-nums;
+}
+.mkt-grade-metric .mkt-yr5 { color: var(--accent); }
+.mkt-grade-metrics-spacer { flex: 1; }
+.mkt-grade-links {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.mkt-grade-links .mkt-link {
+  display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+  padding: 8px 10px; text-align: left; line-height: 1.2;
+}
+.mkt-link-src {
+  font-family: var(--mono); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 5px; border-radius: 3px; align-self: flex-start;
+}
+.src-tcg { background: rgba(45, 212, 191, 0.15); color: #5eead4; }
+.mkt-link-go {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+}
+.mkt-grade-links .mkt-link:hover .mkt-link-go { color: inherit; }
+.mkt-grade-links .mkt-link.mkt-direct .mkt-link-go { color: #86efac; }
+
+@media (max-width: 720px) {
+  .mkt-grade-summary { gap: 10px; }
+  .mkt-grade-metrics { grid-template-columns: 1fr 1fr; flex: 1; }
+  .mkt-grade-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 720px) {
   .mkt-header { flex-direction: column; align-items: stretch; }
 }

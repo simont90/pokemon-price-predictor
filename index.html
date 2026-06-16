@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260616a">
+  <link rel="stylesheet" href="style.css?v=20260616b">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -985,23 +985,10 @@
               </div>
             </div>
           </div>
-          <div class="mkt-table-wrap">
-            <table class="mkt-table" id="marketplaceTable">
-              <thead>
-                <tr>
-                  <th>Grade</th>
-                  <th>Fair value (model)</th>
-                  <th>5yr target</th>
-                  <th>eBay UK</th>
-                  <th>eBay US</th>
-                  <th>Cardmarket</th>
-                  <th>TCGplayer</th>
-                  <th>Deal score</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
+          <!-- Per-grade marketplace search panels. One stacked card per grade.
+               Rendered in JS by renderMarketplaceScan; sorted by deal score so
+               the best-value grade surfaces first. -->
+          <div class="mkt-grades" id="marketplaceGrades"></div>
           <p class="mkt-footnote" id="marketplaceFootnote"></p>
         </section>
 
@@ -1540,6 +1527,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260616a"></script>
+  <script src="app.js?v=20260616b"></script>
 </body>
 </html>
