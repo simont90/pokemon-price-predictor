@@ -6418,8 +6418,11 @@ async function upgradeMarketplaceLinks(card, rows) {
 // because that's the anchor; user could change later).
 
 const MKT_WORKER_KEY = 'pkm-mkt-worker-url';
+// Default worker URL — deployed against Simon's eBay developer keyset. Users
+// who fork the site can override via the Connect-live-scan button.
+const MKT_WORKER_DEFAULT = 'https://pokemon-marketplace.simontariq.workers.dev';
 
-function getMktWorkerUrl() { return localStorage.getItem(MKT_WORKER_KEY) || ''; }
+function getMktWorkerUrl() { return localStorage.getItem(MKT_WORKER_KEY) || MKT_WORKER_DEFAULT; }
 function setMktWorkerUrl(url) {
   if (!url) { localStorage.removeItem(MKT_WORKER_KEY); }
   else { localStorage.setItem(MKT_WORKER_KEY, url.replace(/\/+$/, '')); }
@@ -6429,7 +6432,8 @@ function updateMktSettingsLabel() {
   const lbl = $('mktSettingsLabel');
   if (!lbl) return;
   const url = getMktWorkerUrl();
-  lbl.textContent = url ? 'Live scan: ON' : 'Connect live scan';
+  const isDefault = url === MKT_WORKER_DEFAULT;
+  lbl.textContent = url ? (isDefault ? 'Live scan: ON' : 'Live scan: ON (custom)') : 'Connect live scan';
   $('mktSettingsBtn')?.classList.toggle('is-active', !!url);
 }
 
@@ -6453,6 +6457,51 @@ function setupMarketplaceWorker() {
   });
 }
 
+// Words that almost always indicate junk listings — bulk lots, mystery packs,
+// pick-a-card grab bags, etc. Strip these out before scoring.
+const MKT_JUNK_KEYWORDS = [
+  'choose your card', 'choose your', 'choose card', 'pick your card', 'pick your',
+  'mystery', 'grab bag', 'random', 'build your', 'starter deck', 'theme deck',
+  'booster pack', 'booster box', 'booster bundle', 'pack of ', 'packs of', 'sealed pack',
+  'elite trainer', 'etb ', ' etb', 'tin', 'collection box', 'bulk', 'lot of', 'card lot',
+  ' lot ', 'x100', 'x 100', '100 cards', '50 cards', '25 cards', '10 cards', '5 cards',
+  'job lot', 'wholesale', 'binder', 'sleeves', 'card sleeves', 'playmat', 'deck box',
+  ' proxy', 'reverse holo bundle', 'common &', '· common', 'commons & uncommons',
+  'common and uncommon', 'commons only', 'commons '
+];
+
+// Words the listing title MUST contain (case-insensitive) given the card type.
+// e.g. a "Charizard ex" listing must mention "ex" — otherwise it's just any Charizard.
+function mktRequiredTokens(card) {
+  const name = (card.n || '').toLowerCase();
+  const out = [];
+  // The primary character/word is mandatory — strip ex/v/vmax/gx/etc. tags first
+  // and use the leading word(s).
+  const base = name
+    .replace(/\b(ex|v|vmax|vstar|gx|tag team|prime|legend|break|delta|prism star|radiant)\b/g, '')
+    .replace(/\s+/g, ' ').trim();
+  if (base) out.push(base.split(' ')[0]); // first word, usually the character
+  // Tag tokens that must be present if the card has them
+  if (/\bvmax\b/.test(name)) out.push('vmax');
+  else if (/\bvstar\b/.test(name)) out.push('vstar');
+  else if (/\bv\b/.test(name) && !/\bex\b/.test(name)) out.push(' v ');
+  else if (/\bex\b/.test(name)) out.push(' ex');
+  else if (/\bgx\b/.test(name)) out.push('gx');
+  return out;
+}
+
+function mktIsJunk(title, requiredTokens) {
+  if (!title) return true;
+  const t = ` ${title.toLowerCase()} `;
+  for (const kw of MKT_JUNK_KEYWORDS) {
+    if (t.includes(kw)) return true;
+  }
+  for (const tok of requiredTokens) {
+    if (!t.includes(tok)) return true;
+  }
+  return false;
+}
+
 async function fetchLiveDeals(card) {
   const workerUrl = getMktWorkerUrl();
   const wrap = $('mktLiveWrap');
@@ -6469,6 +6518,7 @@ async function fetchLiveDeals(card) {
   const fxUsdToGbp = (typeof fxRate === 'number' ? fxRate : 0.79);
   const fxEurToGbp = 0.86;
   const query = buildSearchQuery(card, 'PSA 10');
+  const required = mktRequiredTokens(card);
 
   wrap.style.display = 'block';
   status.textContent = 'Scanning eBay UK + US + Cardmarket…';
@@ -6481,12 +6531,16 @@ async function fetchLiveDeals(card) {
     if (!res.ok) throw new Error(`Worker ${res.status}`);
     const data = await res.json();
     const took = Math.round(performance.now() - t0);
-    const deals = data.deals || [];
+    const rawDeals = data.deals || [];
+    // Filter out junk listings (bulk lots, mystery packs, pick-a-card etc.)
+    const deals = rawDeals.filter(d => !mktIsJunk(d.title, required));
+    const filteredCount = rawDeals.length - deals.length;
     const c = data.counts || {};
     const errStr = (data.errors && data.errors.length) ? ` · errors: ${data.errors.join(', ')}` : '';
-    status.innerHTML = `${deals.length} deals · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${errStr}`;
+    const filterStr = filteredCount > 0 ? ` · ${filteredCount} junk filtered` : '';
+    status.innerHTML = `${deals.length} deals · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}`;
     if (deals.length === 0) {
-      list.innerHTML = `<div class="mkt-empty">No live listings under £${fairValueGBP.toFixed(0)} fair value right now. Try widening or use the deep-link buttons below.</div>`;
+      list.innerHTML = `<div class="mkt-empty">No relevant listings under £${fairValueGBP.toFixed(0)} fair value right now${filteredCount > 0 ? ` (${filteredCount} bulk/mystery lots filtered out)` : ''}. Try the deep-link buttons below to browse directly.</div>`;
       return;
     }
     list.innerHTML = deals.map(d => {
