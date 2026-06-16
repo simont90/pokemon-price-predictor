@@ -395,6 +395,7 @@ async function init() {
   setupPageNav();
   setupUnderrated();
   setupPWANav();
+  setupCollapsibleSections();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
   injectUserCards();
@@ -7524,6 +7525,9 @@ function computeHoldCore(card) {
       variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : 0.32,
     })),
   ];
+  // Apply any user-entered eBay market overrides so the EN vs JP verdict
+  // reflects the real-world price the user is seeing on listings.
+  if (typeof applyHoldOverrides === 'function') applyHoldOverrides(card, strategies, fx, gradingFeeUSD);
   // Identical risk-adjustment formula to renderHoldStrategy so EN vs JP
   // verdict numbers line up exactly with the strategy grid.
   strategies.forEach(s => {
@@ -7871,6 +7875,16 @@ function renderHoldStrategy(card) {
     })),
   ];
 
+  // Apply any user-entered eBay market overrides. We override the "today" buy
+  // price for the matching strategy row(s) but leave 5yr targets on the model's
+  // projection — that way ROI honestly reflects "I paid £X, here's what the
+  // model says it'll be worth."
+  if (typeof applyHoldOverrides === 'function') applyHoldOverrides(card, strategies, fx, gradingFeeUSD);
+
+  // Refresh the override editor panel so the placeholders show current fair
+  // values and the inputs reflect any persisted overrides for this card.
+  if (typeof renderHoldOverridePanel === 'function') renderHoldOverridePanel(card);
+
   // Risk-adjusted score: ROI minus a variance discount, then a small bonus
   // for absolute upside so a £500 profit beats a £50 profit at the same ROI.
   // This is how we pick the "long-term winner" — it punishes the high-variance
@@ -7969,14 +7983,15 @@ function renderHoldStrategy(card) {
     const riskLabel = s.risk === 'low' ? 'Low risk' : s.risk === 'med' ? 'Medium risk' : 'High risk';
     const profitSign = s.profit >= 0 ? '+' : '−';
     return `
-      <div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${verdict.c}">
+      <div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${verdict.c} ${s.overridden ? 'hold-tile-overridden' : ''}">
         ${isWinner ? '<div class="hold-winner-tag">\u2605 Best long-term pick</div>' : ''}
+        ${s.overridden ? `<div class="hold-tile-override-tag" title="Using your manual market price">Market £${(+s.overrideGBP).toFixed(2)}</div>` : ''}
         <div class="hold-tile-head">
           <div class="hold-tile-title">${s.label}</div>
           <div class="hold-tile-desc">${s.desc}</div>
         </div>
         <div class="hold-tile-row">
-          <span class="hold-tile-k">Today</span>
+          <span class="hold-tile-k">Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}</span>
           <span class="hold-tile-v">${fmtGBP(s.today)}</span>
         </div>
         <div class="hold-tile-row">
@@ -9981,5 +9996,230 @@ function urRender(results) {
         } catch (e) {}
       }, 80);
     });
+  });
+}
+
+
+// ============================================================================
+// Hold Strategy — Market Price Override (per card, per grade tier)
+// ----------------------------------------------------------------------------
+// Users see the model's "fair value" for each strategy row (Buy Raw, Buy PSA 10,
+// etc) but real eBay listings often clear well above (or below) that fair value.
+// The override lets the user enter the actual market price they're seeing in
+// GBP — that overrides only the "today" buy price for the affected strategy
+// row(s). The 5yr target stays anchored to the model's projection so the
+// resulting profit/ROI honestly tells the user whether paying the eBay number
+// is worth it.
+// ============================================================================
+const HOLD_OVERRIDE_KEY = 'pkm-hold-overrides';
+function _holdOverridesAll() {
+  try { return JSON.parse(localStorage.getItem(HOLD_OVERRIDE_KEY) || '{}') || {}; }
+  catch { return {}; }
+}
+function getHoldOverridesForCard(cardId) {
+  if (!cardId) return {};
+  return _holdOverridesAll()[cardId] || {};
+}
+function setHoldOverride(cardId, gradeKey, gbpValue) {
+  if (!cardId) return;
+  const all = _holdOverridesAll();
+  all[cardId] = all[cardId] || {};
+  const n = (typeof gbpValue === 'string') ? parseFloat(gbpValue) : gbpValue;
+  if (gbpValue == null || gbpValue === '' || !isFinite(n) || n <= 0) {
+    delete all[cardId][gradeKey];
+    if (!Object.keys(all[cardId]).length) delete all[cardId];
+  } else {
+    all[cardId][gradeKey] = +n;
+  }
+  try { localStorage.setItem(HOLD_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
+}
+function clearHoldOverridesForCard(cardId) {
+  if (!cardId) return;
+  const all = _holdOverridesAll();
+  delete all[cardId];
+  try { localStorage.setItem(HOLD_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
+}
+
+// Apply user-entered market prices to a strategies array (mutates in place).
+// We override the "today" buy price only — 5yr target stays from the model.
+// That way ROI honestly reflects "I paid £X today, model says it'll be worth
+// £Y in 5yr". Recompute profit/ROI for affected rows.
+function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
+  if (!card || !card.i || !Array.isArray(strategies)) return;
+  const overrides = getHoldOverridesForCard(card.i);
+  if (!overrides || !Object.keys(overrides).length) return;
+  const fxRateLocal = (typeof fx === 'number' && fx > 0) ? fx : 0.79;
+  // Map strategy key → which override key feeds it.
+  // The "gamble" (Buy Raw + Grade) row buys raw upfront, so it uses the raw override.
+  const sourceKey = { raw: 'raw', gamble: 'raw', psa7: 'psa7', psa8: 'psa8', psa9: 'psa9', psa10: 'psa10' };
+  strategies.forEach(s => {
+    const ok = sourceKey[s.key];
+    if (!ok) return;
+    const gbp = overrides[ok];
+    if (gbp == null || !isFinite(gbp) || gbp <= 0) return;
+    const usd = gbp / fxRateLocal;
+    if (s.key === 'gamble') {
+      s.today = usd + gradingFeeUSD;
+    } else {
+      s.today = usd;
+    }
+    s.profit = s.yr5 - s.today;
+    s.roi = s.today > 0 ? (s.profit / s.today) * 100 : 0;
+    s.overridden = true;
+    s.overrideGBP = gbp;
+  });
+}
+
+// Render the override editor UI inside the Hold Strategy section.
+// Five GBP inputs (Raw + PSA 7/8/9/10) collapsed behind a single details/summary.
+function renderHoldOverridePanel(card) {
+  const host = document.getElementById('holdOverride');
+  if (!host) return;
+  if (!card || !card.i) { host.style.display = 'none'; host.innerHTML = ''; return; }
+  host.style.display = 'block';
+  const overrides = getHoldOverridesForCard(card.i);
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  // Build fair-value reference for each grade for the placeholder hint.
+  const anchor = (typeof getPsa10Anchor === 'function') ? getPsa10Anchor(card) : null;
+  const psa10USD = anchor && anchor.usd;
+  const rawUSD = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : null;
+  function fvGBP(grade) {
+    if (grade === 'raw') return rawUSD ? rawUSD * fx : null;
+    if (!psa10USD) return null;
+    const g = parseInt(grade.replace('psa', ''), 10);
+    if (g === 10) return psa10USD * fx;
+    if (typeof estimateGradePrice === 'function') return estimateGradePrice(card, g, psa10USD) * fx;
+    return null;
+  }
+  const rows = [
+    { key: 'raw',   label: 'Raw' },
+    { key: 'psa7',  label: 'PSA 7' },
+    { key: 'psa8',  label: 'PSA 8' },
+    { key: 'psa9',  label: 'PSA 9' },
+    { key: 'psa10', label: 'PSA 10' },
+  ];
+  const activeCount = rows.filter(r => overrides[r.key] != null).length;
+  const summaryNote = activeCount > 0
+    ? `<span class="ho-active">${activeCount} active override${activeCount === 1 ? '' : 's'}</span>`
+    : `<span class="ho-hint">Override fair value with actual eBay prices</span>`;
+  host.innerHTML = `
+    <details class="ho-details"${activeCount > 0 ? ' open' : ''}>
+      <summary class="ho-summary">
+        <span class="ho-label"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg> Market price override</span>
+        ${summaryNote}
+        <svg class="ho-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </summary>
+      <div class="ho-body">
+        <p class="ho-blurb">If eBay listings are clearing well above (or below) the model's fair value, drop the actual GBP price into the matching grade. The strategy ROI & winner will recompute using your number as the buy-in.</p>
+        <div class="ho-grid">
+          ${rows.map(r => {
+            const fv = fvGBP(r.key);
+            const val = overrides[r.key] != null ? overrides[r.key] : '';
+            const placeholder = fv != null ? `Fair value £${fv.toFixed(2)}` : 'Enter GBP';
+            const fvNote = fv != null ? `<span class="ho-fv">Fair £${fv.toFixed(2)}</span>` : '';
+            return `
+              <div class="ho-row">
+                <label class="ho-row-label" for="ho-in-${r.key}">${r.label}</label>
+                <div class="ho-input-wrap">
+                  <span class="ho-cur">£</span>
+                  <input type="number" id="ho-in-${r.key}" class="ho-input" data-grade="${r.key}"
+                         min="0" step="0.01" inputmode="decimal"
+                         value="${val}" placeholder="${placeholder}">
+                </div>
+                ${fvNote}
+              </div>
+            `;
+          }).join('')}
+        </div>
+        <div class="ho-actions">
+          <button type="button" class="ho-clear" id="holdOverrideClear">Clear all overrides for this card</button>
+        </div>
+      </div>
+    </details>
+  `;
+  // Wire input changes — debounce a touch so typing isn't laggy.
+  let debounceT = null;
+  host.querySelectorAll('.ho-input').forEach(inp => {
+    inp.addEventListener('input', (e) => {
+      const grade = inp.getAttribute('data-grade');
+      const v = inp.value;
+      if (debounceT) clearTimeout(debounceT);
+      debounceT = setTimeout(() => {
+        setHoldOverride(card.i, grade, v);
+        // Re-render the entire Hold Strategy with the new override applied.
+        try { renderHoldStrategy(card); } catch {}
+      }, 220);
+    });
+    // Re-render on blur immediately too, in case user tabs away.
+    inp.addEventListener('blur', (e) => {
+      const grade = inp.getAttribute('data-grade');
+      setHoldOverride(card.i, grade, inp.value);
+      try { renderHoldStrategy(card); } catch {}
+    });
+  });
+  const clearBtn = host.querySelector('#holdOverrideClear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      clearHoldOverridesForCard(card.i);
+      try { renderHoldStrategy(card); } catch {}
+    });
+  }
+}
+
+// ============================================================================
+// Collapsible Sections — global UI cleanup
+// ----------------------------------------------------------------------------
+// Adds a chevron toggle to every `section.card` so users can collapse noisy
+// sections. State persists in localStorage keyed by section id.
+// ============================================================================
+const COLLAPSED_SECTIONS_KEY = 'pkm-collapsed-sections';
+function _getCollapsedSet() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLLAPSED_SECTIONS_KEY) || '[]');
+    return new Set(Array.isArray(raw) ? raw : []);
+  } catch { return new Set(); }
+}
+function _saveCollapsedSet(set) {
+  try { localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify([...set])); } catch {}
+}
+function setupCollapsibleSections() {
+  const collapsed = _getCollapsedSet();
+  const sections = document.querySelectorAll('section.card');
+  sections.forEach((sec, idx) => {
+    if (sec.dataset.collapsibleReady === '1') return;
+    sec.dataset.collapsibleReady = '1';
+    const key = sec.id || `card-idx-${idx}`;
+    sec.dataset.collapseKey = key;
+    sec.classList.add('is-collapsible');
+
+    // Chevron button — absolute-positioned top-right. Stays visible in both
+    // collapsed and expanded states.
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'card-collapse-btn';
+    btn.setAttribute('aria-label', 'Toggle section');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
+    sec.appendChild(btn);
+
+    if (collapsed.has(key)) sec.classList.add('is-collapsed');
+
+    function toggle() {
+      sec.classList.toggle('is-collapsed');
+      const cur = _getCollapsedSet();
+      if (sec.classList.contains('is-collapsed')) cur.add(key); else cur.delete(key);
+      _saveCollapsedSet(cur);
+    }
+    btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+
+    // Also let users click anywhere on the first child (heading row) to toggle,
+    // but skip if the click was on an interactive control inside the header.
+    const head = sec.firstElementChild;
+    if (head && head.classList && !head.classList.contains('card-collapse-btn')) {
+      head.classList.add('card-collapse-header');
+      head.addEventListener('click', (e) => {
+        if (e.target.closest('input, button, select, textarea, a, [role=button], [contenteditable=true], .ho-details summary')) return;
+        toggle();
+      });
+    }
   });
 }
