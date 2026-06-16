@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260614y">
+  <link rel="stylesheet" href="style.css?v=20260616a">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -947,13 +947,43 @@
             </div>
           </div>
 
-          <!-- Live deals: populated when a Worker URL is configured -->
+          <!-- Live deals: populated when a Worker URL is configured. Each grade fans
+               out in parallel; results are filtered by grade-aware junk rules and
+               card-number matching. -->
           <div class="mkt-live-wrap" id="mktLiveWrap" style="display:none">
             <div class="mkt-live-header">
               <h3>Live deals — ranked by spread vs fair value</h3>
-              <span class="mkt-live-status" id="mktLiveStatus">Idle</span>
+              <span class="mkt-live-status" id="mktLiveStatus"></span>
             </div>
-            <div class="mkt-live-list" id="mktLiveList"></div>
+            <div class="mkt-grade-tabs" id="mktGradeTabs" role="tablist">
+              <button class="mkt-grade-tab" data-grade="raw"   role="tab" type="button"><span class="mkt-grade-tab-label">Raw</span><span class="mkt-grade-tab-badge" id="mktBadge-raw">·</span></button>
+              <button class="mkt-grade-tab" data-grade="psa7"  role="tab" type="button"><span class="mkt-grade-tab-label">PSA 7</span><span class="mkt-grade-tab-badge" id="mktBadge-psa7">·</span></button>
+              <button class="mkt-grade-tab" data-grade="psa8"  role="tab" type="button"><span class="mkt-grade-tab-label">PSA 8</span><span class="mkt-grade-tab-badge" id="mktBadge-psa8">·</span></button>
+              <button class="mkt-grade-tab" data-grade="psa9"  role="tab" type="button"><span class="mkt-grade-tab-label">PSA 9</span><span class="mkt-grade-tab-badge" id="mktBadge-psa9">·</span></button>
+              <button class="mkt-grade-tab is-active" data-grade="psa10" role="tab" type="button"><span class="mkt-grade-tab-label">PSA 10</span><span class="mkt-grade-tab-badge" id="mktBadge-psa10">·</span></button>
+            </div>
+            <div class="mkt-grade-panels">
+              <div class="mkt-grade-panel" data-grade="raw" role="tabpanel">
+                <div class="mkt-grade-status" id="mktStatus-raw">Idle</div>
+                <div class="mkt-live-list" id="mktList-raw"></div>
+              </div>
+              <div class="mkt-grade-panel" data-grade="psa7" role="tabpanel">
+                <div class="mkt-grade-status" id="mktStatus-psa7">Idle</div>
+                <div class="mkt-live-list" id="mktList-psa7"></div>
+              </div>
+              <div class="mkt-grade-panel" data-grade="psa8" role="tabpanel">
+                <div class="mkt-grade-status" id="mktStatus-psa8">Idle</div>
+                <div class="mkt-live-list" id="mktList-psa8"></div>
+              </div>
+              <div class="mkt-grade-panel" data-grade="psa9" role="tabpanel">
+                <div class="mkt-grade-status" id="mktStatus-psa9">Idle</div>
+                <div class="mkt-live-list" id="mktList-psa9"></div>
+              </div>
+              <div class="mkt-grade-panel is-active" data-grade="psa10" role="tabpanel">
+                <div class="mkt-grade-status" id="mktStatus-psa10">Idle</div>
+                <div class="mkt-live-list" id="mktList-psa10"></div>
+              </div>
+            </div>
           </div>
           <div class="mkt-table-wrap">
             <table class="mkt-table" id="marketplaceTable">
@@ -1510,6 +1540,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260614y"></script>
+  <script src="app.js?v=20260616a"></script>
 </body>
 </html>

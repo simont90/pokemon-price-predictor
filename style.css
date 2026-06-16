@@ -2792,6 +2792,44 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   font-family: var(--mono); font-size: 11px; color: var(--text-muted);
 }
 .mkt-live-list { display: flex; flex-direction: column; gap: 6px; }
+
+/* Grade tabs (Raw · PSA 7 · PSA 8 · PSA 9 · PSA 10) ------------------------ */
+.mkt-grade-tabs {
+  display: flex; gap: 4px; margin: 0 0 10px;
+  padding: 4px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); flex-wrap: wrap;
+}
+.mkt-grade-tab {
+  flex: 1 1 80px; min-width: 80px; display: inline-flex; align-items: center;
+  justify-content: center; gap: 6px; padding: 6px 10px;
+  background: transparent; border: 1px solid transparent; border-radius: 4px;
+  color: var(--text-muted); cursor: pointer;
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.mkt-grade-tab:hover { color: var(--text); background: var(--bg-card); }
+.mkt-grade-tab.is-active {
+  background: var(--bg-card); color: var(--accent); border-color: var(--accent);
+}
+.mkt-grade-tab-label { line-height: 1; }
+.mkt-grade-tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 16px; padding: 0 5px; border-radius: 8px;
+  background: var(--bg); color: inherit;
+  font-size: 10px; font-weight: 700;
+}
+.mkt-grade-tab.is-active .mkt-grade-tab-badge {
+  background: var(--accent); color: var(--bg);
+}
+.mkt-grade-panels { display: block; }
+.mkt-grade-panel { display: none; }
+.mkt-grade-panel.is-active { display: block; }
+.mkt-grade-status {
+  font-family: var(--mono); font-size: 11px; color: var(--text-muted);
+  margin: 0 0 8px; padding: 6px 8px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 4px;
+}
 .mkt-empty {
   font-size: 12px; color: var(--text-faint); text-align: center; padding: 16px 0;
 }

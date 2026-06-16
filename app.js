@@ -6458,16 +6458,30 @@ function setupMarketplaceWorker() {
 }
 
 // Words that almost always indicate junk listings — bulk lots, mystery packs,
-// pick-a-card grab bags, etc. Strip these out before scoring.
+// pick-a-card grab bags, Battle Academy / League / online-code cards, etc.
+// Strip these out before scoring.
 const MKT_JUNK_KEYWORDS = [
+  // Bulk + pick-a-card listings
   'choose your card', 'choose your', 'choose card', 'pick your card', 'pick your',
   'mystery', 'grab bag', 'random', 'build your', 'starter deck', 'theme deck',
   'booster pack', 'booster box', 'booster bundle', 'pack of ', 'packs of', 'sealed pack',
-  'elite trainer', 'etb ', ' etb', 'tin', 'collection box', 'bulk', 'lot of', 'card lot',
+  'elite trainer', 'etb ', ' etb', 'collection box', 'bulk', 'lot of', 'card lot',
   ' lot ', 'x100', 'x 100', '100 cards', '50 cards', '25 cards', '10 cards', '5 cards',
   'job lot', 'wholesale', 'binder', 'sleeves', 'card sleeves', 'playmat', 'deck box',
   ' proxy', 'reverse holo bundle', 'common &', '· common', 'commons & uncommons',
-  'common and uncommon', 'commons only', 'commons '
+  'common and uncommon', 'commons only', 'commons ',
+  // Online code cards
+  'code card', 'code cards', 'online code', 'online codes', 'tcg online', 'tcgo ',
+  ' tcgo', 'ptcgo', 'ptcgl', 'email code', 'message code', 'unused code',
+  // Battle Academy / League / promo-deck items where the character name is
+  // decoration rather than the actual card being sold
+  'battle academy', 'pokemon academy', 'league promo', 'league deck',
+  'symbol)', 'symbol stamped', 'stamped promo', 'reverse holos -',
+  'damage counter', 'energy card lot', 'condition unspecified codes',
+  'divider', 'gx marker', 'ace spec marker',
+  // Sealed products / accessories
+  'collector chest', 'premium collection', 'mini tin', 'gift set', 'gift box',
+  'figure', 'plush', 'keychain', 'sticker', 'sticker book', 'coin only', 'coin set'
 ];
 
 // Words the listing title MUST contain (case-insensitive) given the card type.
@@ -6490,88 +6504,209 @@ function mktRequiredTokens(card) {
   return out;
 }
 
-function mktIsJunk(title, requiredTokens) {
+// If the title contains ANY card-number reference — either "NN/NN" or "#NN" —
+// require the right one to appear. Catches:
+//   - "Hop - 165/202 - Battle Academy (Pikachu Symbol 13)" misread as Pikachu
+//   - "Charizard EX #125 PSA 10" surfacing when scanning the #223 SIR variant
+// We do NOT match bare \b\d+\b runs (eBay item IDs, seller catalogue numbers,
+// years, etc.) — only the explicit "#NN" and "NN/NN" forms collectors actually
+// use to identify cards. If the title has neither form we let it through —
+// many sellers simply omit the number.
+function mktNumberMismatch(title, card) {
+  if (!card || !card.cn) return false;
+  const expectedNum = String(card.cn).replace(/^0+/, '');
+  const slashMatches = title.match(/\b(\d{1,4})\s*\/\s*(\d{1,4})\b/g) || [];
+  const hashMatches  = title.match(/#\s*(\d{1,4})\b/g) || [];
+  const refs = [
+    ...slashMatches.map(m => m.split('/')[0].trim().replace(/^0+/, '')),
+    ...hashMatches.map(m => m.replace(/[#\s]/g, '').replace(/^0+/, '')),
+  ];
+  if (refs.length === 0) return false;
+  return !refs.includes(expectedNum);
+}
+
+// Grade-aware filter. For 'raw' tab: reject titles mentioning any PSA/CGC/BGS
+// grade. For graded tabs ('7'..'10'): require the title to mention that exact
+// PSA grade. Also apply a min-price floor — sub-£3 or sub-8%-of-fair listings
+// are virtually always junk regardless of how the title reads.
+function mktIsJunk(deal, card, requiredTokens, gradeFilter, fairValueGBP) {
+  const title = deal && deal.title ? deal.title : '';
   if (!title) return true;
   const t = ` ${title.toLowerCase()} `;
+  // Static junk keywords
   for (const kw of MKT_JUNK_KEYWORDS) {
     if (t.includes(kw)) return true;
   }
+  // Required name + tag tokens
   for (const tok of requiredTokens) {
     if (!t.includes(tok)) return true;
   }
+  // Card-number mismatch
+  if (mktNumberMismatch(title, card)) return true;
+  // Grade-aware
+  const anyGradeRe = /\b(psa|cgc|bgs|ace|sgc)\s*-?\s*\d{1,2}\b|gem mint|gem[- ]mt/i;
+  if (gradeFilter === 'raw') {
+    if (anyGradeRe.test(title)) return true;
+  } else {
+    const re = new RegExp(`\\bpsa\\s*-?\\s*${gradeFilter}\\b`, 'i');
+    if (!re.test(title)) return true;
+  }
+  // Min-price floor
+  if (typeof deal.priceGBP === 'number' && fairValueGBP > 0) {
+    const floor = Math.max(3, fairValueGBP * 0.08);
+    if (deal.priceGBP < floor) return true;
+  }
   return false;
+}
+
+// Build the HTML for a single deal card. Shared by every grade panel.
+function mktRenderDealCard(d) {
+  const sigCls = d.signal === 'STRONG VALUE' ? 'mkt-strong'
+               : d.signal === 'VALUE'        ? 'mkt-fair'
+               : d.signal === 'PREMIUM'      ? 'mkt-weak' : 'mkt-fair';
+  const sourceCls = (d.source || '').includes('UK') ? 'src-uk'
+                  : (d.source || '').includes('US') ? 'src-us' : 'src-cm';
+  const img = d.image
+    ? `<img class="mkt-deal-img" src="${esc(d.image)}" alt="" onerror="this.style.display='none'">`
+    : '<div class="mkt-deal-img"></div>';
+  return `
+    <a class="mkt-deal" href="${esc(d.url)}" target="_blank" rel="noopener">
+      ${img}
+      <div class="mkt-deal-body">
+        <div class="mkt-deal-title">${esc(d.title)}</div>
+        <div class="mkt-deal-meta">
+          <span class="mkt-src ${sourceCls}">${esc(d.source)}</span>
+          ${d.condition ? `<span>${esc(d.condition)}</span>` : ''}
+          ${d.seller ? `<span>· ${esc(d.seller)}</span>` : ''}
+        </div>
+      </div>
+      <div class="mkt-deal-right">
+        <div class="mkt-deal-price">£${d.priceGBP.toFixed(2)}</div>
+        <div class="mkt-deal-spread ${d.spreadPct >= 0 ? 'pos' : 'neg'}">${d.spreadPct >= 0 ? '↓' : '↑'} ${Math.abs(d.spreadPct).toFixed(0)}% vs fair</div>
+        <span class="mkt-pill ${sigCls}">${esc(d.signal)}</span>
+      </div>
+    </a>
+  `;
+}
+
+// Fetch + render deals for one grade tab. Called in parallel by fetchLiveDeals.
+async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurToGbp, scanToken) {
+  const status = $(`mktStatus-${g.key}`);
+  const list = $(`mktList-${g.key}`);
+  const badge = $(`mktBadge-${g.key}`);
+  // Stale-scan guard: a new card selection invalidates older fetches.
+  const isStale = () => scanToken !== mktScanToken;
+  if (!g.fairUSD || g.fairUSD <= 0) {
+    if (status) status.textContent = 'No fair-value anchor for this grade.';
+    if (list) list.innerHTML = '';
+    if (badge) badge.textContent = '0';
+    return 0;
+  }
+  const fairValueGBP = gbpFromUSD(g.fairUSD);
+  const query = buildSearchQuery(card, g.queryGrade);
+  const url = `${workerUrl}/search?q=${encodeURIComponent(query)}&max=${fairValueGBP.toFixed(2)}&grade=${g.workerGrade}&fx=${fxUsdToGbp}&fxEur=${fxEurToGbp}`;
+  try {
+    const t0 = performance.now();
+    const res = await fetch(url);
+    if (isStale()) return 0;
+    if (!res.ok) throw new Error(`Worker ${res.status}`);
+    const data = await res.json();
+    if (isStale()) return 0;
+    const took = Math.round(performance.now() - t0);
+    const rawDeals = data.deals || [];
+    const deals = rawDeals.filter(d => !mktIsJunk(d, card, required, g.workerGrade, fairValueGBP));
+    const filteredCount = rawDeals.length - deals.length;
+    const c = data.counts || {};
+    const errStr = (data.errors && data.errors.length) ? ` · errors: ${data.errors.join(', ')}` : '';
+    const filterStr = filteredCount > 0 ? ` · ${filteredCount} filtered` : '';
+    if (badge) badge.textContent = String(deals.length);
+    if (status) status.innerHTML = `${deals.length} clean · £${fairValueGBP.toFixed(0)} cap · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}`;
+    if (list) {
+      if (deals.length === 0) {
+        list.innerHTML = `<div class="mkt-empty">No clean ${g.label} listings under £${fairValueGBP.toFixed(0)} fair value right now${filteredCount > 0 ? ` (${filteredCount} junk filtered)` : ''}. Try the deep-link buttons below.</div>`;
+      } else {
+        list.innerHTML = deals.map(mktRenderDealCard).join('');
+      }
+    }
+    return deals.length;
+  } catch (e) {
+    if (isStale()) return 0;
+    if (status) status.textContent = `Worker error: ${e.message}.`;
+    if (list) list.innerHTML = '';
+    if (badge) badge.textContent = '!';
+    return 0;
+  }
+}
+
+// Stale-scan guard: each call to fetchLiveDeals increments this token. Any
+// in-flight fetch whose token no longer matches discards its result.
+let mktScanToken = 0;
+
+// Wire up grade-tab clicks once. Idempotent.
+function setupMktGradeTabs() {
+  const tabs = document.querySelectorAll('#mktGradeTabs .mkt-grade-tab');
+  if (!tabs.length || tabs[0].dataset.tabsBound) return;
+  tabs.forEach(tab => {
+    tab.dataset.tabsBound = '1';
+    tab.addEventListener('click', () => {
+      const g = tab.dataset.grade;
+      document.querySelectorAll('#mktGradeTabs .mkt-grade-tab').forEach(t => t.classList.toggle('is-active', t === tab));
+      document.querySelectorAll('.mkt-grade-panel').forEach(p => p.classList.toggle('is-active', p.dataset.grade === g));
+    });
+  });
 }
 
 async function fetchLiveDeals(card) {
   const workerUrl = getMktWorkerUrl();
   const wrap = $('mktLiveWrap');
-  const status = $('mktLiveStatus');
-  const list = $('mktLiveList');
+  const topStatus = $('mktLiveStatus');
   if (!workerUrl || !card) { if (wrap) wrap.style.display = 'none'; return; }
 
   const pcPsa10 = (typeof livePrice !== 'undefined' && livePrice && livePrice.pcPsa10 > 0) ? livePrice.pcPsa10 : 0;
-  const psa10Price = card.p10 > 0 ? card.p10 : pcPsa10;
-  if (!psa10Price) { wrap.style.display = 'none'; return; }
-
-  // Default to PSA 10 fair value as the cap (broadest reasonable filter).
-  const fairValueGBP = gbpFromUSD(psa10Price);
-  const fxUsdToGbp = (typeof fxRate === 'number' ? fxRate : 0.79);
-  const fxEurToGbp = 0.86;
-  const query = buildSearchQuery(card, 'PSA 10');
-  const required = mktRequiredTokens(card);
+  const psa10PriceRaw = card.p10 > 0 ? card.p10 : pcPsa10;
+  const rawPriceUSD = getCurrentPrice(card);
+  // Fallback PSA 10 anchor when the card has no explicit p10 — use raw ×5 as a
+  // rough modern-holo proxy. Keeps the live-scan visible on cards the price
+  // model can't anchor exactly.
+  const psa10Price = psa10PriceRaw > 0 ? psa10PriceRaw : (rawPriceUSD > 0 ? rawPriceUSD * 5 : 0);
+  if (psa10Price <= 0 && !(rawPriceUSD > 0)) { wrap.style.display = 'none'; return; }
 
   wrap.style.display = 'block';
-  status.textContent = 'Scanning eBay UK + US + Cardmarket…';
-  list.innerHTML = '';
+  setupMktGradeTabs();
+  if (topStatus) topStatus.textContent = `Scanning 5 grades · eBay UK + US + Cardmarket…`;
 
-  const url = `${workerUrl}/search?q=${encodeURIComponent(query)}&max=${fairValueGBP.toFixed(2)}&grade=10&fx=${fxUsdToGbp}&fxEur=${fxEurToGbp}`;
-  try {
-    const t0 = performance.now();
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Worker ${res.status}`);
-    const data = await res.json();
-    const took = Math.round(performance.now() - t0);
-    const rawDeals = data.deals || [];
-    // Filter out junk listings (bulk lots, mystery packs, pick-a-card etc.)
-    const deals = rawDeals.filter(d => !mktIsJunk(d.title, required));
-    const filteredCount = rawDeals.length - deals.length;
-    const c = data.counts || {};
-    const errStr = (data.errors && data.errors.length) ? ` · errors: ${data.errors.join(', ')}` : '';
-    const filterStr = filteredCount > 0 ? ` · ${filteredCount} junk filtered` : '';
-    status.innerHTML = `${deals.length} deals · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}`;
-    if (deals.length === 0) {
-      list.innerHTML = `<div class="mkt-empty">No relevant listings under £${fairValueGBP.toFixed(0)} fair value right now${filteredCount > 0 ? ` (${filteredCount} bulk/mystery lots filtered out)` : ''}. Try the deep-link buttons below to browse directly.</div>`;
-      return;
-    }
-    list.innerHTML = deals.map(d => {
-      const sigCls = d.signal === 'STRONG VALUE' ? 'mkt-strong'
-                   : d.signal === 'VALUE'        ? 'mkt-fair'
-                   : d.signal === 'PREMIUM'      ? 'mkt-weak' : 'mkt-fair';
-      const sourceCls = d.source.includes('UK') ? 'src-uk' : d.source.includes('US') ? 'src-us' : 'src-cm';
-      const img = d.image ? `<img class="mkt-deal-img" src="${esc(d.image)}" alt="" onerror="this.style.display='none'">` : '<div class="mkt-deal-img"></div>';
-      return `
-        <a class="mkt-deal" href="${esc(d.url)}" target="_blank" rel="noopener">
-          ${img}
-          <div class="mkt-deal-body">
-            <div class="mkt-deal-title">${esc(d.title)}</div>
-            <div class="mkt-deal-meta">
-              <span class="mkt-src ${sourceCls}">${esc(d.source)}</span>
-              ${d.condition ? `<span>${esc(d.condition)}</span>` : ''}
-              ${d.seller ? `<span>· ${esc(d.seller)}</span>` : ''}
-            </div>
-          </div>
-          <div class="mkt-deal-right">
-            <div class="mkt-deal-price">£${d.priceGBP.toFixed(2)}</div>
-            <div class="mkt-deal-spread ${d.spreadPct >= 0 ? 'pos' : 'neg'}">${d.spreadPct >= 0 ? '↓' : '↑'} ${Math.abs(d.spreadPct).toFixed(0)}% vs fair</div>
-            <span class="mkt-pill ${sigCls}">${esc(d.signal)}</span>
-          </div>
-        </a>
-      `;
-    }).join('');
-  } catch (e) {
-    status.textContent = `Worker error: ${e.message}. Showing deep-links only.`;
-    list.innerHTML = '';
-  }
+  const fxUsdToGbp = (typeof fxRate === 'number' ? fxRate : 0.79);
+  const fxEurToGbp = 0.86;
+  const required = mktRequiredTokens(card);
+
+  // Define each grade tab with its fair-value anchor.
+  const grades = [
+    { key: 'raw',   label: 'Raw',    queryGrade: 'Raw',    workerGrade: 'raw', fairUSD: rawPriceUSD || (psa10Price * (PSA_RATIOS[1] || 0.022) * 5) },
+    { key: 'psa7',  label: 'PSA 7',  queryGrade: 'PSA 7',  workerGrade: '7',   fairUSD: psa10Price * (PSA_RATIOS[7]  || 0.11) },
+    { key: 'psa8',  label: 'PSA 8',  queryGrade: 'PSA 8',  workerGrade: '8',   fairUSD: psa10Price * (PSA_RATIOS[8]  || 0.18) },
+    { key: 'psa9',  label: 'PSA 9',  queryGrade: 'PSA 9',  workerGrade: '9',   fairUSD: psa10Price * (PSA_RATIOS[9]  || 0.35) },
+    { key: 'psa10', label: 'PSA 10', queryGrade: 'PSA 10', workerGrade: '10',  fairUSD: psa10Price },
+  ];
+
+  // Reset placeholders
+  grades.forEach(g => {
+    const st = $(`mktStatus-${g.key}`);
+    const li = $(`mktList-${g.key}`);
+    const bd = $(`mktBadge-${g.key}`);
+    if (st) st.textContent = 'Scanning…';
+    if (li) li.innerHTML = '';
+    if (bd) bd.textContent = '…';
+  });
+
+  const scanToken = ++mktScanToken;
+  const t0 = performance.now();
+  const results = await Promise.allSettled(
+    grades.map(g => fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurToGbp, scanToken))
+  );
+  if (scanToken !== mktScanToken) return; // newer scan in-flight
+  const total = results.reduce((acc, r) => acc + (r.status === 'fulfilled' ? (r.value || 0) : 0), 0);
+  const took = Math.round(performance.now() - t0);
+  if (topStatus) topStatus.textContent = `${total} total clean listings across all grades · ${took}ms`;
 }
 
 // Hook live-scan into card selection (no-op if URL not set).
