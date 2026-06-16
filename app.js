@@ -6769,6 +6769,39 @@ function setupReassignModal() {
     } catch (err) { return; }
     openReassignModal(payload);
   }, true);
+  // Dismiss button — record a dismissal for this listing on the current
+  // card + grade, then refresh live deals so the row disappears immediately.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mkt-deal-dismiss');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let payload = null;
+    try {
+      const enc = btn.dataset.payload || '';
+      payload = JSON.parse(decodeURIComponent(escape(atob(enc))));
+    } catch (err) { return; }
+    addDismissal({
+      url: payload.url,
+      title: payload.title,
+      fromCardId: payload.fromCardId,
+      fromGrade: payload.fromGrade,
+    });
+    if (typeof selectedCard !== 'undefined' && selectedCard) fetchLiveDeals(selectedCard);
+  }, true);
+  // "Restore dismissed" link inside a grade-status line — clears all
+  // dismissals for the current card + grade, then re-fetches deals.
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('.mkt-restore-dismissed');
+    if (!link) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const cardId = link.dataset.cardId || '';
+    const gradeKey = link.dataset.grade || '';
+    if (!cardId) return;
+    clearDismissalsForCard(cardId, gradeKey);
+    if (typeof selectedCard !== 'undefined' && selectedCard) fetchLiveDeals(selectedCard);
+  }, true);
 }
 
 function setupMarketplaceWorker() {
@@ -6840,6 +6873,71 @@ function reassignmentsFromCard(cardId, gradeKey) {
 // Listings CLAIMED by the receiving card at this grade.
 function reassignmentsToCard(cardId, gradeKey) {
   return getReassignments().filter(r => r.toCardId === cardId && r.toGrade === gradeKey);
+}
+
+// =============================================================
+// Listing Dismissals · hide irrelevant listings without reassigning
+// =============================================================
+//
+// Companion to the reassignment system. When a listing is clearly noise
+// (wrong product, scammy seller, duplicate, etc.) but isn't a JP/EN or
+// wrong-card mismatch worth re-homing, the user just wants it gone. We
+// store dismissals per card + grade so the same URL can still appear on
+// other cards/grades if relevant. State lives in localStorage and the
+// refresh-after-dismiss path re-fetches the grade so the dismissed URL
+// disappears immediately.
+
+const MKT_DISMISS_KEY = 'pkm-mkt-dismissals';
+
+function getDismissals() {
+  try {
+    const raw = localStorage.getItem(MKT_DISMISS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+function saveDismissals(arr) {
+  try { localStorage.setItem(MKT_DISMISS_KEY, JSON.stringify(arr || [])); }
+  catch (e) { /* quota — silent */ }
+}
+function addDismissal(rec) {
+  if (!rec || !rec.url) return;
+  const key = (rec.fromCardId || '') + '\u0001' + (rec.fromGrade || '') + '\u0001' + rec.url;
+  const arr = getDismissals().filter(r => ((r.fromCardId || '') + '\u0001' + (r.fromGrade || '') + '\u0001' + r.url) !== key);
+  arr.unshift({
+    url: rec.url,
+    title: rec.title || '',
+    fromCardId: rec.fromCardId || '',
+    fromGrade: rec.fromGrade || '',
+    ts: Date.now(),
+  });
+  saveDismissals(arr);
+}
+function removeDismissal(url, cardId, gradeKey) {
+  if (!url) return;
+  saveDismissals(getDismissals().filter(r => !(
+    r.url === url &&
+    (cardId == null || r.fromCardId === cardId) &&
+    (gradeKey == null || r.fromGrade === gradeKey)
+  )));
+}
+// URLs to hide for this card + grade because the user dismissed them.
+function dismissalsForCard(cardId, gradeKey) {
+  const out = new Set();
+  for (const r of getDismissals()) {
+    if (r.fromCardId === cardId && (!gradeKey || r.fromGrade === gradeKey || !r.fromGrade)) {
+      out.add(r.url);
+    }
+  }
+  return out;
+}
+// Clear all dismissals for a card + grade combo (used by "Restore" link in status).
+function clearDismissalsForCard(cardId, gradeKey) {
+  saveDismissals(getDismissals().filter(r => !(
+    r.fromCardId === cardId &&
+    (!gradeKey || r.fromGrade === gradeKey || !r.fromGrade)
+  )));
 }
 
 // Words that almost always indicate junk listings — bulk lots, mystery packs,
@@ -6987,7 +7085,10 @@ function mktRenderDealCard(d, meta) {
         <div class="mkt-deal-price">£${d.priceGBP.toFixed(2)}</div>
         <div class="mkt-deal-spread ${d.spreadPct >= 0 ? 'pos' : 'neg'}">${d.spreadPct >= 0 ? '↓' : '↑'} ${Math.abs(d.spreadPct).toFixed(0)}% vs fair</div>
         <span class="mkt-pill ${sigCls}">${esc(d.signal)}</span>
-        <button type="button" class="mkt-deal-reassign" data-payload="${enc}" title="Wrong card? Move this listing" aria-label="Move this listing to a different card">⇄ Move</button>
+        <div class="mkt-deal-actions">
+          <button type="button" class="mkt-deal-reassign" data-payload="${enc}" title="Wrong card? Move this listing" aria-label="Move this listing to a different card">⇄ Move</button>
+          <button type="button" class="mkt-deal-dismiss" data-payload="${enc}" title="Not relevant — hide this listing for this card + grade" aria-label="Dismiss this listing">✕ Dismiss</button>
+        </div>
       </div>
     </a>
   `;
@@ -7025,22 +7126,33 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     const visibleAfterHide = deals.filter(d => !hiddenUrls.has(d.url));
     const hiddenCount = deals.length - visibleAfterHide.length;
     deals = visibleAfterHide;
+    // Apply user dismissals: hide URLs the user has marked as not relevant
+    // for this specific card+grade. Dismissals are scoped narrowly so the
+    // same URL can still appear under other cards or grades.
+    const dismissedUrls = dismissalsForCard(card.i, g.workerGrade);
+    const visibleAfterDismiss = deals.filter(d => !dismissedUrls.has(d.url));
+    const dismissedCount = deals.length - visibleAfterDismiss.length;
+    deals = visibleAfterDismiss;
     const claimed = reassignmentsToCard(card.i, g.workerGrade);
     // Deduplicate — in the rare case the worker also returned a claimed URL,
     // the claim record wins (it has the user-edited context).
     const claimedUrls = new Set(claimed.map(c => c.url));
     deals = deals.filter(d => !claimedUrls.has(d.url));
-    const filteredCount = rawDeals.length - (deals.length + claimed.length + hiddenCount);
+    const filteredCount = rawDeals.length - (deals.length + claimed.length + hiddenCount + dismissedCount);
     const c = data.counts || {};
     const errStr = (data.errors && data.errors.length) ? ` · errors: ${data.errors.join(', ')}` : '';
     const parts = [];
     if (filteredCount > 0) parts.push(`${filteredCount} junk`);
     if (hiddenCount > 0)   parts.push(`${hiddenCount} moved out`);
     if (claimed.length)    parts.push(`${claimed.length} moved in`);
+    // Dismissed count is rendered with a Restore link so the user can undo.
+    const dismissedPill = dismissedCount > 0
+      ? `<span class="mkt-dismissed-chip">${dismissedCount} dismissed · <a href="#" class="mkt-restore-dismissed" data-card-id="${esc(card.i)}" data-grade="${esc(g.workerGrade)}">Restore</a></span>`
+      : '';
     const filterStr = parts.length ? ` · ${parts.join(' / ')}` : '';
     const totalShown = deals.length + claimed.length;
     if (badge) badge.textContent = String(totalShown);
-    if (status) status.innerHTML = `${totalShown} clean · £${fairValueGBP.toFixed(0)} cap · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}`;
+    if (status) status.innerHTML = `${totalShown} clean · £${fairValueGBP.toFixed(0)} cap · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}${dismissedPill ? ' · ' + dismissedPill : ''}`;
     if (list) {
       if (totalShown === 0) {
         list.innerHTML = `<div class="mkt-empty">No clean ${g.label} listings under £${fairValueGBP.toFixed(0)} fair value right now${filteredCount > 0 ? ` (${filteredCount} junk filtered)` : ''}. Try the deep-link buttons below.</div>`;
@@ -7931,6 +8043,24 @@ function setupPriceSync() {
   sel('livePriceRefresh')?.addEventListener('click', () => {
     if (!selectedCard || _psState.running) return;
     psBatchRefresh([selectedCard.i], `Refresh "${selectedCard.n}"`);
+  });
+
+  // Refresh button on the Model Prediction card — same as the Live panel
+  // refresh: bypasses the 1-hour cache, re-pulls live prices and reruns the
+  // model for the currently selected card. Mirrors enabled-state from the
+  // selected card; spins the icon while a refresh is in flight.
+  sel('modelRefreshBtn')?.addEventListener('click', async () => {
+    if (!selectedCard || _psState.running) return;
+    const btn = sel('modelRefreshBtn');
+    if (btn) { btn.classList.add('is-loading'); btn.disabled = true; }
+    try {
+      await psBatchRefresh([selectedCard.i], `Refresh "${selectedCard.n}"`);
+    } finally {
+      if (btn) {
+        btn.classList.remove('is-loading');
+        btn.disabled = !selectedCard;
+      }
+    }
   });
 
   psUpdateStats();

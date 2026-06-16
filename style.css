@@ -262,8 +262,29 @@ body {
 .desirability-bar { height: 100%; background: var(--demand); border-radius: 3px; transition: width 0.3s ease; }
 
 /* Prediction Card */
-.prediction-card { text-align: center; border-color: var(--accent); border-width: 1.5px; background: linear-gradient(170deg, var(--bg-card) 0%, rgba(232,182,52,0.04) 100%); }
+.prediction-card { position: relative; text-align: center; border-color: var(--accent); border-width: 1.5px; background: linear-gradient(170deg, var(--bg-card) 0%, rgba(232,182,52,0.04) 100%); }
 .prediction-card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px; }
+.model-refresh-btn {
+  position: absolute; top: 12px; right: 12px;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 9px;
+  background: transparent; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-family: inherit; font-size: 11px; font-weight: 500;
+  cursor: pointer; transition: color 0.15s, border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.model-refresh-btn:hover:not(:disabled) {
+  color: var(--accent); border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.model-refresh-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.model-refresh-btn.is-loading svg {
+  animation: model-refresh-spin 0.9s linear infinite;
+}
+@keyframes model-refresh-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
 .predicted-price { font-size: 52px; font-weight: 700; font-family: var(--mono); color: var(--accent); line-height: 1.1; letter-spacing: -0.03em; }
 .predicted-usd { font-size: 14px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
 .price-breakdown { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
@@ -2967,6 +2988,50 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   border-color: var(--accent);
   background: rgba(255, 192, 77, 0.08);
 }
+
+/* ---- Per-listing actions: Move + Dismiss share one row ---- */
+.mkt-deal-actions {
+  display: flex; gap: 6px; align-items: center;
+  margin-top: 4px;
+}
+.mkt-deal-actions .mkt-deal-reassign { margin-top: 0; }
+
+/* ---- Dismiss button — sits next to Move, slightly muted red ---- */
+.mkt-deal-dismiss {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.mkt-deal-dismiss:hover {
+  color: #ff8a8a;
+  border-color: rgba(255, 118, 118, 0.55);
+  background: rgba(255, 118, 118, 0.10);
+}
+
+/* ---- Dismissed chip inside the grade-status line ---- */
+.mkt-dismissed-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 118, 118, 0.12);
+  color: #ff8a8a;
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.mkt-restore-dismissed {
+  color: #ff8a8a;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.mkt-restore-dismissed:hover { color: #ffb3b3; }
 .mkt-deal.is-claimed {
   border-color: rgba(74, 222, 128, 0.35);
   background: linear-gradient(135deg, rgba(74, 222, 128, 0.06), transparent 60%);
