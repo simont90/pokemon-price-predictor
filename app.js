@@ -7168,7 +7168,7 @@ function mktRenderDealCard(d, meta) {
 }
 
 // Fetch + render deals for one grade tab. Called in parallel by fetchLiveDeals.
-async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurToGbp, scanToken) {
+async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurToGbp, scanToken, forceFresh) {
   const status = $(`mktStatus-${g.key}`);
   const list = $(`mktList-${g.key}`);
   const badge = $(`mktBadge-${g.key}`);
@@ -7186,7 +7186,11 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
   // pass an effectively-infinite ceiling.
   const scanCapGBP = MKT_SCAN_NO_CAP_GBP;
   const query = buildSearchQuery(card, g.queryGrade);
-  const url = `${workerUrl}/search?q=${encodeURIComponent(query)}&max=${scanCapGBP.toFixed(2)}&grade=${g.workerGrade}&fx=${fxUsdToGbp}&fxEur=${fxEurToGbp}`;
+  // forceFresh appends a cache-bust param so the Cloudflare edge + browser
+  // cache (worker sends Cache-Control max-age=300) are bypassed when the user
+  // explicitly hits Refresh.
+  const cacheBust = forceFresh ? `&_t=${Date.now()}` : '';
+  const url = `${workerUrl}/search?q=${encodeURIComponent(query)}&max=${scanCapGBP.toFixed(2)}&grade=${g.workerGrade}&fx=${fxUsdToGbp}&fxEur=${fxEurToGbp}${cacheBust}`;
   try {
     const t0 = performance.now();
     const res = await fetch(url);
@@ -7287,7 +7291,8 @@ function setupMktGradeTabs() {
   });
 }
 
-async function fetchLiveDeals(card) {
+async function fetchLiveDeals(card, opts) {
+  const forceFresh = !!(opts && opts.forceFresh);
   const workerUrl = getMktWorkerUrl();
   const wrap = $('mktLiveWrap');
   const topStatus = $('mktLiveStatus');
@@ -7332,7 +7337,7 @@ async function fetchLiveDeals(card) {
   const scanToken = ++mktScanToken;
   const t0 = performance.now();
   const results = await Promise.allSettled(
-    grades.map(g => fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurToGbp, scanToken))
+    grades.map(g => fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurToGbp, scanToken, forceFresh))
   );
   if (scanToken !== mktScanToken) return; // newer scan in-flight
   const total = results.reduce((acc, r) => acc + (r.status === 'fulfilled' ? (r.value || 0) : 0), 0);
@@ -7363,7 +7368,9 @@ function setupMktRefreshBtn() {
     btn.classList.add('is-spinning');
     btn.disabled = true;
     try {
-      await fetchLiveDeals(card);
+      // Refresh button always bypasses CDN + browser cache so the user gets
+      // a guaranteed-fresh scan, not a stale 5-minute-cached response.
+      await fetchLiveDeals(card, { forceFresh: true });
     } finally {
       btn.classList.remove('is-spinning');
       btn.disabled = false;
