@@ -7042,11 +7042,11 @@ function mktIsJunk(deal, card, requiredTokens, gradeFilter, fairValueGBP) {
   return false;
 }
 
-// Marketplace scan: how far above fair value to look for listings. The worker
-// hard-caps eBay queries with `max`, so to surface over-market listings we
-// inflate the cap and re-score the spread + risk client-side using the true
-// fair value.
-const MKT_OVER_MARKET_CAP_MULT = 2.0;     // search up to 200% of fair value
+// Marketplace scan: we no longer cap eBay/Cardmarket queries by price — every
+// listing comes back regardless of how over market it is, and we let the risk
+// band call out the crazy overpriced ones. The worker still requires a `max`
+// param, so we pass an effectively-infinite ceiling.
+const MKT_SCAN_NO_CAP_GBP = 99999;        // effectively uncapped — risk band rates over-market listings
 const MKT_RISK_OVER_LOW_PCT    = 10;      // ≤ 10% over fair = low (with hold premium)
 const MKT_RISK_OVER_MED_PCT    = 40;      // ≤ 40% over fair = medium (still defensible)
 const MKT_RISK_LOW_ROI_FLOOR   = 50;      // 5yr ROI ≥ 50% can rescue a slight overpay to low
@@ -7181,9 +7181,10 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     return 0;
   }
   const fairValueGBP = gbpFromUSD(g.fairUSD);
-  // Search up to 2× fair value so above-market listings come back — we re-score
-  // them client-side with mktScoreDeal and let the user judge with the risk pill.
-  const scanCapGBP = fairValueGBP * MKT_OVER_MARKET_CAP_MULT;
+  // Uncapped scan — we want above-market listings to come back too, so the
+  // risk band can flag them. The worker requires `max` to be present, so we
+  // pass an effectively-infinite ceiling.
+  const scanCapGBP = MKT_SCAN_NO_CAP_GBP;
   const query = buildSearchQuery(card, g.queryGrade);
   const url = `${workerUrl}/search?q=${encodeURIComponent(query)}&max=${scanCapGBP.toFixed(2)}&grade=${g.workerGrade}&fx=${fxUsdToGbp}&fxEur=${fxEurToGbp}`;
   try {
@@ -7250,7 +7251,7 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     if (status) status.innerHTML = `${totalShown} clean · £${fairValueGBP.toFixed(0)} fair value${overStr} · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}${dismissedPill ? ' · ' + dismissedPill : ''}`;
     if (list) {
       if (totalShown === 0) {
-        list.innerHTML = `<div class="mkt-empty">No clean ${g.label} listings within 2× fair value (£${fairValueGBP.toFixed(0)}) right now${filteredCount > 0 ? ` (${filteredCount} junk filtered)` : ''}. Try the deep-link buttons below.</div>`;
+        list.innerHTML = `<div class="mkt-empty">No clean ${g.label} listings on the wire right now (fair value £${fairValueGBP.toFixed(0)}${filteredCount > 0 ? `, ${filteredCount} junk filtered` : ''}). Try the deep-link buttons below.</div>`;
       } else {
         const meta = { fromCardId: card.i, fromGrade: g.workerGrade };
         const claimedHtml = claimed.map(rec => mktRenderDealCard(rec, { ...meta, claimed: true })).join('');
