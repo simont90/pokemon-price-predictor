@@ -6277,6 +6277,50 @@ function dealClass(score) {
   return 'mkt-weak';
 }
 
+// Render (or remove) the quick-switch chip inside the Marketplace Scan header.
+// When `card` has a linked JP/EN counterpart (via findCounterparts), a single
+// pill is shown that switches the whole page to that counterpart on click.
+function renderMarketplaceCpChip(card, section) {
+  if (!section) return;
+  // Always wipe the previous chip so a card without a counterpart leaves no trace.
+  const prev = section.querySelector('#mktCpSwitchChip');
+  if (prev) prev.remove();
+  if (typeof findCounterparts !== 'function') return;
+  const cp = findCounterparts(card);
+  if (!cp || !cp.primary) return;
+  const other = cp.primary;
+  const lang = cp.counterpartLang === 'JP' ? 'Japanese' : 'English';
+  const langBadge = cp.counterpartLang === 'JP' ? 'JP' : 'EN';
+  const setName = other.s || '';
+  const num = other.cn || '';
+  const tail = [setName, num ? '#' + num : ''].filter(Boolean).join(' \u00b7 ');
+  const chip = document.createElement('button');
+  chip.id = 'mktCpSwitchChip';
+  chip.type = 'button';
+  chip.className = 'mkt-cp-switch-chip';
+  chip.title = `Switch this Marketplace Scan to the ${lang} counterpart`;
+  chip.innerHTML = `
+    <span class="mkt-cp-icon" aria-hidden="true">\u21c4</span>
+    <span class="mkt-cp-lead">Scan the ${langBadge} counterpart</span>
+    <span class="mkt-cp-target">
+      <span class="mkt-cp-name">${esc(other.n || 'counterpart')}</span>
+      ${tail ? `<span class="mkt-cp-sub">${esc(tail)}</span>` : ''}
+    </span>
+    <span class="mkt-cp-go" aria-hidden="true">\u2192</span>
+  `;
+  chip.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof selectCard === 'function') selectCard(other.i);
+  });
+  const header = section.querySelector('.mkt-header');
+  if (header && header.parentNode) {
+    header.parentNode.insertBefore(chip, header.nextSibling);
+  } else {
+    section.insertBefore(chip, section.firstChild);
+  }
+}
+
 function renderMarketplaceScan(card, pullCost, desirability) {
   const section = $('marketplaceSection');
   if (!section || !card) return;
@@ -6285,6 +6329,12 @@ function renderMarketplaceScan(card, pullCost, desirability) {
   const psa10Price = card.p10 > 0 ? card.p10 : pcPsa10;
   if (!psa10Price || psa10Price <= 0) { section.style.display = 'none'; return; }
   section.style.display = 'block';
+
+  // Quick-switch chip: if this card has a linked JP/EN counterpart, surface a
+  // one-click chip at the top of the section that swaps the whole page to that
+  // counterpart card. This lets the user re-run the Marketplace Scan against
+  // the other-language version of the same card without leaving the section.
+  renderMarketplaceCpChip(card, section);
 
   const rawPriceUSD = getCurrentPrice(card);
   const grades = [
