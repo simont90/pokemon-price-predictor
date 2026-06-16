@@ -7335,6 +7335,223 @@ const CRACK_RESUB_TRANSITIONS = {
 // 8% reflects real-world handling risk on holo / textured modern cards.
 const CRACK_DAMAGE_RISK = 0.08;
 
+// -------------------------------------------------------------
+// computeHoldCore — pure scoring helper for the Hold Strategy
+// algorithm. Returns the same winner / best-raw / best-graded /
+// overall risk-adjusted score that the full renderer computes,
+// but without touching the DOM. Used to score the EN ↔ JP
+// counterpart so we can put them side-by-side and recommend the
+// smarter version of the same card.
+// -------------------------------------------------------------
+function computeHoldCore(card) {
+  if (!card) return { ok: false };
+  const anchor = getPsa10Anchor(card);
+  const psa10Price = anchor && anchor.usd;
+  const rawUSD = getCurrentPrice(card);
+  if (!psa10Price || psa10Price <= 0 || !rawUSD || rawUSD <= 0) return { ok: false };
+
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const gradingFeeUSD = UK_GRADING_ALL_IN_GBP / fx;
+  const waitYears = UK_GRADING_WAIT_MONTHS / 12;
+  const waitDiscount = 1 / (1 + OPPORTUNITY_COST_ANNUAL * waitYears);
+  const baseGemRate = (typeof card.g === 'number' && card.g > 0) ? card.g : DEFAULT_GEM_RATE;
+  const gemRate = baseGemRate * ONLINE_BUY_GEM_PENALTY;
+
+  // Strategy 1 — Buy Raw, hold ungraded
+  const rawYr5USD = projectGradePrice(card, 9, rawUSD, 5) / GRADE_GROWTH_PREMIUM[9] * 1.0;
+  const rawSell5USD = rawYr5USD * (1 - BUY_SELL_FRICTION);
+  const rawProfitUSD = rawSell5USD - rawUSD;
+  const rawRoi = rawUSD > 0 ? (rawProfitUSD / rawUSD) * 100 : 0;
+
+  // Strategy 2 — Buy Raw + Grade (EV across grade outcomes)
+  const psa7Yr5  = projectGradePrice(card, 7,  estimateGradePrice(card, 7,  psa10Price), 5);
+  const psa8Yr5  = projectGradePrice(card, 8,  estimateGradePrice(card, 8,  psa10Price), 5);
+  const psa9Yr5  = projectGradePrice(card, 9,  estimateGradePrice(card, 9,  psa10Price), 5);
+  const psa10Yr5 = projectGradePrice(card, 10, psa10Price, 5);
+  const subgemEV =
+      SUBGEM_DISTRIBUTION[9]      * psa9Yr5
+    + SUBGEM_DISTRIBUTION[8]      * psa8Yr5
+    + SUBGEM_DISTRIBUTION[7]      * psa7Yr5
+    + SUBGEM_DISTRIBUTION.rawLike * rawYr5USD;
+  const gradeYr5EV = (gemRate * psa10Yr5 + (1 - gemRate) * subgemEV) * waitDiscount;
+  const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
+  const gradeCost = rawUSD + gradingFeeUSD;
+  const gradeProfit = gradeSell5EV - gradeCost;
+  const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
+
+  // Strategies 3-6 — Buy graded at each tier
+  const gradedStrategies = [7, 8, 9, 10].map(g => {
+    const today = estimateGradePrice(card, g, psa10Price);
+    const yr5 = projectGradePrice(card, g, today, 5);
+    const sell = yr5 * (1 - BUY_SELL_FRICTION);
+    const profit = sell - today;
+    const roi = today > 0 ? (profit / today) * 100 : 0;
+    return { label: `Buy PSA ${g}`, key: `psa${g}`, grade: g, today, yr5: sell, profit, roi };
+  });
+
+  const strategies = [
+    { label: 'Buy Raw',         key: 'raw',    today: rawUSD,    yr5: rawSell5USD, profit: rawProfitUSD, roi: rawRoi,   variance: 0.20 },
+    { label: 'Buy Raw + Grade', key: 'gamble', today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, variance: 0.85 },
+    ...gradedStrategies.map(s => ({
+      ...s,
+      variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : 0.32,
+    })),
+  ];
+  // Identical risk-adjustment formula to renderHoldStrategy so EN vs JP
+  // verdict numbers line up exactly with the strategy grid.
+  strategies.forEach(s => {
+    const upsideGBP = Math.max(0, gbpFromUSD(s.profit));
+    const upsideBonus = Math.min(15, upsideGBP / 50);
+    s.riskAdjusted = s.roi - (s.variance * 100 * 0.35) + upsideBonus;
+  });
+
+  const positives = strategies.filter(s => s.roi > 0);
+  const winner = positives.length
+    ? positives.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
+    : null;
+  const rawSide = strategies.filter(s => (s.key === 'raw' || s.key === 'gamble') && s.roi > 0);
+  const gradedSide = strategies.filter(s => s.key.startsWith('psa') && s.roi > 0);
+  const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
+  const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
+
+  return {
+    ok: true,
+    card,
+    rawUSD,
+    psa10USD: psa10Price,
+    strategies,
+    winner,
+    bestRaw,
+    bestGraded,
+    overallScore: winner ? winner.riskAdjusted : -Infinity,
+    anchorSource: anchor && anchor.source,
+    gemRate,
+  };
+}
+
+// Render the EN ↔ JP side-by-side comparison inside the Hold Strategy card.
+// Shows the winning strategy + key economics for each language and lets the
+// algorithm pick the smarter version of the same card. No-op when there is
+// no counterpart or one side has no usable price data.
+function renderHoldCounterpartCompare(card) {
+  const host = $('holdCounterpartCompare');
+  if (!host) return;
+  host.style.display = 'none';
+  host.innerHTML = '';
+  if (!card) return;
+
+  const cp = findCounterparts(card);
+  if (!cp || !cp.primary) return;
+
+  const selfCore = computeHoldCore(card);
+  const otherCore = computeHoldCore(cp.primary);
+  // Need at least one priced side to be useful. If only the selected card has
+  // data we just hide the panel — the strategy grid already covers it.
+  if (!selfCore.ok && !otherCore.ok) return;
+
+  const selfLang = card.lang === 'JP' ? 'JP' : 'EN';
+  const otherLang = cp.counterpartLang;
+
+  // Decide the winning side. Margin threshold mirrors the in-card verdict
+  // (30 points = wide, < 30 = close call).
+  let verdictPill = '';
+  let verdictBody = '';
+  if (selfCore.ok && otherCore.ok) {
+    const margin = selfCore.overallScore - otherCore.overallScore;
+    const winLang = margin > 0 ? selfLang : otherLang;
+    const winCard = margin > 0 ? card : cp.primary;
+    const loseCard = margin > 0 ? cp.primary : card;
+    const absMargin = Math.abs(margin);
+    if (absMargin < 30) {
+      verdictPill = 'Close call';
+      verdictBody = `<strong>${selfLang} and ${otherLang}</strong> score within ${absMargin.toFixed(0)} points on risk-adjusted return. Pick the language you already have access to — the algorithm doesn’t see a meaningful edge either way.`;
+    } else {
+      const winnerStrat = (margin > 0 ? selfCore : otherCore).winner;
+      verdictPill = `Buy ${winLang}`;
+      verdictBody = `The <strong>${winLang}</strong> version is the smarter buy on this card — <strong>${winnerStrat.label}</strong> projects +${winnerStrat.roi.toFixed(0)}% ROI vs the ${margin > 0 ? otherLang : selfLang} copy’s best play. Risk-adjusted edge: +${absMargin.toFixed(0)} pts.`;
+    }
+  } else if (selfCore.ok) {
+    verdictPill = `Buy ${selfLang}`;
+    verdictBody = `Only the <strong>${selfLang}</strong> version has usable price data right now. The ${otherLang} counterpart needs live prices before the algorithm can score it head-to-head.`;
+  } else {
+    verdictPill = `Buy ${otherLang}`;
+    verdictBody = `Only the <strong>${otherLang}</strong> counterpart has usable price data — the ${selfLang} side is missing either a raw price or a PSA 10 anchor.`;
+  }
+
+  // Render a column for each side. If a side has no data, we show a muted
+  // placeholder column so the layout stays symmetrical.
+  function renderCol(core, cardObj, lang, isSelected) {
+    const langTag = lang === 'JP' ? 'Japanese' : 'English';
+    const headBadge = `<span class="hold-cp-lang hold-cp-lang-${lang.toLowerCase()}">${langTag}</span>${isSelected ? '<span class="hold-cp-selected">Selected</span>' : '<span class="hold-cp-link" data-cp-id="' + cardObj.i + '">Switch →</span>'}`;
+    const titleLine = `${cardObj.n}${cardObj.cn ? ' #' + cardObj.cn : ''}`;
+    const setLine = cardObj.s ? `<div class="hold-cp-set">${cardObj.s}</div>` : '';
+    if (!core.ok) {
+      return `
+        <div class="hold-cp-col hold-cp-col-empty">
+          <div class="hold-cp-col-head">${headBadge}</div>
+          <div class="hold-cp-col-title">${titleLine}</div>
+          ${setLine}
+          <div class="hold-cp-empty">No price data — needs a raw price and a PSA 10 anchor to score.</div>
+        </div>
+      `;
+    }
+    const w = core.winner;
+    const scoreClass = core.overallScore >= 30 ? 'hold-cp-score-strong'
+                     : core.overallScore >= 0  ? 'hold-cp-score-fair'
+                     :                           'hold-cp-score-skip';
+    return `
+      <div class="hold-cp-col">
+        <div class="hold-cp-col-head">${headBadge}</div>
+        <div class="hold-cp-col-title">${titleLine}</div>
+        ${setLine}
+        ${w ? `
+        <div class="hold-cp-win">
+          <div class="hold-cp-win-label">Best play</div>
+          <div class="hold-cp-win-name">${w.label}</div>
+        </div>
+        <div class="hold-cp-stats">
+          <div class="hold-cp-stat"><span class="hold-cp-stat-k">Today</span><span class="hold-cp-stat-v">${fmtGBP(w.today)}</span></div>
+          <div class="hold-cp-stat"><span class="hold-cp-stat-k">5yr target</span><span class="hold-cp-stat-v">${fmtGBP(w.yr5)}</span></div>
+          <div class="hold-cp-stat"><span class="hold-cp-stat-k">Profit</span><span class="hold-cp-stat-v ${w.profit >= 0 ? 'hold-pos' : 'hold-neg'}">${w.profit >= 0 ? '+' : '−'}${fmtGBP(Math.abs(w.profit))}</span></div>
+          <div class="hold-cp-stat"><span class="hold-cp-stat-k">ROI</span><span class="hold-cp-stat-v ${w.roi >= 0 ? 'hold-pos' : 'hold-neg'}">${w.roi >= 0 ? '+' : ''}${w.roi.toFixed(0)}%</span></div>
+        </div>
+        <div class="hold-cp-score ${scoreClass}">Risk-adjusted score · ${core.overallScore.toFixed(0)}</div>
+        ` : `
+        <div class="hold-cp-empty">No positive 5yr ROI projected on this side — skip it.</div>
+        `}
+      </div>
+    `;
+  }
+
+  const winsSelf = selfCore.ok && (!otherCore.ok || selfCore.overallScore >= otherCore.overallScore);
+  const winsOther = otherCore.ok && (!selfCore.ok || otherCore.overallScore > selfCore.overallScore);
+  // Mark winning column with a class so CSS can tint it.
+  const selfCol = renderCol(selfCore, card, selfLang, true);
+  const otherCol = renderCol(otherCore, cp.primary, otherLang, false);
+
+  host.style.display = 'block';
+  host.innerHTML = `
+    <div class="hold-cp-head">
+      <span class="hold-cp-eyebrow">EN ↔ JP comparison</span>
+      <span class="hold-cp-pill">${verdictPill}</span>
+    </div>
+    <div class="hold-cp-body">${verdictBody}</div>
+    <div class="hold-cp-grid">
+      <div class="${winsSelf ? 'hold-cp-winner' : ''}">${selfCol}</div>
+      <div class="${winsOther ? 'hold-cp-winner' : ''}">${otherCol}</div>
+    </div>
+  `;
+
+  // Wire the "Switch →" link on the counterpart column.
+  host.querySelectorAll('[data-cp-id]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      const id = el.getAttribute('data-cp-id');
+      if (id && typeof selectCard === 'function') selectCard(id);
+    });
+  });
+}
+
 function renderHoldStrategy(card) {
   const section = $('holdStrategySection');
   if (!section || !card) return;
@@ -7345,9 +7562,16 @@ function renderHoldStrategy(card) {
   // Need both a raw and a PSA 10 anchor to do the comparison.
   if (!psa10Price || psa10Price <= 0 || !rawUSD || rawUSD <= 0) {
     section.style.display = 'none';
+    const cpHost = $('holdCounterpartCompare');
+    if (cpHost) { cpHost.style.display = 'none'; cpHost.innerHTML = ''; }
     return;
   }
   section.style.display = 'block';
+
+  // EN ↔ JP side-by-side: only rendered if the selected card has a
+  // counterpart. Drawn above the strategy grid so the language verdict is
+  // the first thing a collector sees after the headline recommendation.
+  renderHoldCounterpartCompare(card);
 
   // Surface a small disclosure pill in the section header when the PSA 10
   // anchor was estimated (rarity-based) rather than tracked or live.

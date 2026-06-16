@@ -3295,6 +3295,139 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .hold-card { margin-top: 16px; }
 .hold-header { margin-bottom: 14px; }
 
+/* EN ↔ JP counterpart comparison panel.
+   Drawn between the headline recommendation and the strategy grid; only
+   rendered when the selected card has a JP/EN counterpart with usable price
+   data. Each column shows the winning strategy + key economics for that
+   language and the algorithm picks the smarter language side. */
+.hold-cp-compare {
+  margin: 16px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.18));
+}
+.hold-cp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 8px;
+}
+.hold-cp-eyebrow {
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+}
+.hold-cp-pill {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+  background: rgba(245, 197, 24, 0.16);
+  color: var(--accent);
+  border: 1px solid rgba(245, 197, 24, 0.4);
+}
+.hold-cp-body {
+  font-size: 13px; line-height: 1.5; color: var(--text);
+  margin-bottom: 14px;
+}
+.hold-cp-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.hold-cp-grid > div { display: contents; }
+.hold-cp-col {
+  padding: 14px; border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.22);
+  display: flex; flex-direction: column; gap: 8px;
+  position: relative;
+}
+.hold-cp-winner .hold-cp-col {
+  border-color: rgba(245, 197, 24, 0.55);
+  box-shadow: 0 0 0 1px rgba(245, 197, 24, 0.18) inset;
+}
+.hold-cp-winner .hold-cp-col::after {
+  content: '★ Smarter buy';
+  position: absolute; top: -10px; right: 10px;
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  font-weight: 700;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--accent); color: #1a1308;
+}
+.hold-cp-col-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; font-size: 11px;
+}
+.hold-cp-lang {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.hold-cp-lang-en {
+  background: rgba(59, 130, 246, 0.18); color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+.hold-cp-lang-jp {
+  background: rgba(244, 63, 94, 0.18); color: #fda4af;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+}
+.hold-cp-selected, .hold-cp-link {
+  font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted);
+}
+.hold-cp-link {
+  cursor: pointer; color: var(--accent);
+  text-decoration: none; transition: opacity 0.15s ease;
+}
+.hold-cp-link:hover { opacity: 0.8; text-decoration: underline; }
+.hold-cp-col-title {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  line-height: 1.3;
+}
+.hold-cp-set {
+  font-size: 11px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.hold-cp-win {
+  margin-top: 4px;
+  padding: 8px 10px; border-radius: 6px;
+  background: rgba(245, 197, 24, 0.06);
+  border: 1px dashed rgba(245, 197, 24, 0.3);
+}
+.hold-cp-win-label {
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 2px;
+}
+.hold-cp-win-name {
+  font-size: 13px; font-weight: 600; color: var(--accent);
+}
+.hold-cp-stats {
+  display: grid; grid-template-columns: 1fr;
+  gap: 4px;
+  font-size: 12px;
+}
+.hold-cp-stat {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px;
+}
+.hold-cp-stat-k { color: var(--muted); font-size: 11px; }
+.hold-cp-stat-v { font-weight: 600; font-feature-settings: 'tnum'; }
+.hold-cp-score {
+  margin-top: 4px;
+  font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+.hold-cp-score-strong { color: var(--accent); }
+.hold-cp-score-skip { color: #e87979; }
+.hold-cp-empty {
+  font-size: 12px; color: var(--muted); font-style: italic;
+  padding: 8px 0; line-height: 1.5;
+}
+.hold-cp-col-empty { opacity: 0.7; }
+
+@media (max-width: 720px) {
+  .hold-cp-grid { grid-template-columns: 1fr; }
+}
+
 .hold-recommendation {
   display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center;
   padding: 14px 16px; margin-bottom: 18px;
