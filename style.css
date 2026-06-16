@@ -3418,6 +3418,14 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .hold-cp-score-strong { color: var(--accent); }
 .hold-cp-score-skip { color: #e87979; }
+.hold-cp-score-sub {
+  display: inline;
+  color: var(--muted);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.85;
+}
 .hold-cp-empty {
   font-size: 12px; color: var(--muted); font-style: italic;
   padding: 8px 0; line-height: 1.5;

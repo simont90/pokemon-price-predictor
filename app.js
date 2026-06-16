@@ -7414,6 +7414,14 @@ function computeHoldCore(card) {
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
+  // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
+  // funding/concentration risk that a £59 alternative doesn't. We only apply
+  // this to the cross-card overallScore (EN ↔ JP smarter-buy verdict) — the
+  // per-strategy riskAdjusted stays clean for the in-card strategy grid where
+  // every option already targets the same card.
+  const winnerOutlayGBP = winner ? gbpFromUSD(winner.today) : 0;
+  const outlayPenalty = capitalOutlayPenalty(winnerOutlayGBP);
+
   return {
     ok: true,
     card,
@@ -7423,10 +7431,26 @@ function computeHoldCore(card) {
     winner,
     bestRaw,
     bestGraded,
-    overallScore: winner ? winner.riskAdjusted : -Infinity,
+    winnerOutlayGBP,
+    outlayPenalty,
+    overallScore: winner ? (winner.riskAdjusted - outlayPenalty) : -Infinity,
     anchorSource: anchor && anchor.source,
     gemRate,
   };
+}
+
+// Tiered capital-outlay penalty (in risk-adjusted-score points).
+// Tying up large amounts of cash on a single card is a genuine funding risk
+// for a collector building a wide collection — this lets the EN ↔ JP verdict
+// prefer a £59 JP copy over a £640 EN copy when ROI is similar.
+function capitalOutlayPenalty(outlayGBP) {
+  if (!(outlayGBP > 0)) return 0;
+  if (outlayGBP < 50)   return 0;
+  if (outlayGBP < 100)  return 5;
+  if (outlayGBP < 250)  return 15;
+  if (outlayGBP < 500)  return 30;
+  if (outlayGBP < 1000) return 50;
+  return 70;
 }
 
 // Render the EN ↔ JP side-by-side comparison inside the Hold Strategy card.
@@ -7459,16 +7483,25 @@ function renderHoldCounterpartCompare(card) {
   if (selfCore.ok && otherCore.ok) {
     const margin = selfCore.overallScore - otherCore.overallScore;
     const winLang = margin > 0 ? selfLang : otherLang;
-    const winCard = margin > 0 ? card : cp.primary;
-    const loseCard = margin > 0 ? cp.primary : card;
+    const winCore = margin > 0 ? selfCore : otherCore;
+    const loseLang = margin > 0 ? otherLang : selfLang;
+    const loseCore = margin > 0 ? otherCore : selfCore;
     const absMargin = Math.abs(margin);
+    // Capital outlay delta between the two winning plays — highlight when
+    // the winner is also the cheaper upfront buy.
+    const winOutlay = winCore.winnerOutlayGBP || 0;
+    const loseOutlay = loseCore.winnerOutlayGBP || 0;
+    const outlaySavingGBP = loseOutlay - winOutlay;
+    const cheaperLine = outlaySavingGBP >= 25
+      ? ` <strong>${winLang}</strong> also saves <strong>${fmtGBPDirect(outlaySavingGBP)}</strong> upfront vs ${loseLang} — less capital tied up per card.`
+      : '';
     if (absMargin < 30) {
       verdictPill = 'Close call';
-      verdictBody = `<strong>${selfLang} and ${otherLang}</strong> score within ${absMargin.toFixed(0)} points on risk-adjusted return. Pick the language you already have access to — the algorithm doesn’t see a meaningful edge either way.`;
+      verdictBody = `<strong>${selfLang} and ${otherLang}</strong> score within ${absMargin.toFixed(0)} points on risk-adjusted return after factoring upfront outlay. Pick the language you already have access to — the algorithm doesn’t see a meaningful edge either way.${cheaperLine}`;
     } else {
-      const winnerStrat = (margin > 0 ? selfCore : otherCore).winner;
+      const winnerStrat = winCore.winner;
       verdictPill = `Buy ${winLang}`;
-      verdictBody = `The <strong>${winLang}</strong> version is the smarter buy on this card — <strong>${winnerStrat.label}</strong> projects +${winnerStrat.roi.toFixed(0)}% ROI vs the ${margin > 0 ? otherLang : selfLang} copy’s best play. Risk-adjusted edge: +${absMargin.toFixed(0)} pts.`;
+      verdictBody = `The <strong>${winLang}</strong> version is the smarter buy on this card — <strong>${winnerStrat.label}</strong> projects +${winnerStrat.roi.toFixed(0)}% ROI vs the ${loseLang} copy’s best play. Risk-adjusted edge after capital outlay: +${absMargin.toFixed(0)} pts.${cheaperLine}`;
     }
   } else if (selfCore.ok) {
     verdictPill = `Buy ${selfLang}`;
@@ -7515,7 +7548,7 @@ function renderHoldCounterpartCompare(card) {
           <div class="hold-cp-stat"><span class="hold-cp-stat-k">Profit</span><span class="hold-cp-stat-v ${w.profit >= 0 ? 'hold-pos' : 'hold-neg'}">${w.profit >= 0 ? '+' : '−'}${fmtGBP(Math.abs(w.profit))}</span></div>
           <div class="hold-cp-stat"><span class="hold-cp-stat-k">ROI</span><span class="hold-cp-stat-v ${w.roi >= 0 ? 'hold-pos' : 'hold-neg'}">${w.roi >= 0 ? '+' : ''}${w.roi.toFixed(0)}%</span></div>
         </div>
-        <div class="hold-cp-score ${scoreClass}">Risk-adjusted score · ${core.overallScore.toFixed(0)}</div>
+        <div class="hold-cp-score ${scoreClass}">Risk-adjusted score · ${core.overallScore.toFixed(0)}${core.outlayPenalty > 0 ? `<span class="hold-cp-score-sub"> · Outlay −${core.outlayPenalty} pts</span>` : ''}</div>
         ` : `
         <div class="hold-cp-empty">No positive 5yr ROI projected on this side — skip it.</div>
         `}
