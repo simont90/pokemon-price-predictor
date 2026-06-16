@@ -6466,8 +6466,196 @@ function updateMktSettingsLabel() {
   $('mktSettingsBtn')?.classList.toggle('is-active', !!url);
 }
 
+// ---- Reassignment modal ----
+let _mktReassignPayload = null;     // { url, title, ..., fromCardId, fromGrade }
+let _mktReassignPickedCard = null;  // chosen target card
+let _mktReassignPickedGrade = null; // chosen target grade key ('raw' | '7' | ...)
+
+function openReassignModal(payload) {
+  if (!payload) return;
+  _mktReassignPayload = payload;
+  _mktReassignPickedCard = null;
+  _mktReassignPickedGrade = payload.fromGrade || 'raw';
+  const overlay = $('mraOverlay');
+  const modal = $('mraModal');
+  if (!overlay || !modal) return;
+  overlay.style.display = '';
+  overlay.setAttribute('aria-hidden', 'false');
+  modal.style.display = 'flex';
+  // Listing preview
+  const prev = $('mraPreview');
+  if (prev) {
+    const img = payload.image
+      ? `<img src="${esc(payload.image)}" alt="" onerror="this.style.display='none'">`
+      : '<div class="mra-prev-img-empty"></div>';
+    prev.innerHTML = `
+      ${img}
+      <div class="mra-prev-body">
+        <div class="mra-prev-title">${esc(payload.title || '')}</div>
+        <div class="mra-prev-meta">${esc(payload.source || '')}${payload.condition ? ' · ' + esc(payload.condition) : ''} · £${(payload.priceGBP || 0).toFixed(2)}</div>
+      </div>`;
+  }
+  // Reset input + results
+  const input = $('mraInput');
+  if (input) { input.value = ''; setTimeout(() => input.focus(), 50); }
+  const results = $('mraResults');
+  if (results) results.innerHTML = '';
+  // Pre-select current grade in the grade picker
+  const gradeKey = payload.fromGrade || 'raw';
+  document.querySelectorAll('#mraGrades .mra-grade').forEach(b => {
+    b.classList.toggle('is-active', b.dataset.grade === gradeKey);
+  });
+  // Reset target indicator + Save button
+  const tgt = $('mraTarget');
+  if (tgt) tgt.innerHTML = '<span class="mra-target-empty">No card picked yet — search above.</span>';
+  const save = $('mraSaveBtn');
+  if (save) save.disabled = true;
+}
+
+function closeReassignModal() {
+  const overlay = $('mraOverlay');
+  const modal = $('mraModal');
+  if (overlay) { overlay.style.display = 'none'; overlay.setAttribute('aria-hidden', 'true'); }
+  if (modal) modal.style.display = 'none';
+  _mktReassignPayload = null;
+  _mktReassignPickedCard = null;
+  _mktReassignPickedGrade = null;
+}
+
+function runReassignSearch() {
+  const input = $('mraInput');
+  const results = $('mraResults');
+  if (!input || !results || !searchIndex) return;
+  const q = input.value.trim().toLowerCase();
+  if (q.length < 2) { results.innerHTML = ''; return; }
+  let matches = searchIndex.filter(c => c._search.includes(q));
+  const numSlashMatch = q.match(/^#?(\d+)\/(\d+)$/);
+  if (numSlashMatch) {
+    const [, num, total] = numSlashMatch;
+    matches.sort((a, b) => {
+      const aExact = (String(a.cn) === num && String(a.ct) === total) ? 2 : String(a.cn) === num ? 1 : 0;
+      const bExact = (String(b.cn) === num && String(b.ct) === total) ? 2 : String(b.cn) === num ? 1 : 0;
+      return bExact - aExact;
+    });
+  } else if (/^\d+$/.test(q) || /^#\d+/.test(q)) {
+    const num = q.replace('#', '');
+    matches.sort((a, b) => {
+      const aExact = String(a.cn) === num ? 1 : 0;
+      const bExact = String(b.cn) === num ? 1 : 0;
+      return bExact - aExact;
+    });
+  }
+  matches.sort((a, b) => {
+    const aName = a.n.toLowerCase().startsWith(q) ? 1 : 0;
+    const bName = b.n.toLowerCase().startsWith(q) ? 1 : 0;
+    if (aName !== bName) return bName - aName;
+    return (b.p || 0) - (a.p || 0);
+  });
+  matches = matches.slice(0, 15);
+  if (!matches.length) {
+    results.innerHTML = '<div class="mra-empty">No cards match — try another name or number.</div>';
+    return;
+  }
+  results.innerHTML = matches.map(c => {
+    const numLabel = c.cn && c.ct ? `#${esc(c.cn)}/${esc(c.ct)}` : c.cn ? `#${esc(c.cn)}` : '';
+    const langBadge = c.lang === 'JP' ? '<span class="mra-lang jp">JP</span>'
+                   : c.lang === 'CN' ? '<span class="mra-lang cn">CN</span>'
+                   : '<span class="mra-lang en">EN</span>';
+    return `
+      <button type="button" class="mra-result" data-card-id="${esc(c.i)}">
+        <div class="mra-result-main">
+          <div class="mra-result-name">${esc(c.n)} ${langBadge}</div>
+          <div class="mra-result-sub">${esc(c.s || '')} · ${numLabel}${c.r ? ' · ' + esc(c.r) : ''}</div>
+        </div>
+      </button>`;
+  }).join('');
+  results.querySelectorAll('.mra-result').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.cardId;
+      const card = searchIndex.find(c => String(c.i) === String(id));
+      if (!card) return;
+      _mktReassignPickedCard = card;
+      results.querySelectorAll('.mra-result').forEach(b => b.classList.toggle('is-picked', b === btn));
+      const tgt = $('mraTarget');
+      const numLabel = card.cn && card.ct ? `#${esc(card.cn)}/${esc(card.ct)}` : card.cn ? `#${esc(card.cn)}` : '';
+      const langBadge = card.lang === 'JP' ? '<span class="mra-lang jp">JP</span>'
+                     : card.lang === 'CN' ? '<span class="mra-lang cn">CN</span>'
+                     : '<span class="mra-lang en">EN</span>';
+      if (tgt) tgt.innerHTML = `Will move to: <strong>${esc(card.n)}</strong> ${langBadge} <span class="mra-target-sub">${esc(card.s || '')} · ${numLabel}</span>`;
+      const save = $('mraSaveBtn');
+      if (save) save.disabled = false;
+    });
+  });
+}
+
+function setupReassignModal() {
+  $('mraClose')?.addEventListener('click', closeReassignModal);
+  $('mraOverlay')?.addEventListener('click', closeReassignModal);
+  $('mraCancelBtn')?.addEventListener('click', closeReassignModal);
+  const input = $('mraInput');
+  if (input) {
+    let t;
+    input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(runReassignSearch, 160); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') runReassignSearch(); });
+  }
+  document.querySelectorAll('#mraGrades .mra-grade').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _mktReassignPickedGrade = btn.dataset.grade;
+      document.querySelectorAll('#mraGrades .mra-grade').forEach(b => b.classList.toggle('is-active', b === btn));
+    });
+  });
+  // "Just hide" — record a from-only reassignment so the listing disappears
+  // from the origin card without surfacing anywhere else.
+  $('mraHideBtn')?.addEventListener('click', () => {
+    if (!_mktReassignPayload) return;
+    const p = _mktReassignPayload;
+    addReassignment({
+      url: p.url, title: p.title, image: p.image, source: p.source,
+      condition: p.condition, seller: p.seller, priceGBP: p.priceGBP,
+      spreadPct: p.spreadPct, signal: p.signal,
+      fromCardId: p.fromCardId, fromGrade: p.fromGrade,
+      toCardId: null, toGrade: null,
+    });
+    closeReassignModal();
+    if (typeof selectedCard !== 'undefined' && selectedCard) fetchLiveDeals(selectedCard);
+  });
+  $('mraSaveBtn')?.addEventListener('click', () => {
+    if (!_mktReassignPayload || !_mktReassignPickedCard) return;
+    const p = _mktReassignPayload;
+    const target = _mktReassignPickedCard;
+    const grade = _mktReassignPickedGrade || 'raw';
+    addReassignment({
+      url: p.url, title: p.title, image: p.image, source: p.source,
+      condition: p.condition, seller: p.seller, priceGBP: p.priceGBP,
+      spreadPct: p.spreadPct, signal: p.signal,
+      fromCardId: p.fromCardId, fromGrade: p.fromGrade,
+      toCardId: target.i, toGrade: grade,
+    });
+    closeReassignModal();
+    if (typeof selectedCard !== 'undefined' && selectedCard) fetchLiveDeals(selectedCard);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('mraModal') && $('mraModal').style.display !== 'none') closeReassignModal();
+  });
+  // Event delegation — catch reassign-button clicks even though the parent
+  // .mkt-deal is an <a>. We have to prevent both navigation AND bubbling.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mkt-deal-reassign');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let payload = null;
+    try {
+      const enc = btn.dataset.payload || '';
+      payload = JSON.parse(decodeURIComponent(escape(atob(enc))));
+    } catch (err) { return; }
+    openReassignModal(payload);
+  }, true);
+}
+
 function setupMarketplaceWorker() {
   updateMktSettingsLabel();
+  setupReassignModal();
   $('mktSettingsBtn')?.addEventListener('click', () => {
     const current = getMktWorkerUrl();
     const input = prompt(
@@ -6484,6 +6672,56 @@ function setupMarketplaceWorker() {
       $('mktLiveWrap').style.display = 'none';
     }
   });
+}
+
+// =============================================================
+// Listing Reassignment · move a wrong-card listing to the right card
+// =============================================================
+//
+// The eBay/Cardmarket queries occasionally surface Japanese or Chinese
+// listings under an English card (or vice-versa, or a #125 under a #223
+// scan). The reassignment system lets the user say "this listing is
+// actually the JP version of card X at PSA 9" — it disappears from the
+// origin card's grade and reappears on the target card's grade. All state
+// lives in localStorage so it survives reloads and works offline.
+
+const MKT_REASSIGN_KEY = 'pkm-mkt-reassignments';
+
+function getReassignments() {
+  try {
+    const raw = localStorage.getItem(MKT_REASSIGN_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+function saveReassignments(arr) {
+  try { localStorage.setItem(MKT_REASSIGN_KEY, JSON.stringify(arr || [])); }
+  catch (e) { /* quota — silent */ }
+}
+function addReassignment(rec) {
+  if (!rec || !rec.url) return;
+  const arr = getReassignments().filter(r => r.url !== rec.url);
+  arr.unshift({ ...rec, ts: Date.now() });
+  saveReassignments(arr);
+}
+function removeReassignment(url) {
+  if (!url) return;
+  saveReassignments(getReassignments().filter(r => r.url !== url));
+}
+// URLs to HIDE from the origin card's grade panel.
+function reassignmentsFromCard(cardId, gradeKey) {
+  const out = new Set();
+  for (const r of getReassignments()) {
+    if (r.fromCardId === cardId && (!gradeKey || r.fromGrade === gradeKey || !r.fromGrade)) {
+      out.add(r.url);
+    }
+  }
+  return out;
+}
+// Listings CLAIMED by the receiving card at this grade.
+function reassignmentsToCard(cardId, gradeKey) {
+  return getReassignments().filter(r => r.toCardId === cardId && r.toGrade === gradeKey);
 }
 
 // Words that almost always indicate junk listings — bulk lots, mystery packs,
@@ -6589,7 +6827,10 @@ function mktIsJunk(deal, card, requiredTokens, gradeFilter, fairValueGBP) {
 }
 
 // Build the HTML for a single deal card. Shared by every grade panel.
-function mktRenderDealCard(d) {
+// `meta` carries the origin-card context (fromCardId, fromGrade) plus an
+// optional `claimed` flag for listings that were reassigned IN to this card.
+function mktRenderDealCard(d, meta) {
+  meta = meta || {};
   const sigCls = d.signal === 'STRONG VALUE' ? 'mkt-strong'
                : d.signal === 'VALUE'        ? 'mkt-fair'
                : d.signal === 'PREMIUM'      ? 'mkt-weak' : 'mkt-fair';
@@ -6598,8 +6839,22 @@ function mktRenderDealCard(d) {
   const img = d.image
     ? `<img class="mkt-deal-img" src="${esc(d.image)}" alt="" onerror="this.style.display='none'">`
     : '<div class="mkt-deal-img"></div>';
+  const claimedChip = meta.claimed
+    ? `<span class="mkt-claimed-chip" title="Reassigned to this card">⇄ Reassigned here</span>`
+    : '';
+  // Cheap, URL-safe payload for the reassign modal. Avoid quoting headaches
+  // by base64-encoding the JSON — the click handler decodes it back.
+  const payload = {
+    url: d.url, title: d.title, image: d.image || '',
+    source: d.source, condition: d.condition || '', seller: d.seller || '',
+    priceGBP: d.priceGBP, spreadPct: d.spreadPct, signal: d.signal,
+    fromCardId: meta.fromCardId || '', fromGrade: meta.fromGrade || '',
+  };
+  const enc = (typeof btoa === 'function')
+    ? btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
+    : '';
   return `
-    <a class="mkt-deal" href="${esc(d.url)}" target="_blank" rel="noopener">
+    <a class="mkt-deal ${meta.claimed ? 'is-claimed' : ''}" href="${esc(d.url)}" target="_blank" rel="noopener">
       ${img}
       <div class="mkt-deal-body">
         <div class="mkt-deal-title">${esc(d.title)}</div>
@@ -6607,12 +6862,14 @@ function mktRenderDealCard(d) {
           <span class="mkt-src ${sourceCls}">${esc(d.source)}</span>
           ${d.condition ? `<span>${esc(d.condition)}</span>` : ''}
           ${d.seller ? `<span>· ${esc(d.seller)}</span>` : ''}
+          ${claimedChip}
         </div>
       </div>
       <div class="mkt-deal-right">
         <div class="mkt-deal-price">£${d.priceGBP.toFixed(2)}</div>
         <div class="mkt-deal-spread ${d.spreadPct >= 0 ? 'pos' : 'neg'}">${d.spreadPct >= 0 ? '↓' : '↑'} ${Math.abs(d.spreadPct).toFixed(0)}% vs fair</div>
         <span class="mkt-pill ${sigCls}">${esc(d.signal)}</span>
+        <button type="button" class="mkt-deal-reassign" data-payload="${enc}" title="Wrong card? Move this listing" aria-label="Move this listing to a different card">⇄ Move</button>
       </div>
     </a>
   `;
@@ -6643,21 +6900,40 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     if (isStale()) return 0;
     const took = Math.round(performance.now() - t0);
     const rawDeals = data.deals || [];
-    const deals = rawDeals.filter(d => !mktIsJunk(d, card, required, g.workerGrade, fairValueGBP));
-    const filteredCount = rawDeals.length - deals.length;
+    let deals = rawDeals.filter(d => !mktIsJunk(d, card, required, g.workerGrade, fairValueGBP));
+    // Apply user reassignments: hide URLs the user has moved AWAY from this
+    // card+grade, and surface URLs they've moved TO this card+grade.
+    const hiddenUrls = reassignmentsFromCard(card.i, g.workerGrade);
+    const visibleAfterHide = deals.filter(d => !hiddenUrls.has(d.url));
+    const hiddenCount = deals.length - visibleAfterHide.length;
+    deals = visibleAfterHide;
+    const claimed = reassignmentsToCard(card.i, g.workerGrade);
+    // Deduplicate — in the rare case the worker also returned a claimed URL,
+    // the claim record wins (it has the user-edited context).
+    const claimedUrls = new Set(claimed.map(c => c.url));
+    deals = deals.filter(d => !claimedUrls.has(d.url));
+    const filteredCount = rawDeals.length - (deals.length + claimed.length + hiddenCount);
     const c = data.counts || {};
     const errStr = (data.errors && data.errors.length) ? ` · errors: ${data.errors.join(', ')}` : '';
-    const filterStr = filteredCount > 0 ? ` · ${filteredCount} filtered` : '';
-    if (badge) badge.textContent = String(deals.length);
-    if (status) status.innerHTML = `${deals.length} clean · £${fairValueGBP.toFixed(0)} cap · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}`;
+    const parts = [];
+    if (filteredCount > 0) parts.push(`${filteredCount} junk`);
+    if (hiddenCount > 0)   parts.push(`${hiddenCount} moved out`);
+    if (claimed.length)    parts.push(`${claimed.length} moved in`);
+    const filterStr = parts.length ? ` · ${parts.join(' / ')}` : '';
+    const totalShown = deals.length + claimed.length;
+    if (badge) badge.textContent = String(totalShown);
+    if (status) status.innerHTML = `${totalShown} clean · £${fairValueGBP.toFixed(0)} cap · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}`;
     if (list) {
-      if (deals.length === 0) {
+      if (totalShown === 0) {
         list.innerHTML = `<div class="mkt-empty">No clean ${g.label} listings under £${fairValueGBP.toFixed(0)} fair value right now${filteredCount > 0 ? ` (${filteredCount} junk filtered)` : ''}. Try the deep-link buttons below.</div>`;
       } else {
-        list.innerHTML = deals.map(mktRenderDealCard).join('');
+        const meta = { fromCardId: card.i, fromGrade: g.workerGrade };
+        const claimedHtml = claimed.map(rec => mktRenderDealCard(rec, { ...meta, claimed: true })).join('');
+        const dealsHtml = deals.map(d => mktRenderDealCard(d, meta)).join('');
+        list.innerHTML = claimedHtml + dealsHtml;
       }
     }
-    return deals.length;
+    return totalShown;
   } catch (e) {
     if (isStale()) return 0;
     if (status) status.textContent = `Worker error: ${e.message}.`;

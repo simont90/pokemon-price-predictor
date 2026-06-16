@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260616b">
+  <link rel="stylesheet" href="style.css?v=20260616c">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -499,6 +499,46 @@
         </div>
         <div class="ql-status" id="pcovStatus"></div>
         <div class="ql-results" id="pcovResults"></div>
+      </div>
+    </section>
+
+    <!-- Marketplace listing reassignment modal — move a wrong-card listing
+         (e.g. a JP or CN listing surfaced under an EN card, or a #125
+         listing showing up in a #223 scan) to the correct card + grade. -->
+    <div class="ql-overlay" id="mraOverlay" style="display:none" aria-hidden="true"></div>
+    <section class="ql-modal mra-modal" id="mraModal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="mraTitle">
+      <div class="ql-header">
+        <div>
+          <h2 id="mraTitle">Move this listing to the correct card</h2>
+          <p class="ql-sub">Pick the card this listing actually represents. It will disappear from this card and surface on the chosen one.</p>
+        </div>
+        <button class="ql-close" id="mraClose" aria-label="Close">✕</button>
+      </div>
+      <div class="ql-body">
+        <div class="mra-preview" id="mraPreview"></div>
+        <div class="mra-field">
+          <label class="mra-field-label" for="mraInput">Find the correct card</label>
+          <input type="text" id="mraInput" placeholder="e.g. Charizard ex, 125/165, リザードン..." autocomplete="off" spellcheck="false">
+        </div>
+        <div class="mra-results" id="mraResults"></div>
+        <div class="mra-field">
+          <span class="mra-field-label">Grade on the receiving card</span>
+          <div class="mra-grades" id="mraGrades">
+            <button type="button" class="mra-grade is-active" data-grade="raw">Raw</button>
+            <button type="button" class="mra-grade" data-grade="7">PSA 7</button>
+            <button type="button" class="mra-grade" data-grade="8">PSA 8</button>
+            <button type="button" class="mra-grade" data-grade="9">PSA 9</button>
+            <button type="button" class="mra-grade" data-grade="10">PSA 10</button>
+          </div>
+        </div>
+        <div class="mra-target" id="mraTarget"><span class="mra-target-empty">No card picked yet — search above.</span></div>
+        <div class="mra-actions">
+          <button type="button" class="mra-btn mra-btn-ghost" id="mraHideBtn" title="Hide this listing from the current card without moving it anywhere">Just hide from this card</button>
+          <div class="mra-actions-right">
+            <button type="button" class="mra-btn mra-btn-ghost" id="mraCancelBtn">Cancel</button>
+            <button type="button" class="mra-btn mra-btn-primary" id="mraSaveBtn" disabled>Move listing</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1527,6 +1567,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260616b"></script>
+  <script src="app.js?v=20260616c"></script>
 </body>
 </html>
