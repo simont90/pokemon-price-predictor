@@ -6499,7 +6499,13 @@ function openReassignModal(payload) {
   const input = $('mraInput');
   if (input) { input.value = ''; setTimeout(() => input.focus(), 50); }
   const results = $('mraResults');
-  if (results) results.innerHTML = '';
+  if (results) {
+    results.innerHTML = '';
+    // If the origin card has a linked JP/EN counterpart, surface it as a
+    // one-tap suggestion at the very top — most JP-leaks-into-EN moves go
+    // exactly there, so this saves a search step.
+    renderReassignSuggestions(payload.fromCardId);
+  }
   // Pre-select current grade in the grade picker
   const gradeKey = payload.fromGrade || 'raw';
   document.querySelectorAll('#mraGrades .mra-grade').forEach(b => {
@@ -6520,6 +6526,68 @@ function closeReassignModal() {
   _mktReassignPayload = null;
   _mktReassignPickedCard = null;
   _mktReassignPickedGrade = null;
+}
+
+// Render the suggested-counterpart row inside #mraResults. Called by
+// openReassignModal and cleared whenever the user starts typing.
+function renderReassignSuggestions(fromCardId) {
+  const results = $('mraResults');
+  if (!results || !fromCardId || !searchIndex) return;
+  // Resolve the origin card (use cardData first — has all fields — fall back
+  // to searchIndex).
+  let originCard = null;
+  if (typeof cardData !== 'undefined' && cardData && cardData.cards) {
+    originCard = cardData.cards.find(c => String(c.i) === String(fromCardId)) || null;
+  }
+  if (!originCard) originCard = searchIndex.find(c => String(c.i) === String(fromCardId)) || null;
+  if (!originCard || typeof findCounterparts !== 'function') return;
+  const cp = findCounterparts(originCard);
+  if (!cp || !cp.counterparts || !cp.counterparts.length) return;
+  // Cap to 3 to keep the suggested band tight — if the user wants more they
+  // can type a search.
+  const picks = cp.counterparts.slice(0, 3);
+  const otherLang = originCard.lang === 'JP' ? 'EN' : 'JP';
+  const labelText = picks.length === 1
+    ? `Suggested — the linked ${otherLang} counterpart`
+    : `Suggested — linked ${otherLang} counterparts`;
+  const cardsHtml = picks.map(c => {
+    const numLabel = c.cn && c.ct ? `#${esc(c.cn)}/${esc(c.ct)}` : c.cn ? `#${esc(c.cn)}` : '';
+    const langBadge = c.lang === 'JP' ? '<span class="mra-lang jp">JP</span>'
+                   : c.lang === 'CN' ? '<span class="mra-lang cn">CN</span>'
+                   : '<span class="mra-lang en">EN</span>';
+    return `
+      <button type="button" class="mra-result mra-suggested" data-card-id="${esc(c.i)}">
+        <div class="mra-result-main">
+          <div class="mra-result-name">${esc(c.n)} ${langBadge}<span class="mra-suggest-pill">★ Suggested</span></div>
+          <div class="mra-result-sub">${esc(c.s || '')} · ${numLabel}${c.r ? ' · ' + esc(c.r) : ''}</div>
+        </div>
+      </button>`;
+  }).join('');
+  results.innerHTML = `
+    <div class="mra-suggest-band">
+      <div class="mra-suggest-label">${labelText}</div>
+      ${cardsHtml}
+    </div>
+  `;
+  // Wire picks for the suggested band (same handler as the search results).
+  results.querySelectorAll('.mra-suggested').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.cardId;
+      const card = searchIndex.find(c => String(c.i) === String(id));
+      if (!card) return;
+      _mktReassignPickedCard = card;
+      // Clear other picked highlights
+      results.querySelectorAll('.mra-result').forEach(b => b.classList.toggle('is-picked', b === btn));
+      const tgt = $('mraTarget');
+      const numLabel = card.cn && card.ct ? `#${esc(card.cn)}/${esc(card.ct)}` : card.cn ? `#${esc(card.cn)}` : '';
+      const langBadge = card.lang === 'JP' ? '<span class="mra-lang jp">JP</span>'
+                     : card.lang === 'CN' ? '<span class="mra-lang cn">CN</span>'
+                     : '<span class="mra-lang en">EN</span>';
+      if (tgt) tgt.innerHTML = `Will move to: <strong>${esc(card.n)}</strong> ${langBadge} <span class="mra-target-sub">${esc(card.s || '')} · ${numLabel}</span>`;
+      const save = $('mraSaveBtn');
+      if (save) save.disabled = false;
+    });
+  });
 }
 
 function runReassignSearch() {

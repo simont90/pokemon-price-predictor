@@ -3046,6 +3046,34 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   border-color: var(--accent);
   background: rgba(255, 192, 77, 0.08);
 }
+.mra-suggest-band {
+  margin-bottom: 10px;
+  padding: 10px;
+  background: linear-gradient(135deg, rgba(255, 192, 77, 0.08), transparent 70%);
+  border: 1px solid rgba(255, 192, 77, 0.30);
+  border-radius: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.mra-suggest-label {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase;
+}
+.mra-result.mra-suggested {
+  border-color: rgba(255, 192, 77, 0.35);
+}
+.mra-result.mra-suggested:hover {
+  border-color: var(--accent);
+  background: rgba(255, 192, 77, 0.12);
+}
+.mra-suggest-pill {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(255, 192, 77, 0.18);
+  color: var(--accent);
+  font-family: var(--mono); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
 .mra-result-name {
   font-size: 13px; font-weight: 600; color: var(--text);
   display: flex; align-items: center; gap: 6px;
