@@ -1180,43 +1180,6 @@ function getPCOverride(cardId) {
   return all[cardId] || null;
 }
 
-// ---- Collectr per-card URL overrides + prices ----
-// Storage format: { [cardId]: { url, savedAt, source: 'manual',
-//                                prices?: { raw, psa7, psa8, psa9, psa10, currency },
-//                                pricesAt?: number } }
-// The URL is set by the user in Edit Details. Prices are filled in by the
-// Mac mini Collectr bot (see collectr-bot/), which writes them back via the
-// /sync endpoint. The app reads them here and renders them in Live Market Price.
-const COLLECTR_OVERRIDE_KEY = 'pkm-collectr-overrides-v1';
-function getCollectrOverrides() {
-  try { return JSON.parse(localStorage.getItem(COLLECTR_OVERRIDE_KEY) || '{}'); } catch { return {}; }
-}
-function getCollectrOverride(cardId) {
-  return getCollectrOverrides()[cardId] || null;
-}
-function setCollectrOverride(cardId, data) {
-  const all = getCollectrOverrides();
-  if (data) all[cardId] = data; else delete all[cardId];
-  try { localStorage.setItem(COLLECTR_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
-}
-// Set just the URL — preserves any existing prices the bot has fetched.
-function setCollectrUrl(cardId, url) {
-  const existing = getCollectrOverride(cardId) || {};
-  setCollectrOverride(cardId, { ...existing, url, savedAt: Date.now(), source: 'manual' });
-}
-function clearCollectrOverride(cardId) {
-  setCollectrOverride(cardId, null);
-}
-function validateCollectrUrl(u) {
-  if (!u) return null; // empty is fine — just clears
-  try {
-    const parsed = new URL(u);
-    if (!parsed.hostname.endsWith('getcollectr.com')) return 'URL must be on app.getcollectr.com';
-    if (!/\/explore\/product\/\d+/.test(parsed.pathname)) return 'URL must point to an explore/product/{id} page';
-    return null;
-  } catch { return 'Not a valid URL'; }
-}
-
 // Build the cleanest possible query for PriceCharting.
 // Includes set name first (most discriminating), then card name, then number, then JP flag.
 function buildPCQuery(card) {
@@ -2072,7 +2035,6 @@ function selectCard(id) {
   updateWatchButton();
   renderMarketplaceScan(card, pullCost, des.total);
   renderHoldStrategy(card);
-  try { renderCollectrLiveRow(card); } catch {}
 
   // Reset market dynamics section
   $('marketSection').style.display = 'none';
@@ -5425,11 +5387,6 @@ function openEditCard() {
   $('ecRarity').value = c.r || '';
   $('ecSeries').value = c.sr || '';
   $('ecImg').value = c.img || '';
-  // Collectr URL pulls from the dedicated overrides store, not the card itself.
-  const clrField = $('ecCollectrUrl');
-  if (clrField) clrField.value = getCollectrOverride(c.i)?.url || '';
-  const clrStatus = $('ecCollectrStatus');
-  if (clrStatus) clrStatus.textContent = '';
   const sub = $('ecSub');
   const hasOverride = !!loadCardOverrides()[c.i];
   sub.innerHTML = hasOverride
@@ -5475,16 +5432,6 @@ async function saveEditCard() {
     status.textContent = 'Name, set and card number can’t be empty.';
     return;
   }
-  // Validate + save Collectr URL (separate store, doesn't go into card overrides)
-  const clrUrl = ($('ecCollectrUrl')?.value || '').trim();
-  const clrErr = validateCollectrUrl(clrUrl);
-  if (clrErr) {
-    status.className = 'ql-status error';
-    status.textContent = `Collectr URL: ${clrErr}`;
-    return;
-  }
-  if (clrUrl) setCollectrUrl(c.i, clrUrl);
-  else if (getCollectrOverride(c.i)) clearCollectrOverride(c.i);
   // Only persist fields that differ from the original — keeps overrides minimal.
   // Coerce both sides to strings so a numeric `cn=125` matches input `'125'`.
   // For `lang`, treat missing/empty as the implicit default 'EN' (the indexed DB
@@ -10239,121 +10186,6 @@ function renderHoldOverridePanel(card) {
 }
 
 // ============================================================================
-// Collectr live row — reads prices from pkm-collectr-overrides-v1
-// ============================================================================
-// The URL is set in Edit Details. Prices are filled in by the Mac mini bot
-// (collectr-bot/) which runs on a cron schedule, scrapes app.getcollectr.com
-// in a real Chromium with the user's logged-in profile, and writes the prices
-// back via PUT /sync?key=pkm-collectr-overrides-v1.
-//
-// On render: read the override for this card, render Raw + PSA 7–10. Each
-// cell has a "Use" button that copies the price into pkm-hold-overrides; one
-// "Use all" button does all five at once. We do NOT auto-overwrite hold
-// overrides because the user may have set their own values manually.
-
-function _clrFmtGBP(v) {
-  if (v == null || v === '') return '—';
-  const n = typeof v === 'number' ? v : parseFloat(v);
-  if (!isFinite(n) || n <= 0) return '—';
-  return `£${n.toFixed(2)}`;
-}
-
-function _clrRelTime(ts) {
-  if (!ts || typeof ts !== 'number') return '';
-  const ms = Date.now() - ts;
-  if (ms < 0) return 'just now';
-  const m = Math.floor(ms / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
-}
-
-function renderCollectrLiveRow(card) {
-  const row = document.getElementById('collectrLiveRow');
-  if (!row) return;
-  if (!card || !card.i) { row.style.display = 'none'; return; }
-
-  const ov = getCollectrOverride(card.i);
-  if (!ov || !ov.url) { row.style.display = 'none'; return; }
-
-  // Always show the row whenever the user has saved a URL — even before the
-  // bot has fetched prices — so they get visual feedback that it's pending.
-  row.style.display = '';
-
-  // Header link to the Collectr product page
-  const link = document.getElementById('collectrLink');
-  if (link) {
-    link.href = ov.url;
-    link.style.display = '';
-  }
-
-  const prices = ov.prices || {};
-  const grades = [
-    { key: 'raw',   id: 'collectrRaw' },
-    { key: 'psa7',  id: 'collectrPsa7' },
-    { key: 'psa8',  id: 'collectrPsa8' },
-    { key: 'psa9',  id: 'collectrPsa9' },
-    { key: 'psa10', id: 'collectrPsa10' },
-  ];
-  for (const g of grades) {
-    const el = document.getElementById(g.id);
-    if (el) el.textContent = _clrFmtGBP(prices[g.key]);
-  }
-
-  const updated = document.getElementById('collectrUpdated');
-  if (updated) {
-    if (ov.pricesAt) updated.textContent = `Updated ${_clrRelTime(ov.pricesAt)}`;
-    else updated.textContent = 'Pending — waiting for Mac mini bot';
-  }
-
-  const statusEl = document.getElementById('collectrStatus');
-  if (statusEl) statusEl.textContent = '';
-
-  // Per-cell "Use" buttons — only enabled when there's a price
-  document.querySelectorAll('#collectrLiveRow .collectr-use-cell').forEach(btn => {
-    const g = btn.dataset.grade;
-    const p = prices[g];
-    const valid = typeof p === 'number' ? p > 0 : (parseFloat(p) > 0);
-    btn.disabled = !valid;
-    btn.onclick = () => {
-      if (!valid) return;
-      const v = typeof p === 'number' ? p : parseFloat(p);
-      setHoldOverride(card.i, g, v);
-      try { renderHoldOverridePanel(card); } catch {}
-      try { renderHoldStrategy(card); } catch {}
-      btn.textContent = 'Saved ✓';
-      setTimeout(() => { btn.textContent = 'Use'; }, 1500);
-    };
-  });
-
-  // "Use all" button — applies every valid grade in one go
-  const useAll = document.getElementById('collectrUseAllBtn');
-  if (useAll) {
-    const anyValid = grades.some(g => {
-      const p = prices[g.key];
-      const n = typeof p === 'number' ? p : parseFloat(p);
-      return isFinite(n) && n > 0;
-    });
-    useAll.disabled = !anyValid;
-    useAll.onclick = () => {
-      let count = 0;
-      grades.forEach(g => {
-        const p = prices[g.key];
-        const n = typeof p === 'number' ? p : parseFloat(p);
-        if (isFinite(n) && n > 0) { setHoldOverride(card.i, g.key, n); count++; }
-      });
-      try { renderHoldOverridePanel(card); } catch {}
-      try { renderHoldStrategy(card); } catch {}
-      useAll.textContent = `Saved ${count} ✓`;
-      setTimeout(() => { useAll.textContent = 'Use all as market price'; }, 1800);
-    };
-  }
-}
-
-// ============================================================================
 // Collapsible Sections — global UI cleanup
 // ----------------------------------------------------------------------------
 // Adds a chevron toggle to every `section.card` so users can collapse noisy
@@ -10435,7 +10267,6 @@ const SYNC_KEYS = [
   'pkm-mkt-dismissals',             // Listing dismissals
   'pkm-counterpart-overrides-v1',   // EN<->JP counterpart overrides
   'pkm-pc-overrides-v1',            // PriceCharting overrides
-  'pkm-collectr-overrides-v1',      // Collectr per-card URL overrides
   'pkm-user-cards-v1',              // User-added cards
   'pkm-card-overrides-v1',          // Card metadata overrides
 ];

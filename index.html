@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260617q">
+  <link rel="stylesheet" href="style.css?v=20260617r">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -471,11 +471,6 @@
             <input type="url" id="ecImg" placeholder="Paste a tcgcollector.com card link — we'll extract the image" autocomplete="off" spellcheck="false">
             <span class="ma-img-status" id="ecImgStatus"></span>
           </label>
-          <label class="ma-field">
-            <span class="ma-field-label">Collectr product URL <span class="ma-opt">(optional — the Mac mini bot will pull raw + PSA 7/8/9/10 prices)</span></span>
-            <input type="url" id="ecCollectrUrl" placeholder="https://app.getcollectr.com/explore/product/…" autocomplete="off" spellcheck="false">
-            <span class="ma-img-status" id="ecCollectrStatus"></span>
-          </label>
           <div class="ma-form-actions">
             <button class="ql-search-btn" id="ecSaveBtn" type="button">Save changes</button>
             <button class="pcov-clear-btn" id="ecResetBtn" type="button">Reset to original</button>
@@ -783,25 +778,6 @@
                 <div class="lp-cell"><span class="lp-label">PSA 10</span><span class="lp-val" id="crPsa10">—</span></div>
                 <div class="lp-cell"><span class="lp-label">Gem Rate</span><span class="lp-val" id="crGemRate">—</span></div>
                 <div class="lp-cell"><span class="lp-label">Grading ROI</span><span class="lp-val collectrics-grading-roi" id="crGradingRoi">—</span></div>
-              </div>
-            </div>
-            <!-- Collectr (populated by the Mac mini bot from app.getcollectr.com) -->
-            <div class="live-source-row collectr-source-row" id="collectrLiveRow" style="display:none">
-              <div class="live-source-label">
-                <span class="collectr-label-icon">🔥</span> Collectr
-                <a id="collectrLink" href="#" target="_blank" rel="noopener" class="live-source-link" style="display:none">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
-                </a>
-                <span class="live-updated" id="collectrUpdated"></span>
-                <button class="collectr-use-all-btn" id="collectrUseAllBtn" type="button" title="Copy all five Collectr grades into Hold Strategy market-price overrides">Use all as market price</button>
-                <span class="collectr-status" id="collectrStatus"></span>
-              </div>
-              <div class="live-prices-grid live-prices-grid-5" id="collectrPricesGrid">
-                <div class="lp-cell"><span class="lp-label">Raw</span><span class="lp-val lp-market" id="collectrRaw">—</span><button class="collectr-use-cell" data-grade="raw" type="button" title="Use this price as the raw market override">Use</button></div>
-                <div class="lp-cell"><span class="lp-label">PSA 7</span><span class="lp-val" id="collectrPsa7">—</span><button class="collectr-use-cell" data-grade="psa7" type="button">Use</button></div>
-                <div class="lp-cell"><span class="lp-label">PSA 8</span><span class="lp-val" id="collectrPsa8">—</span><button class="collectr-use-cell" data-grade="psa8" type="button">Use</button></div>
-                <div class="lp-cell"><span class="lp-label">PSA 9</span><span class="lp-val" id="collectrPsa9">—</span><button class="collectr-use-cell" data-grade="psa9" type="button">Use</button></div>
-                <div class="lp-cell"><span class="lp-label">PSA 10</span><span class="lp-val" id="collectrPsa10">—</span><button class="collectr-use-cell" data-grade="psa10" type="button">Use</button></div>
               </div>
             </div>
           </div>
@@ -1603,6 +1579,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260617q"></script>
+  <script src="app.js?v=20260617r"></script>
 </body>
 </html>
