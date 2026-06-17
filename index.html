@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260617t">
+  <link rel="stylesheet" href="style.css?v=20260617u">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -72,6 +72,7 @@
           <button class="portfolio-toggle" id="quickLookupToggle" title="Quick Lookup — search live prices for any card">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
           </button>
+          <!-- theme picker -->
           <div class="theme-picker" id="themePicker" role="group" aria-label="Theme">
             <button class="theme-btn" data-theme-val="system" title="System theme" aria-label="System theme">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20"/></svg>
@@ -83,9 +84,6 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
             </button>
           </div>
-          <a href="https://youtu.be/Zml3jfSyPHI" target="_blank" rel="noopener" class="credit-link">
-            Model: PokeDataDadGuy <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
-          </a>
         </div>
       </div>
     </header>
@@ -630,12 +628,12 @@
             <div class="price-tile"><span class="price-tile-label">Market Raw</span><span class="price-tile-usd" id="marketRawUSD"></span><span class="price-tile-gbp" id="marketRawGBP"></span></div>
             <div class="price-tile"><span class="price-tile-label">PSA 10</span><span class="price-tile-usd" id="psa10USD"></span><span class="price-tile-gbp" id="psa10GBP"></span></div>
             <div class="price-tile"><span class="price-tile-label">PSA 10 Gem %</span><span class="price-tile-big" id="gemPct">—</span></div>
-            <div class="price-tile"><span class="price-tile-label">Pull Cost</span><span class="price-tile-big" id="autoPullCost">—</span><span class="price-tile-sub" id="autoPullPacks"></span></div>
+            <div class="price-tile" style="display:none"><span class="price-tile-label">Pull Cost</span><span class="price-tile-big" id="autoPullCost">—</span><span class="price-tile-sub" id="autoPullPacks"></span></div>
           </div>
         </section>
 
-        <!-- Pull Cost -->
-        <section class="card">
+        <!-- Pull Cost — hidden from UI, algorithm still runs -->
+        <section class="card" style="display:none">
           <div class="card-header">
             <div class="card-icon supply-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 8h20"/><path d="M10 3v5"/></svg></div>
             <div><h2>Pull Cost <span class="badge supply-badge">Supply</span></h2><p class="card-desc">Auto-filled from set data when you select a card</p></div>
@@ -1204,7 +1202,7 @@
           <div class="how-content">
             <div class="formula-box"><code>Price = 12.50 × 1.19<sup>PullCost</sup> × 1.41<sup>Desirability</sup></code></div>
             <div class="explanation">
-              <div class="explain-item"><div class="explain-icon supply-icon-sm"></div><div><strong>Pull Cost (Supply)</strong><p>Packs-per-hit × cards-in-tier ÷ 100. Each +1 → +19% price.</p></div></div>
+              <div class="explain-item" style="display:none"><div class="explain-icon supply-icon-sm"></div><div><strong>Pull Cost (Supply)</strong><p>Packs-per-hit × cards-in-tier ÷ 100. Each +1 → +19% price.</p></div></div>
               <div class="explain-item"><div class="explain-icon demand-icon-sm"></div><div><strong>Desirability (Demand)</strong><p>Character (45%) + Artwork (45%) + Appeal (10%). Each +1 → +41% price. Auto-calibrated from market data.</p></div></div>
               <div class="explain-item"><div class="explain-icon r2-icon-sm"></div><div><strong>R² = 0.88</strong><p>Explains 88% of price variation in modern chase cards.</p></div></div>
             </div>
@@ -1329,7 +1327,7 @@
 
     <div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div><p>Loading card database...</p></div>
 
-    <footer class="footer"><p>Live prices via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> + <a href="https://tcgdex.net" target="_blank">TCGdex</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a> · Model by <a href="https://youtu.be/Zml3jfSyPHI" target="_blank">PokeDataDadGuy</a></p></footer>
+    <footer class="footer"><p>Live prices via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> + <a href="https://tcgdex.net" target="_blank">TCGdex</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a></p></footer>
   </div>
 
   <!-- Ask the Predictor — floating AI chatbot -->
@@ -1438,7 +1436,7 @@
             <input type="range" class="sf-thumb sf-thumb-hi" id="sfAppealMax" min="1" max="10" step="0.5" value="10">
           </div>
         </div>
-        <div class="sf-slider-group">
+        <div class="sf-slider-group" style="display:none">
           <div class="sf-slider-header">
             <span class="sf-slider-label">Pull Cost Score</span>
             <span class="sf-slider-vals" id="sfPullVals">Any</span>
@@ -1590,6 +1588,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260617t"></script>
+  <script src="app.js?v=20260617u"></script>
 </body>
 </html>
