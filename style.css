@@ -4014,6 +4014,42 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .acq-save-btn.is-saving { opacity: 0.55; pointer-events: none; }
 .acq-save-btn.is-saved { background: var(--green, #3dd68c); color: #000; border-color: var(--green, #3dd68c); }
 
+/* Sync nudge floating chip */
+.sync-nudge {
+  position: fixed;
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%) translateY(16px);
+  z-index: 250;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.sync-nudge.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.sync-nudge-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 18px;
+  background: var(--accent, #e8b634);
+  color: #000;
+  border: none;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.sync-nudge-btn:active { transform: scale(0.94); }
+.sync-nudge.is-done .sync-nudge-btn { background: var(--green, #3dd68c); }
+
 .acq-empty {
   padding: 12px 14px; border-radius: 8px;
   background: var(--surface-2, rgba(255,255,255,0.02));

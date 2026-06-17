@@ -10758,10 +10758,36 @@ async function syncCloudPull({ mode } = {}) {
 // Wired into every save path that mutates a synced key. Debounced 4s so a burst
 // of edits (e.g. dragging multiple cards) becomes one push.
 let _syncPushTimer = null;
+let _syncNudgeHideTimer = null;
+
+function _syncNudgeShow() {
+  const el = document.getElementById('syncNudge');
+  const lbl = document.getElementById('syncNudgeLabel');
+  if (!el) return;
+  clearTimeout(_syncNudgeHideTimer);
+  el.classList.remove('is-done');
+  el.classList.add('is-visible');
+  if (lbl) lbl.textContent = 'Sync changes';
+}
+
+function _syncNudgeDone() {
+  const el = document.getElementById('syncNudge');
+  const lbl = document.getElementById('syncNudgeLabel');
+  if (!el) return;
+  el.classList.add('is-done');
+  if (lbl) lbl.textContent = '✓ Synced';
+  clearTimeout(_syncNudgeHideTimer);
+  _syncNudgeHideTimer = setTimeout(() => el.classList.remove('is-visible', 'is-done'), 2200);
+}
+
 function syncSchedulePush() {
   if (!syncGetPairCode() || !syncGetEndpoint()) return;
   clearTimeout(_syncPushTimer);
-  _syncPushTimer = setTimeout(() => syncCloudPush({ silent: true }), 4000);
+  _syncNudgeShow();
+  _syncPushTimer = setTimeout(async () => {
+    await syncCloudPush({ silent: true });
+    _syncNudgeDone();
+  }, 4000);
 }
 
 // Patch known save functions so any data change auto-pushes. Done via wrappers
@@ -10948,6 +10974,13 @@ function syncBindOnce() {
     });
   }
   document.getElementById('syncClose')?.addEventListener('click', syncClosePanel);
+
+  // Sync nudge chip — tap to push immediately instead of waiting for debounce
+  document.getElementById('syncNudgeBtn')?.addEventListener('click', async () => {
+    clearTimeout(_syncPushTimer);
+    await syncCloudPush({ silent: true });
+    _syncNudgeDone();
+  });
 
   // Tab switching
   document.querySelectorAll('.sync-tab').forEach(tab => {
