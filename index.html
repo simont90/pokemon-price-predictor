@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260618l">
+  <link rel="stylesheet" href="style.css?v=20260618m">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -960,6 +960,116 @@
           </div>
         </section>
 
+        <!-- Card Condition Scanner -->
+        <section class="card cg-card" id="cardGraderSection" data-collapse-mobile="1" style="display:none">
+          <h2>Card Condition Scanner</h2>
+          <p class="card-desc">Rate each PSA criterion. Upload photos or paste an eBay listing URL to fetch images. Expected grade feeds into the Hold Strategy.</p>
+
+          <!-- Image slots -->
+          <div class="cg-slots">
+            <div class="cg-slot" id="cgFrontSlot">
+              <div class="cg-slot-label">Front</div>
+              <div class="cg-slot-empty" id="cgFrontEmpty">
+                <button class="cg-upload-btn" id="cgFrontCameraBtn" type="button">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Camera
+                </button>
+                <button class="cg-upload-btn" id="cgFrontUploadBtn" type="button">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+                  Upload
+                </button>
+                <input type="file" id="cgFrontCamera" accept="image/*" capture="environment" style="display:none">
+                <input type="file" id="cgFrontFile" accept="image/*" style="display:none">
+              </div>
+              <div class="cg-slot-preview" id="cgFrontPreview" style="display:none">
+                <img id="cgFrontImg" class="cg-img" alt="Card front">
+                <button class="cg-clear-btn" id="cgFrontClear" type="button">✕</button>
+              </div>
+            </div>
+            <div class="cg-slot" id="cgBackSlot">
+              <div class="cg-slot-label">Back</div>
+              <div class="cg-slot-empty" id="cgBackEmpty">
+                <button class="cg-upload-btn" id="cgBackCameraBtn" type="button">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Camera
+                </button>
+                <button class="cg-upload-btn" id="cgBackUploadBtn" type="button">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+                  Upload
+                </button>
+                <input type="file" id="cgBackCamera" accept="image/*" capture="environment" style="display:none">
+                <input type="file" id="cgBackFile" accept="image/*" style="display:none">
+              </div>
+              <div class="cg-slot-preview" id="cgBackPreview" style="display:none">
+                <img id="cgBackImg" class="cg-img" alt="Card back">
+                <button class="cg-clear-btn" id="cgBackClear" type="button">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- eBay URL row -->
+          <div class="cg-ebay-row">
+            <input id="cgEbayUrl" type="url" class="cg-ebay-input" placeholder="eBay listing URL — auto-fetches front + back images">
+            <button id="cgEbayFetch" class="cg-ebay-btn" type="button">Fetch</button>
+          </div>
+          <div class="cg-ebay-status" id="cgEbayStatus" style="display:none"></div>
+
+          <!-- PSA criteria -->
+          <div class="cg-criteria">
+            <div class="cg-crit" data-crit="centering">
+              <div class="cg-crit-name">Centering</div>
+              <div class="cg-crit-opts">
+                <button class="cg-opt" data-score="10" type="button">Centred<span class="cg-opt-hint">≤55/45 both axes</span></button>
+                <button class="cg-opt" data-score="8" type="button">Slight<span class="cg-opt-hint">up to 65/35</span></button>
+                <button class="cg-opt" data-score="6" type="button">Noticeable<span class="cg-opt-hint">up to 75/25</span></button>
+                <button class="cg-opt" data-score="4" type="button">Miscut<span class="cg-opt-hint">worse than 75/25</span></button>
+              </div>
+            </div>
+            <div class="cg-crit" data-crit="corners">
+              <div class="cg-crit-name">Corners</div>
+              <div class="cg-crit-opts">
+                <button class="cg-opt" data-score="10" type="button">Razor sharp<span class="cg-opt-hint">no visible wear</span></button>
+                <button class="cg-opt" data-score="8" type="button">Near perfect<span class="cg-opt-hint">barely visible tip</span></button>
+                <button class="cg-opt" data-score="6" type="button">Light wear<span class="cg-opt-hint">slight rounding</span></button>
+                <button class="cg-opt" data-score="4" type="button">Heavy wear<span class="cg-opt-hint">rounded / chipped</span></button>
+              </div>
+            </div>
+            <div class="cg-crit" data-crit="edges">
+              <div class="cg-crit-name">Edges</div>
+              <div class="cg-crit-opts">
+                <button class="cg-opt" data-score="10" type="button">Clean<span class="cg-opt-hint">no fraying or nicks</span></button>
+                <button class="cg-opt" data-score="8" type="button">Minor fraying<span class="cg-opt-hint">very slight</span></button>
+                <button class="cg-opt" data-score="6" type="button">Visible nicks<span class="cg-opt-hint">chips present</span></button>
+                <button class="cg-opt" data-score="4" type="button">Heavy chips<span class="cg-opt-hint">chunking</span></button>
+              </div>
+            </div>
+            <div class="cg-crit" data-crit="surface">
+              <div class="cg-crit-name">Surface</div>
+              <div class="cg-crit-opts">
+                <button class="cg-opt" data-score="10" type="button">Pristine<span class="cg-opt-hint">no marks</span></button>
+                <button class="cg-opt" data-score="8" type="button">Minor scratches<span class="cg-opt-hint">faint only</span></button>
+                <button class="cg-opt" data-score="6" type="button">Visible marks<span class="cg-opt-hint">scratches or print lines</span></button>
+                <button class="cg-opt" data-score="4" type="button">Heavy defects<span class="cg-opt-hint">creases / staining</span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Grade result -->
+          <div class="cg-result" id="cgResult" style="display:none">
+            <div class="cg-grade-display">
+              <div class="cg-grade-pill">
+                <span class="cg-grade-num" id="cgGradeNum">—</span>
+                <span class="cg-grade-psa">PSA</span>
+              </div>
+              <div class="cg-grade-info">
+                <span class="cg-grade-label" id="cgGradeLabel">—</span>
+                <span class="cg-grade-notes" id="cgGradeNotes"></span>
+              </div>
+            </div>
+            <button class="cg-save-btn" id="cgSaveGrade" type="button">Save expected grade · update Hold Strategy</button>
+          </div>
+        </section>
+
         <!-- Price History -->
         <section class="card pricehist-card" id="priceHistSection" data-collapse-mobile="1" style="display:none">
           <div class="ph-header">
@@ -1676,6 +1786,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260618l"></script>
+  <script src="app.js?v=20260618m"></script>
 </body>
 </html>

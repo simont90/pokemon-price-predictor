@@ -192,6 +192,44 @@ function scoreDeals(buckets, fairValueGBP, fxUsdToGbp, fxEurToGbp) {
   return all;
 }
 
+// ---- eBay listing image proxy ----
+// Accepts ?url=<eBay listing URL>, extracts the item ID, calls Browse API /item endpoint,
+// returns { images: [...imageUrls], title, itemId } so the client can display them for
+// the card condition scanner without CORS issues.
+async function handleImgProxy(request, env, url) {
+  const ch = corsHeaders(request);
+  const ebayUrl = url.searchParams.get('url') || '';
+  if (!ebayUrl) {
+    return new Response(JSON.stringify({ error: 'Missing url param' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } });
+  }
+  const m = ebayUrl.match(/\/itm\/(\d+)/);
+  if (!m) {
+    return new Response(JSON.stringify({ error: 'Cannot extract item ID from URL. Make sure it is a direct eBay listing link.' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } });
+  }
+  const itemId = m[1];
+  let token;
+  try { token = await getEbayToken(env); } catch {
+    return new Response(JSON.stringify({ error: 'eBay auth failed — check worker secrets.' }), { status: 503, headers: { ...ch, 'Content-Type': 'application/json' } });
+  }
+  // Try UK marketplace first, fall back to US
+  for (const mktId of ['EBAY_GB', 'EBAY_US']) {
+    const resp = await fetch(`https://api.ebay.com/buy/browse/v1/item/v1|${itemId}|0`, {
+      headers: { 'Authorization': `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': mktId, 'Accept': 'application/json' },
+    });
+    if (!resp.ok) continue;
+    const item = await resp.json();
+    const images = [];
+    if (item.image?.imageUrl) images.push(item.image.imageUrl);
+    if (Array.isArray(item.additionalImages)) {
+      images.push(...item.additionalImages.map(i => i.imageUrl).filter(Boolean));
+    }
+    return new Response(JSON.stringify({ images, title: item.title || '', itemId }), {
+      headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
+    });
+  }
+  return new Response(JSON.stringify({ error: 'eBay item not found or not accessible.' }), { status: 404, headers: { ...ch, 'Content-Type': 'application/json' } });
+}
+
 // ---- Main handler ----
 async function handle(request, env) {
   const url = new URL(request.url);
@@ -199,6 +237,7 @@ async function handle(request, env) {
   if (url.pathname === '/health') return new Response('ok', { headers: corsHeaders(request) });
   if (url.pathname === '/sync') return handleSync(request, env, url);
   if (url.pathname === '/mcp') return handleMcp(request, env, url);
+  if (url.pathname === '/img-proxy') return handleImgProxy(request, env, url);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 
   const q = url.searchParams.get('q') || '';

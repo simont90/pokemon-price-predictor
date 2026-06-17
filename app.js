@@ -390,6 +390,7 @@ async function init() {
   setupTop50();
   setupPriceSync();
   setupAcquisition();
+  setupCardGrader();
   setupPriceInsight();
   setupAiChat();
   setupTheme();
@@ -1901,8 +1902,9 @@ function recalcWithLivePrice(card) {
   // Refresh EN ↔ JP recommendation with live price data
   renderCounterpartFlag(card);
 
-  // Re-render Acquisition section so ROI uses the live raw + PSA 10 prices
+  // Re-render Acquisition + Grader sections so ROI uses the live raw + PSA 10 prices
   if (typeof renderAcquisition === 'function') renderAcquisition();
+  if (typeof renderCardGrader === 'function') renderCardGrader();
 }
 
 // ================================================================
@@ -1916,8 +1918,9 @@ function selectCard(id) {
 
   // Refresh Price Sync stats so "Refresh selected card" button enables
   if (typeof psUpdateStats === 'function') psUpdateStats();
-  // Refresh Acquisition section for the new card
+  // Refresh Acquisition + Grader section for the new card
   if (typeof renderAcquisition === 'function') renderAcquisition();
+  if (typeof renderCardGrader === 'function') renderCardGrader();
 
   // Reset stale data immediately
   marketData = null;
@@ -7789,15 +7792,28 @@ function renderHoldStrategy(card) {
   const gemRateSource = (typeof card.g === 'number' && card.g > 0) ? 'tracked' : 'estimated';
   // Apply the online sight-unseen penalty — default assumption is the user is
   // buying raw online (eBay/TCGplayer), not hand-picking from a binder.
-  const gemRate = baseGemRate * ONLINE_BUY_GEM_PENALTY;
+  // If the user scanned their card and got an expected grade, remove the penalty
+  // (they've inspected the card, so it's not sight-unseen).
+  const acqForCard = getAcq(card.i);
+  const expectedGrade = acqForCard?.expectedGrade ?? null;
+  const gemRate = expectedGrade
+    ? baseGemRate  // no sight-unseen penalty when card condition is known
+    : baseGemRate * ONLINE_BUY_GEM_PENALTY;
+
+  // If acquisition cost is recorded, use it as the cost basis for raw/grade strategies
+  // so ROI reflects what the user actually paid, not the current market price.
+  const acqCostGBP = getAcqCostBasisGBP(card.i);
+  const acqCostUSD = (acqCostGBP && acqCostGBP > 0) ? acqCostGBP / fx : null;
+  // rawCostUSD = what the user paid (or current market if no acquisition logged)
+  const rawCostUSD = acqCostUSD ?? rawUSD;
+  const usingAcqCost = acqCostUSD != null;
 
   // ----- Strategy 1: Buy Raw, hold ungraded -----
   const rawYr5USD = projectGradePrice(card, 9, rawUSD, 5) / GRADE_GROWTH_PREMIUM[9] * 1.0;
-  // ^ Use the same growth machinery, but apply the "raw" growth premium (1.0).
-  //   Doing it this way keeps the projection consistent with renderPsaGradeRange.
+  // ^ Projections anchor to current market price, not acq cost. ROI uses acq cost.
   const rawSell5USD = rawYr5USD * (1 - BUY_SELL_FRICTION);
-  const rawProfitUSD = rawSell5USD - rawUSD;
-  const rawRoi = rawUSD > 0 ? (rawProfitUSD / rawUSD) * 100 : 0;
+  const rawProfitUSD = rawSell5USD - rawCostUSD;
+  const rawRoi = rawCostUSD > 0 ? (rawProfitUSD / rawCostUSD) * 100 : 0;
 
   // ----- Strategy 2: Buy Raw + Grade (EV across grades) -----
   const psa7Yr5  = projectGradePrice(card, 7,  estimateGradePrice(card, 7,  psa10Price), 5);
@@ -7813,7 +7829,8 @@ function renderHoldStrategy(card) {
   // Apply opportunity-cost discount because your capital is locked for the wait.
   const gradeYr5EV = gradeYr5EVRaw * waitDiscount;
   const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
-  const gradeCost = rawUSD + gradingFeeUSD;
+  // Cost basis: what the user paid for the raw card + grading fee
+  const gradeCost = rawCostUSD + gradingFeeUSD;
   const gradeProfit = gradeSell5EV - gradeCost;
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
 
@@ -7887,9 +7904,17 @@ function renderHoldStrategy(card) {
     return { label: `Buy PSA ${g}`, key: `psa${g}`, grade: g, today, yr5, profit, roi };
   });
 
+  // Label the raw/grade strategies to show acquisition cost basis when applicable
+  const rawDesc = usingAcqCost
+    ? `Cost basis: ${fmtGBP(acqCostGBP)} paid \u2014 holding ungraded 5 yrs`
+    : 'Hold ungraded for 5 yrs';
+  const gambleDesc = usingAcqCost
+    ? `Cost basis: ${fmtGBP(acqCostGBP)} + \u00a3${UK_GRADING_ALL_IN_GBP} grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% PSA 9+`
+    : `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`;
+
   const strategies = [
-    { label: 'Buy Raw',          key: 'raw',      desc: 'Hold ungraded for 5 yrs',                today: rawUSD,    yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20 },
-    { label: 'Buy Raw + Grade',  key: 'gamble',   desc: `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit,  roi: gradeRoi,  risk: 'high',   variance: 0.85, waitMonths: UK_GRADING_WAIT_MONTHS, lossProb, lossEV },
+    { label: 'Buy Raw',          key: 'raw',      desc: rawDesc,     today: rawCostUSD, yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20, acqCost: usingAcqCost },
+    { label: usingAcqCost ? 'Grade My Card' : 'Buy Raw + Grade',  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: UK_GRADING_WAIT_MONTHS, lossProb, lossEV, acqCost: usingAcqCost },
     ...gradedStrategies.map((s, i) => ({
       ...s,
       desc: i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling',
@@ -7986,11 +8011,27 @@ function renderHoldStrategy(card) {
       gradedLine = `No graded tier projects positive 5yr ROI — every graded copy is overpriced relative to the model.`;
     }
 
+    // Card scan + acquisition cost context lines
+    let scanLine = '';
+    if (expectedGrade) {
+      const gradeLbl = PSA_GRADE_LABELS ? PSA_GRADE_LABELS[expectedGrade] : '';
+      const gradeVerdict = expectedGrade >= 9
+        ? `Strong candidate for grading — expected PSA ${expectedGrade} outcome makes the fee worthwhile.`
+        : expectedGrade >= 7
+        ? `Worth considering for grading — expected PSA ${expectedGrade} is viable but verify the numbers in the table.`
+        : `Grading likely not worth the fee at expected PSA ${expectedGrade} — sell raw or upgrade your copy.`;
+      scanLine = `<div class="hold-rec-line hold-rec-scan">Card scan: expected <strong>PSA ${expectedGrade} (${gradeLbl})</strong>. ${gradeVerdict}</div>`;
+    }
+    const acqLine = usingAcqCost
+      ? `<div class="hold-rec-line hold-rec-acq">ROI based on your actual cost (${fmtGBP(acqCostGBP)}), not market price.</div>`
+      : '';
+
     recEl.innerHTML = `
       <div class="hold-rec-pill">Verdict</div>
       <div class="hold-rec-body">
         <div class="hold-rec-line">${rawVsGradedLine}</div>
         <div class="hold-rec-line hold-rec-line-sub">${gradedLine}</div>
+        ${scanLine}${acqLine}
       </div>
     `;
   }
@@ -8781,6 +8822,190 @@ function setupAcquisition() {
   wire('acqSinglePrice', 'singlePriceGBP', v => v === '' ? '' : parseFloat(v));
   wire('acqSingleDate', 'singleDate');
   wire('acqSingleSrc', 'singleWhere');
+}
+
+// =============================================================
+// Card Condition Scanner
+// =============================================================
+const PSA_GRADE_LABELS = {
+  10: 'Gem Mint', 9: 'Mint', 8: 'NM-MT', 7: 'Near Mint',
+  6: 'EX-MT', 5: 'Excellent', 4: 'VG-EX', 3: 'Very Good', 2: 'Good', 1: 'Poor',
+};
+
+let _cgScores = { centering: null, corners: null, edges: null, surface: null };
+
+function _cgCalcGrade() {
+  const vals = Object.values(_cgScores).filter(v => v != null);
+  if (vals.length < 4) return null;
+  const min = Math.min(...vals);
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  if (min >= 10) return 10;
+  if (min >= 8 && avg >= 9) return 9;
+  if (min >= 8) return 8;
+  if (min >= 6 && avg >= 7.5) return 7;
+  if (min >= 6) return 6;
+  if (min >= 4 && avg >= 6) return 5;
+  return 4;
+}
+
+function _cgUpdateResult() {
+  const grade = _cgCalcGrade();
+  const resultEl = document.getElementById('cgResult');
+  if (!resultEl) return;
+  if (grade == null) { resultEl.style.display = 'none'; return; }
+  resultEl.style.display = 'block';
+  document.getElementById('cgGradeNum').textContent = grade;
+  document.getElementById('cgGradeLabel').textContent = PSA_GRADE_LABELS[grade] || '';
+  // Describe the limiting factor
+  const issues = [];
+  if (_cgScores.centering != null && _cgScores.centering < 10) issues.push(`centering (${_cgScores.centering < 6 ? 'miscut' : _cgScores.centering < 8 ? 'noticeable' : 'slight'})`);
+  if (_cgScores.corners != null && _cgScores.corners < 10) issues.push(`corners`);
+  if (_cgScores.edges != null && _cgScores.edges < 10) issues.push(`edges`);
+  if (_cgScores.surface != null && _cgScores.surface < 10) issues.push(`surface`);
+  const min = Math.min(...Object.values(_cgScores).filter(v => v != null));
+  let notes = '';
+  if (issues.length === 0) notes = 'All criteria perfect — strong PSA 10 candidate.';
+  else if (grade >= 9) notes = `Minor issues on ${issues.join(', ')} — clean submission.`;
+  else if (grade >= 7) notes = `Held back by ${issues.join(' and ')} — grade carefully before paying for grading.`;
+  else notes = `Multiple issues on ${issues.join(', ')} — grading likely not worth the fee at this condition.`;
+  document.getElementById('cgGradeNotes').textContent = notes;
+}
+
+function _cgSetImg(side, src) {
+  const preview = document.getElementById(`cg${side}Preview`);
+  const empty = document.getElementById(`cg${side}Empty`);
+  const img = document.getElementById(`cg${side}Img`);
+  if (!src) {
+    preview.style.display = 'none';
+    empty.style.display = 'flex';
+    img.src = '';
+  } else {
+    img.src = src;
+    preview.style.display = 'block';
+    empty.style.display = 'none';
+  }
+}
+
+function renderCardGrader() {
+  const sec = document.getElementById('cardGraderSection');
+  if (!sec) return;
+  if (!selectedCard) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+
+  // Load saved scores
+  const acq = getAcq(selectedCard.i) || {};
+  _cgScores = acq.cgScores ? { ..._cgScores, ...acq.cgScores } : { centering: null, corners: null, edges: null, surface: null };
+
+  // Restore criterion button states
+  document.querySelectorAll('.cg-crit').forEach(critEl => {
+    const crit = critEl.dataset.crit;
+    critEl.querySelectorAll('.cg-opt').forEach(btn => {
+      btn.classList.toggle('is-active', +btn.dataset.score === _cgScores[crit]);
+    });
+  });
+
+  // Clear images on card switch
+  _cgSetImg('Front', null);
+  _cgSetImg('Back', null);
+  const urlInput = document.getElementById('cgEbayUrl');
+  if (urlInput) urlInput.value = '';
+  const status = document.getElementById('cgEbayStatus');
+  if (status) { status.style.display = 'none'; status.textContent = ''; }
+
+  _cgUpdateResult();
+
+  // Update save button if already saved
+  const saveBtn = document.getElementById('cgSaveGrade');
+  if (saveBtn) {
+    saveBtn.classList.remove('is-saved');
+    if (acq.expectedGrade) saveBtn.textContent = `Saved: expected PSA ${acq.expectedGrade} — update`;
+    else saveBtn.textContent = 'Save expected grade · update Hold Strategy';
+  }
+}
+
+function setupCardGrader() {
+  if (!document.getElementById('cardGraderSection')) return;
+
+  // Image slot wiring
+  ['Front', 'Back'].forEach(side => {
+    const cameraBtn = document.getElementById(`cg${side}CameraBtn`);
+    const uploadBtn = document.getElementById(`cg${side}UploadBtn`);
+    const cameraInput = document.getElementById(`cg${side}Camera`);
+    const fileInput = document.getElementById(`cg${side}File`);
+    const clearBtn = document.getElementById(`cg${side}Clear`);
+
+    cameraBtn?.addEventListener('click', () => cameraInput?.click());
+    uploadBtn?.addEventListener('click', () => fileInput?.click());
+
+    const handleFile = (file) => {
+      if (!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = e => _cgSetImg(side, e.target.result);
+      reader.readAsDataURL(file);
+    };
+    cameraInput?.addEventListener('change', e => handleFile(e.target.files[0]));
+    fileInput?.addEventListener('change', e => handleFile(e.target.files[0]));
+    clearBtn?.addEventListener('click', () => _cgSetImg(side, null));
+  });
+
+  // Criteria button wiring
+  document.querySelectorAll('.cg-crit').forEach(critEl => {
+    const crit = critEl.dataset.crit;
+    critEl.querySelectorAll('.cg-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const score = +btn.dataset.score;
+        _cgScores[crit] = _cgScores[crit] === score ? null : score;
+        critEl.querySelectorAll('.cg-opt').forEach(b => b.classList.toggle('is-active', +b.dataset.score === _cgScores[crit]));
+        _cgUpdateResult();
+      });
+    });
+  });
+
+  // eBay URL fetch
+  document.getElementById('cgEbayFetch')?.addEventListener('click', async () => {
+    const urlInput = document.getElementById('cgEbayUrl');
+    const status = document.getElementById('cgEbayStatus');
+    const btn = document.getElementById('cgEbayFetch');
+    const raw = (urlInput?.value || '').trim();
+    if (!raw) return;
+    btn.classList.add('is-loading');
+    btn.textContent = 'Fetching…';
+    status.style.display = 'block';
+    status.className = 'cg-ebay-status';
+    status.textContent = 'Fetching images from eBay…';
+    try {
+      const resp = await fetch(`${MKT_WORKER_DEFAULT}/img-proxy?url=${encodeURIComponent(raw)}`);
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      const imgs = data.images || [];
+      if (!imgs.length) throw new Error('No images found in this listing.');
+      _cgSetImg('Front', imgs[0]);
+      if (imgs[1]) _cgSetImg('Back', imgs[1]);
+      status.textContent = `Loaded ${imgs.length} image${imgs.length > 1 ? 's' : ''}${data.title ? ` — ${data.title.slice(0, 60)}` : ''}.`;
+    } catch (err) {
+      status.className = 'cg-ebay-status is-error';
+      status.textContent = err.message || 'Failed to fetch images.';
+    } finally {
+      btn.classList.remove('is-loading');
+      btn.textContent = 'Fetch';
+    }
+  });
+
+  // Save grade
+  document.getElementById('cgSaveGrade')?.addEventListener('click', () => {
+    if (!selectedCard) return;
+    const grade = _cgCalcGrade();
+    if (grade == null) return;
+    const btn = document.getElementById('cgSaveGrade');
+    updateAcq({ cgScores: { ..._cgScores }, expectedGrade: grade });
+    btn.classList.add('is-saved');
+    btn.textContent = `Saved: expected PSA ${grade} — update`;
+    setTimeout(() => btn.classList.remove('is-saved'), 2000);
+    // Re-render hold strategy immediately
+    if (typeof renderHoldStrategy === 'function' && selectedCard) {
+      try { renderHoldStrategy(selectedCard); } catch {}
+    }
+  });
 }
 
 // =============================================================
