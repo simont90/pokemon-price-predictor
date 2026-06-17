@@ -28,8 +28,17 @@
   --red: #ff5c5c;
   --red-dim: rgba(255, 92, 92, 0.10);
   --red-border: rgba(255, 92, 92, 0.25);
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 18px;
+  --radius-sm: 12px;
+  --radius-lg: 24px;
+  --radius-pill: 999px;
+  --touch-min: 44px;
+  --glass-bg: rgba(255,255,255,0.05);
+  --glass-bg-raised: rgba(255,255,255,0.08);
+  --glass-border: rgba(255,255,255,0.12);
+  --glass-specular: rgba(255,255,255,0.18);
+  --glass-blur: blur(24px) saturate(180%);
+  --glass-blur-light: blur(12px) saturate(150%);
   --font: 'Space Grotesk', system-ui, sans-serif;
   --mono: 'JetBrains Mono', 'SF Mono', monospace;
 }
@@ -38,7 +47,7 @@
 
 body {
   font-family: var(--font);
-  background: var(--bg);
+  background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(100,80,200,0.12) 0%, transparent 70%), var(--bg);
   color: var(--text);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -48,7 +57,7 @@ body {
 .app { max-width: 1160px; margin: 0 auto; padding: 0 20px; }
 
 /* Header */
-.header { padding: 20px 0 16px; border-bottom: 1px solid var(--border); }
+.header { padding: 20px 0 16px; border-bottom: 1px solid var(--glass-border); }
 .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .logo { display: flex; align-items: center; gap: 12px; color: var(--text); }
 .logo h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
@@ -76,7 +85,9 @@ body {
 
 /* Portfolio Panel */
 .portfolio-panel {
-  background: var(--bg-card); border: 1px solid var(--accent); border-radius: var(--radius);
+  background: rgba(14,15,19,0.7); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--accent); border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 var(--glass-specular), 0 8px 32px rgba(0,0,0,0.4);
   padding: 18px; margin-top: 16px; animation: slideDown 0.2s ease;
 }
 @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
@@ -111,7 +122,9 @@ body {
 .search-section { padding: 20px 0 0; position: relative; }
 .search-container {
   position: relative; display: flex; align-items: center;
-  background: var(--bg-card); border: 1.5px solid var(--border);
+  background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border: 1.5px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-specular), 0 4px 16px rgba(0,0,0,0.3);
   border-radius: var(--radius); padding: 0 16px; transition: border-color 0.2s;
 }
 .search-container:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
@@ -127,9 +140,10 @@ body {
 
 .search-results {
   position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
-  background: var(--bg-card); border: 1px solid var(--border);
+  background: rgba(14,15,19,0.75); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
   border-radius: 0 0 var(--radius) var(--radius); max-height: 380px; overflow-y: auto;
-  display: none; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  display: none; box-shadow: inset 0 1px 0 var(--glass-specular), 0 12px 40px rgba(0,0,0,0.5);
 }
 .search-results.open { display: block; }
 
@@ -154,7 +168,7 @@ body {
 .main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 0 40px; }
 
 /* Cards */
-.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
+.card { background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-border); box-shadow: inset 0 1px 0 var(--glass-specular), 0 8px 32px rgba(0,0,0,0.4); border-radius: var(--radius-lg); padding: 22px; }
 .card h2 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4px; }
 .card-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
 .card-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -820,7 +834,8 @@ body {
 .screener-panel {
   position: fixed; top: 0; right: -700px; z-index: 1000;
   width: 680px; max-width: 100vw; height: 100vh;
-  background: var(--bg-card); border-left: 1px solid var(--border);
+  background: rgba(14,15,19,0.7); backdrop-filter: blur(40px) saturate(200%); -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border-left: 1px solid var(--glass-border);
   display: flex; flex-direction: column;
   box-shadow: -8px 0 40px rgba(0,0,0,0.4); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1474,8 +1489,8 @@ textarea, select {
 #addWishlistBtn,
 #addCompareBtn,
 .add-portfolio-btn {
-  min-height: 40px;
-  min-width: 40px;
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
 }
 
 /* Search results: bigger touch rows on compact devices */
@@ -1691,10 +1706,10 @@ textarea, select {
   align-items: center; gap: 6px;
   padding: 8px 12px;
   padding-top: max(8px, env(safe-area-inset-top, 8px));
-  background: rgba(14, 15, 19, 0.92);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid var(--border);
+  background: rgba(14,15,19,0.7);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border-bottom: 1px solid var(--glass-border);
 }
 .pwa-nav.visible { display: flex; }
 body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
@@ -1740,10 +1755,12 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   max-width: 720px;
   max-height: 85vh;
   display: flex; flex-direction: column;
-  background: var(--bg-card);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  background: rgba(14,15,19,0.75);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-specular), 0 20px 60px rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius-lg);
   z-index: 1600;
   overflow: hidden;
 }
@@ -4302,8 +4319,10 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   bottom: 0;
   width: 420px;
   max-width: 100vw;
-  background: var(--bg-raised);
-  border-left: 1px solid var(--border);
+  background: rgba(14,15,19,0.7);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border-left: 1px solid var(--glass-border);
   box-shadow: -16px 0 48px rgba(0,0,0,0.45);
   z-index: 930;
   display: flex;
@@ -5353,4 +5372,68 @@ section.card.is-collapsed { padding-bottom: 18px; }
   .sync-field label { margin-bottom: -2px; }
   .sync-actions { grid-template-columns: 1fr; }
 }
+
+/* ================================================================
+   iOS 26 Liquid Glass — supplemental rules
+   ================================================================ */
+
+/* Page nav glass */
+.page-nav-btn {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur-light);
+  -webkit-backdrop-filter: var(--glass-blur-light);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-specular), 0 4px 16px rgba(0,0,0,0.25);
+}
+.page-nav-btn:hover {
+  box-shadow: inset 0 1px 0 var(--glass-specular), 0 0 12px rgba(232,182,52,0.2), 0 4px 16px rgba(0,0,0,0.25);
+}
+.page-nav-btn.active {
+  background: rgba(232,182,52,0.08);
+  box-shadow: inset 0 1px 0 var(--glass-specular), 0 0 12px rgba(232,182,52,0.3), 0 4px 16px rgba(0,0,0,0.25);
+}
+
+/* Accent glow on focused search */
+.search-container:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim), 0 0 12px rgba(232,182,52,0.3), inset 0 1px 0 var(--glass-specular);
+}
+
+/* Accent glow on active accent buttons */
+.filter-fab:active,
+.ai-chat-btn:active { box-shadow: 0 0 16px rgba(232,182,52,0.4); }
+
+/* Touch targets — all interactive elements min 44px */
+button, .btn, .icon-btn {
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
+}
+.icon-btn { padding: 10px; }
+
+/* Inputs and selects — min 44px height, 16px font prevents iOS zoom */
+input[type="text"],
+input[type="search"],
+input[type="number"],
+input[type="email"],
+input[type="tel"],
+input[type="url"],
+input[type="password"],
+textarea, select {
+  min-height: var(--touch-min);
+}
+
+/* Nav tabs — slightly taller than standard touch target */
+.page-nav-btn { min-height: 48px; }
+.alerts-tab, .ma-tab, .sync-tab, .mkt-grade-tab, .phr-btn { min-height: var(--touch-min); }
+
+/* Scrollbars — thin and subtle across the whole app */
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) transparent; }
+*::-webkit-scrollbar { width: 4px; height: 4px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+/* Larger icon-button padding for collapse/close buttons */
+section.card .card-collapse-btn { padding: 10px; }
+.ql-close, .sp-close { min-height: var(--touch-min); min-width: var(--touch-min); }
 
