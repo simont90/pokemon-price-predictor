@@ -1946,6 +1946,8 @@ function selectCard(id) {
     $('cardImage').onclick = () => openImageLightbox(getCardImg(card), card.n);
     loadJapaneseImage(card);
   }
+  const _heroBg = $('cardHeroBg');
+  if (_heroBg) _heroBg.src = getCardImg(card);
 
   // Card name
   $('cardName').textContent = card.n;
