@@ -1945,7 +1945,7 @@ function selectCard(id) {
     $('cardImage').title = 'Click to view full resolution';
     $('cardImage').style.cursor = 'zoom-in';
     $('cardImage').onclick = () => openImageLightbox(getCardImg(card), card.n);
-    loadJapaneseImage(card);
+    $('cardImageJp').style.display = 'none';
   }
   const _heroBg = $('cardHeroBg');
   if (_heroBg) _heroBg.src = getCardImg(card);
