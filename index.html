@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260618m">
+  <link rel="stylesheet" href="style.css?v=20260618o">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1014,7 +1014,8 @@
           </div>
           <div class="cg-ebay-status" id="cgEbayStatus" style="display:none"></div>
 
-          <!-- PSA criteria -->
+          <!-- PSA criteria + result — hidden until an image is loaded -->
+          <div id="cgCriteriaWrap" style="display:none">
           <div class="cg-criteria">
             <div class="cg-crit" data-crit="centering">
               <div class="cg-crit-name">Centering</div>
@@ -1068,6 +1069,7 @@
             </div>
             <button class="cg-save-btn" id="cgSaveGrade" type="button">Save expected grade · update Hold Strategy</button>
           </div>
+          </div><!-- /cgCriteriaWrap -->
         </section>
 
         <!-- Price History -->
@@ -1786,6 +1788,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260618m"></script>
+  <script src="app.js?v=20260618o"></script>
 </body>
 </html>

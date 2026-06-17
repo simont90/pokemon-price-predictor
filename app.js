@@ -8879,11 +8879,18 @@ function _cgSetImg(side, src) {
     preview.style.display = 'none';
     empty.style.display = 'flex';
     img.src = '';
+    img.removeAttribute('data-cg-loaded');
   } else {
     img.src = src;
+    img.setAttribute('data-cg-loaded', '1');
     preview.style.display = 'block';
     empty.style.display = 'none';
   }
+  // Show criteria only once at least one image is loaded
+  const hasImage = !!document.getElementById('cgFrontImg')?.getAttribute('data-cg-loaded')
+                || !!document.getElementById('cgBackImg')?.getAttribute('data-cg-loaded');
+  const criteria = document.getElementById('cgCriteriaWrap');
+  if (criteria) criteria.style.display = hasImage ? 'block' : 'none';
 }
 
 function renderCardGrader() {
@@ -8904,9 +8911,11 @@ function renderCardGrader() {
     });
   });
 
-  // Clear images on card switch
+  // Clear images on card switch — also hides criteria until new image is loaded
   _cgSetImg('Front', null);
   _cgSetImg('Back', null);
+  const cgWrap = document.getElementById('cgCriteriaWrap');
+  if (cgWrap) cgWrap.style.display = 'none';
   const urlInput = document.getElementById('cgEbayUrl');
   if (urlInput) urlInput.value = '';
   const status = document.getElementById('cgEbayStatus');
