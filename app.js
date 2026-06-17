@@ -11053,6 +11053,43 @@ function syncBindOnce() {
   if (syncGetPairCode() && syncGetEndpoint()) {
     setTimeout(() => syncCloudPull({ mode: 'merge' }), 800);
   }
+
+  // Daily 9 AM pull — keeps every device in sync each morning without
+  // needing a manual push. Uses a device-local key (not in SYNC_KEYS)
+  // to track whether today's run has already happened.
+  const SYNC_DAILY_KEY = 'pkm-sync-daily-pull-last';
+
+  function syncScheduleDailyPull() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(9, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    setTimeout(syncRunDailyPull, next - now);
+  }
+
+  function syncRunDailyPull() {
+    if (!syncGetPairCode() || !syncGetEndpoint()) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    localStorage.setItem(SYNC_DAILY_KEY, todayStr);
+    syncUpdateCloudLog('Daily 9 AM pull starting…', 'info');
+    syncCloudPull({ mode: 'merge' });
+    syncScheduleDailyPull();
+  }
+
+  // On cold boot: if 9 AM has already passed today and the daily pull
+  // hasn't run yet, fire it after the boot pull settles (6 s delay).
+  // Otherwise just arm the timer for the next 9 AM.
+  {
+    const now = new Date();
+    const nineAm = new Date(now); nineAm.setHours(9, 0, 0, 0);
+    const lastDaily = localStorage.getItem(SYNC_DAILY_KEY);
+    const todayStr = now.toISOString().slice(0, 10);
+    if (lastDaily !== todayStr && now >= nineAm) {
+      setTimeout(syncRunDailyPull, 6000);
+    } else {
+      syncScheduleDailyPull();
+    }
+  }
 }
 
 if (document.readyState === 'loading') {
