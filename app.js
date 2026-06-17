@@ -9610,10 +9610,89 @@ function renderHomeDashboard() {
 }
 
 function _homeItemClick(id) {
-  const card = cardData?.cards.find(c => c.i === id);
-  if (!card) return;
   document.querySelector('.page-nav-btn[data-page="predict"]')?.click();
   setTimeout(() => selectCard(id), 80);
+}
+
+const _TRASH_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+
+function _homeRow(id, extraClass, contentHtml) {
+  return `<div class="home-row${extraClass ? ' ' + extraClass : ''}" data-id="${id}">
+    <button class="home-delete-btn" aria-label="Remove">${_TRASH_SVG}Remove</button>
+    <div class="home-item" data-id="${id}">${contentHtml}</div>
+  </div>`;
+}
+
+function _setupSwipeToDelete(listEl, deleteFn) {
+  let startX = 0, startY = 0, activeRow = null, swipeDir = null;
+
+  listEl.addEventListener('touchstart', e => {
+    // Close any open rows first (unless tapping the delete button)
+    listEl.querySelectorAll('.home-row.swiped').forEach(r => {
+      if (r !== e.target.closest('.home-row')) _snapRowBack(r);
+    });
+    const row = e.target.closest('.home-row');
+    if (!row) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    activeRow = row;
+    swipeDir = null;
+  }, { passive: true });
+
+  listEl.addEventListener('touchmove', e => {
+    if (!activeRow) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (swipeDir === null) {
+      if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+      swipeDir = Math.abs(dy) > Math.abs(dx) ? 'v' : 'h';
+    }
+    if (swipeDir === 'v' || dx > 0) return; // vertical or right swipe — don't intercept
+    e.preventDefault();
+    const item = activeRow.querySelector('.home-item');
+    if (!item) return;
+    const offset = Math.max(dx, -80);
+    item.style.transition = 'none';
+    item.style.transform = `translateX(${offset}px)`;
+  }, { passive: false });
+
+  listEl.addEventListener('touchend', e => {
+    if (!activeRow || swipeDir !== 'h') { activeRow = null; return; }
+    const dx = e.changedTouches[0].clientX - startX;
+    const item = activeRow.querySelector('.home-item');
+    if (item) {
+      if (dx < -56) {
+        item.style.transition = 'transform 0.28s cubic-bezier(0.34,1.2,0.64,1)';
+        item.style.transform = 'translateX(-80px)';
+        activeRow.classList.add('swiped');
+      } else {
+        _snapRowBack(activeRow);
+      }
+    }
+    activeRow = null; swipeDir = null;
+  }, { passive: true });
+
+  // Delete button tap
+  listEl.addEventListener('click', e => {
+    const btn = e.target.closest('.home-delete-btn');
+    if (!btn) return;
+    const row = btn.closest('.home-row');
+    if (!row) return;
+    const id = row.dataset.id;
+    const h = row.offsetHeight;
+    row.style.cssText += `height:${h}px;overflow:hidden;transition:height 0.28s ease,opacity 0.28s ease,margin-bottom 0.28s ease;`;
+    row.offsetHeight;
+    row.style.height = '0'; row.style.opacity = '0'; row.style.marginBottom = '-6px';
+    setTimeout(() => { deleteFn(id); }, 290);
+  });
+}
+
+function _snapRowBack(row) {
+  const item = row.querySelector('.home-item');
+  if (!item) return;
+  item.style.transition = 'transform 0.38s cubic-bezier(0.34,1.56,0.64,1)';
+  item.style.transform = 'translateX(0)';
+  row.classList.remove('swiped');
 }
 
 function _renderHomeCollection() {
@@ -9643,8 +9722,7 @@ function _renderHomeCollection() {
       if (sig) signal = sig.signal;
     }
     const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
-    return `<div class="home-item" data-id="${p.id}">
-      ${p.img ? `<img class="home-item-img" src="${p.img}" alt="" onerror="this.style.display='none'">` : '<div class="home-item-img"></div>'}
+    const inner = `${p.img ? `<img class="home-item-img" src="${p.img}" alt="" onerror="this.style.display='none'">` : '<div class="home-item-img"></div>'}
       <div class="home-item-info">
         <div class="home-item-name">${esc(p.name)}</div>
         <div class="home-item-meta">${esc(p.set)} · ${p.lang === 'JP' ? 'JP' : 'EN'}</div>
@@ -9652,12 +9730,17 @@ function _renderHomeCollection() {
       <div class="home-item-right">
         <span class="home-item-price">${fmtGBPDirect(priceGBP)}</span>
         ${signal ? `<span class="home-sig ${sc}">${signal}</span>` : ''}
-      </div>
-    </div>`;
+      </div>`;
+    return _homeRow(p.id, '', inner);
   });
   list.innerHTML = rows.join('');
   if (totalEl) totalEl.textContent = `${fmtGBPDirect(totalGBP)} · ${portfolio.length} card${portfolio.length !== 1 ? 's' : ''}`;
   list.querySelectorAll('.home-item').forEach(el => el.addEventListener('click', () => _homeItemClick(el.dataset.id)));
+  _setupSwipeToDelete(list, id => {
+    portfolio = portfolio.filter(p => p.id !== id);
+    savePortfolio(); renderPortfolio(); updatePortfolioButton();
+    _renderHomeCollection();
+  });
 }
 
 function _renderHomeWishlist() {
@@ -9679,8 +9762,7 @@ function _renderHomeWishlist() {
       if (priceGBP <= target) { alertClass = 'alert-buy'; alertLabel = 'BUY NOW'; }
       else if (priceGBP <= target * 1.10) { alertClass = 'alert-watch'; alertLabel = 'Close'; }
     }
-    return `<div class="home-item" data-id="${w.id}">
-      ${w.img ? `<img class="home-item-img" src="${w.img}" alt="" onerror="this.style.display='none'">` : '<div class="home-item-img"></div>'}
+    const inner = `${w.img ? `<img class="home-item-img" src="${w.img}" alt="" onerror="this.style.display='none'">` : '<div class="home-item-img"></div>'}
       <div class="home-item-info">
         <div class="home-item-name">${esc(w.name)}</div>
         <div class="home-item-meta">${esc(w.set)}${target > 0 ? ` · Target: ${fmtGBPDirect(target)}` : ''}</div>
@@ -9688,11 +9770,16 @@ function _renderHomeWishlist() {
       <div class="home-item-right">
         <span class="home-item-price">${fmtGBPDirect(priceGBP)}</span>
         <span class="wishlist-alert ${alertClass}">${alertLabel}</span>
-      </div>
-    </div>`;
+      </div>`;
+    return _homeRow(w.id, '', inner);
   });
   list.innerHTML = rows.join('');
   list.querySelectorAll('.home-item').forEach(el => el.addEventListener('click', () => _homeItemClick(el.dataset.id)));
+  _setupSwipeToDelete(list, id => {
+    wishlist = wishlist.filter(w => w.id !== id);
+    saveWishlist(); renderWishlist(); updateWishlistButton();
+    _renderHomeWishlist();
+  });
 }
 
 function _renderHomeWatchlist() {
@@ -9711,8 +9798,7 @@ function _renderHomeWatchlist() {
     const signal = a ? a.signal : (w.addedSignal || '—');
     const triggered = a ? (a.triggered && a.dismissedFor !== a.signal) : false;
     const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
-    return `<div class="home-item${triggered ? ' home-item-alert' : ''}" data-id="${w.id}">
-      ${w.img ? `<img class="home-item-img" src="${w.img}" alt="" onerror="this.style.display='none'">` : '<div class="home-item-img"></div>'}
+    const inner = `${w.img ? `<img class="home-item-img" src="${w.img}" alt="" onerror="this.style.display='none'">` : '<div class="home-item-img"></div>'}
       <div class="home-item-info">
         <div class="home-item-name">${esc(w.name)}</div>
         <div class="home-item-meta">${esc(w.set)}</div>
@@ -9720,11 +9806,16 @@ function _renderHomeWatchlist() {
       <div class="home-item-right">
         ${priceGBP > 0 ? `<span class="home-item-price">${fmtGBPDirect(priceGBP)}</span>` : ''}
         <span class="home-sig ${sc}">${signal}</span>
-      </div>
-    </div>`;
+      </div>`;
+    return _homeRow(w.id, triggered ? 'home-item-alert' : '', inner);
   });
   list.innerHTML = rows.join('');
   list.querySelectorAll('.home-item').forEach(el => el.addEventListener('click', () => _homeItemClick(el.dataset.id)));
+  _setupSwipeToDelete(list, id => {
+    const idx = watchlist.findIndex(w => w.id === id);
+    if (idx >= 0) { watchlist.splice(idx, 1); saveWatchlist(); }
+    _renderHomeWatchlist();
+  });
 }
 
 function setupPageNav() {
@@ -9780,6 +9871,53 @@ function setupPageNav() {
   // Initial route — default to Home.
   const initial = (location.hash || '#home').replace('#', '');
   go(['home', 'predict', 'discover', 'tools'].includes(initial) ? initial : 'home');
+
+  // ── Liquid glass tab bar: specular + sliding pill ──────────────
+  const nav = document.getElementById('pageNav');
+  const pill = document.getElementById('navPill');
+
+  function _positionPill(activeBtn) {
+    if (!pill || !nav || !activeBtn) return;
+    const navRect = nav.getBoundingClientRect();
+    const btnRect = activeBtn.getBoundingClientRect();
+    pill.style.left = (btnRect.left - navRect.left) + 'px';
+    pill.style.width = btnRect.width + 'px';
+  }
+
+  // Move pill after every page switch — wire onto button clicks after the fact
+  buttons.forEach(b => {
+    b.addEventListener('click', () => requestAnimationFrame(() => _positionPill(nav?.querySelector('.page-nav-btn.active'))));
+  });
+
+  // Initial pill position — defer until layout is settled
+  function _initPill() {
+    const activeBtn = nav?.querySelector('.page-nav-btn.active');
+    if (!pill || !activeBtn) return;
+    pill.style.transition = 'none';
+    _positionPill(activeBtn);
+    requestAnimationFrame(() => { if (pill) pill.style.transition = ''; });
+  }
+  requestAnimationFrame(() => requestAnimationFrame(_initPill));
+
+  // Specular light follows pointer / touch along the bar
+  if (nav) {
+    nav.addEventListener('pointermove', e => {
+      const x = e.clientX - nav.getBoundingClientRect().left;
+      nav.style.setProperty('--nav-mx', x + 'px');
+      nav.style.setProperty('--nav-glow', '1');
+    });
+    nav.addEventListener('pointerleave', () => {
+      nav.style.setProperty('--nav-glow', '0');
+    });
+    nav.addEventListener('touchmove', e => {
+      const x = e.touches[0].clientX - nav.getBoundingClientRect().left;
+      nav.style.setProperty('--nav-mx', x + 'px');
+      nav.style.setProperty('--nav-glow', '1');
+    }, { passive: true });
+    nav.addEventListener('touchend', () => {
+      nav.style.setProperty('--nav-glow', '0');
+    }, { passive: true });
+  }
 }
 
 // =============================================================

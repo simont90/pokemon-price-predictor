@@ -75,9 +75,11 @@ body {
 
 /* Portfolio Toggle */
 .portfolio-toggle {
-  position: relative; display: flex; align-items: center; gap: 4px;
-  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px;
-  padding: 6px 10px; color: var(--text-muted); cursor: pointer; transition: all 0.2s;
+  position: relative; display: flex; align-items: center; justify-content: center;
+  background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px;
+  padding: 10px 12px; color: var(--text-muted); cursor: pointer; transition: all 0.2s;
+  min-width: 46px; min-height: 46px;
+  -webkit-tap-highlight-color: transparent;
 }
 .portfolio-toggle:hover { border-color: var(--accent); color: var(--accent); }
 .portfolio-count {
@@ -4568,7 +4570,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 /* =============================================================
    Page Nav — top-level routing tabs (Predict · Discover · Tools)
    ============================================================= */
-/* ─── Bottom floating tab bar (iOS 26 Files-style) ────────── */
+/* ─── Bottom floating tab bar — iOS 26 Liquid Glass ──────── */
 .page-nav {
   position: fixed;
   bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
@@ -4576,24 +4578,69 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 0;
   padding: 5px;
-  background: rgba(14,15,19,0.72);
-  backdrop-filter: blur(40px) saturate(200%);
-  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  background: rgba(14,15,19,0.68);
+  backdrop-filter: blur(48px) saturate(220%);
+  -webkit-backdrop-filter: blur(48px) saturate(220%);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-pill);
-  box-shadow: inset 0 1px 0 var(--glass-specular), 0 8px 40px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3);
+  box-shadow:
+    inset 0 1px 0 var(--glass-specular),
+    inset 0 -1px 0 rgba(0,0,0,0.3),
+    0 12px 48px rgba(0,0,0,0.6),
+    0 2px 8px rgba(0,0,0,0.35);
   z-index: 200;
+  /* specular tracking via JS --nav-mx / --nav-glow */
+  overflow: hidden;
+}
+
+/* Liquid specular highlight — follows pointer/touch */
+.page-nav::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse 110px 100% at var(--nav-mx, -200px) 50%,
+    rgba(255,255,255,0.30) 0%,
+    rgba(255,255,255,0.08) 45%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--nav-glow, 0);
+  transition: opacity 0.35s ease;
+  will-change: opacity;
+}
+
+/* Sliding active pill — positioned via JS */
+.nav-pill {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: 84px;
+  border-radius: calc(var(--radius-pill) - 5px);
+  background: rgba(232,182,52,0.13);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.20), 0 0 14px rgba(232,182,52,0.18);
+  pointer-events: none;
+  z-index: 0;
+  transition:
+    left 0.38s cubic-bezier(0.34, 1.3, 0.64, 1),
+    width 0.38s cubic-bezier(0.34, 1.3, 0.64, 1);
+  will-change: left, width;
 }
 
 .page-nav-btn {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 9px 24px;
+  padding: 10px 22px;
   background: transparent;
   border: none;
   border-radius: calc(var(--radius-pill) - 5px);
@@ -4603,36 +4650,33 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  transition: background 0.2s ease, color 0.18s ease;
+  transition: color 0.18s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
   white-space: nowrap;
-  min-height: 58px;
+  min-height: 60px;
   min-width: 84px;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .page-nav-btn svg {
-  width: 20px;
-  height: 20px;
-  opacity: 0.65;
-  transition: opacity 0.18s ease, color 0.18s ease;
+  width: 22px;
+  height: 22px;
+  opacity: 0.6;
+  transition: opacity 0.18s ease, color 0.18s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .page-nav-sub { display: none; }
 
-.page-nav-btn:hover {
-  background: rgba(255,255,255,0.07);
-  color: var(--text);
-}
-.page-nav-btn:hover svg { opacity: 1; }
+.page-nav-btn:hover { color: var(--text); }
+.page-nav-btn:hover svg { opacity: 0.9; }
+.page-nav-btn:active { transform: scale(0.82); }
+.page-nav-btn:active svg { transform: scale(0.88); }
 
-.page-nav-btn.active {
-  background: rgba(232,182,52,0.14);
-  color: var(--accent);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14);
-}
+.page-nav-btn.active { color: var(--accent); }
 .page-nav-btn.active svg { opacity: 1; color: var(--accent); }
 
 @media (max-width: 400px) {
-  .page-nav-btn { padding: 9px 16px; min-width: 70px; font-size: 10px; }
+  .page-nav-btn { padding: 10px 14px; min-width: 68px; font-size: 10px; }
+  .nav-pill { width: 68px; }
 }
 
 .page { width: 100%; }
@@ -5396,8 +5440,8 @@ section.card.is-collapsed { padding-bottom: 18px; }
    iOS 26 Liquid Glass — supplemental rules
    ================================================================ */
 
-/* Page nav — accent glow on active tab */
-.page-nav-btn.active { box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 0 12px rgba(232,182,52,0.25); }
+/* Page nav — pill handles active glow, btn has no bg */
+.page-nav-btn.active { box-shadow: none; }
 
 /* Accent glow on focused search */
 .search-container:focus-within {
@@ -5508,35 +5552,84 @@ section.card .card-collapse-btn { padding: 10px; }
 .home-list {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  max-height: 380px;
+  gap: 6px;
+  max-height: 420px;
   overflow-y: auto;
 }
 .home-empty {
   color: var(--text-faint);
   font-size: 13px;
-  padding: 16px 0;
+  padding: 20px 0;
   text-align: center;
-  line-height: 1.5;
+  line-height: 1.6;
 }
+
+/* Swipe-to-delete row wrapper */
+.home-row {
+  position: relative;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.home-delete-btn {
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 80px;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  min-height: unset !important;
+  min-width: unset !important;
+  border-radius: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.home-delete-btn svg { opacity: 0.9; }
+
 .home-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  background: var(--glass-bg);
+  gap: 14px;
+  padding: 12px 14px;
+  /* solid dark base + glass gradient on top — hides delete button underneath */
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.03) 100%),
+    rgba(16, 18, 28, 0.96);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
+  will-change: transform;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
-.home-item:hover { background: var(--glass-bg-raised); border-color: rgba(255,255,255,0.25); }
-.home-item-alert { border-color: var(--accent) !important; background: rgba(232,182,52,0.06) !important; }
+.home-item:hover {
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.06) 100%),
+    rgba(16, 18, 28, 0.96);
+  border-color: rgba(255,255,255,0.26);
+}
+.home-row.home-item-alert .home-item {
+  border-color: var(--accent) !important;
+  background:
+    linear-gradient(160deg, rgba(232,182,52,0.12) 0%, rgba(232,182,52,0.04) 100%),
+    rgba(16, 18, 28, 0.96) !important;
+}
 .home-item-img {
-  width: 38px;
-  height: 38px;
+  width: 52px;
+  height: 52px;
   object-fit: contain;
-  border-radius: 5px;
+  border-radius: 8px;
   background: rgba(255,255,255,0.04);
   flex-shrink: 0;
 }
@@ -5545,7 +5638,7 @@ section.card .card-collapse-btn { padding: 10px; }
   min-width: 0;
 }
 .home-item-name {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
@@ -5554,9 +5647,9 @@ section.card .card-collapse-btn { padding: 10px; }
   line-height: 1.3;
 }
 .home-item-meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5565,11 +5658,11 @@ section.card .card-collapse-btn { padding: 10px; }
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 3px;
+  gap: 4px;
   flex-shrink: 0;
 }
 .home-item-price {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   font-family: var(--mono);
   color: var(--text);

@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260617x">
+  <link rel="stylesheet" href="style.css?v=20260617z">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -51,26 +51,26 @@
         <div class="header-right">
           <div class="fx-rate" style="display:none"><span class="fx-label">USD/GBP</span><span class="fx-value" id="fxValue">...</span></div>
           <button class="portfolio-toggle" id="wishlistToggle" title="Wishlist">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
             <span class="portfolio-count" id="wishlistCount" style="display:none">0</span>
           </button>
           <button class="portfolio-toggle" id="compareToggle" title="Compare two cards">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
             <span class="portfolio-count" id="compareCount" style="display:none">0</span>
           </button>
           <button class="portfolio-toggle" id="portfolioToggle" title="My Collection">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
             <span class="portfolio-count" id="portfolioCount" style="display:none">0</span>
           </button>
           <button class="portfolio-toggle alerts-toggle" id="alertsToggle" title="Watchlist alerts — cards now making logical &amp; financial sense">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             <span class="portfolio-count alerts-count" id="alertsCount" style="display:none">0</span>
           </button>
           <button class="portfolio-toggle" id="syncToggle" title="Sync across devices — export/import or pair via code" style="display:none">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M3 12a9 9 0 0 0 15 6.7L21 16"/><path d="M16 21h5v-5"/></svg>
           </button>
           <button class="portfolio-toggle" id="quickLookupToggle" title="Quick Lookup — search live prices for any card">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
           </button>
           <!-- theme picker -->
           <div class="theme-picker" id="themePicker" role="group" aria-label="Theme">
@@ -90,6 +90,7 @@
 
     <!-- Top-level Page Nav (Predict · Discover · Tools) -->
     <nav class="page-nav" id="pageNav" aria-label="Section navigation">
+      <div class="nav-pill" id="navPill" aria-hidden="true"></div>
       <button class="page-nav-btn" data-page="home" type="button">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         <span>Home</span>
@@ -1640,6 +1641,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260617x"></script>
+  <script src="app.js?v=20260617z"></script>
 </body>
 </html>
