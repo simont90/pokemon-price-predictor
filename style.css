@@ -4000,6 +4000,20 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .acq-input:focus { outline: none; border-color: var(--green); background: var(--surface); }
 .acq-help { font-size: 10.5px; color: var(--text-faint); margin-top: 2px; }
 
+.acq-save-btn {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 16px; margin-bottom: 14px;
+  background: rgba(61,214,140,0.1);
+  border: 1px solid var(--green, #3dd68c);
+  border-radius: 8px;
+  color: var(--green, #3dd68c);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.acq-save-btn:hover { background: rgba(61,214,140,0.2); }
+.acq-save-btn.is-saving { opacity: 0.55; pointer-events: none; }
+.acq-save-btn.is-saved { background: var(--green, #3dd68c); color: #000; border-color: var(--green, #3dd68c); }
+
 .acq-empty {
   padding: 12px 14px; border-radius: 8px;
   background: var(--surface-2, rgba(255,255,255,0.02));

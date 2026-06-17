@@ -8561,6 +8561,10 @@ function renderAcquisition() {
     b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
   document.querySelector('.acq-src-clear').style.display = acq.source ? 'inline-flex' : 'none';
+  const saveBtnEl = document.getElementById('acqSaveBtn');
+  if (saveBtnEl && !saveBtnEl.classList.contains('is-saving') && !saveBtnEl.classList.contains('is-saved')) {
+    saveBtnEl.style.display = acq.source ? 'flex' : 'none';
+  }
 
   // Show the right fields
   const packFields = document.getElementById('acqFieldsPack');
@@ -8736,6 +8740,29 @@ function setupAcquisition() {
       updateAcq({ source: src });
     });
   });
+
+  // Save & Sync button — immediate push to cloud without waiting for debounce
+  const saveBtn = document.getElementById('acqSaveBtn');
+  const ACQ_SAVE_HTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Save &amp; Sync`;
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      if (saveBtn.classList.contains('is-saving')) return;
+      saveBtn.classList.add('is-saving');
+      saveBtn.textContent = 'Syncing…';
+      if (typeof syncCloudPush === 'function' && syncGetPairCode && syncGetPairCode()) {
+        await syncCloudPush({});
+      } else {
+        await new Promise(r => setTimeout(r, 300));
+      }
+      saveBtn.classList.remove('is-saving');
+      saveBtn.classList.add('is-saved');
+      saveBtn.textContent = 'Saved ✓';
+      setTimeout(() => {
+        saveBtn.classList.remove('is-saved');
+        saveBtn.innerHTML = ACQ_SAVE_HTML;
+      }, 2500);
+    });
+  }
 
   // Live-update on input changes
   const wire = (id, key, parser) => {
