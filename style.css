@@ -1654,24 +1654,25 @@ textarea, select {
   .card-images {
     position: relative;
     width: 100%;
-    height: 260px;
+    height: 310px;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     border-radius: var(--radius-sm);
     margin-bottom: 16px;
-    background: rgba(5,6,10,0.85);
+    background: rgba(4,5,9,0.97);
     gap: 0;
   }
   .card-hero-bg {
     display: block;
     position: absolute;
-    inset: -14px;
-    width: calc(100% + 28px);
-    height: calc(100% + 28px);
+    inset: -8px;
+    width: calc(100% + 16px);
+    height: calc(100% + 16px);
     object-fit: cover;
-    filter: blur(28px) saturate(180%) brightness(0.58);
+    filter: blur(6px) saturate(90%) brightness(0.22);
+    opacity: 0.5;
     pointer-events: none;
     z-index: 0;
   }
@@ -1679,7 +1680,7 @@ textarea, select {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(to top, rgba(10,11,18,0.92) 0%, rgba(10,11,18,0.12) 55%, transparent 100%);
+    background: linear-gradient(to top, rgba(4,5,9,0.55) 0%, transparent 40%);
     z-index: 1;
     pointer-events: none;
   }
@@ -1687,9 +1688,9 @@ textarea, select {
     position: relative;
     z-index: 2;
     width: auto !important;
-    height: 224px !important;
+    height: 282px !important;
     border-radius: 10px;
-    box-shadow: 0 16px 48px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.1);
+    box-shadow: 0 24px 64px rgba(0,0,0,0.9), 0 8px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.12);
     cursor: zoom-in;
     object-fit: cover;
   }
