@@ -397,6 +397,7 @@ async function init() {
   setupUnderrated();
   setupPWANav();
   setupCollapsibleSections();
+  setupCardLinksToggle();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
   injectUserCards();
@@ -9785,6 +9786,7 @@ function setupPageNav() {
     buttons.forEach(b => b.classList.toggle('active', b.dataset.page === page));
     const fab = document.getElementById('filterFab');
     if (fab) fab.style.display = (page === 'predict') ? '' : 'none';
+    document.getElementById('pageNav')?.classList.toggle('has-ctx', page === 'predict');
     if (page === 'discover' && !window._urRanOnce) {
       window._urRanOnce = true;
       setTimeout(() => { try { urRunScan(); } catch (e) {} }, 100);
@@ -9801,6 +9803,8 @@ function setupPageNav() {
 
   buttons.forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
   window.addEventListener('hashchange', () => go((location.hash || '#home').replace('#', '')));
+  document.getElementById('navAskCtx')?.addEventListener('click', aiOpenPanel);
+  document.getElementById('navFilterCtx')?.addEventListener('click', openScreener);
 
   // Initial route — default to Home.
   const initial = (location.hash || '#home').replace('#', '');
@@ -10453,7 +10457,14 @@ function setupCollapsibleSections() {
     btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
     sec.appendChild(btn);
 
-    if (collapsed.has(key)) sec.classList.add('is-collapsed');
+    if (collapsed.has(key)) {
+      sec.classList.add('is-collapsed');
+    } else if (sec.dataset.collapseMobile && window.innerWidth <= 600) {
+      sec.classList.add('is-collapsed');
+      const cur = _getCollapsedSet();
+      cur.add(key);
+      _saveCollapsedSet(cur);
+    }
 
     function toggle() {
       sec.classList.toggle('is-collapsed');
@@ -10473,6 +10484,17 @@ function setupCollapsibleSections() {
         toggle();
       });
     }
+  });
+}
+
+function setupCardLinksToggle() {
+  const toggle = document.getElementById('cardLinksToggle');
+  const links = document.querySelector('.card-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', () => {
+    const open = links.classList.toggle('links-open');
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.querySelector('.clt-chev').style.transform = open ? 'rotate(180deg)' : '';
   });
 }
 

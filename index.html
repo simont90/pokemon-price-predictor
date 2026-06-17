@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260618b">
+  <link rel="stylesheet" href="style.css?v=20260618c">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -110,6 +110,13 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
         <span>Tools</span>
         <span class="page-nav-sub">Price sync · settings</span>
+      </button>
+      <div class="nav-ctx-sep" id="navCtxSep" aria-hidden="true"></div>
+      <button class="nav-ctx-btn" id="navAskCtx" type="button" aria-label="Ask AI">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><circle cx="8.5" cy="10.5" r="0.8" fill="currentColor" stroke="none"/><circle cx="12" cy="10.5" r="0.8" fill="currentColor" stroke="none"/><circle cx="15.5" cy="10.5" r="0.8" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="nav-ctx-btn" id="navFilterCtx" type="button" aria-label="Filter">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
       </button>
     </nav>
 
@@ -648,6 +655,11 @@
                 <span class="meta-rarity" id="cardRarity"></span>
                 <span class="meta-series-tag" id="cardSeries" style="display:none"></span>
               </div>
+              <button class="card-links-toggle" id="cardLinksToggle" type="button" aria-expanded="false">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
+                Links &amp; tools
+                <svg class="clt-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
               <div class="card-links">
                 <a id="linkCollectrics" href="#" target="_blank" rel="noopener" class="card-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> mycollectrics</a>
                 <a id="linkTcgCollector" href="#" target="_blank" rel="noopener" class="card-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg> tcgcollector</a>
@@ -848,7 +860,7 @@
 
         <!-- Acquisition tracker — logs how the user got the card (pack pull vs single purchase)
              and shows realised + max ROI based on actual cost basis. -->
-        <section class="card acq-card" id="acqSection" style="display:none">
+        <section class="card acq-card" id="acqSection" data-collapse-mobile="1" style="display:none">
           <div class="acq-header">
             <h2><span class="acq-icon">💰</span> Acquisition &amp; Max ROI</h2>
             <p class="acq-sub">Tell the model how you got this card so it knows your true cost basis. The lower your basis, the higher your ceiling.</p>
@@ -939,7 +951,7 @@
         </section>
 
         <!-- Price History -->
-        <section class="card pricehist-card" id="priceHistSection" style="display:none">
+        <section class="card pricehist-card" id="priceHistSection" data-collapse-mobile="1" style="display:none">
           <div class="ph-header">
             <h2>Price History</h2>
             <div class="ph-verdict" id="phVerdict"></div>
@@ -967,7 +979,7 @@
         </section>
 
         <!-- Market Dynamics -->
-        <section class="card market-card" id="marketSection" style="display:none">
+        <section class="card market-card" id="marketSection" data-collapse-mobile="1" style="display:none">
           <div class="market-header">
             <h2>Market Dynamics</h2>
             <div class="market-trend-badge" id="marketTrend"></div>
@@ -998,14 +1010,14 @@
         </section>
 
         <!-- Grading ROI -->
-        <section class="card grade-card" id="gradeSection" style="display:none">
+        <section class="card grade-card" id="gradeSection" data-collapse-mobile="1" style="display:none">
           <h2>Grading ROI</h2>
           <p class="card-desc">Is it worth grading this card? PSA 10 vs raw value gain</p>
           <div class="grade-content" id="gradeContent"></div>
         </section>
 
         <!-- PSA 1-10 Grade Range — estimated values + 5yr projections per grade -->
-        <section class="card psa-range-card" id="psaRangeSection" style="display:none">
+        <section class="card psa-range-card" id="psaRangeSection" data-collapse-mobile="1" style="display:none">
           <div class="psa-range-header">
             <div>
               <h2>PSA Grade Range · 5yr Forecast <span class="anchor-badge" id="psaAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span></h2>
@@ -1118,7 +1130,7 @@
         </section>
 
         <!-- Rip or Buy -->
-        <section class="card rip-card" id="ripSection" style="display:none">
+        <section class="card rip-card" id="ripSection" data-collapse-mobile="1" style="display:none">
           <div class="rip-header">
             <h2>Rip or Buy?</h2>
             <div class="rip-verdict-badge" id="ripVerdict"></div>
@@ -1162,7 +1174,7 @@
         </section>
 
         <!-- 5-Year Forecast -->
-        <section class="card forecast-card" id="forecastSection" style="display:none">
+        <section class="card forecast-card" id="forecastSection" data-collapse-mobile="1" style="display:none">
           <h2>5-Year Price Forecast</h2>
           <p class="card-desc">Projected appreciation based on rarity, character, and market trends</p>
           <canvas id="forecastChart" width="500" height="220" style="width:100%;height:220px;"></canvas>
@@ -1642,6 +1654,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260618b"></script>
+  <script src="app.js?v=20260618c"></script>
 </body>
 </html>

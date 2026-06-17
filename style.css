@@ -5823,3 +5823,66 @@ section.card .card-collapse-btn { padding: 10px; }
 [data-theme="light"] * { scrollbar-color: rgba(0,0,0,0.18) transparent; }
 [data-theme="light"] *::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); }
 
+/* ── Nav context buttons (Ask + Filter in glass bar) ─────────────────── */
+.nav-ctx-sep { display: none; }
+.nav-ctx-btn { display: none; }
+
+@media (max-width: 600px) {
+  #pageNav.has-ctx .nav-ctx-sep {
+    display: block;
+    width: 1px;
+    height: 22px;
+    background: rgba(255,255,255,0.14);
+    margin: auto 0px;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  #pageNav.has-ctx .nav-ctx-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 44px;
+    padding: 0;
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    transition: color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #pageNav.has-ctx .nav-ctx-btn:active { color: var(--accent); }
+
+  /* Standalone FABs hidden on mobile — nav ctx buttons handle them */
+  .filter-fab { display: none !important; }
+  .ai-chat-btn { display: none !important; }
+}
+
+/* ── Card-links toggle (mobile accordion) ────────────────────────────── */
+.card-links-toggle { display: none; }
+
+@media (max-width: 600px) {
+  .card-links-toggle {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 7px 11px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-family: var(--font-main, inherit);
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 8px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.15s;
+  }
+  .card-links-toggle:active { color: var(--accent); }
+  .card-links-toggle .clt-chev { margin-left: auto; transition: transform 0.2s ease; }
+  .card-links { display: none; flex-wrap: wrap; gap: 6px; }
+  .card-links.links-open { display: flex; }
+}
+
