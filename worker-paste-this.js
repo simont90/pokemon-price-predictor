@@ -23,10 +23,17 @@
  * Secrets (set with `wrangler secret put`):
  *   EBAY_CLIENT_ID
  *   EBAY_CLIENT_SECRET
+ *   COLLECTR_TOKEN  — your Collectr JWT (copy from collectrToken cookie in browser DevTools)
  *
  * KV bindings (set in Cloudflare dashboard → Worker → Settings → Variables
  * → KV Namespace Bindings):
  *   SYNC_KV  → bind to a KV namespace named e.g. `pokemon-sync`
+ *
+ *   GET /collectr?url=<encoded-collectr-product-url>[&bust=1]
+ *       → returns { product_id, card_name, set_name, currency, current_prices: { raw, psa7, psa8, psa9, psa10 },
+ *                   price_history: [{ date, grade, price }], fetched_at }
+ *       Proxies api-v2.getcollectr.com with COLLECTR_TOKEN secret. 5-min edge cache.
+ *       Returns { error, detail } if the token is missing or the product can't be parsed.
  *
  * CORS: open to https://simont90.github.io (and localhost for dev). Tighten in
  * production by editing ALLOWED_ORIGINS below.
@@ -198,6 +205,7 @@ async function handle(request, env) {
   if (url.pathname === '/health') return new Response('ok', { headers: corsHeaders(request) });
   if (url.pathname === '/sync') return handleSync(request, env, url);
   if (url.pathname === '/mcp') return handleMcp(request, env, url);
+  if (url.pathname === '/collectr') return handleCollectr(request, env, url);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 
   const q = url.searchParams.get('q') || '';
@@ -664,6 +672,156 @@ async function handleMcp(request, env, url) {
       ...cors,
     },
   });
+}
+
+// ---- Collectr price proxy ----
+// Endpoint: GET /collectr?url=<encoded-collectr-product-url>[&bust=1]
+//
+// Collectr's data lives entirely in their private API at api-v2.getcollectr.com.
+// The worker fetches it server-side using the COLLECTR_TOKEN secret (a Collectr JWT
+// the user copies from their collectrToken cookie in browser DevTools once and pastes
+// into Cloudflare → Worker → Settings → Environment Variables as a secret).
+//
+// API shape discovered by reading Collectr's minified JS (module 17511, chunk 588):
+//   GET https://api-v2.getcollectr.com/catalog/products/{id}?username=00000000-0000-0000-0000-000000000000&details=true
+//   Authorization: Bearer <token>
+//
+// Response contains: data.market_price (current raw price), data.graded_sub_types
+// (array of graded variants each with product_sub_type e.g. "PSA 10" and market_price),
+// and data.ungraded_sub_types for raw/ungraded variants.
+// Grade IDs: 12=PSA 10, 11=PSA 9, 9=PSA 8 (PSA 7 may not be tracked).
+
+const COLLECTR_API = 'https://api-v2.getcollectr.com';
+const COLLECTR_ANON = '00000000-0000-0000-0000-000000000000';
+
+function extractCollectrProductId(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    if (!u.hostname.endsWith('getcollectr.com')) return null;
+    // Matches: /explore/product/42382  or  /explore/product/42382/some-slug
+    const m = u.pathname.match(/\/explore\/product\/(\d+)/);
+    return m ? m[1] : null;
+  } catch { return null; }
+}
+
+function parseCollectrResponse(body) {
+  // body is the parsed JSON from api-v2.getcollectr.com/catalog/products/{id}?details=true
+  // The top-level may be the data directly, or wrapped under a 'data' key.
+  const d = body?.data ?? body;
+  if (!d) return null;
+
+  const current_prices = {};
+
+  // Raw / ungraded price — top-level market_price, or from ungraded_sub_types
+  const rawPrice = extractNumericPrice(d.market_price ?? d.ungraded_market_price);
+  if (rawPrice != null) current_prices.raw = rawPrice;
+
+  // Also check ungraded_sub_types for a more specific raw price
+  if (Array.isArray(d.ungraded_sub_types)) {
+    const rawEntry = d.ungraded_sub_types[0];
+    if (rawEntry) {
+      const p = extractNumericPrice(rawEntry.market_price ?? rawEntry.price);
+      if (p != null) current_prices.raw = p;
+    }
+  }
+
+  // Graded prices — from graded_sub_types array
+  if (Array.isArray(d.graded_sub_types)) {
+    for (const g of d.graded_sub_types) {
+      const label = (g.product_sub_type || g.name || '').toLowerCase();
+      const p = extractNumericPrice(g.market_price ?? g.price);
+      if (p == null) continue;
+      if (label.includes('psa 10') || label.includes('psa10')) current_prices.psa10 = p;
+      else if (label.includes('psa 9') || label.includes('psa9')) current_prices.psa9 = p;
+      else if (label.includes('psa 8') || label.includes('psa8')) current_prices.psa8 = p;
+      else if (label.includes('psa 7') || label.includes('psa7')) current_prices.psa7 = p;
+    }
+  }
+
+  // Price history — try multiple field name conventions
+  const historyRaw = d.price_history ?? d.priceHistory ?? d.history ?? [];
+  const price_history = Array.isArray(historyRaw)
+    ? historyRaw.map(h => ({
+        date: h.date ?? h.ts ?? h.timestamp ?? h.created_at ?? '',
+        grade: h.grade ?? h.product_sub_type ?? h.type ?? 'raw',
+        price: extractNumericPrice(h.price ?? h.market_price ?? h.value) ?? 0,
+      })).filter(h => h.price > 0)
+    : [];
+
+  return {
+    card_name: d.name ?? d.card_name ?? d.product_name ?? '',
+    set_name: d.set_name ?? d.set ?? d.expansion ?? '',
+    currency: d.currency ?? 'GBP',
+    current_prices,
+    price_history,
+  };
+}
+
+function extractNumericPrice(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const n = parseFloat(v.replace(/[^0-9.]/g, ''));
+    return isFinite(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
+async function handleCollectr(request, env, url) {
+  const cors = { 'Content-Type': 'application/json', ...corsHeaders(request) };
+  const json = (body, status = 200, extra = {}) =>
+    new Response(JSON.stringify(body), { status, headers: { ...cors, ...extra } });
+
+  if (!env.COLLECTR_TOKEN) {
+    return json({ error: 'COLLECTR_TOKEN secret not set', detail: 'Add your Collectr JWT as a worker secret named COLLECTR_TOKEN in Cloudflare dashboard → Worker → Settings → Variables.' }, 503);
+  }
+
+  const rawUrl = url.searchParams.get('url') || '';
+  const productId = extractCollectrProductId(rawUrl);
+  if (!productId) {
+    return json({ error: 'Invalid Collectr URL', detail: 'URL must be app.getcollectr.com/explore/product/{id}' }, 400);
+  }
+
+  const bustParam = url.searchParams.get('bust');
+  const apiUrl = `${COLLECTR_API}/catalog/products/${productId}?username=${COLLECTR_ANON}&details=true`;
+
+  let apiRes;
+  try {
+    apiRes = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${env.COLLECTR_TOKEN}`,
+        'Origin': 'https://app.getcollectr.com',
+        'Referer': 'https://app.getcollectr.com/',
+        'User-Agent': 'Mozilla/5.0 (compatible; PokemonPricePredictor/1.0)',
+      },
+    });
+  } catch (e) {
+    return json({ error: 'Collectr API unreachable', detail: e.message }, 502);
+  }
+
+  if (apiRes.status === 401) {
+    return json({ error: 'Collectr token rejected (401)', detail: 'Your COLLECTR_TOKEN has expired. Copy a fresh one from your browser DevTools → Application → Cookies → collectrToken.' }, 401);
+  }
+  if (!apiRes.ok) {
+    const body = await apiRes.text().catch(() => '');
+    return json({ error: `Collectr API error ${apiRes.status}`, detail: body.slice(0, 200) }, 502);
+  }
+
+  let body;
+  try { body = await apiRes.json(); }
+  catch { return json({ error: 'Collectr API returned non-JSON response' }, 502); }
+
+  const parsed = parseCollectrResponse(body);
+  if (!parsed) {
+    return json({ error: 'Could not parse Collectr response', detail: 'Unexpected response shape from Collectr API — structure may have changed.' }, 502);
+  }
+
+  const payload = { product_id: productId, ...parsed, fetched_at: Date.now() };
+  const cacheControl = bustParam
+    ? 'no-store'
+    : 'public, max-age=300'; // 5-min CDN cache matching /search
+
+  return json(payload, 200, { 'Cache-Control': cacheControl });
 }
 
 export default {

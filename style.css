@@ -5353,3 +5353,85 @@ section.card.is-collapsed { padding-bottom: 18px; }
   .sync-field label { margin-bottom: -2px; }
   .sync-actions { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   Collectr Price History section
+   ============================================================ */
+.collectr-card { padding: 20px 24px 24px; }
+.collectr-card h2 { margin: 0 0 4px; font-size: 17px; }
+.card-desc { margin: 0 0 14px; font-size: 13px; color: var(--text-muted); }
+
+.clr-url-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.clr-input-wrap { flex: 1; }
+.clr-url-input {
+  width: 100%; padding: 9px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+  font-size: 13px; font-family: JetBrains Mono, monospace;
+  box-sizing: border-box;
+}
+.clr-url-input:focus { outline: none; border-color: var(--accent); }
+
+.clr-btn-save, .clr-btn-clear {
+  padding: 9px 14px; border-radius: var(--radius-sm); font-size: 13px;
+  font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s;
+}
+.clr-btn-save {
+  border: 1px solid var(--accent); background: transparent; color: var(--accent);
+}
+.clr-btn-save:hover { background: var(--accent); color: #000; }
+.clr-btn-clear {
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+}
+.clr-btn-clear:hover { background: var(--border); color: var(--text); }
+
+.clr-error { font-size: 12px; color: #e05252; margin-bottom: 6px; }
+.clr-resolved-link { font-size: 12px; color: var(--accent); text-decoration: none; display: block; margin-bottom: 14px; word-break: break-all; }
+.clr-resolved-link:hover { text-decoration: underline; }
+
+.clr-panel { margin-top: 16px; }
+
+.clr-prices {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px; margin-bottom: 16px;
+}
+.clr-grade-tile {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 12px; text-align: center; display: flex; flex-direction: column; gap: 6px;
+}
+.clr-grade-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.clr-grade-price { font-size: 18px; font-weight: 700; color: var(--accent); font-family: JetBrains Mono, monospace; }
+.clr-use-btn {
+  font-size: 11px; padding: 5px 8px; border-radius: 4px;
+  border: 1px solid var(--accent); background: transparent; color: var(--accent);
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.clr-use-btn:hover { background: var(--accent); color: #000; }
+
+.clr-chart-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.clr-chart-title { font-size: 13px; font-weight: 600; flex: 1; }
+.clr-timeframe-btns { display: flex; gap: 4px; }
+.clr-tf {
+  padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+  transition: background 0.12s, color 0.12s;
+}
+.clr-tf.active, .clr-tf:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+.clr-refresh-btn {
+  padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+  transition: background 0.12s, color 0.12s;
+}
+.clr-refresh-btn:hover { background: var(--border); color: var(--text); }
+
+#clrChart { border-radius: var(--radius-sm); background: var(--bg-card); }
+.clr-chart-empty { font-size: 13px; color: var(--text-muted); padding: 16px 0; text-align: center; }
+.clr-status { font-size: 12px; color: var(--text-muted); margin-top: 8px; min-height: 18px; }
+
+@media (max-width: 640px) {
+  .clr-url-row { flex-wrap: wrap; }
+  .clr-input-wrap { min-width: 0; }
+  .clr-prices { grid-template-columns: repeat(2, 1fr); }
+  .clr-chart-header { flex-wrap: wrap; gap: 6px; }
+}
