@@ -161,7 +161,7 @@ Known synced keys:
 - `pkm-pc-overrides-v1` — PriceCharting URL overrides per card.
 - `pkm-user-cards-v1` / `pkm-card-overrides-v1` — user-edited card metadata.
 - `pkm-hold-overrides` — per-card grade-specific market price overrides.
-- `pkm-collapsed-sections` — UI section collapse state.
+- `pkm-acquisitions-v1` — how each card was obtained (pack pull vs single buy, cost basis).
 
 Excluded from sync (device-local):
 - `pkm-sync-prefs-v1`, `pkm-sync-pair-code`, `pkm-sync-endpoint`, `pkm-sync-meta`,

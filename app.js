@@ -10542,6 +10542,8 @@ const SYNC_KEYS = [
   'pkm-pc-overrides-v1',            // PriceCharting overrides
   'pkm-user-cards-v1',              // User-added cards
   'pkm-card-overrides-v1',          // Card metadata overrides
+  'pkm-acquisitions-v1',            // How each card was obtained (pack / single + cost)
+  'pkm-hold-overrides',             // Per-card grade-specific market price overrides
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
@@ -10639,6 +10641,7 @@ function syncApplyPayload(payload, mode) {
     if (typeof wishlist !== 'undefined') wishlist = JSON.parse(localStorage.getItem('pkm-wishlist') || '[]');
     if (typeof compareSlots !== 'undefined') compareSlots = JSON.parse(localStorage.getItem('pkm-compare') || '[null, null]');
     if (typeof watchlist !== 'undefined') watchlist = JSON.parse(localStorage.getItem('pkm-watchlist-v1') || '[]');
+    if (typeof acquisitions !== 'undefined') acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}');
   } catch {}
   // Trigger re-render of any visible panels.
   try { typeof renderPortfolio    === 'function' && renderPortfolio();    } catch {}
