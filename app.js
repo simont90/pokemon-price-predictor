@@ -8384,6 +8384,7 @@ async function psBatchRefresh(ids, label) {
   try { if (typeof renderWishlist === 'function') renderWishlist(); } catch {}
   try { if (typeof renderWatchlist === 'function') renderWatchlist(); } catch {}
   try { if (typeof rebuildAlerts === 'function') rebuildAlerts(); } catch {}
+  try { if (typeof renderHomeDashboard === 'function') renderHomeDashboard(); } catch {}
 }
 
 // Manual lookup — accepts a cardId ("sv8pt5-161") OR a free-text query
@@ -9601,6 +9602,131 @@ function setupTheme() {
   });
 }
 
+// ─── Home Dashboard ───────────────────────────────────────────────
+function renderHomeDashboard() {
+  _renderHomeCollection();
+  _renderHomeWishlist();
+  _renderHomeWatchlist();
+}
+
+function _homeItemClick(id) {
+  const card = cardData?.cards.find(c => c.i === id);
+  if (!card) return;
+  document.querySelector('.page-nav-btn[data-page="predict"]')?.click();
+  setTimeout(() => selectCard(id), 80);
+}
+
+function _renderHomeCollection() {
+  const list = $('homeCollList'), countEl = $('homeCollCount'), totalEl = $('homeCollTotal');
+  if (!list) return;
+  if (countEl) countEl.textContent = portfolio.length;
+  if (portfolio.length === 0) {
+    list.innerHTML = '<div class="home-empty">No cards in collection yet.<br>Search a card and tap + to add it.</div>';
+    if (totalEl) totalEl.textContent = '';
+    return;
+  }
+  let totalGBP = 0;
+  const rows = portfolio.map(p => {
+    const card = cardData?.cards.find(c => c.i === p.id);
+    const cached = getCachedPrice(p.id);
+    const priceUSD = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
+    const priceGBP = usdToGbp(priceUSD);
+    totalGBP += priceGBP;
+    let signal = null;
+    if (card) {
+      let pull = 7.65;
+      if (setsData?.[card.sc]) {
+        const r = setsData[card.sc].rarities?.[card.rc];
+        if (r?.pullRate > 0) pull = Math.round(1 / r.pullRate) * r.count / 100;
+      }
+      const sig = computeSignal(card, pull, autoFillDesirability(card, pull).total);
+      if (sig) signal = sig.signal;
+    }
+    const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
+    return `<div class="home-item" data-id="${p.id}">
+      ${p.img ? `<img class="home-item-img" src="${p.img}" alt="" onerror="this.style.display='none'">` : '<div class="home-item-img"></div>'}
+      <div class="home-item-info">
+        <div class="home-item-name">${esc(p.name)}</div>
+        <div class="home-item-meta">${esc(p.set)} · ${p.lang === 'JP' ? 'JP' : 'EN'}</div>
+      </div>
+      <div class="home-item-right">
+        <span class="home-item-price">${fmtGBPDirect(priceGBP)}</span>
+        ${signal ? `<span class="home-sig ${sc}">${signal}</span>` : ''}
+      </div>
+    </div>`;
+  });
+  list.innerHTML = rows.join('');
+  if (totalEl) totalEl.textContent = `${fmtGBPDirect(totalGBP)} · ${portfolio.length} card${portfolio.length !== 1 ? 's' : ''}`;
+  list.querySelectorAll('.home-item').forEach(el => el.addEventListener('click', () => _homeItemClick(el.dataset.id)));
+}
+
+function _renderHomeWishlist() {
+  const list = $('homeWishList'), countEl = $('homeWishCount');
+  if (!list) return;
+  if (countEl) countEl.textContent = wishlist.length;
+  if (wishlist.length === 0) {
+    list.innerHTML = '<div class="home-empty">No wishlisted cards yet.<br>Tap ♥ on any card to add it.</div>';
+    return;
+  }
+  const rows = wishlist.map(w => {
+    const card = cardData?.cards.find(c => c.i === w.id);
+    const cached = getCachedPrice(w.id);
+    const priceUSD = cached ? (cached.pcUngraded || cached.market || cached.mid || (card ? card.p : 0)) : (card ? card.p : 0);
+    const priceGBP = usdToGbp(priceUSD);
+    const target = w.targetGBP || 0;
+    let alertClass = 'alert-far', alertLabel = 'Watching';
+    if (target > 0) {
+      if (priceGBP <= target) { alertClass = 'alert-buy'; alertLabel = 'BUY NOW'; }
+      else if (priceGBP <= target * 1.10) { alertClass = 'alert-watch'; alertLabel = 'Close'; }
+    }
+    return `<div class="home-item" data-id="${w.id}">
+      ${w.img ? `<img class="home-item-img" src="${w.img}" alt="" onerror="this.style.display='none'">` : '<div class="home-item-img"></div>'}
+      <div class="home-item-info">
+        <div class="home-item-name">${esc(w.name)}</div>
+        <div class="home-item-meta">${esc(w.set)}${target > 0 ? ` · Target: ${fmtGBPDirect(target)}` : ''}</div>
+      </div>
+      <div class="home-item-right">
+        <span class="home-item-price">${fmtGBPDirect(priceGBP)}</span>
+        <span class="wishlist-alert ${alertClass}">${alertLabel}</span>
+      </div>
+    </div>`;
+  });
+  list.innerHTML = rows.join('');
+  list.querySelectorAll('.home-item').forEach(el => el.addEventListener('click', () => _homeItemClick(el.dataset.id)));
+}
+
+function _renderHomeWatchlist() {
+  const list = $('homeWatchList'), countEl = $('homeWatchCount');
+  if (!list) return;
+  if (countEl) countEl.textContent = watchlist.length;
+  if (watchlist.length === 0) {
+    list.innerHTML = '<div class="home-empty">No cards being watched yet.<br>Tap "Watch" on any card to track it.</div>';
+    return;
+  }
+  const alerts = (typeof computeActiveAlerts === 'function') ? computeActiveAlerts() : [];
+  const alertMap = Object.fromEntries(alerts.map(a => [a.id, a]));
+  const rows = watchlist.map(w => {
+    const a = alertMap[w.id];
+    const priceGBP = a ? a.currentPriceGBP : usdToGbp(w.addedPriceUSD || 0);
+    const signal = a ? a.signal : (w.addedSignal || '—');
+    const triggered = a ? (a.triggered && a.dismissedFor !== a.signal) : false;
+    const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
+    return `<div class="home-item${triggered ? ' home-item-alert' : ''}" data-id="${w.id}">
+      ${w.img ? `<img class="home-item-img" src="${w.img}" alt="" onerror="this.style.display='none'">` : '<div class="home-item-img"></div>'}
+      <div class="home-item-info">
+        <div class="home-item-name">${esc(w.name)}</div>
+        <div class="home-item-meta">${esc(w.set)}</div>
+      </div>
+      <div class="home-item-right">
+        ${priceGBP > 0 ? `<span class="home-item-price">${fmtGBPDirect(priceGBP)}</span>` : ''}
+        <span class="home-sig ${sc}">${signal}</span>
+      </div>
+    </div>`;
+  });
+  list.innerHTML = rows.join('');
+  list.querySelectorAll('.home-item').forEach(el => el.addEventListener('click', () => _homeItemClick(el.dataset.id)));
+}
+
 function setupPageNav() {
   // --- Relocate existing sections into their target pages -----------
   const discoverMount = document.getElementById('discoverMount');
@@ -9622,36 +9748,38 @@ function setupPageNav() {
   // --- Wire the tab buttons + hash routing --------------------------
   const buttons = Array.from(document.querySelectorAll('.page-nav-btn'));
   const pages = {
+    home: document.getElementById('pageHome'),
     predict: document.getElementById('pagePredict'),
     discover: document.getElementById('pageDiscover'),
     tools: document.getElementById('pageTools'),
   };
 
   function go(page) {
-    if (!pages[page]) page = 'predict';
+    if (!pages[page]) page = 'home';
     Object.entries(pages).forEach(([k, el]) => { if (el) el.style.display = (k === page) ? '' : 'none'; });
     buttons.forEach(b => b.classList.toggle('active', b.dataset.page === page));
-    // Hide the floating Filter FAB outside the Predict page — the screener
-    // only makes sense on Predict (acts on the search index).
     const fab = document.getElementById('filterFab');
     if (fab) fab.style.display = (page === 'predict') ? '' : 'none';
-    // When the user lands on Discover for the first time and the Underrated
-    // engine has never been run, auto-kick a Raw scan so they see something.
     if (page === 'discover' && !window._urRanOnce) {
       window._urRanOnce = true;
-      setTimeout(() => { try { urRunScan(); } catch (e) { /* defer until data ready */ } }, 100);
+      setTimeout(() => { try { urRunScan(); } catch (e) {} }, 100);
     }
-    // Persist + sync hash
+    if (page === 'home') renderHomeDashboard();
     try { if (location.hash.replace('#', '') !== page) history.replaceState(null, '', '#' + page); } catch (e) {}
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   }
 
-  buttons.forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
-  window.addEventListener('hashchange', () => go((location.hash || '#predict').replace('#', '')));
+  // Wire "View all" buttons on the home page
+  document.getElementById('homeOpenCollection')?.addEventListener('click', () => { $('portfolioToggle')?.click(); });
+  document.getElementById('homeOpenWishlist')?.addEventListener('click', () => { $('wishlistToggle')?.click(); });
+  document.getElementById('homeOpenWatchlist')?.addEventListener('click', () => { $('alertsToggle')?.click(); });
 
-  // Initial route — default to Predict.
-  const initial = (location.hash || '#predict').replace('#', '');
-  go(['predict', 'discover', 'tools'].includes(initial) ? initial : 'predict');
+  buttons.forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
+  window.addEventListener('hashchange', () => go((location.hash || '#home').replace('#', '')));
+
+  // Initial route — default to Home.
+  const initial = (location.hash || '#home').replace('#', '');
+  go(['home', 'predict', 'discover', 'tools'].includes(initial) ? initial : 'home');
 }
 
 // =============================================================
@@ -10401,11 +10529,12 @@ function syncApplyPayload(payload, mode) {
     if (typeof watchlist !== 'undefined') watchlist = JSON.parse(localStorage.getItem('pkm-watchlist-v1') || '[]');
   } catch {}
   // Trigger re-render of any visible panels.
-  try { typeof renderPortfolio === 'function' && renderPortfolio(); } catch {}
-  try { typeof renderWishlist  === 'function' && renderWishlist();  } catch {}
-  try { typeof renderCompare   === 'function' && renderCompare();   } catch {}
-  try { typeof renderWatchlist === 'function' && renderWatchlist(); } catch {}
-  try { typeof renderAlerts    === 'function' && renderAlerts();    } catch {}
+  try { typeof renderPortfolio    === 'function' && renderPortfolio();    } catch {}
+  try { typeof renderWishlist     === 'function' && renderWishlist();     } catch {}
+  try { typeof renderCompare      === 'function' && renderCompare();      } catch {}
+  try { typeof renderWatchlist    === 'function' && renderWatchlist();    } catch {}
+  try { typeof renderAlerts       === 'function' && renderAlerts();       } catch {}
+  try { typeof renderHomeDashboard === 'function' && renderHomeDashboard(); } catch {}
   return { applied: applied.length, keys: applied };
 }
 
