@@ -1180,8 +1180,13 @@ function getPCOverride(cardId) {
   return all[cardId] || null;
 }
 
-// ---- Collectr per-card URL overrides ----
-// Storage format: { [cardId]: { url, savedAt, source: 'manual' } }
+// ---- Collectr per-card URL overrides + prices ----
+// Storage format: { [cardId]: { url, savedAt, source: 'manual',
+//                                prices?: { raw, psa7, psa8, psa9, psa10, currency },
+//                                pricesAt?: number } }
+// The URL is set by the user in Edit Details. Prices are filled in by the
+// Mac mini Collectr bot (see collectr-bot/), which writes them back via the
+// /sync endpoint. The app reads them here and renders them in Live Market Price.
 const COLLECTR_OVERRIDE_KEY = 'pkm-collectr-overrides-v1';
 function getCollectrOverrides() {
   try { return JSON.parse(localStorage.getItem(COLLECTR_OVERRIDE_KEY) || '{}'); } catch { return {}; }
@@ -1194,8 +1199,22 @@ function setCollectrOverride(cardId, data) {
   if (data) all[cardId] = data; else delete all[cardId];
   try { localStorage.setItem(COLLECTR_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
 }
+// Set just the URL — preserves any existing prices the bot has fetched.
+function setCollectrUrl(cardId, url) {
+  const existing = getCollectrOverride(cardId) || {};
+  setCollectrOverride(cardId, { ...existing, url, savedAt: Date.now(), source: 'manual' });
+}
 function clearCollectrOverride(cardId) {
   setCollectrOverride(cardId, null);
+}
+function validateCollectrUrl(u) {
+  if (!u) return null; // empty is fine — just clears
+  try {
+    const parsed = new URL(u);
+    if (!parsed.hostname.endsWith('getcollectr.com')) return 'URL must be on app.getcollectr.com';
+    if (!/\/explore\/product\/\d+/.test(parsed.pathname)) return 'URL must point to an explore/product/{id} page';
+    return null;
+  } catch { return 'Not a valid URL'; }
 }
 
 // Build the cleanest possible query for PriceCharting.
@@ -2053,7 +2072,7 @@ function selectCard(id) {
   updateWatchButton();
   renderMarketplaceScan(card, pullCost, des.total);
   renderHoldStrategy(card);
-  try { renderCollectrSection(card); } catch {}
+  try { renderCollectrLiveRow(card); } catch {}
 
   // Reset market dynamics section
   $('marketSection').style.display = 'none';
@@ -5406,6 +5425,11 @@ function openEditCard() {
   $('ecRarity').value = c.r || '';
   $('ecSeries').value = c.sr || '';
   $('ecImg').value = c.img || '';
+  // Collectr URL pulls from the dedicated overrides store, not the card itself.
+  const clrField = $('ecCollectrUrl');
+  if (clrField) clrField.value = getCollectrOverride(c.i)?.url || '';
+  const clrStatus = $('ecCollectrStatus');
+  if (clrStatus) clrStatus.textContent = '';
   const sub = $('ecSub');
   const hasOverride = !!loadCardOverrides()[c.i];
   sub.innerHTML = hasOverride
@@ -5451,6 +5475,16 @@ async function saveEditCard() {
     status.textContent = 'Name, set and card number can’t be empty.';
     return;
   }
+  // Validate + save Collectr URL (separate store, doesn't go into card overrides)
+  const clrUrl = ($('ecCollectrUrl')?.value || '').trim();
+  const clrErr = validateCollectrUrl(clrUrl);
+  if (clrErr) {
+    status.className = 'ql-status error';
+    status.textContent = `Collectr URL: ${clrErr}`;
+    return;
+  }
+  if (clrUrl) setCollectrUrl(c.i, clrUrl);
+  else if (getCollectrOverride(c.i)) clearCollectrOverride(c.i);
   // Only persist fields that differ from the original — keeps overrides minimal.
   // Coerce both sides to strings so a numeric `cn=125` matches input `'125'`.
   // For `lang`, treat missing/empty as the implicit default 'EN' (the indexed DB
@@ -10205,294 +10239,117 @@ function renderHoldOverridePanel(card) {
 }
 
 // ============================================================================
-// Collectr Price History — per-card URL override + worker-proxied price data
+// Collectr live row — reads prices from pkm-collectr-overrides-v1
 // ============================================================================
-// The user manually pastes a Collectr product URL (app.getcollectr.com/explore/product/{id}).
-// The worker (/collectr route) fetches the price data server-side using the
-// COLLECTR_TOKEN secret so credentials never touch the client.
+// The URL is set in Edit Details. Prices are filled in by the Mac mini bot
+// (collectr-bot/) which runs on a cron schedule, scrapes app.getcollectr.com
+// in a real Chromium with the user's logged-in profile, and writes the prices
+// back via PUT /sync?key=pkm-collectr-overrides-v1.
+//
+// On render: read the override for this card, render Raw + PSA 7–10. Each
+// cell has a "Use" button that copies the price into pkm-hold-overrides; one
+// "Use all" button does all five at once. We do NOT auto-overwrite hold
+// overrides because the user may have set their own values manually.
 
-function renderCollectrSection(card) {
-  const host = document.getElementById('collectrSection');
-  if (!host) return;
-  if (!card || !card.i) { host.style.display = 'none'; return; }
-  host.style.display = 'block';
-
-  const saved = getCollectrOverride(card.i);
-  const savedUrl = saved?.url || '';
-  const workerBase = getMktWorkerUrl ? getMktWorkerUrl() : '';
-
-  host.innerHTML = `
-    <h2>Collectr Price History</h2>
-    <p class="card-desc">Paste a Collectr product URL to pull live prices and history via the worker.</p>
-    <div class="clr-url-row">
-      <div class="clr-input-wrap">
-        <input type="url" id="clrUrlInput" class="clr-url-input" placeholder="https://app.getcollectr.com/explore/product/…"
-          value="${savedUrl ? savedUrl.replace(/"/g, '&quot;') : ''}">
-      </div>
-      <button type="button" id="clrSaveBtn" class="clr-btn-save">Save</button>
-      ${savedUrl ? '<button type="button" id="clrClearBtn" class="clr-btn-clear">Clear</button>' : ''}
-    </div>
-    <div id="clrUrlError" class="clr-error" style="display:none"></div>
-    ${savedUrl ? `<a href="${savedUrl}" target="_blank" rel="noopener" class="clr-resolved-link">↗ ${savedUrl}</a>` : ''}
-    <div id="clrPanel" class="clr-panel" style="display:none">
-      <div id="clrPrices" class="clr-prices"></div>
-      <div class="clr-chart-header">
-        <span class="clr-chart-title">Price History</span>
-        <div class="clr-timeframe-btns" id="clrTimeframeBtns">
-          <button class="clr-tf active" data-days="30">30d</button>
-          <button class="clr-tf" data-days="90">90d</button>
-          <button class="clr-tf" data-days="365">1yr</button>
-          <button class="clr-tf" data-days="0">All</button>
-        </div>
-        <button type="button" id="clrRefreshBtn" class="clr-refresh-btn">↻ Refresh</button>
-      </div>
-      <canvas id="clrChart" width="500" height="180" style="width:100%;height:180px;display:none"></canvas>
-      <div id="clrChartEmpty" class="clr-chart-empty" style="display:none">No price history available</div>
-      <div id="clrStatus" class="clr-status"></div>
-    </div>
-  `;
-
-  const inp = document.getElementById('clrUrlInput');
-  const errEl = document.getElementById('clrUrlError');
-  const panel = document.getElementById('clrPanel');
-
-  function showError(msg) {
-    errEl.textContent = msg;
-    errEl.style.display = msg ? 'block' : 'none';
-  }
-
-  function validateCollectrUrl(u) {
-    try {
-      const parsed = new URL(u);
-      if (!parsed.hostname.endsWith('getcollectr.com')) return 'URL must be on app.getcollectr.com';
-      if (!/\/explore\/product\/\d+/.test(parsed.pathname)) return 'URL must point to an explore/product/{id} page';
-      return null;
-    } catch { return 'Not a valid URL'; }
-  }
-
-  // Save button
-  document.getElementById('clrSaveBtn').addEventListener('click', async () => {
-    const u = inp.value.trim();
-    const err = validateCollectrUrl(u);
-    if (err) { showError(err); return; }
-    showError('');
-    setCollectrOverride(card.i, { url: u, savedAt: Date.now(), source: 'manual' });
-    renderCollectrSection(card); // re-render to show link + load data
-    await clrFetch(card, u, false);
-  });
-
-  // Clear button
-  const clearBtn = document.getElementById('clrClearBtn');
-  if (clearBtn) {
-    clearBtn.addEventListener('click', () => {
-      clearCollectrOverride(card.i);
-      renderCollectrSection(card);
-    });
-  }
-
-  // Refresh button
-  const refreshBtn = document.getElementById('clrRefreshBtn');
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', async () => {
-      if (!savedUrl) return;
-      await clrFetch(card, savedUrl, true);
-    });
-  }
-
-  // Timeframe buttons
-  document.getElementById('clrTimeframeBtns')?.querySelectorAll('.clr-tf').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.clr-tf').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const cached = _clrCache[card.i];
-      if (cached) clrRenderPanel(card, cached);
-    });
-  });
-
-  // Auto-load if URL already saved
-  if (savedUrl && workerBase) {
-    clrFetch(card, savedUrl, false);
-  } else if (savedUrl && !workerBase) {
-    document.getElementById('clrStatus').textContent = 'Worker URL not configured — set it in Settings to enable price fetching.';
-    panel.style.display = 'block';
-  }
+function _clrFmtGBP(v) {
+  if (v == null || v === '') return '—';
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (!isFinite(n) || n <= 0) return '—';
+  return `£${n.toFixed(2)}`;
 }
 
-// In-memory cache of last Collectr fetch per card so timeframe switches don't re-fetch
-const _clrCache = {};
-
-async function clrFetch(card, collectrUrl, forceFresh) {
-  const workerBase = getMktWorkerUrl ? getMktWorkerUrl() : '';
-  const statusEl = document.getElementById('clrStatus');
-  const panel = document.getElementById('clrPanel');
-  if (!workerBase) {
-    if (panel) panel.style.display = 'block';
-    if (statusEl) statusEl.textContent = 'Worker URL not configured.';
-    return;
-  }
-
-  if (panel) panel.style.display = 'block';
-  if (statusEl) statusEl.textContent = 'Fetching from Collectr…';
-
-  const bust = forceFresh ? `&bust=${Date.now()}` : '';
-  const endpoint = `${workerBase}/collectr?url=${encodeURIComponent(collectrUrl)}${bust}`;
-
-  let data;
-  try {
-    const res = await fetch(endpoint);
-    data = await res.json();
-  } catch (e) {
-    if (statusEl) statusEl.textContent = `Fetch failed: ${e.message}`;
-    return;
-  }
-
-  if (data.error) {
-    if (statusEl) statusEl.textContent = `Error: ${data.error}${data.detail ? ' — ' + data.detail : ''}`;
-    return;
-  }
-
-  _clrCache[card.i] = data;
-  if (statusEl) statusEl.textContent = '';
-  clrRenderPanel(card, data);
+function _clrRelTime(ts) {
+  if (!ts || typeof ts !== 'number') return '';
+  const ms = Date.now() - ts;
+  if (ms < 0) return 'just now';
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
 }
 
-function clrRenderPanel(card, data) {
-  const pricesEl = document.getElementById('clrPrices');
-  const canvas = document.getElementById('clrChart');
-  const chartEmpty = document.getElementById('clrChartEmpty');
+function renderCollectrLiveRow(card) {
+  const row = document.getElementById('collectrLiveRow');
+  if (!row) return;
+  if (!card || !card.i) { row.style.display = 'none'; return; }
 
-  if (!pricesEl) return;
+  const ov = getCollectrOverride(card.i);
+  if (!ov || !ov.url) { row.style.display = 'none'; return; }
 
-  const prices = data.current_prices || {};
+  // Always show the row whenever the user has saved a URL — even before the
+  // bot has fetched prices — so they get visual feedback that it's pending.
+  row.style.display = '';
+
+  // Header link to the Collectr product page
+  const link = document.getElementById('collectrLink');
+  if (link) {
+    link.href = ov.url;
+    link.style.display = '';
+  }
+
+  const prices = ov.prices || {};
   const grades = [
-    { key: 'raw',   label: 'Raw' },
-    { key: 'psa7',  label: 'PSA 7' },
-    { key: 'psa8',  label: 'PSA 8' },
-    { key: 'psa9',  label: 'PSA 9' },
-    { key: 'psa10', label: 'PSA 10' },
+    { key: 'raw',   id: 'collectrRaw' },
+    { key: 'psa7',  id: 'collectrPsa7' },
+    { key: 'psa8',  id: 'collectrPsa8' },
+    { key: 'psa9',  id: 'collectrPsa9' },
+    { key: 'psa10', id: 'collectrPsa10' },
   ];
+  for (const g of grades) {
+    const el = document.getElementById(g.id);
+    if (el) el.textContent = _clrFmtGBP(prices[g.key]);
+  }
 
-  pricesEl.innerHTML = grades.map(g => {
-    const p = prices[g.key];
-    if (p == null) return '';
-    const gbp = typeof p === 'number' ? p : parseFloat(p);
-    if (!isFinite(gbp) || gbp <= 0) return '';
-    const fmtd = `£${gbp.toFixed(2)}`;
-    return `
-      <div class="clr-grade-tile">
-        <span class="clr-grade-label">${g.label}</span>
-        <span class="clr-grade-price">${fmtd}</span>
-        <button class="clr-use-btn" data-grade="${g.key}" data-price="${gbp.toFixed(2)}">
-          Use as market price
-        </button>
-      </div>
-    `;
-  }).join('');
+  const updated = document.getElementById('collectrUpdated');
+  if (updated) {
+    if (ov.pricesAt) updated.textContent = `Updated ${_clrRelTime(ov.pricesAt)}`;
+    else updated.textContent = 'Pending — waiting for Mac mini bot';
+  }
 
-  // Wire "Use as market price" buttons
-  pricesEl.querySelectorAll('.clr-use-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const g = btn.dataset.grade;
-      const p = parseFloat(btn.dataset.price);
-      if (!card || !card.i || !isFinite(p)) return;
-      setHoldOverride(card.i, g, p);
+  const statusEl = document.getElementById('collectrStatus');
+  if (statusEl) statusEl.textContent = '';
+
+  // Per-cell "Use" buttons — only enabled when there's a price
+  document.querySelectorAll('#collectrLiveRow .collectr-use-cell').forEach(btn => {
+    const g = btn.dataset.grade;
+    const p = prices[g];
+    const valid = typeof p === 'number' ? p > 0 : (parseFloat(p) > 0);
+    btn.disabled = !valid;
+    btn.onclick = () => {
+      if (!valid) return;
+      const v = typeof p === 'number' ? p : parseFloat(p);
+      setHoldOverride(card.i, g, v);
       try { renderHoldOverridePanel(card); } catch {}
       try { renderHoldStrategy(card); } catch {}
       btn.textContent = 'Saved ✓';
-      setTimeout(() => { btn.textContent = 'Use as market price'; }, 1800);
-    });
+      setTimeout(() => { btn.textContent = 'Use'; }, 1500);
+    };
   });
 
-  // Draw price history chart
-  const history = data.price_history || [];
-  const activeDays = parseInt(document.querySelector('.clr-tf.active')?.dataset?.days ?? '90');
-  const cutoff = activeDays > 0 ? Date.now() - activeDays * 86400000 : 0;
-
-  const filtered = history.filter(h => {
-    if (!cutoff) return true;
-    const ts = typeof h.date === 'number' ? h.date : new Date(h.date).getTime();
-    return ts >= cutoff;
-  });
-
-  if (!canvas) return;
-
-  if (filtered.length < 2) {
-    canvas.style.display = 'none';
-    if (chartEmpty) chartEmpty.style.display = 'block';
-    return;
-  }
-  if (chartEmpty) chartEmpty.style.display = 'none';
-  canvas.style.display = 'block';
-  clrDrawChart(canvas, filtered);
-}
-
-function clrDrawChart(canvas, history) {
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = (rect.width || 400) * dpr;
-  canvas.height = (rect.height || 180) * dpr;
-  ctx.scale(dpr, dpr);
-  const W = rect.width || 400;
-  const H = rect.height || 180;
-  ctx.clearRect(0, 0, W, H);
-
-  const points = history.map(h => ({
-    ts: typeof h.date === 'number' ? h.date : new Date(h.date).getTime(),
-    price: typeof h.price === 'number' ? h.price : parseFloat(h.price) || 0,
-    grade: h.grade || 'raw',
-  })).filter(p => p.ts > 0 && p.price > 0).sort((a, b) => a.ts - b.ts);
-
-  if (points.length < 2) return;
-
-  const prices = points.map(p => p.price);
-  const maxP = Math.max(...prices) * 1.08;
-  const minP = Math.min(...prices) * 0.92;
-  const minTs = points[0].ts;
-  const maxTs = points[points.length - 1].ts;
-  const pad = { l: 52, r: 12, t: 12, b: 28 };
-  const cw = W - pad.l - pad.r;
-  const ch = H - pad.t - pad.b;
-
-  const xp = ts => pad.l + ((ts - minTs) / (maxTs - minTs)) * cw;
-  const yp = v  => pad.t + ch - ((v - minP) / (maxP - minP)) * ch;
-
-  // Grid lines
-  ctx.strokeStyle = '#2a2d3a';
-  ctx.lineWidth = 1;
-  const gridN = 3;
-  for (let i = 0; i <= gridN; i++) {
-    const gv = minP + (maxP - minP) * (i / gridN);
-    const gy = yp(gv);
-    ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
-    ctx.fillStyle = '#555768'; ctx.font = '10px JetBrains Mono, monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(`£${Math.round(gv)}`, pad.l - 4, gy + 3);
-  }
-
-  // X-axis date labels
-  ctx.fillStyle = '#555768'; ctx.font = '10px Space Grotesk, sans-serif';
-  ctx.textAlign = 'center';
-  const fmt = ts => { const d = new Date(ts); return `${d.getDate()}/${d.getMonth()+1}`; };
-  ctx.fillText(fmt(minTs), pad.l, H - 6);
-  ctx.fillText(fmt(maxTs), W - pad.r, H - 6);
-
-  // Line per grade
-  const GRADE_COLORS = { raw: '#e8b634', psa7: '#6ca0dc', psa8: '#7ecba1', psa9: '#e87d34', psa10: '#c44dff' };
-  const byGrade = {};
-  for (const p of points) {
-    (byGrade[p.grade] = byGrade[p.grade] || []).push(p);
-  }
-  for (const [grade, pts] of Object.entries(byGrade)) {
-    if (pts.length < 2) continue;
-    ctx.strokeStyle = GRADE_COLORS[grade] || '#888';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    pts.forEach((p, i) => {
-      const fx = xp(p.ts), fy = yp(p.price);
-      i === 0 ? ctx.moveTo(fx, fy) : ctx.lineTo(fx, fy);
+  // "Use all" button — applies every valid grade in one go
+  const useAll = document.getElementById('collectrUseAllBtn');
+  if (useAll) {
+    const anyValid = grades.some(g => {
+      const p = prices[g.key];
+      const n = typeof p === 'number' ? p : parseFloat(p);
+      return isFinite(n) && n > 0;
     });
-    ctx.stroke();
+    useAll.disabled = !anyValid;
+    useAll.onclick = () => {
+      let count = 0;
+      grades.forEach(g => {
+        const p = prices[g.key];
+        const n = typeof p === 'number' ? p : parseFloat(p);
+        if (isFinite(n) && n > 0) { setHoldOverride(card.i, g.key, n); count++; }
+      });
+      try { renderHoldOverridePanel(card); } catch {}
+      try { renderHoldStrategy(card); } catch {}
+      useAll.textContent = `Saved ${count} ✓`;
+      setTimeout(() => { useAll.textContent = 'Use all as market price'; }, 1800);
+    };
   }
 }
 
