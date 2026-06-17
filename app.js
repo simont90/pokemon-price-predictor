@@ -398,6 +398,7 @@ async function init() {
   setupPWANav();
   setupCollapsibleSections();
   setupCardLinksToggle();
+  setupHeaderMenu();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
   injectUserCards();
@@ -10483,6 +10484,23 @@ function setupCollapsibleSections() {
         if (e.target.closest('input, button, select, textarea, a, [role=button], [contenteditable=true], .ho-details summary')) return;
         toggle();
       });
+    }
+  });
+}
+
+function setupHeaderMenu() {
+  const btn = document.getElementById('headerMenuBtn');
+  const right = document.querySelector('.header-right');
+  if (!btn || !right) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = right.classList.toggle('is-open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  document.addEventListener('click', (e) => {
+    if (right.classList.contains('is-open') && !right.contains(e.target) && e.target !== btn) {
+      right.classList.remove('is-open');
+      btn.setAttribute('aria-expanded', 'false');
     }
   });
 }
