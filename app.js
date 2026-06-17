@@ -2493,6 +2493,23 @@ function updateDealCheck(modelPriceUSD) {
     <div class="deal-saving">${diff > 0 ? 'Save' : 'Over by'} £${Math.abs(diff).toFixed(2)}</div>
     <div class="deal-note">${note}</div>
   </div>`;
+
+  const saveBtn = $('dealSaveHold');
+  if (saveBtn) {
+    if (selectedCard && selectedCard.i) {
+      saveBtn.style.display = 'block';
+      saveBtn.onclick = () => {
+        const gradeKey = $('dealGrade') ? $('dealGrade').value : 'raw';
+        setHoldOverride(selectedCard.i, gradeKey, ebayGBP);
+        try { renderHoldOverridePanel(selectedCard); } catch {}
+        try { renderHoldStrategy(selectedCard); } catch {}
+        saveBtn.textContent = 'Saved';
+        setTimeout(() => { saveBtn.textContent = 'Save to Hold Strategy'; }, 1800);
+      };
+    } else {
+      saveBtn.style.display = 'none';
+    }
+  }
 }
 
 // ---- Rip or Buy ----
@@ -3738,6 +3755,8 @@ function computeCompareVerdict(a, b) {
 function setupInputs() {
   ['packRate','cardsInTier','characterPremium','artworkHype','universalAppeal','ebayPrice']
     .forEach(id => $(id).addEventListener('input', updateAll));
+  const dealGradeEl = $('dealGrade');
+  if (dealGradeEl) dealGradeEl.addEventListener('change', updateAll);
 }
 
 // ================================================================

@@ -300,7 +300,13 @@ body {
 
 /* Deal Check */
 .deal-card h2 { margin-bottom: 2px; }
+.deal-check-inputs { display: flex; gap: 10px; align-items: flex-end; }
+.deal-check-inputs .input-group { flex: 1; }
+.deal-grade-group { flex: 0 0 auto !important; min-width: 100px; }
+.deal-grade-select { width: 100%; padding: 10px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 14px; cursor: pointer; margin-top: 8px; }
 .ebay-input { font-size: 20px; padding: 12px 14px; text-align: center; margin-top: 8px; }
+.deal-save-btn { display: block; width: 100%; margin-top: 10px; padding: 10px 0; border-radius: var(--radius-sm); border: 1px solid var(--accent); background: transparent; color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; letter-spacing: 0.04em; transition: background 0.15s, color 0.15s; }
+.deal-save-btn:hover { background: var(--accent); color: #000; }
 .deal-result { margin-top: 14px; border-radius: var(--radius-sm); min-height: 70px; display: flex; align-items: center; justify-content: center; transition: all 0.3s; }
 .deal-placeholder { font-size: 12px; color: var(--text-faint); text-align: center; padding: 12px; }
 .deal-active { padding: 16px; text-align: center; width: 100%; }
