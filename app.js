@@ -392,6 +392,7 @@ async function init() {
   setupAcquisition();
   setupPriceInsight();
   setupAiChat();
+  setupTheme();
   setupPageNav();
   setupUnderrated();
   setupPWANav();
@@ -9567,6 +9568,38 @@ function setupAiChat() {
 // On init we relocate a handful of sections out of the legacy single-page
 // layout into dedicated page containers so each top-level tab feels like
 // its own page without us having to rewrite the entire DOM.
+
+function setupTheme() {
+  function applyTheme(pref) {
+    const root = document.documentElement;
+    if (pref === 'light') {
+      root.setAttribute('data-theme', 'light');
+    } else if (pref === 'dark') {
+      root.setAttribute('data-theme', 'dark');
+    } else {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    }
+  }
+
+  const stored = localStorage.getItem('theme-pref') || 'system';
+  applyTheme(stored);
+
+  const btns = document.querySelectorAll('.theme-btn');
+  btns.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.themeVal === stored);
+    btn.addEventListener('click', () => {
+      const val = btn.dataset.themeVal;
+      localStorage.setItem('theme-pref', val);
+      applyTheme(val);
+      btns.forEach(b => b.classList.toggle('active', b.dataset.themeVal === val));
+    });
+  });
+
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if ((localStorage.getItem('theme-pref') || 'system') === 'system') applyTheme('system');
+  });
+}
 
 function setupPageNav() {
   // --- Relocate existing sections into their target pages -----------
