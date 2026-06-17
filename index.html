@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260617v">
+  <link rel="stylesheet" href="style.css?v=20260617w">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -645,8 +645,8 @@
           <div class="pull-cost-result"><div class="pull-cost-label">Pull Cost Score</div><div class="pull-cost-value" id="pullCostDisplay">7.65</div><div class="pull-cost-packs" id="packsNeeded">≈ 765 packs for this specific card</div></div>
         </section>
 
-        <!-- Desirability -->
-        <section class="card">
+        <!-- Desirability — hidden from UI, algorithm still runs -->
+        <section class="card" style="display:none">
           <div class="card-header">
             <div class="card-icon demand-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div>
             <div><h2>Desirability <span class="badge demand-badge">Demand</span></h2><p class="card-desc">Auto-calibrated from market price — adjust to explore</p></div>
@@ -1203,7 +1203,7 @@
             <div class="formula-box"><code>Price = 12.50 × 1.19<sup>PullCost</sup> × 1.41<sup>Desirability</sup></code></div>
             <div class="explanation">
               <div class="explain-item" style="display:none"><div class="explain-icon supply-icon-sm"></div><div><strong>Pull Cost (Supply)</strong><p>Packs-per-hit × cards-in-tier ÷ 100. Each +1 → +19% price.</p></div></div>
-              <div class="explain-item"><div class="explain-icon demand-icon-sm"></div><div><strong>Desirability (Demand)</strong><p>Character (45%) + Artwork (45%) + Appeal (10%). Each +1 → +41% price. Auto-calibrated from market data.</p></div></div>
+              <div class="explain-item" style="display:none"><div class="explain-icon demand-icon-sm"></div><div><strong>Desirability (Demand)</strong><p>Character (45%) + Artwork (45%) + Appeal (10%). Each +1 → +41% price. Auto-calibrated from market data.</p></div></div>
               <div class="explain-item"><div class="explain-icon r2-icon-sm"></div><div><strong>R² = 0.88</strong><p>Explains 88% of price variation in modern chase cards.</p></div></div>
             </div>
             <div class="data-sources"><strong>Data Sources</strong><p>Cards: <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> (20k+ cards, all eras). Market: <a href="https://mycollectrics.com" target="_blank">mycollectrics.com</a> (eBay live data). Japanese: <a href="https://www.tcgcollector.com" target="_blank">tcgcollector.com</a>. Prices: <a href="https://www.pricecharting.com" target="_blank">pricecharting.com</a>. FX: Open Exchange Rates.</p></div>
@@ -1403,7 +1403,7 @@
     <div class="sp-body">
       <div class="screener-filters" id="screenerFilters">
         <!-- Dual-range sliders -->
-        <div class="sf-slider-group">
+        <div class="sf-slider-group" style="display:none">
           <div class="sf-slider-header">
             <span class="sf-slider-label">Character Premium</span>
             <span class="sf-slider-vals" id="sfCharVals">Any</span>
@@ -1414,7 +1414,7 @@
             <input type="range" class="sf-thumb sf-thumb-hi" id="sfCharMax" min="1" max="10" step="0.5" value="10">
           </div>
         </div>
-        <div class="sf-slider-group">
+        <div class="sf-slider-group" style="display:none">
           <div class="sf-slider-header">
             <span class="sf-slider-label">Artwork / Hype</span>
             <span class="sf-slider-vals" id="sfArtVals">Any</span>
@@ -1425,7 +1425,7 @@
             <input type="range" class="sf-thumb sf-thumb-hi" id="sfArtMax" min="1" max="10" step="0.5" value="10">
           </div>
         </div>
-        <div class="sf-slider-group">
+        <div class="sf-slider-group" style="display:none">
           <div class="sf-slider-header">
             <span class="sf-slider-label">Universal Appeal</span>
             <span class="sf-slider-vals" id="sfAppealVals">Any</span>
@@ -1588,6 +1588,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260617v"></script>
+  <script src="app.js?v=20260617w"></script>
 </body>
 </html>
