@@ -193,44 +193,79 @@ function scoreDeals(buckets, fairValueGBP, fxUsdToGbp, fxEurToGbp) {
 }
 
 // ---- eBay listing image proxy ----
-// Accepts ?url=<eBay listing URL>, extracts the item ID, calls Browse API /item endpoint,
-// returns { images: [...imageUrls], title, itemId } so the client can display them for
-// the card condition scanner without CORS issues.
+// Accepts ?url=<eBay listing URL>, fetches the listing page, and extracts
+// all carousel image URLs from eBay's embedded JSON data and meta tags.
+// No extra API permissions needed — reads the public listing page.
+function _jsonResp(status, body, ch) {
+  return new Response(JSON.stringify(body), { status, headers: { ...ch, 'Content-Type': 'application/json' } });
+}
+
 async function handleImgProxy(request, env, url) {
   const ch = corsHeaders(request);
-  const ebayUrl = url.searchParams.get('url') || '';
-  if (!ebayUrl) {
-    return new Response(JSON.stringify({ error: 'Missing url param' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } });
-  }
-  const m = ebayUrl.match(/\/itm\/(\d+)/);
-  if (!m) {
-    return new Response(JSON.stringify({ error: 'Cannot extract item ID from URL. Make sure it is a direct eBay listing link.' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } });
-  }
+  const rawUrl = (url.searchParams.get('url') || '').trim();
+  if (!rawUrl) return _jsonResp(400, { error: 'Missing url param.' }, ch);
+
+  const m = rawUrl.match(/\/itm\/(\d+)/);
+  if (!m) return _jsonResp(400, { error: 'Paste a direct eBay listing URL (must contain /itm/{id}).' }, ch);
   const itemId = m[1];
-  let token;
-  try { token = await getEbayToken(env); } catch {
-    return new Response(JSON.stringify({ error: 'eBay auth failed — check worker secrets.' }), { status: 503, headers: { ...ch, 'Content-Type': 'application/json' } });
-  }
-  // eBay Browse API item ID format: v1|{legacyItemId}|0
-  // Pipe characters must be percent-encoded in URL path segments.
-  const encodedItemId = `v1%7C${itemId}%7C0`;
-  // Try UK marketplace first, fall back to US
-  for (const mktId of ['EBAY_GB', 'EBAY_US']) {
-    const resp = await fetch(`https://api.ebay.com/buy/browse/v1/item/${encodedItemId}`, {
-      headers: { 'Authorization': `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': mktId, 'Accept': 'application/json' },
+
+  // Build a clean URL without tracking params to avoid redirect chains
+  const cleanUrl = rawUrl.includes('ebay.co.uk')
+    ? `https://www.ebay.co.uk/itm/${itemId}`
+    : `https://www.ebay.com/itm/${itemId}`;
+
+  let html;
+  try {
+    const resp = await fetch(cleanUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-GB,en;q=0.9',
+      },
+      redirect: 'follow',
     });
-    if (!resp.ok) continue;
-    const item = await resp.json();
-    const images = [];
-    if (item.image?.imageUrl) images.push(item.image.imageUrl);
-    if (Array.isArray(item.additionalImages)) {
-      images.push(...item.additionalImages.map(i => i.imageUrl).filter(Boolean));
+    if (!resp.ok) return _jsonResp(502, { error: `eBay returned ${resp.status} for this listing.` }, ch);
+    html = await resp.text();
+  } catch (e) {
+    return _jsonResp(502, { error: `Could not reach eBay: ${e.message}` }, ch);
+  }
+
+  const images = [];
+  const seen = new Set();
+  const add = (u) => {
+    if (!u || seen.has(u)) return;
+    // Upgrade to highest resolution
+    const hi = u.replace(/s-l\d+(\.\w+)$/, 's-l1600$1').split('?')[0];
+    if (!seen.has(hi)) { seen.add(hi); images.push(hi); }
+  };
+
+  // 1. eBay hydration JSON — "maxImageUrl" appears once per carousel image
+  for (const [, u] of html.matchAll(/"maxImageUrl"\s*:\s*"(https:\\?\/\\?\/i\.ebayimg\.com[^"]+)"/g)) {
+    add(u.replace(/\\u002F/g, '/').replace(/\\\//g, '/'));
+  }
+
+  // 2. og:image meta tag (main image, always present)
+  const og = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/)?.[1]
+           || html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/)?.[1];
+  if (og) add(og);
+
+  // 3. Fallback: any i.ebayimg.com URL with size suffix
+  if (images.length < 2) {
+    for (const [u] of html.matchAll(/https:\/\/i\.ebayimg\.com\/images\/g\/[A-Za-z0-9~_-]+\/s-l\d+\.\w+/g)) {
+      add(u);
     }
-    return new Response(JSON.stringify({ images, title: item.title || '', itemId }), {
-      headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
-    });
   }
-  return new Response(JSON.stringify({ error: 'eBay item not found or not accessible.' }), { status: 404, headers: { ...ch, 'Content-Type': 'application/json' } });
+
+  // Extract title from og:title meta (most reliable)
+  const title = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/)?.[1]
+              || html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:title"/)?.[1]
+              || '';
+
+  if (!images.length) return _jsonResp(404, { error: 'No images found — the listing may require sign-in or have been removed.' }, ch);
+
+  return new Response(JSON.stringify({ images: images.slice(0, 10), title, itemId }), {
+    headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
+  });
 }
 
 // ---- Main handler ----
