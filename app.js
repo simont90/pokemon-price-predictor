@@ -8943,21 +8943,29 @@ function capitalOutlayPenalty(outlayGBP) {
 }
 
 // Capital penalty used exclusively for BEST LONG-TERM PICK selection.
-// Significantly heavier than capitalOutlayPenalty so that a cheaper option
-// with similar ROI wins: e.g. PSA 9 at £600 with 400% ROI beats PSA 10 at
-// £1600 with 500% ROI — because tying up £1600 in one card is a real risk
-// for a budget-conscious collector who could deploy that capital more wisely.
+// Aggressive enough that a cheaper strong-hold option beats an expensive one
+// when the ROI advantage doesn't justify the extra capital outlay.
+// E.g. Raw at £418 (+398% ROI) beats PSA 10 at £1044 (+494% ROI) because
+// spending an extra £626 for 96 more ROI points is poor capital efficiency.
 function ltpCapitalPenalty(outlayGBP) {
   if (!(outlayGBP > 0)) return 0;
   if (outlayGBP < 50)   return 0;
   if (outlayGBP < 100)  return 10;
-  if (outlayGBP < 200)  return 25;
-  if (outlayGBP < 350)  return 50;
-  if (outlayGBP < 500)  return 80;
-  if (outlayGBP < 800)  return 120;
-  if (outlayGBP < 1200) return 170;
-  if (outlayGBP < 2000) return 230;
-  return 300;
+  if (outlayGBP < 200)  return 30;
+  if (outlayGBP < 350)  return 55;
+  if (outlayGBP < 500)  return 85;
+  if (outlayGBP < 800)  return 130;
+  if (outlayGBP < 1200) return 200;
+  if (outlayGBP < 2000) return 280;
+  return 370;
+}
+
+// Read the user's max-spend-per-card budget (device-local pref, not synced).
+const BUDGET_KEY = 'budget-max-gbp';
+const BUDGET_DEFAULT = 5000; // shown as "No limit"
+function getMaxBudgetGBP() {
+  const v = parseFloat(localStorage.getItem(BUDGET_KEY));
+  return isFinite(v) && v > 0 ? v : BUDGET_DEFAULT;
 }
 
 // Render the EN ↔ JP side-by-side comparison inside the Hold Strategy card.
@@ -11618,6 +11626,7 @@ function buildAllHomeRecos(limit = 15) {
   const wishIds   = new Set(wishlist.map(w => w.id));
   const watchIds  = new Set(watchlist.map(w => w.id));
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const maxBudget = getMaxBudgetGBP();
   const general = [];
   const byStrat  = { raw: [], psa8: [], psa9: [], psa10: [] };
   const seenIds  = new Set();
@@ -11633,7 +11642,7 @@ function buildAllHomeRecos(limit = 15) {
     const marketUSD = manualRawGBP ? manualRawGBP / fx : _recoStaticPrice(c);
 
     if (!marketUSD || marketUSD < 8) continue;
-    if (marketUSD * fx > 1500) continue;
+    if (marketUSD * fx > maxBudget) continue; // general section: budget filter on raw price
 
     let pullCost = 7.65;
     if (setsData && setsData[c.sc]) {
@@ -11674,7 +11683,8 @@ function buildAllHomeRecos(limit = 15) {
     const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(c) : { ok: false };
     if (hc.ok && hc.bestLongTermPick) {
       const wk = hc.bestLongTermPick.key;
-      if (byStrat[wk]) {
+      const stratGBP = hc.bestLongTermPick.today * fx;
+      if (byStrat[wk] && stratGBP <= maxBudget) {
         byStrat[wk].push({
           ...base,
           strategyRoi:       hc.bestLongTermPick.roi,
@@ -12123,6 +12133,26 @@ function setupPageNav() {
   document.getElementById('homeOpenWishlist')?.addEventListener('click', () => { $('wishlistToggle')?.click(); });
   document.getElementById('homeOpenWatchlist')?.addEventListener('click', () => { $('alertsToggle')?.click(); });
   document.getElementById('homeRecoRefresh')?.addEventListener('click', () => _renderHomeReco(true));
+
+  // Budget slider
+  (() => {
+    const slider = document.getElementById('homeBudgetSlider');
+    const valEl  = document.getElementById('homeBudgetVal');
+    if (!slider || !valEl) return;
+    const saved = parseFloat(localStorage.getItem(BUDGET_KEY));
+    if (isFinite(saved) && saved > 0) slider.value = Math.min(Math.max(saved, 100), 5000);
+    const refresh = () => {
+      const v = parseInt(slider.value, 10);
+      valEl.textContent = v >= 5000 ? 'No limit' : `£${v.toLocaleString()}`;
+    };
+    refresh();
+    slider.addEventListener('input', () => {
+      refresh();
+      const v = parseInt(slider.value, 10);
+      localStorage.setItem(BUDGET_KEY, v >= 5000 ? '99999' : String(v));
+      _renderHomeReco(true);
+    });
+  })();
   document.getElementById('signalJumpHold')?.addEventListener('click', () => {
     $('holdStrategySection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
