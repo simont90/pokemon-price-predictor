@@ -266,6 +266,7 @@ function getCachedPrice(cardId) {
 // ---- Live Price State ----
 let livePrice = null; // Current card's live pricing data
 let livePriceFetchId = 0;
+let lastModelPriceUSD = 0; // Last result from predictPrice — used by inline deal checks
 
 // ---- Portfolio (persisted to localStorage) ----
 let portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
@@ -2518,6 +2519,7 @@ function updateAll() {
   $('universalAppealValue').textContent = parseFloat($('universalAppeal').value).toFixed(1);
 
   const { priceUSD, sf, df } = predictPrice(pullCost, des);
+  lastModelPriceUSD = priceUSD;
   const priceGBP = usdToGbp(priceUSD);
   $('predictedPriceGBP').textContent = `£${Math.round(priceGBP).toLocaleString()}`;
   $('predictedPriceUSD').textContent = `≈ ${fmtUSD(priceUSD)}`;
@@ -2535,6 +2537,12 @@ function updateAll() {
 }
 
 function updateMaxPrice(modelPriceUSD) {
+  const ppMaxbuy = document.getElementById('ppMaxbuy');
+  const ppDivider = document.getElementById('ppDivider');
+  const inPortfolio = selectedCard ? portfolio.some(p => p.id === selectedCard.i) : false;
+  if (ppMaxbuy) ppMaxbuy.style.display = inPortfolio ? 'none' : '';
+  if (ppDivider) ppDivider.style.display = inPortfolio ? 'none' : '';
+
   let maxUSD, logic;
   if (selectedCard) {
     const mkt = getCurrentPrice(selectedCard);
@@ -2605,6 +2613,9 @@ function updateDealCheck(modelPriceUSD) {
 function updateRipOrBuy(card, pullCost) {
   const section = $('ripSection');
   if (!card) { section.style.display = 'none'; return; }
+
+  const inPortfolio = portfolio.some(p => p.id === card.i);
+  if (inPortfolio) { section.style.display = 'none'; return; }
 
   const econ = resolvePackEconomics(card);
   if (!econ) { section.style.display = 'none'; return; }
@@ -4681,7 +4692,7 @@ async function runPCOverrideSearch() {
       for (const p of products) p._score = scorePCProduct(p, pcovCard);
       products.sort((a, b) => b._score - a._score);
     }
-    $('pcovStatus').textContent = `${products.length} match${products.length === 1 ? '' : 'es'} — click “Use this match” on the right one`;
+    $('pcovStatus').textContent = `${products.length} match${products.length === 1 ? '' : 'es'} — click "Use this match" on the right one`;
     $('pcovResults').innerHTML = products.slice(0, 50).map((p, i) => renderPCOverrideCard(p, i)).join('');
     // Wire "Use this match" buttons
     document.querySelectorAll('#pcovResults .pcov-pick-btn').forEach((btn, i) => {
@@ -5304,7 +5315,7 @@ function wireTCGCImageInput(imgInputId, statusId, opts = {}) {
       if (my !== token) return; // stale
       if (!imgUrl) {
         status.className = 'ma-img-status error';
-        status.textContent = 'Couldn’t find card art on that page — paste a different link or a direct image URL.';
+        status.textContent = "Couldn't find card art on that page — paste a different link or a direct image URL.";
         return;
       }
       input.value = imgUrl;
@@ -5326,7 +5337,7 @@ function wireTCGCImageInput(imgInputId, statusId, opts = {}) {
     } catch (e) {
       if (my !== token) return;
       status.className = 'ma-img-status error';
-      status.textContent = `Couldn’t reach TCG Collector. ${e.message || ''}`;
+      status.textContent = `Couldn't reach TCG Collector. ${e.message || ''}`;
     }
   }
   // Debounce keyboard input; fire immediately on paste/blur.
@@ -5379,7 +5390,7 @@ async function resolveImageInputIfTCGC(imgInputId, statusId) {
   } catch {}
   if (status) {
     status.className = 'ma-img-status error';
-    status.textContent = 'Couldn’t resolve that link to an image. Card was saved without artwork.';
+    status.textContent = "Couldn't resolve that link to an image. Card was saved without artwork.";
   }
   // Don't save the bad page URL as an image — fall back to no override.
   el.value = '';
@@ -5533,7 +5544,7 @@ async function saveEditCard() {
   const status = $('ecStatus');
   if (!next.n || !next.s || !next.cn) {
     status.className = 'ql-status error';
-    status.textContent = 'Name, set and card number can’t be empty.';
+    status.textContent = "Name, set and card number can't be empty.";
     return;
   }
   // Only persist fields that differ from the original — keeps overrides minimal.
@@ -6091,7 +6102,7 @@ function renderAlertsList() {
   const list = $('alertsList');
   if (!list) return;
   if (watchlist.length === 0) {
-    list.innerHTML = `<div class="portfolio-empty">Nothing on your watchlist yet. Open a card and tap “Watch this card” to start tracking it. You’ll see a notification here the moment the model flips it to BUY or STRONG BUY.</div>`;
+    list.innerHTML = `<div class="portfolio-empty">Nothing on your watchlist yet. Open a card and tap "Watch this card" to start tracking it. You'll see a notification here the moment the model flips it to BUY or STRONG BUY.</div>`;
     return;
   }
   const alerts = computeActiveAlerts();
@@ -6099,7 +6110,7 @@ function renderAlertsList() {
   if (_alertsTab === 'active') shown = alerts.filter(a => a.triggered && a.dismissedFor !== a.signal);
   if (shown.length === 0) {
     list.innerHTML = _alertsTab === 'active'
-      ? `<div class="portfolio-empty">No new alerts. You’re watching ${watchlist.length} card${watchlist.length === 1 ? '' : 's'} — switch to “All watched” to review them.</div>`
+      ? `<div class="portfolio-empty">No new alerts. You're watching ${watchlist.length} card${watchlist.length === 1 ? '' : 's'} — switch to "All watched" to review them.</div>`
       : `<div class="portfolio-empty">Watchlist is empty.</div>`;
     return;
   }
@@ -7751,11 +7762,11 @@ function renderHoldCounterpartCompare(card) {
       : '';
     if (absMargin < 30) {
       verdictPill = 'Close call';
-      verdictBody = `<strong>${selfLang} and ${otherLang}</strong> score within ${absMargin.toFixed(0)} points on risk-adjusted return after factoring upfront outlay. Pick the language you already have access to — the algorithm doesn’t see a meaningful edge either way.${cheaperLine}`;
+      verdictBody = `<strong>${selfLang} and ${otherLang}</strong> score within ${absMargin.toFixed(0)} points on risk-adjusted return after factoring upfront outlay. Pick the language you already have access to — the algorithm doesn't see a meaningful edge either way.${cheaperLine}`;
     } else {
       const winnerStrat = winCore.winner;
       verdictPill = `Buy ${winLang}`;
-      verdictBody = `The <strong>${winLang}</strong> version is the smarter buy on this card — <strong>${winnerStrat.label}</strong> projects +${winnerStrat.roi.toFixed(0)}% ROI vs the ${loseLang} copy’s best play. Risk-adjusted edge after capital outlay: +${absMargin.toFixed(0)} pts.${cheaperLine}`;
+      verdictBody = `The <strong>${winLang}</strong> version is the smarter buy on this card — <strong>${winnerStrat.label}</strong> projects +${winnerStrat.roi.toFixed(0)}% ROI vs the ${loseLang} copy's best play. Risk-adjusted edge after capital outlay: +${absMargin.toFixed(0)} pts.${cheaperLine}`;
     }
   } else if (selfCore.ok) {
     verdictPill = `Buy ${selfLang}`;
@@ -8082,7 +8093,15 @@ function renderHoldStrategy(card) {
       }
     }
     let rawVsGradedLine;
-    if (bestRaw && bestGraded) {
+    if (expectedGrade && expectedGrade < 9) {
+      // Scan result known — skip the stochastic "gem rate" framing and give grade-specific context
+      const gradeLbl = PSA_GRADE_LABELS?.[expectedGrade] || '';
+      if (bestGraded) {
+        rawVsGradedLine = `Scan expects <strong>PSA ${expectedGrade} (${gradeLbl})</strong>. See advice below. Best graded hold if buying slabbed: <strong>${bestGraded.label}</strong>.`;
+      } else {
+        rawVsGradedLine = `Scan expects <strong>PSA ${expectedGrade} (${gradeLbl})</strong>. See advice below.`;
+      }
+    } else if (bestRaw && bestGraded) {
       const rawScore = bestRaw.riskAdjusted;
       const gradedScore = bestGraded.riskAdjusted;
       if (rawScore > gradedScore + 30) {
@@ -8095,7 +8114,7 @@ function renderHoldStrategy(card) {
     } else if (bestGraded) {
       rawVsGradedLine = `<strong>Buy graded</strong> — no raw-side option projects positive 5yr ROI for this card; only graded holds make sense.`;
     } else {
-      rawVsGradedLine = `<strong>Buy raw</strong> — graded copies don’t project a positive 5yr return at current prices; the raw card is the only sensible entry.`;
+      rawVsGradedLine = `<strong>Buy raw</strong> — graded copies don't project a positive 5yr return at current prices; the raw card is the only sensible entry.`;
     }
 
     // Best graded tier line.
@@ -8264,10 +8283,13 @@ function renderHoldStrategy(card) {
     }).join('');
     const goodPct = (goodOutcomeProb*100).toFixed(0);
     const lossPct = (lossProb*100).toFixed(0);
+    const goodChipLabel = expectedGrade
+      ? `Expected PSA ${expectedGrade}`
+      : `${goodPct}% PSA 9 or 10`;
     outcomeHost.innerHTML = `
       <div class="hold-out-head">
         <div class="hold-out-summary">
-          <span class="hold-out-chip hold-out-chip-good">${goodPct}% PSA 9 or 10</span>
+          <span class="hold-out-chip hold-out-chip-good">${goodChipLabel}</span>
           <span class="hold-out-chip hold-out-chip-bad">${lossPct}% loss case</span>
           <span class="hold-out-chip hold-out-chip-wait">${UK_GRADING_WAIT_MONTHS} mo wait (UK)</span>
         </div>
@@ -8286,12 +8308,12 @@ function renderHoldStrategy(card) {
     <strong>UK grading assumptions:</strong> £${UK_GRADING_ALL_IN_GBP} all-in cost per card
     (PSA economy fee + Ludkins/GetGraded intermediary fee + insured round-trip shipping)
     and a ~${UK_GRADING_WAIT_MONTHS}-month wait. Capital locked during the wait is discounted at
-    ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a. opportunity cost so the gamble can’t look better
+    ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a. opportunity cost so the gamble can't look better
     than it really is once your money is tied up. Also assumes ${(BUY_SELL_FRICTION*100).toFixed(0)}%
     combined buy + sell friction.<br>
     <strong>Online buy penalty:</strong> base gem rate is ${baseGemPctStr}% (${gemRateSource}) but we apply a
     ${(ONLINE_BUY_GEM_PENALTY*100).toFixed(0)}% multiplier because buying raw online (eBay / TCGplayer) is sight-unseen —
-    you can’t check centering, whitening, or surface scratches — so the effective PSA 10
+    you can't check centering, whitening, or surface scratches — so the effective PSA 10
     hit rate drops to <strong>${gemPctStr}%</strong>. Hand-pick from a shop or show and you can dial that back up.<br>
     <strong>Flip vs Crack on a non-10 outcome:</strong> for each PSA 7/8/9 row above we compare
     flipping the slab at current market against cracking it out, paying another £${UK_GRADING_ALL_IN_GBP}, waiting
@@ -8300,7 +8322,7 @@ function renderHoldStrategy(card) {
     crack-damage haircut and the same wait discount apply to the crack EV. Cracking only
     pays off when the PSA 10 / PSA 9 spread is wide enough to overcome those costs —
     usually only on chase cards with 5-10× spread between adjacent grades.<br>
-    Risk-adjusted ranking discounts ROI by variance so a coin-flip can’t win “best” when
+    Risk-adjusted ranking discounts ROI by variance so a coin-flip can't win "best" when
     a steadier graded copy delivers nearly the same return without the wait.
   `;
 }
@@ -8708,6 +8730,8 @@ function renderAcquisition() {
   const sec = document.getElementById('acqSection');
   if (!sec) return;
   if (!selectedCard) { sec.style.display = 'none'; return; }
+  const inPortfolio = portfolio.some(p => p.id === selectedCard.i);
+  if (!inPortfolio) { sec.style.display = 'none'; return; }
   sec.style.display = 'block';
 
   const card = selectedCard;
@@ -8864,10 +8888,10 @@ function renderAcquisition() {
   const meta = document.getElementById('acqMeta');
   const acqDate = acq.ts ? new Date(acq.ts) : null;
   const acqLabel = acqDate ? `Logged ${acqDate.toLocaleDateString('en-GB')}` : '';
-  const inPortfolio = (portfolio || []).some(p => p.id === card.i);
+  const cardInPortfolio = (portfolio || []).some(p => p.id === card.i);
   meta.innerHTML = [
     acqLabel,
-    inPortfolio ? '<span class="acq-pill">In collection</span>' : '<span class="acq-pill acq-pill-muted">Not in collection</span>'
+    cardInPortfolio ? '<span class="acq-pill">In collection</span>' : '<span class="acq-pill acq-pill-muted">Not in collection</span>'
   ].filter(Boolean).join(' · ');
 }
 
@@ -9181,6 +9205,16 @@ function setupCardGrader() {
       _cgSetImg('Front', imgs[0]);
       if (imgs[1]) _cgSetImg('Back', imgs[1]);
       status.textContent = `Loaded ${imgs.length} image${imgs.length > 1 ? 's' : ''}${data.title ? ` — ${data.title.slice(0, 60)}` : ''}.`;
+      // Show inline deal check; pre-fill price if returned (GBP listings) or convert USD
+      const dealRow = document.getElementById('cgDealRow');
+      const cgPriceInput = document.getElementById('cgEbayPrice');
+      if (dealRow) dealRow.style.display = 'block';
+      if (cgPriceInput && data.price) {
+        const priceVal = parseFloat(data.price.value) || 0;
+        const currency = (data.price.currency || 'GBP').toUpperCase();
+        const gbp = currency === 'GBP' ? priceVal : (currency === 'USD' ? usdToGbp(priceVal) : priceVal);
+        cgPriceInput.value = gbp > 0 ? gbp.toFixed(2) : '';
+      }
     } catch (err) {
       status.className = 'cg-ebay-status is-error';
       status.textContent = err.message || 'Failed to fetch images.';
@@ -9188,6 +9222,32 @@ function setupCardGrader() {
       btn.classList.remove('is-loading');
       btn.textContent = 'Fetch';
     }
+  });
+
+  // Inline deal check button
+  document.getElementById('cgDealCheckBtn')?.addEventListener('click', () => {
+    const priceGBP = parseFloat(document.getElementById('cgEbayPrice')?.value) || 0;
+    const resultEl = document.getElementById('cgDealResult');
+    if (!resultEl) return;
+    if (!priceGBP || priceGBP <= 0) { resultEl.innerHTML = ''; return; }
+    const refUSD = selectedCard
+      ? Math.min(lastModelPriceUSD || getCurrentPrice(selectedCard), getCurrentPrice(selectedCard))
+      : lastModelPriceUSD;
+    const refGBP = usdToGbp(refUSD);
+    const diff = refGBP - priceGBP;
+    const pct = refGBP > 0 ? ((diff / priceGBP) * 100).toFixed(0) : 0;
+    let cls, verdict, note;
+    if (diff > refGBP * 0.05) {
+      cls = 'good-deal'; verdict = 'Good Deal';
+      note = `${pct}% below fair value (ref: £${refGBP.toFixed(2)})`;
+    } else if (diff < -refGBP * 0.05) {
+      cls = 'bad-deal'; verdict = 'Overpriced';
+      note = `${Math.abs(pct)}% above fair value (ref: £${refGBP.toFixed(2)})`;
+    } else {
+      cls = 'fair-deal'; verdict = 'Fair Price';
+      note = `Within 5% of fair value (ref: £${refGBP.toFixed(2)})`;
+    }
+    resultEl.innerHTML = `<span class="deal-verdict ${cls}">${verdict}</span><span class="deal-note">${note}</span>`;
   });
 
   // AI grade button

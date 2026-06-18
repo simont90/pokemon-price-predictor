@@ -234,7 +234,8 @@ async function handleImgProxy(request, env, url) {
       if (img.imageUrl) images.push(hi(img.imageUrl));
     }
     if (!images.length) continue;
-    return new Response(JSON.stringify({ images, title: item.title || '', itemId }), {
+    const price = item.price ? { value: item.price.value, currency: item.price.currency } : null;
+    return new Response(JSON.stringify({ images, title: item.title || '', itemId, price }), {
       headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
     });
   }

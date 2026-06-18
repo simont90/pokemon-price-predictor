@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260618u">
+  <link rel="stylesheet" href="style.css?v=20260618v">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -652,6 +652,9 @@
                 <button class="add-portfolio-btn" id="addPortfolioBtn" title="Add to collection">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
                 </button>
+                <button class="add-portfolio-btn watch-btn watch-btn-icon" id="watchBtn" type="button" title="Watch — get an alert when this card hits BUY or STRONG BUY">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
               </div>
               <div class="jp-name-subtitle" id="cardNameJp" style="display:none"></div>
               <div class="card-meta">
@@ -762,8 +765,8 @@
               <div class="breakdown-item"><span class="breakdown-label">Demand factor</span><span class="breakdown-value" id="demandFactor">×10.71</span></div>
             </div>
           </div>
-          <div class="pp-divider"></div>
-          <div class="pp-maxbuy">
+          <div class="pp-divider" id="ppDivider"></div>
+          <div class="pp-maxbuy" id="ppMaxbuy">
             <div class="pp-maxbuy-label">Max buy price (raw)</div>
             <div class="max-price" id="maxPriceGBP">—</div>
             <div class="max-price-logic" id="maxPriceLogic">Select a card to calculate</div>
@@ -1014,6 +1017,15 @@
           </div>
           <div class="cg-ebay-status" id="cgEbayStatus" style="display:none"></div>
 
+          <!-- Inline deal check — appears after Fetch -->
+          <div class="cg-deal-row" id="cgDealRow" style="display:none">
+            <div class="cg-deal-inputs">
+              <input type="number" id="cgEbayPrice" class="cg-deal-price-input" min="0" step="0.01" placeholder="eBay price (£)">
+              <button type="button" id="cgDealCheckBtn" class="cg-deal-check-btn">Check deal</button>
+            </div>
+            <div class="cg-deal-result" id="cgDealResult"></div>
+          </div>
+
           <!-- PSA criteria + result — hidden until an image is loaded -->
           <div id="cgCriteriaWrap" style="display:none">
           <div class="cg-ai-row">
@@ -1150,10 +1162,6 @@
               <h2>PSA Grade Range · 5yr Forecast <span class="anchor-badge" id="psaAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span></h2>
               <p class="card-desc">What each PSA grade is worth today, and where the model says it goes over 5 years. Use this to decide if a lower grade is worth picking up.</p>
             </div>
-            <button class="watch-btn" id="watchBtn" type="button" title="Add to Watchlist — you'll get an alert when this card hits BUY or STRONG BUY">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              <span id="watchBtnLabel">Watch this card</span>
-            </button>
           </div>
           <div class="psa-range-grid">
             <table class="psa-range-table" id="psaRangeTable">
@@ -1796,6 +1804,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260618u"></script>
+  <script src="app.js?v=20260618v"></script>
 </body>
 </html>

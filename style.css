@@ -551,6 +551,17 @@ body {
 }
 .cg-ebay-status.is-error { color: var(--red, #f87171); }
 
+/* Inline deal check inside card scanner */
+.cg-deal-row { margin: 8px 0 4px; padding: 10px 12px; background: var(--bg-elevated, rgba(255,255,255,0.04)); border-radius: var(--radius-sm); }
+.cg-deal-inputs { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.cg-deal-price-input { flex: 1; background: var(--input-bg, rgba(255,255,255,0.06)); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 13px; color: var(--text); font-family: var(--mono); }
+.cg-deal-price-input::placeholder { color: var(--text-muted); }
+.cg-deal-check-btn { padding: 7px 14px; background: var(--accent); color: #000; font-weight: 600; font-size: 12px; border: none; border-radius: var(--radius-sm); cursor: pointer; white-space: nowrap; }
+.cg-deal-check-btn:hover { filter: brightness(1.1); }
+.cg-deal-result { font-size: 13px; display: flex; align-items: center; gap: 10px; min-height: 20px; }
+.cg-deal-result .deal-verdict { margin-bottom: 0; }
+.cg-deal-result .deal-note { margin-top: 0; font-size: 11px; opacity: 0.7; }
+
 .cg-criteria {
   display: flex;
   flex-direction: column;
@@ -2907,6 +2918,8 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s;
   font-family: var(--font); white-space: nowrap;
 }
+/* Compact icon-only variant used in the card name row */
+.watch-btn-icon { width: 28px; height: 28px; padding: 0; justify-content: center; }
 .watch-btn:hover { border-color: var(--accent); color: var(--accent); }
 .watch-btn.is-watching {
   background: var(--accent-dim); border-color: var(--accent);
