@@ -7799,8 +7799,12 @@ function renderMarketplaceScan(card, pullCost, desirability) {
     return { ...row, todayGBP, todayEUR, yr5USD, yr5GBP, score, ebayUk, ebayUs, cardmarket, tcgplayer };
   });
 
-  // Sort by descending deal score so the most attractive grades surface first.
-  rows.sort((a, b) => b.score - a.score);
+  // Sort by grade descending: PSA 10 → PSA 9 → PSA 8 → PSA 7 → Raw
+  rows.sort((a, b) => {
+    const ag = a.g === 'raw' ? -1 : a.g;
+    const bg = b.g === 'raw' ? -1 : b.g;
+    return bg - ag;
+  });
 
   // Render one stacked panel per grade. Each panel groups the fair-value
   // metrics on the left with the four marketplace search buttons on the right,
