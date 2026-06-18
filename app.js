@@ -12652,7 +12652,7 @@ async function _homeAutoRefresh() {
       const id = staleIds[cursor++];
       await psRefreshOne(id);
       _psState.done++;
-      try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
+      _scheduleHomeRender();
     }
   };
   await Promise.all(Array.from({ length: Math.min(PRICE_SYNC_CONCURRENCY, staleIds.length) }, worker));
@@ -12707,6 +12707,20 @@ function _setupTileEvents(scrollEl, deleteFn) {
   });
 }
 
+// ─── Home render deduplication ─────────────────────────────
+let _homeCollHash = '', _homeWishHash = '', _homeWatchHash = '';
+let _homeRenderTimer = null;
+function _scheduleHomeRender() {
+  clearTimeout(_homeRenderTimer);
+  _homeRenderTimer = setTimeout(() => {
+    try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
+  }, 350);
+}
+function _homeItemHash(items, prefix) {
+  const s = items.map(i => { const c = getCachedPrice(i.id); return i.id + ':' + Math.round((c?.market || c?.mid || 0) * 100); }).join('|');
+  return (prefix != null ? String(prefix) : '') + '|' + s;
+}
+
 function _renderHomeCollection() {
   const list = $('homeCollList'), countEl = $('homeCollCount'), totalEl = $('homeCollTotal');
   if (!list) return;
@@ -12714,8 +12728,12 @@ function _renderHomeCollection() {
   if (portfolio.length === 0) {
     list.innerHTML = '<div class="home-empty">No cards in collection yet.<br>Search a card and tap + to add it.</div>';
     if (totalEl) totalEl.textContent = '';
+    _homeCollHash = '';
     return;
   }
+  const hash = _homeItemHash(portfolio, '');
+  if (hash === _homeCollHash && list.querySelector('.home-card-tile')) return;
+  _homeCollHash = hash;
   let totalGBP = 0;
   const tiles = portfolio.map(p => {
     const card = cardData?.cards.find(c => c.i === p.id);
@@ -12769,9 +12787,13 @@ function _renderHomeWishlist() {
   if (wishlist.length === 0) {
     if (countEl) countEl.textContent = '0';
     list.innerHTML = '<div class="home-empty">No wishlisted cards yet.<br>Tap ♥ on any card to add it.</div>';
+    _homeWishHash = '';
     return;
   }
   const maxBudget = getMaxBudgetGBP();
+  const hash = _homeItemHash(wishlist, maxBudget);
+  if (hash === _homeWishHash && list.querySelector('.home-card-tile')) return;
+  _homeWishHash = hash;
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
   const tiles = wishlist.flatMap(w => {
     const card = cardData?.cards.find(c => c.i === w.id);
@@ -12819,9 +12841,13 @@ function _renderHomeWatchlist() {
   if (watchlist.length === 0) {
     if (countEl) countEl.textContent = '0';
     list.innerHTML = '<div class="home-empty">No cards being watched yet.<br>Tap "Watch" on any card to track it.</div>';
+    _homeWatchHash = '';
     return;
   }
   const maxBudget = getMaxBudgetGBP();
+  const hash = _homeItemHash(watchlist, maxBudget);
+  if (hash === _homeWatchHash && list.querySelector('.home-card-tile')) return;
+  _homeWatchHash = hash;
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
   const alerts = (typeof computeActiveAlerts === 'function') ? computeActiveAlerts() : [];
   const alertMap = Object.fromEntries(alerts.map(a => [a.id, a]));
@@ -12895,7 +12921,18 @@ function setupPageNav() {
 
   function go(page) {
     if (!pages[page]) page = 'home';
-    Object.entries(pages).forEach(([k, el]) => { if (el) el.style.display = (k === page) ? '' : 'none'; });
+    Object.entries(pages).forEach(([k, el]) => {
+      if (!el) return;
+      if (k === page) {
+        el.style.display = '';
+        el.classList.remove('pkm-page-in');
+        void el.offsetWidth; // force reflow so animation restarts
+        el.classList.add('pkm-page-in');
+      } else {
+        el.style.display = 'none';
+        el.classList.remove('pkm-page-in');
+      }
+    });
     buttons.forEach(b => b.classList.toggle('active', b.dataset.page === page));
     const fab = document.getElementById('filterFab');
     if (fab) fab.style.display = (page === 'predict') ? '' : 'none';

@@ -7751,3 +7751,7 @@ section.card .card-collapse-btn { padding: 10px; }
 .roi-legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
 .roi-empty { font-size: 12px; color: var(--text-faint); text-align: center; padding: 20px 0; }
 
+/* ─── Page transition fade ───────────────────────────────── */
+@keyframes pkm-page-in { from { opacity: 0; } to { opacity: 1; } }
+.pkm-page-in { animation: pkm-page-in 0.15s ease-out both; }
+
