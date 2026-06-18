@@ -8984,6 +8984,10 @@ function setupCardGrader() {
     status.textContent = 'Fetching images from eBay…';
     try {
       const resp = await fetch(`${MKT_WORKER_DEFAULT}/img-proxy?url=${encodeURIComponent(raw)}`);
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => '');
+        throw new Error(txt.trim() || `Worker returned ${resp.status}`);
+      }
       const data = await resp.json();
       if (data.error) throw new Error(data.error);
       const imgs = data.images || [];
