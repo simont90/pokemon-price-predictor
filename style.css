@@ -61,7 +61,7 @@ body {
 .app { max-width: 1160px; margin: 0 auto; padding: 0 20px calc(env(safe-area-inset-bottom, 0px) + 96px); }
 
 /* Header */
-.header { padding: 20px 0 16px; border-bottom: 1px solid var(--glass-border); position: relative; }
+.header { padding: 20px 0 16px; border-bottom: 1px solid var(--glass-border); position: relative; z-index: 200; }
 .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .logo { display: flex; align-items: center; gap: 12px; color: var(--text); }
 .logo h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
@@ -75,6 +75,9 @@ body {
 .fx-value { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--accent); }
 .credit-link { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-faint); text-decoration: none; padding: 5px 10px; border: 1px solid var(--border); border-radius: 16px; transition: all 0.2s; }
 .credit-link:hover { color: var(--accent); border-color: var(--accent); }
+
+/* btn-label — shown only inside mobile hamburger panel (via media query) */
+.btn-label { display: none; }
 
 /* Portfolio Toggle */
 .portfolio-toggle {
@@ -6447,17 +6450,74 @@ section.card .card-collapse-btn { padding: 10px; }
     top: calc(100% + 16px);
     z-index: 300;
     background: rgba(10, 11, 18, 0.97);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
     border: 1px solid var(--glass-border);
     border-radius: 16px;
-    padding: 14px 16px;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 10px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    padding: 16px;
+    gap: 8px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.55);
   }
-  .header-right.is-open { display: flex !important; }
+  .header-right.is-open {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  /* Expand each icon button into a column layout with label */
+  .header-right.is-open .portfolio-toggle {
+    flex-direction: column;
+    gap: 5px;
+    min-height: 60px;
+    padding: 10px 8px 9px;
+    border-radius: 14px;
+    justify-content: center;
+  }
+  .header-right.is-open .portfolio-toggle svg { flex-shrink: 0; }
+  .header-right.is-open .btn-label {
+    display: block;
+    font-size: 10px;
+    font-family: var(--font);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    color: inherit;
+    pointer-events: none;
+  }
+  /* FX rate spans full width when visible */
+  .header-right.is-open .fx-rate {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  /* Theme picker spans full width */
+  .header-right.is-open .theme-picker {
+    grid-column: 1 / -1;
+    justify-content: center;
+    padding: 4px 0 2px;
+  }
+
+  /* Light mode: frosted glass panel — slightly tinted so buttons read against it */
+  [data-theme="light"] .header-right {
+    background: rgba(240, 241, 248, 0.94);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border-color: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.10), inset 0 1.5px 0 rgba(255,255,255,0.98);
+  }
+  /* Light mode: buttons clearly stand out from the panel background */
+  [data-theme="light"] .header-right.is-open .portfolio-toggle {
+    background: rgba(255, 255, 255, 0.90);
+    border-color: rgba(0, 0, 0, 0.10);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,1);
+    color: var(--text-muted);
+  }
+  [data-theme="light"] .header-right.is-open .portfolio-toggle:active {
+    background: rgba(255, 255, 255, 1);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
 }
 
 /* ── Nav context buttons (Ask + Filter in glass bar) ─────────────────── */
