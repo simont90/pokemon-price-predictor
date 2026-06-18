@@ -666,6 +666,41 @@ body {
 }
 .cg-save-btn:hover { opacity: 0.88; }
 .cg-save-btn.is-saved { background: var(--green, #3dd68c); }
+.cg-ai-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.cg-grade-ai-btn {
+  flex-shrink: 0;
+  padding: 8px 22px;
+  background: var(--accent, #e8b634);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.cg-grade-ai-btn:hover { opacity: 0.88; }
+.cg-grade-ai-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cg-grade-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.cg-grade-status.is-error { color: var(--red, #f87171); }
+.cg-verdict {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+.cg-verdict:empty { display: none; }
 
 /* Grading ROI */
 .grade-content { margin-top: 12px; }

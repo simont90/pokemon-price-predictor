@@ -268,6 +268,81 @@ async function handleImgProxy(request, env, url) {
   });
 }
 
+// ---- AI card grading ----
+// POST /grade-card — body: { imageUrl?: string } | { imageB64: string, mimeType: string }
+// Requires ANTHROPIC_API_KEY secret in Cloudflare dashboard.
+// Returns { centering, corners, edges, surface, verdict }
+async function handleGradeCard(request, env) {
+  const ch = corsHeaders(request);
+  let body;
+  try { body = await request.json(); } catch { return _jsonResp(400, { error: 'Invalid JSON body.' }, ch); }
+
+  const { imageUrl, imageB64, mimeType = 'image/jpeg' } = body || {};
+  if (!imageUrl && !imageB64) return _jsonResp(400, { error: 'Provide imageUrl or imageB64.' }, ch);
+  if (!env.ANTHROPIC_API_KEY) return _jsonResp(503, { error: 'ANTHROPIC_API_KEY not configured in worker secrets.' }, ch);
+
+  const imageContent = imageUrl
+    ? { type: 'image', source: { type: 'url', url: imageUrl } }
+    : { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageB64 } };
+
+  const prompt = `You are a PSA trading card grading expert. Analyse this Pokémon card image and score each criterion:
+
+centering: 10=≤55/45, 8=up to 65/35, 6=up to 75/25, 4=worse
+corners: 10=razor-sharp, 8=barely-visible wear, 6=slight rounding, 4=rounded/chipped
+edges: 10=clean, 8=slight fraying, 6=visible nicks, 4=heavy chips
+surface: 10=pristine, 8=faint scratches, 6=visible marks, 4=creases/staining
+
+Then write one sentence (under 20 words) with a realistic best-case and worst-case PSA grade.
+
+Reply with ONLY this JSON — no markdown, no extra text:
+{"centering":10,"corners":8,"edges":10,"surface":8,"verdict":"Best case PSA 9, worst case PSA 7 — corners are the ceiling."}
+
+Valid score values: 4, 6, 8, or 10 only.`;
+
+  let claudeResp;
+  try {
+    claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 256,
+        messages: [{ role: 'user', content: [imageContent, { type: 'text', text: prompt }] }],
+      }),
+    });
+  } catch (e) {
+    return _jsonResp(502, { error: `Claude API unreachable: ${e.message}` }, ch);
+  }
+
+  if (!claudeResp.ok) {
+    const errTxt = await claudeResp.text().catch(() => '');
+    return _jsonResp(502, { error: `Claude API error ${claudeResp.status}: ${errTxt.slice(0, 120)}` }, ch);
+  }
+
+  const result = await claudeResp.json();
+  const raw = (result.content?.[0]?.text || '').trim();
+
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch {
+    const m = raw.match(/\{[\s\S]*?\}/);
+    if (m) try { parsed = JSON.parse(m[0]); } catch {}
+  }
+  if (!parsed) return _jsonResp(502, { error: 'Could not parse grading response.' }, ch);
+
+  const valid = [4, 6, 8, 10];
+  ['centering', 'corners', 'edges', 'surface'].forEach(k => {
+    if (!valid.includes(parsed[k])) parsed[k] = 8;
+  });
+
+  return new Response(JSON.stringify(parsed), {
+    headers: { ...ch, 'Content-Type': 'application/json' },
+  });
+}
+
 // ---- Main handler ----
 async function handle(request, env) {
   const url = new URL(request.url);
@@ -276,6 +351,7 @@ async function handle(request, env) {
   if (url.pathname === '/sync') return handleSync(request, env, url);
   if (url.pathname === '/mcp') return handleMcp(request, env, url);
   if (url.pathname === '/img-proxy') return handleImgProxy(request, env, url);
+  if (url.pathname === '/grade-card' && request.method === 'POST') return handleGradeCard(request, env);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 
   const q = url.searchParams.get('q') || '';

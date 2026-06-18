@@ -8920,6 +8920,10 @@ function renderCardGrader() {
   if (urlInput) urlInput.value = '';
   const status = document.getElementById('cgEbayStatus');
   if (status) { status.style.display = 'none'; status.textContent = ''; }
+  const verdictEl = document.getElementById('cgVerdict');
+  if (verdictEl) verdictEl.textContent = '';
+  const gradeStatus = document.getElementById('cgGradeStatus');
+  if (gradeStatus) { gradeStatus.textContent = ''; gradeStatus.className = 'cg-grade-status'; }
 
   _cgUpdateResult();
 
@@ -8929,6 +8933,68 @@ function renderCardGrader() {
     saveBtn.classList.remove('is-saved');
     if (acq.expectedGrade) saveBtn.textContent = `Saved: expected PSA ${acq.expectedGrade} — update`;
     else saveBtn.textContent = 'Save expected grade · update Hold Strategy';
+  }
+}
+
+async function cgGradeCard() {
+  const gradeBtn = document.getElementById('cgGradeBtn');
+  const statusEl = document.getElementById('cgGradeStatus');
+  if (gradeBtn) { gradeBtn.disabled = true; gradeBtn.textContent = 'Grading…'; }
+  if (statusEl) { statusEl.textContent = ''; statusEl.className = 'cg-grade-status'; }
+
+  try {
+    const frontImg = document.getElementById('cgFrontImg');
+    const backImg = document.getElementById('cgBackImg');
+    const img = frontImg?.getAttribute('data-cg-loaded') ? frontImg : backImg;
+    if (!img?.getAttribute('data-cg-loaded')) throw new Error('Load an image first.');
+
+    let payload;
+    if (img.src.startsWith('data:')) {
+      const comma = img.src.indexOf(',');
+      const mimeType = img.src.slice(5, img.src.indexOf(';'));
+      payload = { imageB64: img.src.slice(comma + 1), mimeType };
+    } else if (img.src.startsWith('blob:')) {
+      const fetched = await fetch(img.src);
+      const blob = await fetched.blob();
+      const b64 = await new Promise(res => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(',')[1]);
+        r.readAsDataURL(blob);
+      });
+      payload = { imageB64: b64, mimeType: blob.type || 'image/jpeg' };
+    } else {
+      payload = { imageUrl: img.src };
+    }
+
+    const resp = await fetch(`${MKT_WORKER_DEFAULT}/grade-card`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      let msg = txt; try { msg = JSON.parse(txt).error || txt; } catch {}
+      throw new Error(msg || `Worker returned ${resp.status}`);
+    }
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+
+    // Auto-select criteria buttons
+    ['centering', 'corners', 'edges', 'surface'].forEach(crit => {
+      const score = data[crit];
+      if (!score) return;
+      _cgScores[crit] = score;
+      const critEl = document.querySelector(`.cg-crit[data-crit="${crit}"]`);
+      critEl?.querySelectorAll('.cg-opt').forEach(b => b.classList.toggle('is-active', +b.dataset.score === score));
+    });
+    _cgUpdateResult();
+
+    const verdictEl = document.getElementById('cgVerdict');
+    if (verdictEl) verdictEl.textContent = data.verdict || '';
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = e.message; statusEl.className = 'cg-grade-status is-error'; }
+  } finally {
+    if (gradeBtn) { gradeBtn.disabled = false; gradeBtn.textContent = 'Grade'; }
   }
 }
 
@@ -9003,6 +9069,9 @@ function setupCardGrader() {
       btn.textContent = 'Fetch';
     }
   });
+
+  // AI grade button
+  document.getElementById('cgGradeBtn')?.addEventListener('click', cgGradeCard);
 
   // Save grade
   document.getElementById('cgSaveGrade')?.addEventListener('click', () => {
