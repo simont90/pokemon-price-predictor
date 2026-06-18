@@ -6407,6 +6407,76 @@ section.card .card-collapse-btn { padding: 10px; }
 }
 .home-card-remove:hover,
 .home-card-remove:active { background: rgba(220,50,50,0.8); color: #fff; border-color: transparent; }
+
+/* Recommendation tile — extends home-card-tile with 3-button action strip */
+.reco-tile .home-card-remove { display: none; }
+.reco-actions {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  display: flex;
+  gap: 4px;
+}
+.reco-btn {
+  width: 24px;
+  height: 24px;
+  min-height: unset !important;
+  min-width: unset !important;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgba(255,255,255,0.85);
+  border: 1px solid rgba(255,255,255,0.15);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+.reco-btn.reco-dismiss:hover,
+.reco-btn.reco-dismiss:active { background: rgba(220,50,50,0.8); color: #fff; border-color: transparent; }
+.reco-btn.reco-wish:hover,
+.reco-btn.reco-wish:active   { background: rgba(232,182,52,0.85); color: #1a1200; border-color: transparent; }
+.reco-btn.reco-watch:hover,
+.reco-btn.reco-watch:active  { background: rgba(61,214,140,0.85); color: #072215; border-color: transparent; }
+.reco-manual-tag {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  background: rgba(232,182,52,0.13);
+  border: 1px solid rgba(232,182,52,0.3);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.reco-gem-tag {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #3dd68c;
+  background: rgba(61,214,140,0.12);
+  border: 1px solid rgba(61,214,140,0.3);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.reco-upside {
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+.reco-upside.pos { color: var(--green); }
+
 @media (min-width: 600px) { .home-card-tile { width: 168px; } }
 @media (min-width: 860px) { .home-card-tile { width: 184px; } }
 

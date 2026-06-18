@@ -11384,6 +11384,65 @@ function _recoStaticPrice(c) {
   return c.p || 0;
 }
 
+// Secondary scoring layer — structural reasons a card may be overlooked by the market.
+// Returns 0–3 bonus; combined with signal score in sort but never replaces it.
+function _gemScore(card, marketUSD) {
+  let bonus = 0;
+  const rc  = card.rc  || '';
+  const sc  = (card.sc || '').toUpperCase();
+  const r   = (card.r  || '').toLowerCase();
+  const n   = (card.n  || '').toLowerCase();
+  const charScore = getCharacterScore(card.n);
+
+  // 1. Promo of a popular Pokémon
+  // Promos are single-source, limited-window, harder to grade — market systematically
+  // underprices them on release and reassesses years later.
+  if (rc === 'PR' || /promo/i.test(r)) {
+    if (charScore >= 9.0)      bonus += 2.5; // S-tier (Charizard, Pikachu, Mew…)
+    else if (charScore >= 8.0) bonus += 1.5; // A-tier (Lucario, Greninja…)
+    else                       bonus += 0.4;
+  }
+
+  // 2. High rarity trading well below expected for its tier
+  // SIR/AR/IR cards priced at less than 35% of the tier median are likely overlooked.
+  const expected = EXPECTED_PRICE_BY_RARITY[rc] || 0;
+  if (expected > 0 && marketUSD > 0) {
+    const ratio = marketUSD / expected;
+    if ((rc === 'SIR' || rc === 'MHR' || rc === 'SHR') && ratio < 0.20) bonus += 2.5;
+    else if ((rc === 'SIR' || rc === 'AR')              && ratio < 0.35) bonus += 1.5;
+    else if ((rc === 'IR'  || rc === 'UR')              && ratio < 0.35) bonus += 1.0;
+    else if ((rc === 'HR'  || rc === 'SR')              && ratio < 0.30) bonus += 0.5;
+  }
+
+  // 3. Franchise-spillover candidates — generational nostalgia / game re-releases
+  // Mega Evolution (XY era): renewed interest driven by Legends ZA bringing megas back.
+  const isMega = n.startsWith('mega ') || /\bm-[a-z]/i.test(n) || /mega evolution/i.test(r);
+  const isXYEra = sc.startsWith('XY') || (card.s || '').match(/^(XY|Flashfire|Phantom Forces|Primal Clash|Roaring Skies|Ancient Origins|BREAKthrough|BREAKpoint|Fates Collide|Steam Siege|Evolutions)/);
+  if (isMega || isXYEra) {
+    if (charScore >= 8.0 && marketUSD < 35) bonus += 1.5;
+    else if (charScore >= 6.5 && marketUSD < 18) bonus += 0.8;
+  }
+
+  // SWSH VMAX / Gigantamax (Gen 8): only generation with that mechanic.
+  // The cohort that grew up with Sword & Shield hasn't yet driven collector demand.
+  const isSwsh = sc.startsWith('SWSH') || sc.startsWith('SSH');
+  const isGmax = n.includes('gigantamax') || n.includes('gmax');
+  const isVmax = n.includes('vmax');
+  if (isSwsh && (isGmax || isVmax)) {
+    if (charScore >= 8.0) bonus += 1.2;
+    else if (charScore >= 6.5) bonus += 0.6;
+  }
+
+  // 4. Cards from sets the market dismissed at release (historically overshadowed)
+  // These had strong rarity but launch competition/sentiment suppressed initial price.
+  const overshadowedSets = /shrouded fable|hidden fates|celebrations|lost origin|chilling reign|evolving skies/i;
+  if (overshadowedSets.test(card.s || '') && (rc === 'SIR' || rc === 'IR' || rc === 'AR' || rc === 'UR')) {
+    bonus += 0.8;
+  }
+
+  return Math.min(3.0, bonus);
+}
+
 function buildHomeReco(limit = 15) {
   if (!cardData || !cardData.cards) return [];
   const dismissed   = _getRecoDismissed();
@@ -11423,6 +11482,7 @@ function buildHomeReco(limit = 15) {
     const modelUSD = (typeof predictPrice === 'function') ? (predictPrice(pullCost, des.total).priceUSD || 0) : 0;
     const upsidePct = modelUSD > marketUSD ? ((modelUSD - marketUSD) / marketUSD * 100) : 0;
     const onWatchlist = watchIds.has(c.i);
+    const gemScore = _gemScore(c, marketUSD);
 
     results.push({
       card: c,
@@ -11433,16 +11493,19 @@ function buildHomeReco(limit = 15) {
       signalCls: sig.signal === 'STRONG BUY' ? 'sig-strong-buy' : 'sig-buy',
       score: sig.score,
       upsidePct,
+      gemScore,
       onWatchlist,
       reasons: sig.reasons || [],
     });
   }
 
-  // STRONG BUY first, then signal score descending
+  // STRONG BUY first, then combined score (signal + gem weighting) descending
   results.sort((a, b) => {
     const sA = a.signal === 'STRONG BUY' ? 1 : 0;
     const sB = b.signal === 'STRONG BUY' ? 1 : 0;
-    return sB - sA || b.score - a.score || b.upsidePct - a.upsidePct;
+    const cA = a.score + a.gemScore * 1.5;
+    const cB = b.score + b.gemScore * 1.5;
+    return sB - sA || cB - cA || b.upsidePct - a.upsidePct;
   });
 
   return results.slice(0, limit);
@@ -11454,6 +11517,7 @@ function _recoTileHtml(r) {
     ? `<img class="home-card-art" src="${esc(r.card.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
     : `<div class="home-card-art"></div>`;
   const manual = r.manualPrice ? `<span class="reco-manual-tag">manual</span>` : '';
+  const gem = r.gemScore >= 1.5 ? `<span class="reco-gem-tag">overlooked</span>` : '';
   const upside = r.upsidePct > 5
     ? `<span class="reco-upside pos">+${r.upsidePct.toFixed(0)}% model upside</span>`
     : `<span class="reco-upside">${esc(r.card.s || '')}</span>`;
@@ -11469,7 +11533,7 @@ function _recoTileHtml(r) {
     </div>
     <div class="home-card-info">
       <div class="home-card-name">${esc(r.card.n)}</div>
-      <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}</div>
+      <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}${gem}</div>
       <div class="home-card-sub">${upside}</div>
     </div>
   </div>`;
