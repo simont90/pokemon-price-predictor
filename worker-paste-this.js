@@ -209,61 +209,41 @@ async function handleImgProxy(request, env, url) {
   if (!m) return _jsonResp(400, { error: 'Paste a direct eBay listing URL (must contain /itm/{id}).' }, ch);
   const itemId = m[1];
 
-  // Build a clean URL without tracking params to avoid redirect chains
-  const cleanUrl = rawUrl.includes('ebay.co.uk')
-    ? `https://www.ebay.co.uk/itm/${itemId}`
-    : `https://www.ebay.com/itm/${itemId}`;
+  if (!env.EBAY_CLIENT_ID) return _jsonResp(503, { error: 'EBAY_CLIENT_ID not configured in worker secrets.' }, ch);
 
-  let html;
-  try {
-    const resp = await fetch(cleanUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-GB,en;q=0.9',
-      },
-      redirect: 'follow',
-    });
-    if (!resp.ok) return _jsonResp(502, { error: `eBay returned ${resp.status} for this listing.` }, ch);
-    html = await resp.text();
-  } catch (e) {
-    return _jsonResp(502, { error: `Could not reach eBay: ${e.message}` }, ch);
+  // eBay Shopping API — GetSingleItem with PictureDetails selector.
+  // No OAuth needed, just App ID. Try UK site first, fall back to US.
+  const base = `https://open.api.ebay.com/shopping?callname=GetSingleItem&responseencoding=JSON&appid=${env.EBAY_CLIENT_ID}&version=967&ItemID=${itemId}&IncludeSelector=PictureDetails`;
+
+  let data;
+  for (const siteid of ['3', '0']) {
+    try {
+      const resp = await fetch(`${base}&siteid=${siteid}`, { headers: { Accept: 'application/json' } });
+      if (resp.ok) { data = await resp.json(); break; }
+    } catch {}
   }
 
-  const images = [];
+  if (!data) return _jsonResp(502, { error: 'eBay Shopping API unreachable.' }, ch);
+  if (data.Ack === 'Failure' || !data.Item) {
+    const msg = data.Errors?.[0]?.ShortMessage || 'Item not found or listing has ended.';
+    return _jsonResp(404, { error: msg }, ch);
+  }
+
+  const item = data.Item;
+  const rawUrls = item.PictureURL || item.PictureDetails?.PictureURL || [];
   const seen = new Set();
-  const add = (u) => {
-    if (!u || seen.has(u)) return;
-    // Upgrade to highest resolution
-    const hi = u.replace(/s-l\d+(\.\w+)$/, 's-l1600$1').split('?')[0];
-    if (!seen.has(hi)) { seen.add(hi); images.push(hi); }
-  };
-
-  // 1. eBay hydration JSON — "maxImageUrl" appears once per carousel image
-  for (const [, u] of html.matchAll(/"maxImageUrl"\s*:\s*"(https:\\?\/\\?\/i\.ebayimg\.com[^"]+)"/g)) {
-    add(u.replace(/\\u002F/g, '/').replace(/\\\//g, '/'));
+  const images = [];
+  for (const u of rawUrls) {
+    if (!u || seen.has(u)) continue;
+    seen.add(u);
+    images.push(u.replace(/s-l\d+(\.\w+)$/, 's-l1600$1'));
   }
-
-  // 2. og:image meta tag (main image, always present)
-  const og = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/)?.[1]
-           || html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/)?.[1];
-  if (og) add(og);
-
-  // 3. Fallback: any i.ebayimg.com URL with size suffix
-  if (images.length < 2) {
-    for (const [u] of html.matchAll(/https:\/\/i\.ebayimg\.com\/images\/g\/[A-Za-z0-9~_-]+\/s-l\d+\.\w+/g)) {
-      add(u);
-    }
+  if (!images.length && item.GalleryURL) {
+    images.push(item.GalleryURL.replace(/s-l\d+(\.\w+)$/, 's-l1600$1'));
   }
+  if (!images.length) return _jsonResp(404, { error: 'No images found for this listing.' }, ch);
 
-  // Extract title from og:title meta (most reliable)
-  const title = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/)?.[1]
-              || html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:title"/)?.[1]
-              || '';
-
-  if (!images.length) return _jsonResp(404, { error: 'No images found — the listing may require sign-in or have been removed.' }, ch);
-
-  return new Response(JSON.stringify({ images: images.slice(0, 10), title, itemId }), {
+  return new Response(JSON.stringify({ images, title: item.Title || '', itemId }), {
     headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
   });
 }
