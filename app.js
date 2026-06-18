@@ -11757,6 +11757,7 @@ function _recoStrategyTileHtml(r) {
     : `<span class="reco-upside">${esc(r.card.s || '')}</span>`;
   const watchTitle = r.onWatchlist ? 'On watchlist' : 'Add to watchlist';
   const watchCls   = r.onWatchlist ? 'reco-watch reco-watch-active' : 'reco-watch';
+  const displayPrice = r.strategyToday || r.marketGBP;
   return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
     ${img}
     <span class="home-card-signal ${r.signalCls}">${r.signal}</span>
@@ -11767,7 +11768,7 @@ function _recoStrategyTileHtml(r) {
     </div>
     <div class="home-card-info">
       <div class="home-card-name">${esc(r.card.n)}</div>
-      <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}${gem}</div>
+      <div class="home-card-price">${fmtGBPDirect(displayPrice)}${manual}${gem}</div>
       <div class="home-card-sub">${roiLine}</div>
     </div>
   </div>`;
