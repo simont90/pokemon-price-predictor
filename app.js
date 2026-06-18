@@ -3485,7 +3485,8 @@ function renderGradingROI(apiData) {
   section.style.display = 'block';
   const rawPrice = getCurrentPrice(card);
   const psa10Price = (staticPsa10 && staticPsa10 > 0) ? staticPsa10 : pcPsa10;
-  const gradingFee = 20;
+  const _eBayFx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const gradingFee = getUkGradingFeeGBP(psa10Price) / _eBayFx;
 
   // Use scan expected grade if available — no sight-unseen penalty for cards in hand
   const scanAcq = (typeof getAcq === 'function') ? getAcq(card.i) : null;
@@ -8667,11 +8668,31 @@ queueMicrotask(setupMarketplaceWorker);
 // either ship direct to the US (slow + customs hassle on return) or use a
 // domestic intermediary like Ludkins Collectables / GetGraded, who bulk-ship
 // to PSA on your behalf. Either route the all-in cost lands around £40 per
-// card once PSA tier fee (~£15 economy), the intermediary fee (~£15), and
-// insured round-trip shipping (~£10) are added together. Turnaround is
-// typically 6-9 months for the economy tier as of mid-2026.
-const UK_GRADING_ALL_IN_GBP = 40;    // PSA fee + intermediary fee + insured shipping (round trip)
-const UK_GRADING_WAIT_MONTHS = 9;    // typical UK third-party submission cycle
+// PSA UK pricing (June 2026) — Value tier removed, now two tiers by final graded value:
+//   ≤ $1500 PSA 10 value : £65/card, 30–40 business days (~6–8 wk)
+//   $1501–$2500           : £135/card, 20–30 business days (~4–6 wk)
+// Submitted via UK intermediary (Ludkins / GetGraded) — fee is PSA charge only;
+// intermediary handling + insured round-trip shipping adds ~£15–20 on top but
+// is modest vs the tier fee so we include it in the tier figures as a buffer.
+const UK_GRADING_FEE_STD_GBP    = 65;   // ≤ $1500 final value tier
+const UK_GRADING_FEE_PREM_GBP   = 135;  // $1501–$2500 final value tier
+const UK_GRADING_VALUE_THRESHOLD_USD = 1500;
+const UK_GRADING_WAIT_STD_MONTHS  = 1.75;  // 30–40 business days ≈ 7 wk
+const UK_GRADING_WAIT_PREM_MONTHS = 1.25;  // 20–30 business days ≈ 5 wk
+// Legacy alias — use getUkGradingFeeGBP() / getUkGradingWaitMonths() where psa10USD is known
+const UK_GRADING_ALL_IN_GBP  = UK_GRADING_FEE_STD_GBP;
+const UK_GRADING_WAIT_MONTHS = UK_GRADING_WAIT_STD_MONTHS;
+function getUkGradingFeeGBP(psa10USD) {
+  return (psa10USD && psa10USD > UK_GRADING_VALUE_THRESHOLD_USD)
+    ? UK_GRADING_FEE_PREM_GBP : UK_GRADING_FEE_STD_GBP;
+}
+function getUkGradingWaitMonths(psa10USD) {
+  return (psa10USD && psa10USD > UK_GRADING_VALUE_THRESHOLD_USD)
+    ? UK_GRADING_WAIT_PREM_MONTHS : UK_GRADING_WAIT_STD_MONTHS;
+}
+function getUkGradingWaitDisplay(psa10USD) {
+  return (psa10USD && psa10USD > UK_GRADING_VALUE_THRESHOLD_USD) ? '4–6 wk' : '6–8 wk';
+}
 const OPPORTUNITY_COST_ANNUAL = 0.06; // pre-tax return you could earn elsewhere while capital is locked
 const BUY_SELL_FRICTION = 0.10;      // 10% combined buy + sell fees (fair tier midpoint)
 
@@ -8736,8 +8757,8 @@ function computeHoldCore(card) {
   if (!psa10Price || psa10Price <= 0 || !rawUSD || rawUSD <= 0) return { ok: false };
 
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
-  const gradingFeeUSD = UK_GRADING_ALL_IN_GBP / fx;
-  const waitYears = UK_GRADING_WAIT_MONTHS / 12;
+  const gradingFeeUSD = getUkGradingFeeGBP(psa10Price) / fx;
+  const waitYears = getUkGradingWaitMonths(psa10Price) / 12;
   const waitDiscount = 1 / (1 + OPPORTUNITY_COST_ANNUAL * waitYears);
   const baseGemRate = (typeof card.g === 'number' && card.g > 0) ? card.g : DEFAULT_GEM_RATE;
   const gemRate = baseGemRate * ONLINE_BUY_GEM_PENALTY;
@@ -9011,10 +9032,13 @@ function renderHoldStrategy(card) {
   // rest of the math (which works in USD) stays consistent. fxRate is GBP/USD
   // — so USD = GBP / fxRate.
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
-  const gradingFeeUSD = UK_GRADING_ALL_IN_GBP / fx;
-  const waitYears = UK_GRADING_WAIT_MONTHS / 12;
+  const gradingFeeGBP = getUkGradingFeeGBP(psa10Price);
+  const gradingWaitMonths = getUkGradingWaitMonths(psa10Price);
+  const gradingWaitDisplay = getUkGradingWaitDisplay(psa10Price);
+  const gradingFeeUSD = gradingFeeGBP / fx;
+  const waitYears = gradingWaitMonths / 12;
   // Opportunity-cost discount applied to the post-grade 5yr value: while the
-  // card sits at PSA for ~9 months your capital is locked. We pretend that
+  // card sits at PSA for a few weeks your capital is locked. We pretend that
   // money could have earned ~6% p.a. elsewhere and discount the eventual
   // value accordingly. Small but it matters for close calls.
   const waitDiscount = 1 / (1 + OPPORTUNITY_COST_ANNUAL * waitYears);
@@ -9140,12 +9164,12 @@ function renderHoldStrategy(card) {
     ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} paid \u2014 holding ungraded 5 yrs`
     : 'Hold ungraded for 5 yrs';
   const gambleDesc = usingAcqCost
-    ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${UK_GRADING_ALL_IN_GBP} grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% PSA 9+`
+    ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${gradingFeeGBP} grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% PSA 9+`
     : `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`;
 
   const strategies = [
     { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',      desc: rawDesc,     today: rawCostUSD, yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20, acqCost: usingAcqCost },
-    { label: usingAcqCost ? 'Grade My Card' : 'Buy Raw + Grade',  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: UK_GRADING_WAIT_MONTHS, lossProb, lossEV, acqCost: usingAcqCost },
+    { label: usingAcqCost ? 'Grade My Card' : 'Buy Raw + Grade',  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: gradingWaitMonths, lossProb, lossEV, acqCost: usingAcqCost },
     ...gradedStrategies.map((s, i) => ({
       ...s,
       desc: i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling',
@@ -9215,9 +9239,9 @@ function renderHoldStrategy(card) {
     let gambleCaveat = '';
     if (bestRaw && bestRaw.key === 'gamble') {
       if (lossProb > 0.01) {
-        gambleCaveat = ` Heads-up: this means shipping to a UK third-party (Ludkins / GetGraded), waiting ~${UK_GRADING_WAIT_MONTHS} months with your capital locked, and accepting a <strong>${(lossProb*100).toFixed(0)}% chance of a sub-PSA 9 outcome that loses money (avg −${fmtGBP(Math.abs(gbpFromUSD(lossEV)))})</strong>.`;
+        gambleCaveat = ` Heads-up: this means shipping to a UK third-party (Ludkins / GetGraded), waiting ~${gradingWaitDisplay} with your capital locked, and accepting a <strong>${(lossProb*100).toFixed(0)}% chance of a sub-PSA 9 outcome that loses money (avg −${fmtGBP(Math.abs(gbpFromUSD(lossEV)))})</strong>.`;
       } else {
-        gambleCaveat = ` Heads-up: still a ~${UK_GRADING_WAIT_MONTHS}-month UK grading wait with capital locked — every PSA outcome turns a profit on this card, but you forfeit liquidity until the grades come back.`;
+        gambleCaveat = ` Heads-up: still a ~${gradingWaitDisplay} UK grading wait with capital locked — every PSA outcome turns a profit on this card, but you forfeit liquidity until the grades come back.`;
       }
     }
     let rawVsGradedLine;
@@ -9238,9 +9262,9 @@ function renderHoldStrategy(card) {
       if (rawScore > gradedScore + 30) {
         rawVsGradedLine = `<strong>${rawVerb}</strong> — <strong>${bestRaw.label}</strong> beats the best graded option (${bestGraded.label}) by a wide margin on risk-adjusted return.${gambleCaveat}`;
       } else if (gradedScore > rawScore + 30) {
-        rawVsGradedLine = `<strong>${ownedCard ? 'Sell raw, buy graded' : 'Buy graded'}</strong> — <strong>${bestGraded.label}</strong> beats the best raw approach (${bestRaw.label}) on risk-adjusted return. From the UK, skipping the ~${UK_GRADING_WAIT_MONTHS}-month grading wait is the better play here.`;
+        rawVsGradedLine = `<strong>${ownedCard ? 'Sell raw, buy graded' : 'Buy graded'}</strong> — <strong>${bestGraded.label}</strong> beats the best raw approach (${bestRaw.label}) on risk-adjusted return. From the UK, skipping the ~${gradingWaitDisplay} grading wait is the better play here.`;
       } else {
-        rawVsGradedLine = `<strong>Close call</strong> — ${bestRaw.label} and ${bestGraded.label} are within a few points of each other. From the UK, the tie-breaker is usually the ~${UK_GRADING_WAIT_MONTHS}-month grading wait and ${(lossProb*100).toFixed(0)}% loss case on Raw + Grade — the graded copy gives you an instant, certain position.`;
+        rawVsGradedLine = `<strong>Close call</strong> — ${bestRaw.label} and ${bestGraded.label} are within a few points of each other. From the UK, the tie-breaker is usually the ~${gradingWaitDisplay} grading wait and ${(lossProb*100).toFixed(0)}% loss case on Raw + Grade — the graded copy gives you an instant, certain position.`;
       }
     } else if (bestGraded) {
       rawVsGradedLine = `<strong>${ownedCard ? 'Sell raw, buy graded' : 'Buy graded'}</strong> — no raw-side option projects positive 5yr ROI for this card; only graded holds make sense.`;
@@ -9390,9 +9414,9 @@ function renderHoldStrategy(card) {
           moveLabel = `Flip the slab (${fmtGBP(o.flipNetUSD)})`;
           if (o.crackNetUSD >= o.flipNetUSD) {
             // Crack EV is technically higher but within the 5% risk-buffer.
-            otherLine = `Crack alt: ${fmtGBP(o.crackNetUSD)} EV\u00a0\u00b7\u00a0only +${fmtGBP(o.nextMoveEdgeUSD)} edge \u2014 not worth another \u00a3${UK_GRADING_ALL_IN_GBP} + ${UK_GRADING_WAIT_MONTHS}mo wait + ${(CRACK_DAMAGE_RISK*100).toFixed(0)}% damage risk`;
+            otherLine = `Crack alt: ${fmtGBP(o.crackNetUSD)} EV\u00a0\u00b7\u00a0only +${fmtGBP(o.nextMoveEdgeUSD)} edge \u2014 not worth another \u00a3${gradingFeeGBP} + ${gradingWaitDisplay} wait + ${(CRACK_DAMAGE_RISK*100).toFixed(0)}% damage risk`;
           } else {
-            otherLine = `Crack alt: ${fmtGBP(o.crackNetUSD)} EV\u00a0\u00b7\u00a0\u2212${fmtGBP(o.nextMoveEdgeUSD)} after \u00a3${UK_GRADING_ALL_IN_GBP} resub fee + ${(CRACK_DAMAGE_RISK*100).toFixed(0)}% damage risk`;
+            otherLine = `Crack alt: ${fmtGBP(o.crackNetUSD)} EV\u00a0\u00b7\u00a0\u2212${fmtGBP(o.nextMoveEdgeUSD)} after \u00a3${gradingFeeGBP} resub fee + ${(CRACK_DAMAGE_RISK*100).toFixed(0)}% damage risk`;
           }
         }
         moveBlock = `
@@ -9426,7 +9450,7 @@ function renderHoldStrategy(card) {
         <div class="hold-out-summary">
           <span class="hold-out-chip hold-out-chip-good">${goodChipLabel}</span>
           <span class="hold-out-chip hold-out-chip-bad">${lossPct}% loss case</span>
-          <span class="hold-out-chip hold-out-chip-wait">${UK_GRADING_WAIT_MONTHS} mo wait (UK)</span>
+          <span class="hold-out-chip hold-out-chip-wait">${gradingWaitDisplay} wait (UK)</span>
         </div>
       </div>
       <div class="hold-out-grid-head">
@@ -9451,19 +9475,19 @@ function renderHoldStrategy(card) {
   };
 
   $('holdFootnote').innerHTML = `
-    <strong>UK grading assumptions:</strong> £${UK_GRADING_ALL_IN_GBP} all-in cost per card
-    (PSA economy fee + Ludkins/GetGraded intermediary fee + insured round-trip shipping)
-    and a ~${UK_GRADING_WAIT_MONTHS}-month wait. Capital locked during the wait is discounted at
-    ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a. opportunity cost so the gamble can't look better
-    than it really is once your money is tied up. Also assumes ${(BUY_SELL_FRICTION*100).toFixed(0)}%
+    <strong>UK grading assumptions:</strong> £${gradingFeeGBP} per card via PSA
+    (${psa10Price > UK_GRADING_VALUE_THRESHOLD_USD ? '$1,501–$2,500 value tier, 20–30 business day turnaround' : '≤$1,500 value tier, 30–40 business day turnaround'};
+    submitted via Ludkins / GetGraded). Wait discount applied at
+    ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a. opportunity cost so capital locked during the ~${gradingWaitDisplay} turnaround
+    is fairly penalised. Also assumes ${(BUY_SELL_FRICTION*100).toFixed(0)}%
     combined buy + sell friction.<br>
     <strong>Online buy penalty:</strong> base gem rate is ${baseGemPctStr}% (${gemRateSource}) but we apply a
     ${(ONLINE_BUY_GEM_PENALTY*100).toFixed(0)}% multiplier because buying raw online (eBay / TCGplayer) is sight-unseen —
     you can't check centering, whitening, or surface scratches — so the effective PSA 10
     hit rate drops to <strong>${gemPctStr}%</strong>. Hand-pick from a shop or show and you can dial that back up.<br>
     <strong>Flip vs Crack on a non-10 outcome:</strong> for each PSA 7/8/9 row above we compare
-    flipping the slab at current market against cracking it out, paying another £${UK_GRADING_ALL_IN_GBP}, waiting
-    ~${UK_GRADING_WAIT_MONTHS} more months, and gambling on a regrade. PSA grades are sticky on resub —
+    flipping the slab at current market against cracking it out, paying another £${gradingFeeGBP}, waiting
+    another ~${gradingWaitDisplay}, and gambling on a regrade. PSA grades are sticky on resub —
     upgrade rates used: PSA 9→10 = 10%, PSA 8→9+ = 15%, PSA 7→8+ = 25%. A ${(CRACK_DAMAGE_RISK*100).toFixed(0)}%
     crack-damage haircut and the same wait discount apply to the crack EV. Cracking only
     pays off when the PSA 10 / PSA 9 spread is wide enough to overcome those costs —
@@ -9953,7 +9977,7 @@ function renderAcquisition() {
     const psa10NowUSD = estimateGradePrice(card, 10, psa10USD);
     const psa10In5USD = projectGradePrice(card, 10, psa10NowUSD, 5);
     const psa10In5GBP = usdToGbp(psa10In5USD);
-    const gradingFeeGBP = (typeof UK_GRADING_ALL_IN_GBP === 'number') ? UK_GRADING_ALL_IN_GBP : 40;
+    const gradingFeeGBP = getUkGradingFeeGBP(psa10USD);
     const netGBP = psa10In5GBP * (1 - FRICTION) - gradingFeeGBP;
     maxValueGBP = psa10In5GBP;
     maxROI = costGBP > 0 ? ((netGBP - costGBP) / costGBP) * 100 : null;
