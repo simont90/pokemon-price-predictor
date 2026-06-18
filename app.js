@@ -8908,7 +8908,7 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     // Auto-save raw deals with PSA 9-10 text estimate as grade candidates
     if (g.workerGrade === 'raw') {
       const newCands = deals
-        .filter(d => { const e = mktEstimateGradeFromText(d.title, d.condition); return e && (e.range === '9–10' || e.range === '8–10'); })
+        .filter(d => { const e = mktEstimateGradeFromText(d.title, d.condition); return d.image && e && (e.range === '9–10' || e.range === '8–10'); })
         .map(d => ({ cardId: card.i, cardName: card.n, listingUrl: d.url, listingImg: d.image || '', priceGBP: d.priceGBP, ts: Date.now() }));
       if (newCands.length) {
         const existing = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
@@ -12823,21 +12823,20 @@ function _renderHomeGradeCandidates() {
   const list = $('homeGradeCandList'), wrap = $('homeGradeCandWrap');
   if (!list) return;
   const raw = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
-  // One listing per card (cheapest), up to 15
-  const seenCards = new Set();
-  const cands = [];
-  for (const c of raw) {
-    if (!seenCards.has(c.cardId)) { seenCards.add(c.cardId); cands.push(c); }
-    if (cands.length >= 15) break;
-  }
+  const cands = raw.slice(0, 15);
   const hash = cands.map(c => c.listingUrl).join('|');
   if (wrap) wrap.style.display = cands.length ? '' : 'none';
   if (hash === _homeGradeCandHash && list.querySelector('.home-card-tile')) return;
   _homeGradeCandHash = hash;
   const countEl = $('homeGradeCandCount'); if (countEl) countEl.textContent = raw.length;
   list.innerHTML = cands.map(d => {
-    const img = d.listingImg
-      ? `<img class="home-card-art" src="${esc(d.listingImg)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+    const fallbackImg = d.listingImg ? '' : (() => {
+      const c = cardData?.cards?.find(x => x.i === d.cardId);
+      return c?.img || '';
+    })();
+    const displayImg = d.listingImg || fallbackImg;
+    const img = displayImg
+      ? `<img class="home-card-art" src="${esc(displayImg)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
       : `<div class="home-card-art"></div>`;
     const price = d.priceGBP ? `£${Number(d.priceGBP).toFixed(2)}` : '';
     return `<div class="home-card-tile" data-id="${esc(String(d.cardId))}" data-listing-url="${esc(d.listingUrl)}" data-listing-img="${esc(d.listingImg || '')}" data-card-name="${esc(d.cardName || '')}" data-price-gbp="${d.priceGBP || 0}">
@@ -12958,7 +12957,7 @@ function _gradeCandRefresh() {
   const graded = new Set((JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]')).map(r => r.listingUrl));
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const pruned = (JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]'))
-    .filter(c => !graded.has(c.listingUrl) && c.ts > cutoff);
+    .filter(c => c.listingImg && !graded.has(c.listingUrl) && c.ts > cutoff);
   localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(pruned));
   _homeGradeCandHash = '';
   _renderHomeGradeCandidates();
