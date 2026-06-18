@@ -861,7 +861,7 @@ function buildCounterpartRecommendation(card) {
   const selfPSA10 = card.p10 || 0, otherPSA10 = other.p10 || 0;
   const psaSame = !selfPSA10 || !otherPSA10;
 
-  let verdict, reason;
+  let verdict, reason, verdictByRoi = false;
   const cheaperGBPv = usdToGbp(cheaperUSD);
   const pricierGBPv = usdToGbp(pricierUSD);
   if (savingsPct < 8) {
@@ -1007,6 +1007,24 @@ function buildCounterpartRecommendation(card) {
   }
 
   const needsJpPsa10 = s2NeedsJpPsa10 || s3NeedsJpPsa10;
+
+  // ── Reconcile headline verdict with scenario analysis ──────────────────
+  // The price-only verdict above picks the cheaper card. If the S1 model
+  // analysis says the pricier card has enough ROI advantage to justify the
+  // premium, override the headline so it stays consistent with the breakdown.
+  if (s1winner && s1winner !== 'TIE' && s1winner !== cheaperLang) {
+    const enSRaw = getStrat(enHold, 'raw');
+    const jpSRaw = getStrat(jpHold, 'raw');
+    if (enSRaw && jpSRaw) {
+      const pricierRoi = s1winner === 'EN' ? enSRaw.roi : jpSRaw.roi;
+      const cheaperRoi = s1winner === 'EN' ? jpSRaw.roi : enSRaw.roi;
+      const roiAdv = Math.max(0, pricierRoi - cheaperRoi);
+      verdict = s1winner === 'JP' ? 'buy-jp' : 'buy-en';
+      verdictByRoi = true;
+      reason = `The ${s1winner} version is <strong>£${savingsGBP.toFixed(2)} more</strong> upfront but the model projects a <strong>+${roiAdv.toFixed(0)}pt ROI edge</strong> over 5 years — the premium is offset by stronger long-term growth. See the scenario breakdown below.`;
+    }
+  }
+
   const scenarios = [
     { key: 'raw-keep',    label: 'Raw, keep raw', winner: s1winner, text: s1 },
     { key: 'raw-grade',   label: 'Raw to grade',  winner: s2winner, text: s2 },
@@ -1017,7 +1035,7 @@ function buildCounterpartRecommendation(card) {
     other, otherLang: cp.counterpartLang,
     selfUSD, otherUSD, selfGBP, otherGBP,
     cheaper, cheaperLang, pricier, savingsPct, savingsGBP,
-    verdict, reason,
+    verdict, reason, verdictByRoi,
     totalCounterparts: cp.counterparts.length,
     scenarios,
     needsJpPsa10,
@@ -1052,11 +1070,15 @@ function renderCounterpartFlag(card) {
   const isJPSelf = card.lang === 'JP';
   const isManual = !!getCPOverride(card.i);
   if (rec.verdict === 'buy-jp') {
-    badge.textContent = 'Get the JP';
-    headline.innerHTML = `<strong>Japanese version is the value pick</strong>`;
+    badge.textContent = rec.verdictByRoi ? 'JP long-term' : 'Get the JP';
+    headline.innerHTML = rec.verdictByRoi
+      ? `<strong>Japanese version is the smarter long-term buy</strong>`
+      : `<strong>Japanese version is the value pick</strong>`;
   } else if (rec.verdict === 'buy-en') {
-    badge.textContent = 'Get the EN';
-    headline.innerHTML = `<strong>English version is cheaper here</strong>`;
+    badge.textContent = rec.verdictByRoi ? 'EN long-term' : 'Get the EN';
+    headline.innerHTML = rec.verdictByRoi
+      ? `<strong>English version is the smarter long-term buy</strong>`
+      : `<strong>English version is cheaper here</strong>`;
   } else if (rec.verdict === 'tie') {
     badge.textContent = 'Toss-up';
     headline.innerHTML = `<strong>Either version works</strong>`;
