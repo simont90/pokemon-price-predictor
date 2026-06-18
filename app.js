@@ -3351,6 +3351,211 @@ function savePortfolio() {
   localStorage.setItem('pkm-portfolio', JSON.stringify(portfolio));
 }
 
+// ---- Layout drag-resize ----
+const LAYOUT_KEY = 'pkm-layout-v1'; // device-local, NOT in SYNC_KEYS
+
+function initLayoutResizer() {
+  // Only active on desktop (CSS hides handles on mobile, but guard JS too)
+  if (window.innerWidth < 1024) return;
+
+  const main = document.querySelector('.main');
+  const colResizer = document.getElementById('colResizer');
+  if (!main || !colResizer) return;
+
+  // ── Restore or auto-fit ──────────────────────────────────────────────
+  const saved = (() => { try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || 'null'); } catch { return null; } })();
+
+  if (saved) {
+    // Restore column split from saved computed string (e.g. "480px 20px 320px")
+    if (saved.cols && saved.cols !== '') {
+      // Parse pixel values and re-apply as fr units
+      const parts = saved.cols.split(' ').map(parseFloat).filter(Boolean);
+      if (parts.length >= 2) {
+        const leftPx = parts[0], rightPx = parts[parts.length - 1];
+        const total = leftPx + rightPx;
+        if (total > 0) applyColSplit(leftPx / total, false);
+      }
+    }
+    if (saved.tiles) {
+      Object.entries(saved.tiles).forEach(([key, h]) => {
+        const el = document.getElementById(key) || document.querySelector(`[data-layout-id="${key}"]`);
+        if (el) el.style.minHeight = h;
+      });
+    }
+  }
+  // Auto-label sections without IDs
+  let auto = 0;
+  document.querySelectorAll('.inputs-column > .card, .output-column > .card').forEach(c => {
+    if (!c.id && !c.dataset.layoutId) c.dataset.layoutId = `lt${auto++}`;
+  });
+
+  // ── Column resizer ───────────────────────────────────────────────────
+  function applyColSplit(pct, save = true) {
+    const clamped = Math.min(0.78, Math.max(0.22, pct));
+    const l = clamped * 2, r = (1 - clamped) * 2;
+    main.style.gridTemplateColumns = `minmax(0, ${l}fr) 20px minmax(0, ${r}fr)`;
+    // Position the resizer bar at the visual boundary between columns
+    requestAnimationFrame(() => {
+      const inCol = document.querySelector('.inputs-column');
+      if (!inCol) return;
+      const mRect = main.getBoundingClientRect();
+      const cRect = inCol.getBoundingClientRect();
+      const xPos = (cRect.right - mRect.left) + (cRect.right < mRect.right ? 10 : 0);
+      colResizer.style.left = xPos + 'px';
+    });
+    if (save) saveLayout();
+  }
+
+  // Position handle on init / window resize
+  function positionColResizer() {
+    const inCol = document.querySelector('.inputs-column');
+    if (!inCol) return;
+    const mRect = main.getBoundingClientRect();
+    const cRect = inCol.getBoundingClientRect();
+    colResizer.style.left = (cRect.right - mRect.left + 10) + 'px';
+  }
+  requestAnimationFrame(positionColResizer);
+  window.addEventListener('resize', positionColResizer);
+
+  let colDragStartX = 0, colDragStartPct = 0.5;
+
+  function getColPct() {
+    const cols = getComputedStyle(main).gridTemplateColumns.split(' ');
+    // cols[0] is left width px, cols[1] is resizer ~20px, cols[2] is right width px
+    const leftW = parseFloat(cols[0]) || 0;
+    const rightW = parseFloat(cols[2]) || 0;
+    return (leftW + rightW) > 0 ? leftW / (leftW + rightW) : 0.5;
+  }
+
+  colResizer.addEventListener('mousedown', e => {
+    e.preventDefault();
+    colDragStartX = e.clientX;
+    colDragStartPct = getColPct();
+    colResizer.classList.add('is-dragging');
+    document.body.classList.add('layout-resizing');
+    const onMove = (e) => {
+      const mainW = main.getBoundingClientRect().width;
+      const dx = e.clientX - colDragStartX;
+      applyColSplit(colDragStartPct + dx / mainW);
+    };
+    const onUp = () => {
+      colResizer.classList.remove('is-dragging');
+      document.body.classList.remove('layout-resizing');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      saveLayout();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  // Touch support for column resizer
+  colResizer.addEventListener('touchstart', e => {
+    e.preventDefault();
+    colDragStartX = e.touches[0].clientX;
+    colDragStartPct = getColPct();
+    colResizer.classList.add('is-dragging');
+    document.body.classList.add('layout-resizing');
+    const onMove = (e) => {
+      const mainW = main.getBoundingClientRect().width;
+      const dx = e.touches[0].clientX - colDragStartX;
+      applyColSplit(colDragStartPct + dx / mainW);
+    };
+    const onEnd = () => {
+      colResizer.classList.remove('is-dragging');
+      document.body.classList.remove('layout-resizing');
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      saveLayout();
+    };
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+  }, { passive: false });
+
+  // Double-click col-resizer: reset to 50/50
+  colResizer.addEventListener('dblclick', () => {
+    main.style.gridTemplateColumns = '';
+    saveLayout();
+    requestAnimationFrame(positionColResizer);
+  });
+
+  // ── Tile resizers ────────────────────────────────────────────────────
+  function addTileHandles() {
+    document.querySelectorAll('.inputs-column > .card, .output-column > .card').forEach(card => {
+      if (card.querySelector('.tile-resizer')) return; // already added
+      const handle = document.createElement('div');
+      handle.className = 'tile-resizer';
+      handle.title = 'Drag to resize · Double-click to reset';
+      card.appendChild(handle);
+
+      let startY = 0, startH = 0;
+
+      function startDrag(clientY) {
+        startY = clientY;
+        startH = card.getBoundingClientRect().height;
+        handle.classList.add('is-dragging');
+        document.body.classList.add('layout-resizing', 'tile-resizing');
+      }
+      function onMove(clientY) {
+        const newH = Math.max(60, startH + (clientY - startY));
+        card.style.minHeight = newH + 'px';
+      }
+      function endDrag() {
+        handle.classList.remove('is-dragging');
+        document.body.classList.remove('layout-resizing', 'tile-resizing');
+        saveLayout();
+      }
+
+      handle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        startDrag(e.clientY);
+        const onMoveDoc = e => onMove(e.clientY);
+        const onUp = () => { endDrag(); document.removeEventListener('mousemove', onMoveDoc); document.removeEventListener('mouseup', onUp); };
+        document.addEventListener('mousemove', onMoveDoc);
+        document.addEventListener('mouseup', onUp);
+      });
+      handle.addEventListener('touchstart', e => {
+        e.preventDefault();
+        startDrag(e.touches[0].clientY);
+        const onMoveDoc = e => onMove(e.touches[0].clientY);
+        const onEnd = () => { endDrag(); document.removeEventListener('touchmove', onMoveDoc); document.removeEventListener('touchend', onEnd); };
+        document.addEventListener('touchmove', onMoveDoc, { passive: false });
+        document.addEventListener('touchend', onEnd);
+      }, { passive: false });
+      // Double-click: reset this tile's min-height
+      handle.addEventListener('dblclick', () => {
+        card.style.minHeight = '';
+        saveLayout();
+      });
+    });
+  }
+  addTileHandles();
+
+  // Re-run when new sections become visible (e.g. card selection shows selectedCardSection)
+  const tileObserver = new MutationObserver(mutations => {
+    for (const m of mutations) {
+      if (m.type === 'attributes' && m.attributeName === 'style') addTileHandles();
+    }
+  });
+  document.querySelectorAll('.inputs-column > .card, .output-column > .card').forEach(c => {
+    tileObserver.observe(c, { attributes: true, attributeFilter: ['style'] });
+  });
+
+  // ── Save / restore helpers ───────────────────────────────────────────
+  function saveLayout() {
+    const cols = getComputedStyle(main).gridTemplateColumns;
+    const tiles = {};
+    document.querySelectorAll('.inputs-column > .card, .output-column > .card').forEach(c => {
+      const key = c.id || c.dataset.layoutId;
+      if (key && c.style.minHeight) tiles[key] = c.style.minHeight;
+    });
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify({ cols, tiles })); } catch {}
+  }
+
+  // Expose applyColSplit so re-renders can call positionColResizer
+  window._layoutResizer = { reposition: positionColResizer };
+}
+
 // ---- Collection ROI chart ----
 function renderRoiChart() {
   const section = document.getElementById('portfolioRoiSection');
@@ -9955,6 +10160,9 @@ function setupPriceInsight() {
 
   // Start background eBay deal polling
   startDealPolling();
+
+  // Drag-resize layout
+  initLayoutResizer();
 }
 
 // =============================================================

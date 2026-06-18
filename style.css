@@ -176,8 +176,70 @@ body {
 .search-result-price .usd { font-size: 11px; color: var(--text-faint); display: block; }
 
 /* Main */
-.main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 0 40px; }
+.main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 0 40px; position: relative; }
 .inputs-column, .output-column { min-width: 0; }
+
+/* ---- Layout resize handles ---- */
+.card { position: relative; }
+
+/* Column divider — absolute, floats in the gap between left/right */
+.col-resizer {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 20px;          /* generous hit-area */
+  transform: translateX(-50%);
+  cursor: col-resize;
+  z-index: 30;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+.col-resizer::after {
+  content: '';
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.18s;
+  margin: 8px 0;
+}
+.main:hover .col-resizer { opacity: 1; }
+.col-resizer:hover::after, .col-resizer.is-dragging::after { background: var(--accent); }
+.col-resizer.is-dragging { opacity: 1; }
+
+/* Tile drag handle — inside each .card at its bottom edge */
+.tile-resizer {
+  position: absolute;
+  bottom: -5px; left: 28px; right: 28px;
+  height: 10px;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tile-resizer::after {
+  content: '';
+  width: 36px; height: 3px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.15);
+  transition: background 0.15s;
+}
+.card:hover .tile-resizer { opacity: 1; }
+.tile-resizer:hover::after, .tile-resizer.is-dragging::after { background: var(--accent); }
+.tile-resizer.is-dragging { opacity: 1; }
+
+/* Suppress text selection while dragging */
+body.layout-resizing { user-select: none; -webkit-user-select: none; cursor: col-resize; }
+body.layout-resizing.tile-resizing { cursor: row-resize; }
+
+/* No resizers on touch/narrow screens */
+@media (max-width: 1023px) {
+  .col-resizer, .tile-resizer { display: none !important; }
+}
 
 /* Cards */
 .card { background: linear-gradient(160deg, rgba(255,255,255,0.11) 0%, rgba(255,255,255,0.04) 55%, rgba(0,0,0,0.04) 100%); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-border); box-shadow: inset 0 2px 0 var(--glass-specular), inset 1px 0 0 rgba(255,255,255,0.07), 0 20px 60px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(255,255,255,0.07); border-radius: var(--radius-lg); padding: 22px; }
