@@ -3678,20 +3678,17 @@ function savePortfolio() {
 const LAYOUT_KEY = 'pkm-layout-v1'; // device-local, NOT in SYNC_KEYS
 
 function initLayoutResizer() {
-  // Only active on desktop (CSS hides handles on mobile, but guard JS too)
-  if (window.innerWidth < 1024) return;
-
   const main = document.querySelector('.main');
   const colResizer = document.getElementById('colResizer');
-  if (!main || !colResizer) return;
+  if (!main) return;
+  const isDesktop = window.innerWidth >= 1024;
 
   // ── Restore or auto-fit ──────────────────────────────────────────────
   const saved = (() => { try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || 'null'); } catch { return null; } })();
 
   if (saved) {
-    // Restore column split from saved computed string (e.g. "480px 20px 320px")
-    if (saved.cols && saved.cols !== '') {
-      // Parse pixel values and re-apply as fr units
+    // Restore column split (desktop only)
+    if (isDesktop && colResizer && saved.cols && saved.cols !== '') {
       const parts = saved.cols.split(' ').map(parseFloat).filter(Boolean);
       if (parts.length >= 2) {
         const leftPx = parts[0], rightPx = parts[parts.length - 1];
@@ -3702,7 +3699,14 @@ function initLayoutResizer() {
     if (saved.tiles) {
       Object.entries(saved.tiles).forEach(([key, h]) => {
         const el = document.getElementById(key) || document.querySelector(`[data-layout-id="${key}"]`);
-        if (el) el.style.minHeight = h;
+        if (!el) return;
+        if (h.startsWith('clamp:')) {
+          el.style.maxHeight = h.slice(6);
+          el.style.overflow = 'hidden';
+          el.classList.add('is-clamped');
+        } else {
+          el.style.minHeight = h;
+        }
       });
     }
   }
@@ -3712,7 +3716,7 @@ function initLayoutResizer() {
     if (!c.id && !c.dataset.layoutId) c.dataset.layoutId = `lt${auto++}`;
   });
 
-  // ── Column resizer ───────────────────────────────────────────────────
+  // ── Column resizer (desktop only) ────────────────────────────────────
   function applyColSplit(pct, save = true) {
     const clamped = Math.min(0.78, Math.max(0.22, pct));
     const l = clamped * 2, r = (1 - clamped) * 2;
@@ -3731,26 +3735,28 @@ function initLayoutResizer() {
 
   // Position handle on init / window resize
   function positionColResizer() {
+    if (!colResizer) return;
     const inCol = document.querySelector('.inputs-column');
     if (!inCol) return;
     const mRect = main.getBoundingClientRect();
     const cRect = inCol.getBoundingClientRect();
     colResizer.style.left = (cRect.right - mRect.left + 10) + 'px';
   }
-  requestAnimationFrame(positionColResizer);
-  window.addEventListener('resize', positionColResizer);
+  if (isDesktop && colResizer) {
+    requestAnimationFrame(positionColResizer);
+    window.addEventListener('resize', positionColResizer);
+  }
 
   let colDragStartX = 0, colDragStartPct = 0.5;
 
   function getColPct() {
     const cols = getComputedStyle(main).gridTemplateColumns.split(' ');
-    // cols[0] is left width px, cols[1] is resizer ~20px, cols[2] is right width px
     const leftW = parseFloat(cols[0]) || 0;
     const rightW = parseFloat(cols[2]) || 0;
     return (leftW + rightW) > 0 ? leftW / (leftW + rightW) : 0.5;
   }
 
-  colResizer.addEventListener('mousedown', e => {
+  if (colResizer) colResizer.addEventListener('mousedown', e => {
     e.preventDefault();
     colDragStartX = e.clientX;
     colDragStartPct = getColPct();
@@ -3773,7 +3779,7 @@ function initLayoutResizer() {
   });
 
   // Touch support for column resizer
-  colResizer.addEventListener('touchstart', e => {
+  if (colResizer) colResizer.addEventListener('touchstart', e => {
     e.preventDefault();
     colDragStartX = e.touches[0].clientX;
     colDragStartPct = getColPct();
@@ -3796,36 +3802,85 @@ function initLayoutResizer() {
   }, { passive: false });
 
   // Double-click col-resizer: reset to 50/50
-  colResizer.addEventListener('dblclick', () => {
+  if (isDesktop && colResizer) colResizer.addEventListener('dblclick', () => {
     main.style.gridTemplateColumns = '';
     saveLayout();
     requestAnimationFrame(positionColResizer);
   });
 
-  // ── Tile resizers ────────────────────────────────────────────────────
+  // ── Tile resizers (all screen sizes) ─────────────────────────────────
+  function resetTileClamp(card) {
+    card.style.maxHeight = '';
+    card.style.overflow = '';
+    card.style.minHeight = '';
+    card.classList.remove('is-clamped');
+  }
+
+  function updateShowMore(card) {
+    const btn = card._showMoreBtn;
+    if (!btn) return;
+    const isClipped = card.classList.contains('is-clamped') && card.scrollHeight > card.clientHeight + 4;
+    btn.style.display = isClipped ? '' : 'none';
+  }
+
   function addTileHandles() {
     document.querySelectorAll('.inputs-column > .card, .output-column > .card').forEach(card => {
       if (card.querySelector('.tile-resizer')) return; // already added
+
+      // Show-more button sits after the card as a flex sibling
+      if (!card._showMoreBtn) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tile-show-more';
+        btn.textContent = '↓ Show more';
+        btn.style.display = 'none';
+        card.insertAdjacentElement('afterend', btn);
+        card._showMoreBtn = btn;
+        btn.addEventListener('click', () => {
+          resetTileClamp(card);
+          updateShowMore(card);
+          saveLayout();
+        });
+      }
+      // Check initial clamped state (restored from saved layout)
+      requestAnimationFrame(() => updateShowMore(card));
+
       const handle = document.createElement('div');
       handle.className = 'tile-resizer';
       handle.title = 'Drag to resize · Double-click to reset';
       card.appendChild(handle);
 
-      let startY = 0, startH = 0;
+      let startY = 0, startH = 0, naturalH = 0;
 
       function startDrag(clientY) {
         startY = clientY;
         startH = card.getBoundingClientRect().height;
+        // Measure natural (unclamped) content height
+        const prevMax = card.style.maxHeight, prevOv = card.style.overflow;
+        card.style.maxHeight = 'none'; card.style.overflow = 'visible';
+        naturalH = card.scrollHeight;
+        card.style.maxHeight = prevMax; card.style.overflow = prevOv;
         handle.classList.add('is-dragging');
         document.body.classList.add('layout-resizing', 'tile-resizing');
       }
       function onMove(clientY) {
         const newH = Math.max(60, startH + (clientY - startY));
-        card.style.minHeight = newH + 'px';
+        if (newH < naturalH - 8) {
+          card.style.maxHeight = newH + 'px';
+          card.style.minHeight = '';
+          card.style.overflow = 'hidden';
+          card.classList.add('is-clamped');
+        } else {
+          card.style.minHeight = newH + 'px';
+          card.style.maxHeight = '';
+          card.style.overflow = '';
+          card.classList.remove('is-clamped');
+        }
       }
       function endDrag() {
         handle.classList.remove('is-dragging');
         document.body.classList.remove('layout-resizing', 'tile-resizing');
+        updateShowMore(card);
         saveLayout();
       }
 
@@ -3845,9 +3900,9 @@ function initLayoutResizer() {
         document.addEventListener('touchmove', onMoveDoc, { passive: false });
         document.addEventListener('touchend', onEnd);
       }, { passive: false });
-      // Double-click: reset this tile's min-height
       handle.addEventListener('dblclick', () => {
-        card.style.minHeight = '';
+        resetTileClamp(card);
+        updateShowMore(card);
         saveLayout();
       });
     });
@@ -3870,7 +3925,9 @@ function initLayoutResizer() {
     const tiles = {};
     document.querySelectorAll('.inputs-column > .card, .output-column > .card').forEach(c => {
       const key = c.id || c.dataset.layoutId;
-      if (key && c.style.minHeight) tiles[key] = c.style.minHeight;
+      if (!key) return;
+      if (c.style.maxHeight) tiles[key] = `clamp:${c.style.maxHeight}`;
+      else if (c.style.minHeight) tiles[key] = c.style.minHeight;
     });
     try { localStorage.setItem(LAYOUT_KEY, JSON.stringify({ cols, tiles })); } catch {}
   }
@@ -7811,6 +7868,7 @@ function updateMktSettingsLabel() {
 let _mktReassignPayload = null;     // { url, title, ..., fromCardId, fromGrade }
 let _mktReassignPickedCard = null;  // chosen target card
 let _mktReassignPickedGrade = null; // chosen target grade key ('raw' | '7' | ...)
+let _mktBulkPayloads = [];          // when bulk-moving: all selected payloads
 
 function openReassignModal(payload) {
   if (!payload) return;
@@ -7867,6 +7925,7 @@ function closeReassignModal() {
   _mktReassignPayload = null;
   _mktReassignPickedCard = null;
   _mktReassignPickedGrade = null;
+  _mktBulkPayloads = [];
 }
 
 // Render the suggested-counterpart row inside #mraResults. Called by
@@ -7896,8 +7955,10 @@ function renderReassignSuggestions(fromCardId) {
     const langBadge = c.lang === 'JP' ? '<span class="mra-lang jp">JP</span>'
                    : c.lang === 'CN' ? '<span class="mra-lang cn">CN</span>'
                    : '<span class="mra-lang en">EN</span>';
+    const imgSrc = typeof getCardImg === 'function' ? getCardImg(c) : '';
     return `
       <button type="button" class="mra-result mra-suggested" data-card-id="${esc(c.i)}">
+        ${imgSrc ? `<img class="mra-result-img" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
         <div class="mra-result-main">
           <div class="mra-result-name">${esc(c.n)} ${langBadge}<span class="mra-suggest-pill">★ Suggested</span></div>
           <div class="mra-result-sub">${esc(c.s || '')} · ${numLabel}${c.r ? ' · ' + esc(c.r) : ''}</div>
@@ -7970,8 +8031,10 @@ function runReassignSearch() {
     const langBadge = c.lang === 'JP' ? '<span class="mra-lang jp">JP</span>'
                    : c.lang === 'CN' ? '<span class="mra-lang cn">CN</span>'
                    : '<span class="mra-lang en">EN</span>';
+    const imgSrc = typeof getCardImg === 'function' ? getCardImg(c) : '';
     return `
       <button type="button" class="mra-result" data-card-id="${esc(c.i)}">
+        ${imgSrc ? `<img class="mra-result-img" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
         <div class="mra-result-main">
           <div class="mra-result-name">${esc(c.n)} ${langBadge}</div>
           <div class="mra-result-sub">${esc(c.s || '')} · ${numLabel}${c.r ? ' · ' + esc(c.r) : ''}</div>
@@ -7995,6 +8058,16 @@ function runReassignSearch() {
       if (save) save.disabled = false;
     });
   });
+}
+
+function updateBulkBar() {
+  const checked = document.querySelectorAll('.mkt-deal-select:checked');
+  const bar = $('mktBulkBar');
+  if (!bar) return;
+  if (!checked.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  const countEl = $('mktBulkCount');
+  if (countEl) countEl.textContent = `${checked.length} selected`;
 }
 
 function setupReassignModal() {
@@ -8030,18 +8103,41 @@ function setupReassignModal() {
   });
   $('mraSaveBtn')?.addEventListener('click', () => {
     if (!_mktReassignPayload || !_mktReassignPickedCard) return;
-    const p = _mktReassignPayload;
+    const payloads = _mktBulkPayloads.length > 0 ? _mktBulkPayloads : [_mktReassignPayload];
     const target = _mktReassignPickedCard;
     const grade = _mktReassignPickedGrade || 'raw';
-    addReassignment({
-      url: p.url, title: p.title, image: p.image, source: p.source,
-      condition: p.condition, seller: p.seller, priceGBP: p.priceGBP,
-      spreadPct: p.spreadPct, signal: p.signal,
-      fromCardId: p.fromCardId, fromGrade: p.fromGrade,
-      toCardId: target.i, toGrade: grade,
+    payloads.forEach(p => {
+      addReassignment({
+        url: p.url, title: p.title, image: p.image, source: p.source,
+        condition: p.condition, seller: p.seller, priceGBP: p.priceGBP,
+        spreadPct: p.spreadPct, signal: p.signal,
+        fromCardId: p.fromCardId, fromGrade: p.fromGrade,
+        toCardId: target.i, toGrade: grade,
+      });
     });
+    document.querySelectorAll('.mkt-deal-select').forEach(cb => { cb.checked = false; });
     closeReassignModal();
+    updateBulkBar();
     if (typeof selectedCard !== 'undefined' && selectedCard) fetchLiveDeals(selectedCard);
+  });
+  // Bulk bar — "Move selected" and "Clear"
+  $('mktBulkMoveBtn')?.addEventListener('click', () => {
+    const checked = [...document.querySelectorAll('.mkt-deal-select:checked')];
+    if (!checked.length) return;
+    _mktBulkPayloads = checked.map(cb => {
+      try { return JSON.parse(decodeURIComponent(escape(atob(cb.dataset.payload || '')))); }
+      catch (e) { return null; }
+    }).filter(Boolean);
+    if (_mktBulkPayloads.length) openReassignModal(_mktBulkPayloads[0]);
+  });
+  $('mktBulkClearBtn')?.addEventListener('click', () => {
+    document.querySelectorAll('.mkt-deal-select').forEach(cb => { cb.checked = false; });
+    _mktBulkPayloads = [];
+    updateBulkBar();
+  });
+  // Checkbox selection change
+  document.addEventListener('change', e => {
+    if (e.target.closest('.mkt-deal-select')) updateBulkBar();
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('mraModal') && $('mraModal').style.display !== 'none') closeReassignModal();
@@ -8466,6 +8562,7 @@ function mktRenderDealCard(d, meta) {
         </div>
       </a>
       <div class="mkt-deal-actions">
+        <label class="mkt-deal-check-wrap" title="Select for bulk move"><input type="checkbox" class="mkt-deal-select" data-payload="${enc}"></label>
         <button type="button" class="mkt-deal-open" data-url="${esc(d.url)}" title="Open listing on eBay">Open ↗</button>
         <button type="button" class="mkt-deal-reassign" data-payload="${enc}" title="Wrong card? Move this listing" aria-label="Move this listing to a different card">⇄ Move</button>
         <button type="button" class="mkt-deal-dismiss" data-payload="${enc}" title="Not relevant — hide this listing" aria-label="Dismiss this listing">✕ Hide</button>

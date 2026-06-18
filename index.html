@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619ba">
+  <link rel="stylesheet" href="style.css?v=20260619bb">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1385,6 +1385,11 @@
               <button type="button" class="mkt-refresh-btn" id="mktRefreshBtn" title="Re-run the marketplace scan for the selected card" aria-label="Refresh marketplace scan"><span class="mkt-refresh-ico" aria-hidden="true">↻</span><span class="mkt-refresh-label">Refresh</span></button>
             </div>
             <div class="mkt-alert-banner" id="mktAlertBanner" style="display:none"></div>
+            <div class="mkt-bulk-bar" id="mktBulkBar" style="display:none">
+              <span class="mkt-bulk-count" id="mktBulkCount">0 selected</span>
+              <button type="button" class="mkt-bulk-move" id="mktBulkMoveBtn">⇄ Move selected</button>
+              <button type="button" class="mkt-bulk-clear" id="mktBulkClearBtn">Clear</button>
+            </div>
             <div class="mkt-grade-tabs" id="mktGradeTabs" role="tablist">
               <button class="mkt-grade-tab" data-grade="raw"   role="tab" type="button"><span class="mkt-grade-tab-label">Raw</span><span class="mkt-grade-tab-badge" id="mktBadge-raw">·</span></button>
               <button class="mkt-grade-tab" data-grade="psa7"  role="tab" type="button"><span class="mkt-grade-tab-label">PSA 7</span><span class="mkt-grade-tab-badge" id="mktBadge-psa7">·</span></button>
@@ -2000,6 +2005,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619ba"></script>
+  <script src="app.js?v=20260619bb"></script>
 </body>
 </html>

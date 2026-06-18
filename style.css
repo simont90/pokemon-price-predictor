@@ -247,6 +247,25 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   .tile-resizer::after { width: 48px; height: 4px; }
 }
 
+/* Clamped card — fade hint at bottom edge when content is hidden */
+.card.is-clamped {
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, rgba(0,0,0,0.5) 88%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 60%, rgba(0,0,0,0.5) 88%, transparent 100%);
+}
+.card.is-clamped .tile-resizer { display: none !important; }
+/* Show-more button — flex sibling inserted after clamped card */
+.tile-show-more {
+  display: block;
+  width: max-content; margin: 1px auto 0;
+  padding: 3px 16px 4px;
+  font-size: 11px; font-family: var(--mono); letter-spacing: 0.03em;
+  color: var(--text-muted); background: var(--bg-raised);
+  border: 1px solid var(--border); border-radius: 10px;
+  cursor: pointer; position: relative; z-index: 2;
+  transition: color 0.12s, border-color 0.12s;
+}
+.tile-show-more:hover { color: var(--text); border-color: var(--accent); }
+
 /* Cards */
 .card { background: linear-gradient(160deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.05) 55%, rgba(0,0,0,0.03) 100%); backdrop-filter: blur(32px) saturate(220%); -webkit-backdrop-filter: blur(32px) saturate(220%); border: 1px solid rgba(255,255,255,0.22); box-shadow: inset 0 2px 0 rgba(255,255,255,0.36), inset 1px 0 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.18), 0 20px 60px rgba(0,0,0,0.50), 0 0 0 0.5px rgba(255,255,255,0.10); border-radius: var(--radius-lg); padding: 22px; }
 .card h2 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4px; }
@@ -3639,6 +3658,40 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   font-size: 12px; color: var(--text); flex: 1; min-width: 0;
 }
 .mkt-alert-banner-trigger strong { color: var(--green); }
+
+/* Bulk move bar — appears above grade tabs when listings are selected ------- */
+.mkt-bulk-bar {
+  align-items: center; gap: 10px;
+  margin-bottom: 10px; padding: 8px 12px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.mkt-bulk-count {
+  flex: 1; font-family: var(--mono); font-size: 11px; color: var(--text-muted);
+}
+.mkt-bulk-move {
+  padding: 5px 14px; font-size: 12px; font-weight: 600;
+  background: var(--accent); color: #000;
+  border: none; border-radius: 6px; cursor: pointer;
+  transition: filter 0.12s;
+}
+.mkt-bulk-move:hover { filter: brightness(1.08); }
+.mkt-bulk-clear {
+  padding: 5px 10px; font-size: 12px;
+  background: transparent; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+}
+.mkt-bulk-clear:hover { color: var(--text); border-color: var(--text-faint); }
+
+/* Checkbox in deal action bar */
+.mkt-deal-check-wrap {
+  display: flex; align-items: center; cursor: pointer;
+  padding: 0 4px; flex-shrink: 0;
+}
+.mkt-deal-select {
+  width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent);
+}
+
 .mkt-live-header h3 {
   margin: 0; font-size: 13px; font-weight: 700; color: var(--green);
   letter-spacing: 0.02em; text-transform: uppercase;
@@ -3929,12 +3982,13 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 #mraInput:focus { border-color: var(--accent); }
 .mra-results {
-  max-height: 220px; overflow-y: auto;
+  max-height: 340px; overflow-y: auto;
   display: flex; flex-direction: column; gap: 4px;
   margin-bottom: 14px;
 }
 .mra-result {
   text-align: left;
+  display: flex; align-items: center; gap: 10px;
   padding: 8px 10px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
@@ -3942,6 +3996,15 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   color: var(--text);
   cursor: pointer;
   transition: all 0.12s ease;
+}
+.mra-result-main { flex: 1; min-width: 0; }
+.mra-result-img {
+  width: 40px; height: 56px;
+  object-fit: cover; border-radius: 4px;
+  flex-shrink: 0; background: var(--bg-raised);
+}
+.mra-result.mra-suggested .mra-result-img {
+  width: 80px; height: 112px; border-radius: 6px;
 }
 .mra-result:hover { border-color: var(--accent); }
 .mra-result.is-picked {
