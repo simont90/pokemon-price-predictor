@@ -263,6 +263,25 @@ function getCachedPrice(cardId) {
   return entry;
 }
 
+// Returns the last-stored cache entry regardless of age (stale-but-usable fallback).
+function getLastKnownPrice(cardId) {
+  const cache = getPriceCache();
+  return cache[cardId] || null;
+}
+
+// ---- TCGPlayer URL overrides (per-card manual/auto-enriched link) ----
+const TCG_OVERRIDE_KEY = 'pkm-tcg-overrides-v1';
+function getTcgOverride(cardId) {
+  try { return JSON.parse(localStorage.getItem(TCG_OVERRIDE_KEY) || '{}')[cardId] || null; } catch { return null; }
+}
+function setTcgOverride(cardId, url) {
+  try {
+    const map = JSON.parse(localStorage.getItem(TCG_OVERRIDE_KEY) || '{}');
+    if (url) map[cardId] = url; else delete map[cardId];
+    localStorage.setItem(TCG_OVERRIDE_KEY, JSON.stringify(map));
+  } catch {}
+}
+
 // ---- Live Price State ----
 let livePrice = null; // Current card's live pricing data
 let livePriceFetchId = 0;
@@ -1804,8 +1823,10 @@ function renderLivePrice(data) {
     }
     // TCGPlayer link
     const tcgLink = $('tcgPlayerLink');
-    if (data.tcgUrl) {
-      tcgLink.href = data.tcgUrl;
+    const tcgOverrideUrl = selectedCard ? getTcgOverride(selectedCard.i) : null;
+    const tcgFinalUrl = tcgOverrideUrl || data.tcgUrl;
+    if (tcgFinalUrl) {
+      tcgLink.href = tcgFinalUrl;
       tcgLink.style.display = '';
     } else {
       tcgLink.style.display = 'none';
@@ -2100,6 +2121,14 @@ function selectCard(id) {
   $('linkTcgJp').href = `https://www.tcgcollector.com/cards/jp?${jpParams.toString()}`;
   const pcQuery = card.cn ? `${card.n} ${card.cn}` : card.n;
   $('linkPriceCharting').href = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(pcQuery)}`;
+
+  // Reset enrich UI for each new card selection
+  const enrichStatus = $('linkEnrichStatus');
+  const manualWrap = $('linkTcgManualWrap');
+  const manualInput = $('linkTcgManualInput');
+  if (enrichStatus) { enrichStatus.style.display = 'none'; enrichStatus.textContent = ''; }
+  if (manualWrap) manualWrap.style.display = 'none';
+  if (manualInput) manualInput.value = '';
 
   // Static prices (will be overwritten by live)
   $('marketRawUSD').textContent = fmtUSD(card.p);
@@ -3413,6 +3442,25 @@ function setupPortfolio() {
   $('portfolioToggle').addEventListener('click', togglePortfolio);
   $('portfolioClose').addEventListener('click', () => { $('portfolioPanel').style.display = 'none'; });
   $('addPortfolioBtn').addEventListener('click', toggleCardInPortfolio);
+
+  const refreshBtn = $('portfolioRefreshBtn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      const ids = portfolio.map(p => p.id).filter(Boolean);
+      if (!ids.length || _psState.running) return;
+      refreshBtn.disabled = true;
+      const orig = refreshBtn.innerHTML;
+      refreshBtn.textContent = '⟳ Refreshing…';
+      try {
+        await psBatchRefresh(ids, 'Refresh collection prices');
+        renderPortfolio();
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.innerHTML = orig;
+      }
+    });
+  }
+
   renderPortfolio();
 }
 
@@ -3825,11 +3873,15 @@ function renderPortfolio() {
   let hasAnyAcq = false;
   const items = portfolio.map(p => {
     const currentCard = cardData ? cardData.cards.find(c => c.i === p.id) : null;
-    // Try cached live price first
-    const cached = getCachedPrice(p.id);
-    const currentPrice = cached ? (cached.market || cached.mid || (currentCard ? currentCard.p : p.price)) : (currentCard ? currentCard.p : p.price);
+    const cached = getCachedPrice(p.id);           // fresh (<1 h)
+    const stale = !cached ? getLastKnownPrice(p.id) : null; // stale fallback
+    const priceData = cached || stale;
+    const currentPrice = priceData
+      ? (priceData.market || priceData.mid || (currentCard ? currentCard.p : p.price))
+      : (currentCard ? currentCard.p : p.price);
     const currentGBP = usdToGbp(currentPrice);
     const isLive = !!cached;
+    const isStale = !cached && !!stale;
     totalGBP += currentGBP;
 
     let signal = null;
@@ -3877,7 +3929,7 @@ function renderPortfolio() {
           ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="" onerror="this.style.display='none'">` : '<div class="portfolio-item-img"></div>'}
           <div class="portfolio-item-info">
             <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}</div>
-            <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}</div>
+            <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}${isStale ? ' · <span class="stale-price-tag" title="Cached price (>1h old) — tap Refresh prices to update">cached</span>' : ''}</div>
             ${acqLine}
           </div>
           <div class="portfolio-item-right">
@@ -6122,6 +6174,50 @@ function setupEditCard() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('ecModal') && $('ecModal').style.display !== 'none') closeEditCard();
   });
+
+  // Auto-enrich TCGPlayer URL
+  $('linkEnrichTcg')?.addEventListener('click', async () => {
+    if (!selectedCard) return;
+    const btn = $('linkEnrichTcg');
+    const status = $('linkEnrichStatus');
+    const manualWrap = $('linkTcgManualWrap');
+    btn.disabled = true;
+    status.style.display = 'block';
+    status.textContent = 'Looking up TCGPlayer…';
+    try {
+      const result = await fetchPokemonTcgIoLinks(selectedCard.i);
+      if (result && result.tcgplayerUrl) {
+        setTcgOverride(selectedCard.i, result.tcgplayerUrl);
+        status.textContent = 'Found — TCGPlayer link saved.';
+        if (livePrice) renderLivePriceData(livePrice);
+      } else {
+        status.textContent = 'Not found automatically — add URL manually:';
+        if (manualWrap) manualWrap.style.display = 'flex';
+      }
+    } catch {
+      status.textContent = 'Lookup failed — add URL manually:';
+      if (manualWrap) manualWrap.style.display = 'flex';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('linkTcgManualSave')?.addEventListener('click', () => {
+    if (!selectedCard) return;
+    const input = $('linkTcgManualInput');
+    const status = $('linkEnrichStatus');
+    const url = (input?.value || '').trim();
+    if (!url || !url.startsWith('http')) {
+      if (status) { status.style.display = 'block'; status.textContent = 'Paste a valid https:// URL.'; }
+      return;
+    }
+    setTcgOverride(selectedCard.i, url);
+    if (status) { status.style.display = 'block'; status.textContent = 'Saved.'; }
+    const wrap = $('linkTcgManualWrap');
+    if (wrap) wrap.style.display = 'none';
+    if (input) input.value = '';
+    if (livePrice) renderLivePriceData(livePrice);
+  });
 }
 
 // Refresh the artwork for the currently selected card. Use this when a CDN URL
@@ -7764,8 +7860,19 @@ function setupReassignModal() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('mraModal') && $('mraModal').style.display !== 'none') closeReassignModal();
   });
-  // Event delegation — catch reassign-button clicks even though the parent
-  // .mkt-deal is an <a>. We have to prevent both navigation AND bubbling.
+  // "Open" button — explicit eBay navigation so tapping Move/Hide never
+  // accidentally opens the listing first.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mkt-deal-open');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const url = btn.dataset.url;
+    if (url) openExternalUrl(url);
+  }, true);
+
+  // Event delegation — catch reassign-button clicks. The buttons are now
+  // siblings of .mkt-deal-main (not children of it) so the link can't fire.
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.mkt-deal-reassign');
     if (!btn) return;
@@ -8150,29 +8257,32 @@ function mktRenderDealCard(d, meta) {
     ? btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
     : '';
   return `
-    <a class="mkt-deal ${meta.claimed ? 'is-claimed' : ''}" href="${esc(d.url)}" target="_blank" rel="noopener">
-      ${img}
-      <div class="mkt-deal-body">
-        <div class="mkt-deal-title">${esc(d.title)}</div>
-        <div class="mkt-deal-meta">
-          <span class="mkt-src ${sourceCls}">${esc(d.source)}</span>
-          ${d.condition ? `<span>${esc(d.condition)}</span>` : ''}
-          ${d.seller ? `<span>· ${esc(d.seller)}</span>` : ''}
-          ${claimedChip}
+    <div class="mkt-deal ${meta.claimed ? 'is-claimed' : ''}">
+      <a class="mkt-deal-main" href="${esc(d.url)}" target="_blank" rel="noopener">
+        ${img}
+        <div class="mkt-deal-body">
+          <div class="mkt-deal-title">${esc(d.title)}</div>
+          <div class="mkt-deal-meta">
+            <span class="mkt-src ${sourceCls}">${esc(d.source)}</span>
+            ${d.condition ? `<span>${esc(d.condition)}</span>` : ''}
+            ${d.seller ? `<span>· ${esc(d.seller)}</span>` : ''}
+            ${claimedChip}
+          </div>
         </div>
-      </div>
-      <div class="mkt-deal-right">
-        <div class="mkt-deal-price">£${d.priceGBP.toFixed(2)}</div>
-        <div class="mkt-deal-spread ${d.spreadPct >= 0 ? 'pos' : 'neg'}">${d.spreadPct >= 0 ? '↓' : '↑'} ${Math.abs(d.spreadPct).toFixed(0)}% vs fair</div>
-        ${typeof d.roi5 === 'number' ? `<div class="mkt-deal-roi5 ${d.roi5 >= 0 ? 'pos' : 'neg'}" title="Projected 5-year ROI at this entry price">5yr ${d.roi5 >= 0 ? '+' : ''}${d.roi5.toFixed(0)}%</div>` : ''}
-        <span class="mkt-pill ${sigCls}">${esc(d.signal)}</span>
-        ${d.risk ? `<span class="mkt-risk mkt-risk-${d.risk}" title="Capital risk band based on % over fair value and 5-year hold ROI">${d.risk.toUpperCase()} RISK</span>` : ''}
-        <div class="mkt-deal-actions">
-          <button type="button" class="mkt-deal-reassign" data-payload="${enc}" title="Wrong card? Move this listing" aria-label="Move this listing to a different card">⇄ Move</button>
-          <button type="button" class="mkt-deal-dismiss" data-payload="${enc}" title="Not relevant — hide this listing for this card + grade" aria-label="Dismiss this listing">✕ Dismiss</button>
+        <div class="mkt-deal-right">
+          <div class="mkt-deal-price">£${d.priceGBP.toFixed(2)}</div>
+          <div class="mkt-deal-spread ${d.spreadPct >= 0 ? 'pos' : 'neg'}">${d.spreadPct >= 0 ? '↓' : '↑'} ${Math.abs(d.spreadPct).toFixed(0)}% vs fair</div>
+          ${typeof d.roi5 === 'number' ? `<div class="mkt-deal-roi5 ${d.roi5 >= 0 ? 'pos' : 'neg'}" title="Projected 5-year ROI at this entry price">5yr ${d.roi5 >= 0 ? '+' : ''}${d.roi5.toFixed(0)}%</div>` : ''}
+          <span class="mkt-pill ${sigCls}">${esc(d.signal)}</span>
+          ${d.risk ? `<span class="mkt-risk mkt-risk-${d.risk}" title="Capital risk band based on % over fair value and 5-year hold ROI">${d.risk.toUpperCase()} RISK</span>` : ''}
         </div>
+      </a>
+      <div class="mkt-deal-actions">
+        <button type="button" class="mkt-deal-open" data-url="${esc(d.url)}" title="Open listing on eBay">Open ↗</button>
+        <button type="button" class="mkt-deal-reassign" data-payload="${enc}" title="Wrong card? Move this listing" aria-label="Move this listing to a different card">⇄ Move</button>
+        <button type="button" class="mkt-deal-dismiss" data-payload="${enc}" title="Not relevant — hide this listing" aria-label="Dismiss this listing">✕ Hide</button>
       </div>
-    </a>
+    </div>
   `;
 }
 
@@ -12016,6 +12126,7 @@ const SYNC_KEYS = [
   'pkm-card-overrides-v1',          // Card metadata overrides
   'pkm-acquisitions-v1',            // How each card was obtained (pack / single + cost)
   'pkm-hold-overrides',             // Per-card grade-specific market price overrides
+  'pkm-tcg-overrides-v1',          // TCGPlayer URL overrides (auto-enriched or manual)
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
