@@ -11556,10 +11556,13 @@ function buildHomeReco(limit = 15) {
   const watchIds    = new Set(watchlist.map(w => w.id));
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
   const results = [];
+  const seenIds = new Set(); // dedup guard — should never fire, but prevents any edge-case duplicate
 
   for (const c of cardData.cards) {
     if (dismissed.has(c.i)) continue;
     if (ownedIds.has(c.i) || wishIds.has(c.i) || watchIds.has(c.i)) continue; // already tracking
+    if (seenIds.has(c.i)) continue; // dedup
+    seenIds.add(c.i);
 
     // Manual raw price override takes priority over live/static market data
     const overrides = (typeof getHoldOverridesForCard === 'function') ? getHoldOverridesForCard(c.i) : {};
@@ -11750,7 +11753,7 @@ function renderHomeDashboard() {
   _renderHomeCollection();
   _renderHomeWishlist();
   _renderHomeWatchlist();
-  _renderHomeReco();
+  _renderHomeReco(true); // always rebuild — tracked-card sets may have changed since last render
 }
 
 // Silently refresh stale tracked card prices in the background when the user
