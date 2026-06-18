@@ -282,7 +282,7 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .selected-card { border-color: var(--accent); border-width: 1.5px; }
 .selected-card-header { display: flex; gap: 16px; margin-bottom: 18px; }
 .card-images { display: flex; gap: 8px; flex-shrink: 0; }
-.card-thumb { width: 80px; height: 112px; object-fit: cover; border-radius: 8px; background: var(--bg-raised); flex-shrink: 0; }
+.card-thumb { width: 80px; height: 112px; object-fit: contain; border-radius: 8px; background: var(--bg-raised); flex-shrink: 0; }
 .card-thumb-jp { border: 1.5px solid var(--demand); opacity: 0.92; }
 .card-thumb-jp:hover { opacity: 1; }
 .selected-card-header { position: relative; overflow: hidden; border-radius: var(--radius-sm); }
@@ -2378,7 +2378,7 @@ textarea, select {
     border-radius: 10px;
     box-shadow: 0 20px 52px rgba(0,0,0,0.65), 0 4px 16px rgba(0,0,0,0.3);
     cursor: zoom-in;
-    object-fit: cover;
+    object-fit: contain;
   }
   .card-links { flex-wrap: wrap; gap: 6px; }
   /* Results screener table: scroll horizontally */

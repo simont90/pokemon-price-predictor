@@ -8516,8 +8516,8 @@ function mktRequiredTokens(card) {
   // Tag tokens that must be present if the card has them
   if (/\bvmax\b/.test(name)) out.push('vmax');
   else if (/\bvstar\b/.test(name)) out.push('vstar');
-  else if (/\bv\b/.test(name) && !/\bex\b/.test(name)) out.push(' v ');
-  else if (/\bex\b/.test(name)) out.push(' ex');
+  else if (/\bv\b/.test(name) && !/\bex\b/.test(name)) out.push('v');
+  else if (/\bex\b/.test(name)) out.push('ex');
   else if (/\bgx\b/.test(name)) out.push('gx');
   return out;
 }
@@ -8555,9 +8555,11 @@ function mktIsJunk(deal, card, requiredTokens, gradeFilter, fairValueGBP) {
   for (const kw of MKT_JUNK_KEYWORDS) {
     if (t.includes(kw)) return true;
   }
-  // Required name + tag tokens
+  // Required name + tag tokens — use \b word boundaries so "Charizard-ex" and
+  // "Charizard-V" also match (hyphen counts as a word boundary).
   for (const tok of requiredTokens) {
-    if (!t.includes(tok)) return true;
+    const esc = tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!new RegExp(`\\b${esc}\\b`, 'i').test(t)) return true;
   }
   // Card-number mismatch
   if (mktNumberMismatch(title, card)) return true;
