@@ -9234,7 +9234,7 @@ function renderHoldStrategy(card) {
     { label: usingAcqCost ? 'Grade My Card' : 'Buy Raw + Grade',  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: gradingWaitMonths, lossProb, lossEV, acqCost: usingAcqCost },
     ...gradedStrategies.map((s, i) => ({
       ...s,
-      desc: (i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling') + (s.slabShipGBP > 0 ? ` — incl. ~£${s.slabShipGBP.toFixed(0)} intl. shipping` : ''),
+      desc: i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling',
       // Variance falls as grade rises (less subjective re-grade risk).
       risk: s.grade === 10 ? 'low' : s.grade === 9 ? 'med' : 'med',
       variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : 0.32,
@@ -9463,6 +9463,15 @@ function renderHoldStrategy(card) {
           <span class="hold-tile-k">Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}</span>
           <span class="hold-tile-v">${fmtGBP(s.today)}</span>
         </div>
+        ${s.slabShipGBP > 0 ? `
+        <div class="hold-tile-row hold-tile-sub">
+          <span class="hold-tile-k">· Card price</span>
+          <span class="hold-tile-v">${fmtGBP(s.today - s.slabShipGBP / fx)}</span>
+        </div>
+        <div class="hold-tile-row hold-tile-sub">
+          <span class="hold-tile-k">· Est. UK shipping</span>
+          <span class="hold-tile-v">~£${s.slabShipGBP.toFixed(0)}</span>
+        </div>` : ''}
         <div class="hold-tile-row">
           <span class="hold-tile-k">5yr target</span>
           <span class="hold-tile-v hold-tile-target">${fmtGBP(s.yr5)}</span>

@@ -4287,6 +4287,9 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .hold-tile-row.hold-tile-warn .hold-tile-k { color: #fca5a5; }
 .hold-tile-row.hold-tile-warn .hold-tile-v { color: #fca5a5; font-weight: 600; }
 .hold-tile-row.hold-tile-warn .hold-tile-v.hold-neg { color: #fca5a5; }
+.hold-tile-row.hold-tile-sub { padding-top: 1px; padding-bottom: 1px; }
+.hold-tile-row.hold-tile-sub .hold-tile-k { color: var(--text-faint); font-size: 0.82em; padding-left: 6px; }
+.hold-tile-row.hold-tile-sub .hold-tile-v { color: var(--text-muted); font-size: 0.82em; }
 
 /* ---------------------------------------------------------
    Grading outcome distribution — "what you actually get"
