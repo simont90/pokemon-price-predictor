@@ -12305,7 +12305,11 @@ function setupPageNav() {
       slider.value  = noLimit ? 5000 : Math.min(Math.max(Math.round(gbp), 100), 5000);
       inputEl.value = noLimit ? '' : Math.round(gbp);
       localStorage.setItem(BUDGET_KEY, noLimit ? String(BUDGET_DEFAULT) : String(Math.round(gbp)));
-      if (rebuild) _renderHomeReco(true);
+      if (rebuild) {
+        _renderHomeReco(true);
+        _renderHomeWishlist();
+        _renderHomeWatchlist();
+      }
     }
 
     // Expose for post-sync UI refresh (reads from localStorage, updates slider+input only)
