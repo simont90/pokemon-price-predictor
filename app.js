@@ -12152,6 +12152,28 @@ function _renderHomeCollection() {
   });
 }
 
+// Find the best strategy for a card that fits within the budget.
+// Tries BLP first (already budget-aware); if over-budget or null, falls
+// back to the best in-budget strategy with positive ROI.
+// Returns { pick, displayGBP, stratLabel } or null.
+function _bestInBudgetPick(card, maxBudget, fx) {
+  if (!card || typeof computeHoldCore !== 'function') return null;
+  const hc = computeHoldCore(card);
+  if (!hc.ok) return null;
+  let pick = hc.bestLongTermPick;
+  if (!pick || pick.today * fx > maxBudget) {
+    // BLP is over-budget or absent — search all strategies for best in-budget positive-ROI option
+    const candidates = (hc.strategies || []).filter(
+      s => s.key !== 'gamble' && s.roi > 0 && s.today * fx <= maxBudget
+    );
+    pick = candidates.length ? _pickBestLTP(candidates) : null;
+  }
+  if (!pick) return null;
+  const displayGBP = pick.today * fx;
+  const stratLabel = pick.key === 'raw' ? 'Raw' : pick.key.startsWith('psa') ? pick.key.replace('psa', 'PSA ') : '';
+  return { pick, displayGBP, stratLabel };
+}
+
 function _renderHomeWishlist() {
   const list = $('homeWishList'), countEl = $('homeWishCount');
   if (!list) return;
@@ -12165,25 +12187,29 @@ function _renderHomeWishlist() {
   const tiles = wishlist.flatMap(w => {
     const card = cardData?.cards.find(c => c.i === w.id);
     if (!card) return [];
-    // Use BLP strategy price if available, else raw market price
-    let displayGBP;
-    const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(card) : { ok: false };
-    if (hc.ok && hc.bestLongTermPick) {
-      displayGBP = hc.bestLongTermPick.today * fx;
+    // Try best in-budget strategy; fall back to raw market price if computeHoldCore unavailable
+    const budgetPick = _bestInBudgetPick(card, maxBudget, fx);
+    let displayGBP, stratLabel = '';
+    if (budgetPick) {
+      displayGBP = budgetPick.displayGBP;
+      stratLabel = budgetPick.stratLabel;
     } else {
       const cached = getCachedPrice(w.id);
       const priceUSD = cached ? (cached.pcUngraded || cached.market || cached.mid || card.p || 0) : (card.p || 0);
       displayGBP = usdToGbp(priceUSD);
     }
-    if (displayGBP > maxBudget) return []; // hide cards outside budget
+    if (displayGBP > maxBudget) return []; // no in-budget strategy found
     const target = w.targetGBP || 0;
     let alertClass = 'alert-far', alertLabel = 'Watching';
     if (target > 0) {
       if (displayGBP <= target) { alertClass = 'alert-buy'; alertLabel = 'BUY NOW'; }
       else if (displayGBP <= target * 1.10) { alertClass = 'alert-watch'; alertLabel = 'Close'; }
     }
-    const sub = target > 0 ? `Target: ${fmtGBPDirect(target)}` : (w.set || '');
-    return [_homeTile(w.id, w.img, w.name, fmtGBPDirect(displayGBP), alertClass, alertLabel, '', sub)];
+    const subParts = [];
+    if (target > 0) subParts.push(`Target: ${fmtGBPDirect(target)}`);
+    else if (w.set) subParts.push(w.set);
+    if (stratLabel) subParts.push(stratLabel);
+    return [_homeTile(w.id, w.img, w.name, fmtGBPDirect(displayGBP), alertClass, alertLabel, '', subParts.join(' · '))];
   });
   if (countEl) countEl.textContent = tiles.length;
   list.innerHTML = tiles.length
@@ -12210,28 +12236,31 @@ function _renderHomeWatchlist() {
   const alertMap = Object.fromEntries(alerts.map(a => [a.id, a]));
   const tiles = watchlist.flatMap(w => {
     const card = cardData?.cards.find(c => c.i === w.id);
-    // Use BLP strategy price if available, else fall back to tracked market price
-    let displayGBP;
+    let displayGBP, stratLabel = '';
     if (card) {
-      const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(card) : { ok: false };
-      if (hc.ok && hc.bestLongTermPick) {
-        displayGBP = hc.bestLongTermPick.today * fx;
+      const budgetPick = _bestInBudgetPick(card, maxBudget, fx);
+      if (budgetPick) {
+        displayGBP = budgetPick.displayGBP;
+        stratLabel = budgetPick.stratLabel;
       }
     }
     if (!(displayGBP > 0)) {
       const a = alertMap[w.id];
       displayGBP = a ? a.currentPriceGBP : usdToGbp(w.addedPriceUSD || 0);
     }
-    if (displayGBP > maxBudget) return []; // hide cards outside budget
+    if (displayGBP > maxBudget) return []; // no in-budget strategy — hide
     const a = alertMap[w.id];
     const signal = a ? a.signal : (w.addedSignal || '—');
     const triggered = a ? (a.triggered && a.dismissedFor !== a.signal) : false;
     const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
+    const subParts = [];
+    if (w.set) subParts.push(w.set);
+    if (stratLabel) subParts.push(stratLabel);
     return [_homeTile(w.id, w.img, w.name,
       displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—',
       sc, signal,
       triggered ? 'alert-tile' : '',
-      w.set || '')];
+      subParts.join(' · '))];
   });
   if (countEl) countEl.textContent = tiles.length;
   list.innerHTML = tiles.length
