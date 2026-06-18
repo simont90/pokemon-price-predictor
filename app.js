@@ -1217,8 +1217,7 @@ function renderCounterpartFlag(card) {
     saveCompare();
     renderCompare();
     updateCompareButton();
-    document.getElementById('comparePanel').style.display = 'block';
-    document.getElementById('comparePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    openComparePanel();
   };
 
   // Background: warm the counterpart's live price so the next paint has live data
@@ -4215,15 +4214,11 @@ function setupWishlist() {
 }
 
 function toggleSidePanel(id) {
-  // Close the others when one opens
-  ['portfolioPanel', 'wishlistPanel', 'comparePanel', 'alertsPanel'].forEach(p => {
+  if (id === 'comparePanel') { openComparePanel(); return; }
+  ['portfolioPanel', 'wishlistPanel', 'alertsPanel'].forEach(p => {
     const el = document.getElementById(p);
     if (!el) return;
-    if (p === id) {
-      el.style.display = el.style.display === 'none' ? 'block' : 'none';
-    } else {
-      el.style.display = 'none';
-    }
+    el.style.display = p === id ? (el.style.display === 'none' ? 'block' : 'none') : 'none';
   });
 }
 
@@ -4369,9 +4364,28 @@ function renderWishlist() {
 let compareSlots = JSON.parse(localStorage.getItem('pkm-compare') || '[null, null]');
 if (!Array.isArray(compareSlots) || compareSlots.length !== 2) compareSlots = [null, null];
 
+function openComparePanel() {
+  const panel = $('comparePanel'), overlay = $('compareOverlay');
+  if (panel) { panel.style.display = 'flex'; panel.setAttribute('aria-hidden', 'false'); }
+  if (overlay) { overlay.style.display = 'block'; overlay.setAttribute('aria-hidden', 'false'); }
+  document.body.style.overflow = 'hidden';
+}
+function closeComparePanel() {
+  const panel = $('comparePanel'), overlay = $('compareOverlay');
+  if (panel) { panel.style.display = 'none'; panel.setAttribute('aria-hidden', 'true'); }
+  if (overlay) { overlay.style.display = 'none'; overlay.setAttribute('aria-hidden', 'true'); }
+  document.body.style.overflow = '';
+}
+
 function setupCompare() {
-  $('compareToggle').addEventListener('click', () => toggleSidePanel('comparePanel'));
-  $('compareClose').addEventListener('click', () => { $('comparePanel').style.display = 'none'; });
+  $('compareToggle').addEventListener('click', () => {
+    $('comparePanel')?.style.display !== 'none' ? closeComparePanel() : openComparePanel();
+  });
+  $('compareClose')?.addEventListener('click', closeComparePanel);
+  $('compareOverlay')?.addEventListener('click', closeComparePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('comparePanel')?.style.display !== 'none') closeComparePanel();
+  });
   $('addCompareBtn').addEventListener('click', toggleCardInCompare);
   renderCompare();
 }
@@ -4393,9 +4407,7 @@ function toggleCardInCompare() {
   renderCompare();
   updateCompareButton();
   // Auto-open when 2 cards are pinned
-  if (compareSlots[0] && compareSlots[1]) {
-    $('comparePanel').style.display = 'block';
-  }
+  if (compareSlots[0] && compareSlots[1]) openComparePanel();
 }
 
 function snapshotCardForCompare(card) {
@@ -6706,14 +6718,69 @@ let _psaChartState   = null;
 function renderPsaGradeRange(card, pullCost, desirability) {
   const section = $('psaRangeSection');
   if (!section || !card) return;
-  // Need a PSA 10 anchor price (static p10 or PriceCharting PSA 10) to derive grades.
   const anchor = getPsa10Anchor(card);
   const psa10Price = anchor.usd;
+  const isJP = card.lang === 'JP';
+  const jpManualRow = $('psaJpManualRow');
+  const jpManualInput = $('psaJpManualInput');
+  const jpManualSave = $('psaJpManualSave');
+  const jpManualSaved = $('psaJpManualSaved');
+
+  // JP cards without a live/tracked anchor: show section with just the manual input row
+  if (isJP && (!psa10Price || psa10Price <= 0) && anchor.source !== 'tracked' && anchor.source !== 'live') {
+    section.style.display = 'block';
+    if (jpManualRow) jpManualRow.style.display = 'flex';
+    // Prefill with existing override if any
+    const existing = getJpPsa10Override(card.i);
+    if (jpManualInput) jpManualInput.value = existing ? existing.gbp : '';
+    if (jpManualSaved) jpManualSaved.textContent = existing ? `Saved ${existing.date || ''}` : '';
+    // Wire Save button (replace listener each render)
+    if (jpManualSave) {
+      jpManualSave.onclick = () => {
+        const val = parseFloat(jpManualInput?.value);
+        if (!val || val <= 0) return;
+        const dateStr = new Date().toISOString().slice(0, 10);
+        setJpPsa10Override(card.i, val, dateStr);
+        if (jpManualSaved) jpManualSaved.textContent = `Saved ${dateStr}`;
+        renderPsaGradeRange(card, pullCost, desirability);
+      };
+    }
+    // Hide chart-dependent elements
+    ['psaAnchorBadge', 'psaGradeToggles', 'psaRangeChart', 'psaRangeFootnote'].forEach(id => {
+      const el = $(id); if (el) el.style.display = 'none';
+    });
+    return;
+  }
+
   if (!psa10Price || psa10Price <= 0) {
     section.style.display = 'none';
     return;
   }
   section.style.display = 'block';
+  // Restore chart elements visibility
+  ['psaGradeToggles', 'psaRangeChart', 'psaRangeFootnote'].forEach(id => {
+    const el = $(id); if (el) el.style.display = '';
+  });
+  // Show JP manual row for JP cards even when anchor exists (non-tracked/live)
+  if (jpManualRow) {
+    const showManual = isJP && anchor.source !== 'tracked' && anchor.source !== 'live';
+    jpManualRow.style.display = showManual ? 'flex' : 'none';
+    if (showManual) {
+      const existing = getJpPsa10Override(card.i);
+      if (jpManualInput) jpManualInput.value = existing ? existing.gbp : '';
+      if (jpManualSaved) jpManualSaved.textContent = existing ? `Saved ${existing.date || ''}` : '';
+      if (jpManualSave) {
+        jpManualSave.onclick = () => {
+          const val = parseFloat(jpManualInput?.value);
+          if (!val || val <= 0) return;
+          const dateStr = new Date().toISOString().slice(0, 10);
+          setJpPsa10Override(card.i, val, dateStr);
+          if (jpManualSaved) jpManualSaved.textContent = `Saved ${dateStr}`;
+          renderPsaGradeRange(card, pullCost, desirability);
+        };
+      }
+    }
+  }
   const psaAnchorBadge = $('psaAnchorBadge');
   if (psaAnchorBadge) {
     if (anchor.source === 'estimated') {

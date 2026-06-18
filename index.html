@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619bb">
+  <link rel="stylesheet" href="style.css?v=20260619bc">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -368,13 +368,15 @@
       </div>
     </section>
 
-    <!-- Compare Panel (slide-in) -->
-    <section class="portfolio-panel compare-panel" id="comparePanel" style="display:none">
-      <div class="portfolio-header">
-        <h2>Compare <span class="wishlist-sub">English vs Japanese, or any two cards</span></h2>
-        <div class="portfolio-actions">
-          <button class="portfolio-close" id="compareClose">✕</button>
+    <!-- Compare — full-screen floating modal -->
+    <div class="compare-overlay" id="compareOverlay" style="display:none" aria-hidden="true"></div>
+    <section class="compare-modal" id="comparePanel" style="display:none" role="dialog" aria-modal="true" aria-labelledby="comparePanelTitle">
+      <div class="compare-modal-header">
+        <div>
+          <h2 id="comparePanelTitle">Compare</h2>
+          <p class="compare-modal-sub">English vs Japanese, or any two cards</p>
         </div>
+        <button class="compare-modal-close" id="compareClose" aria-label="Close compare">✕ Close</button>
       </div>
       <div class="compare-body" id="compareBody">
         <div class="compare-empty">Open a card and tap the compare icon to add it as Slot A. Repeat for Slot B — you'll see a side-by-side breakdown with a winner verdict.</div>
@@ -1347,6 +1349,12 @@
               <p class="card-desc">What each PSA grade is worth today, and where the model says it goes over 5 years. Use this to decide if a lower grade is worth picking up.</p>
             </div>
           </div>
+          <div class="psa-jp-manual-row" id="psaJpManualRow" style="display:none">
+            <span class="psa-jp-manual-label">JP PSA 10 anchor price</span>
+            <input type="number" id="psaJpManualInput" class="psa-jp-manual-input" placeholder="£ e.g. 85" min="0" step="0.01">
+            <button type="button" id="psaJpManualSave" class="psa-jp-manual-save">Save</button>
+            <span class="psa-jp-manual-saved" id="psaJpManualSaved"></span>
+          </div>
           <div class="psa-grade-toggles" id="psaGradeToggles"></div>
           <div class="psa-chart-wrap">
             <canvas id="psaRangeChart" class="psa-range-chart"></canvas>
@@ -2005,6 +2013,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619bb"></script>
+  <script src="app.js?v=20260619bc"></script>
 </body>
 </html>
