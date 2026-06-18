@@ -389,12 +389,18 @@ async function handleGradeCard(request, env) {
     ? { type: 'image', source: { type: 'url', url: imageUrl } }
     : { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageB64 } };
 
-  const prompt = `You are a PSA trading card grading expert. Analyse this Pokémon card image and score each criterion:
+  const prompt = `You are a PSA trading card grading expert assessing a photo of a Pokémon card.
 
-centering: 10=≤55/45, 8=up to 65/35, 6=up to 75/25, 4=worse
-corners: 10=razor-sharp, 8=barely-visible wear, 6=slight rounding, 4=rounded/chipped
-edges: 10=clean, 8=slight fraying, 6=visible nicks, 4=heavy chips
-surface: 10=pristine, 8=faint scratches, 6=visible marks, 4=creases/staining
+IMPORTANT: Photos show lighting reflections, glare, and texture that are NOT real defects — only score below 10 if a genuine physical defect is clearly visible (actual corner wear, real edge chips, true scratches, obvious miscentering). Do not penalise for photo quality, reflections, holographic sheen, or normal print texture.
+
+Score each criterion using ONLY these values: 4, 6, 8, or 10.
+
+centering: 10=≤55/45 both axes (looks centred), 8=up to 65/35, 6=up to 75/25, 4=worse than 75/25
+corners: 10=razor-sharp no visible wear, 8=barely-visible tip wear, 6=slight rounding, 4=rounded or chipped
+edges: 10=clean no fraying, 8=slight fraying barely visible, 6=visible nicks/chips, 4=heavy chips
+surface: 10=no scratches or marks (reflections are NOT marks), 8=genuine faint scratches, 6=visible scratches or print lines, 4=creases/staining
+
+If the card looks gem mint in the photo, all scores should be 10.
 
 Then write one sentence (under 20 words) with a realistic best-case and worst-case PSA grade.
 

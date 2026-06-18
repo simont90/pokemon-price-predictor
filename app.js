@@ -10401,8 +10401,11 @@ function _cgCalcGrade() {
   if (vals.length < 4) return null;
   const min = Math.min(...vals);
   const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  // PSA 10: all perfect, OR at most one "near perfect" criterion (avg ≥ 9.5)
   if (min >= 10) return 10;
-  if (min >= 8 && avg >= 9) return 9;
+  if (min >= 8 && avg >= 9.5) return 10;
+  // PSA 9: all 8+, average ≥ 8.5 (up to three slight issues)
+  if (min >= 8 && avg >= 8.5) return 9;
   if (min >= 8) return 8;
   if (min >= 6 && avg >= 7.5) return 7;
   if (min >= 6) return 6;
@@ -10431,6 +10434,60 @@ function _cgUpdateResult() {
   else if (grade >= 7) notes = `Held back by ${issues.join(' and ')} — grade carefully before paying for grading.`;
   else notes = `Multiple issues on ${issues.join(', ')} — grading likely not worth the fee at this condition.`;
   document.getElementById('cgGradeNotes').textContent = notes;
+}
+
+function _cgShowPicker(imgs) {
+  const wrap = document.getElementById('cgPickerWrap');
+  const grid = document.getElementById('cgPickerGrid');
+  if (!wrap || !grid) return;
+
+  // Track which index is assigned to each slot
+  const assigned = { Front: -1, Back: -1 };
+
+  function refreshBadges() {
+    grid.querySelectorAll('.cg-pick-item').forEach(item => {
+      const idx = +item.dataset.idx;
+      const badge = item.querySelector('.cg-pick-badge');
+      const frontBtn = item.querySelector('[data-slot="Front"]');
+      const backBtn = item.querySelector('[data-slot="Back"]');
+      const label = idx === assigned.Front && idx === assigned.Back ? 'Front + Back'
+                  : idx === assigned.Front ? 'Front'
+                  : idx === assigned.Back  ? 'Back'
+                  : '';
+      badge.textContent = label;
+      badge.style.display = label ? 'block' : 'none';
+      if (frontBtn) frontBtn.classList.toggle('is-active', idx === assigned.Front);
+      if (backBtn)  backBtn.classList.toggle('is-active', idx === assigned.Back);
+    });
+  }
+
+  grid.innerHTML = imgs.map((src, i) => `
+    <div class="cg-pick-item" data-idx="${i}">
+      <img class="cg-pick-thumb" src="${src}" alt="Image ${i + 1}" loading="lazy">
+      <div class="cg-pick-btns">
+        <button class="cg-pick-btn" data-slot="Front" type="button">Front</button>
+        <button class="cg-pick-btn" data-slot="Back" type="button">Back</button>
+      </div>
+      <div class="cg-pick-badge" style="display:none"></div>
+    </div>`).join('');
+
+  grid.querySelectorAll('.cg-pick-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = +btn.closest('.cg-pick-item').dataset.idx;
+      const slot = btn.dataset.slot;
+      if (assigned[slot] === idx) {
+        assigned[slot] = -1;
+        _cgSetImg(slot, null);
+      } else {
+        assigned[slot] = idx;
+        _cgSetImg(slot, imgs[idx]);
+      }
+      refreshBadges();
+    });
+  });
+
+  wrap.style.display = 'block';
+  refreshBadges();
 }
 
 function _cgSetImg(side, src) {
@@ -10482,6 +10539,8 @@ function renderCardGrader() {
   if (urlInput) urlInput.value = '';
   const status = document.getElementById('cgEbayStatus');
   if (status) { status.style.display = 'none'; status.textContent = ''; }
+  const pickerWrap = document.getElementById('cgPickerWrap');
+  if (pickerWrap) { pickerWrap.style.display = 'none'; }
   const verdictEl = document.getElementById('cgVerdict');
   if (verdictEl) verdictEl.textContent = '';
   const gradeStatus = document.getElementById('cgGradeStatus');
@@ -10620,9 +10679,15 @@ function setupCardGrader() {
       if (data.error) throw new Error(data.error);
       const imgs = data.images || [];
       if (!imgs.length) throw new Error('No images found in this listing.');
-      _cgSetImg('Front', imgs[0]);
-      if (imgs[1]) _cgSetImg('Back', imgs[1]);
-      status.textContent = `Loaded ${imgs.length} image${imgs.length > 1 ? 's' : ''}${data.title ? ` — ${data.title.slice(0, 60)}` : ''}.`;
+      const pickerWrap = document.getElementById('cgPickerWrap');
+      if (imgs.length <= 2) {
+        if (pickerWrap) pickerWrap.style.display = 'none';
+        _cgSetImg('Front', imgs[0]);
+        if (imgs[1]) _cgSetImg('Back', imgs[1]);
+      } else {
+        _cgShowPicker(imgs);
+      }
+      status.textContent = `${imgs.length} image${imgs.length > 1 ? 's' : ''} found${imgs.length > 2 ? ' — select Front and Back below' : ''}${data.title ? ` · ${data.title.slice(0, 55)}` : ''}.`;
       // Show inline deal check; pre-fill price if returned (GBP listings) or convert USD
       const dealRow = document.getElementById('cgDealRow');
       const cgPriceInput = document.getElementById('cgEbayPrice');

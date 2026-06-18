@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619ai">
+  <link rel="stylesheet" href="style.css?v=20260619aj">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1191,6 +1191,12 @@
           </div>
           <div class="cg-ebay-status" id="cgEbayStatus" style="display:none"></div>
 
+          <!-- Image picker — appears when listing has more than 2 photos -->
+          <div class="cg-picker-wrap" id="cgPickerWrap" style="display:none">
+            <div class="cg-picker-label">Tap Front / Back on each image to assign</div>
+            <div class="cg-picker-grid" id="cgPickerGrid"></div>
+          </div>
+
           <!-- Inline deal check — appears after Fetch -->
           <div class="cg-deal-row" id="cgDealRow" style="display:none">
             <div class="cg-deal-inputs">
@@ -1989,6 +1995,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619ai"></script>
+  <script src="app.js?v=20260619aj"></script>
 </body>
 </html>
