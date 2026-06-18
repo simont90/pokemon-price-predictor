@@ -896,24 +896,51 @@ function buildCounterpartRecommendation(card) {
   const jpPsa10Manual = getJpPsa10Override(jpCardRef.i); // user-saved manual entry
 
   // ── S1: Raw, keep raw ──
-  // ROI% is the same for both (same character/rarity/set age growth model);
-  // winner is purely the cheaper entry price.
+  // Winner balances upfront cost saving vs long-term ROI projection.
+  // ROI CAN differ between EN and JP because projectGradePrice anchors on each
+  // card's PSA10 ceiling — a higher ceiling lifts the 5yr raw projection.
+  // Formula: pricier card wins if its ROI advantage > savingsPct × 0.4.
+  // At 13% gap that threshold is 5.2pts — a clear EN upside overcomes it.
+  // At 25%+ gap the bar rises proportionally so a big saving still wins unless
+  // the long-term edge is substantial.
   let s1, s1winner;
   {
     const enS = getStrat(enHold, 'raw');
     const jpS = getStrat(jpHold, 'raw');
-    const roiSuffix = enS ? ` · both ${fmtRoi(enS.roi)} 5yr ROI` : '';
+    const enLine = enS
+      ? `EN £${enRawGBP.toFixed(0)} → 5yr ${fmtP(enS.yr5)} ${fmtRoi(enS.roi)}`
+      : `EN £${enRawGBP.toFixed(0)}`;
+    const jpLine = jpS
+      ? `JP £${jpRawGBP.toFixed(0)} → 5yr ${fmtP(jpS.yr5)} ${fmtRoi(jpS.roi)}`
+      : `JP £${jpRawGBP.toFixed(0)}`;
+
     if (savingsPct < 8) {
       s1winner = 'TIE';
-      s1 = `Within 8% — pick the art you prefer. EN £${enRawGBP.toFixed(0)} · JP £${jpRawGBP.toFixed(0)}${roiSuffix}.`;
-    } else if (cheaperLang === 'JP') {
-      s1winner = 'JP';
-      const yr5 = jpS ? ` → 5yr ${fmtP(jpS.yr5)}` : '';
-      s1 = `JP: entry £${jpRawGBP.toFixed(0)}${yr5}${enS ? ' · ' + fmtRoi(enS.roi) : ''} · Saves £${savingsGBP.toFixed(0)} vs EN £${enRawGBP.toFixed(0)}.`;
+      s1 = `Within 8% — pick the art you prefer. ${enLine} · ${jpLine}.`;
+    } else if (!enS || !jpS) {
+      // No model data for one side — fall back to cheaper
+      s1winner = cheaperLang;
+      s1 = `${cheaperLang} is cheaper. ${enLine} · ${jpLine} · saves £${savingsGBP.toFixed(0)}.`;
     } else {
-      s1winner = 'EN';
-      const yr5 = enS ? ` → 5yr ${fmtP(enS.yr5)}` : '';
-      s1 = `EN: entry £${enRawGBP.toFixed(0)}${yr5}${enS ? ' · ' + fmtRoi(enS.roi) : ''} · Saves £${savingsGBP.toFixed(0)} vs JP £${jpRawGBP.toFixed(0)}.`;
+      const cheaperRoi  = cheaperLang === 'EN' ? enS.roi : jpS.roi;
+      const pricierLang = cheaperLang === 'EN' ? 'JP' : 'EN';
+      const pricierRoi  = pricierLang === 'EN' ? enS.roi : jpS.roi;
+      // How much better is the pricier card's long-term ROI?
+      const roiAdv = pricierRoi - cheaperRoi;
+
+      if (roiAdv > savingsPct * 0.4) {
+        // Pricier card's ROI edge is proportionally large enough to justify the premium
+        s1winner = pricierLang;
+        s1 = `${pricierLang} has stronger long-term growth (+${roiAdv.toFixed(0)}pt ROI edge) — worth the £${savingsGBP.toFixed(0)} premium. ${enLine} · ${jpLine}.`;
+      } else if (roiAdv > 0) {
+        // Pricier has slightly better ROI but not enough — cheaper still wins
+        s1winner = cheaperLang;
+        s1 = `${cheaperLang} is the value play — ${savingsGBP.toFixed(0)}% saving outweighs ${roiAdv.toFixed(0)}pt ROI gap. ${enLine} · ${jpLine}.`;
+      } else {
+        // Cheaper has equal or better ROI — no contest
+        s1winner = cheaperLang;
+        s1 = `${cheaperLang} wins on both price and long-term return. ${enLine} · ${jpLine} · saves £${savingsGBP.toFixed(0)}.`;
+      }
     }
   }
 
