@@ -7681,10 +7681,12 @@ function buildTcgplayerUrl(query, maxPriceUSD) {
 // term (we handle grade with the eBay search filter "PSA 10" appended).
 function buildSearchQuery(card, gradeLabel) {
   const name = (card.n || '').replace(/[^a-zA-Z0-9 \-]/g, ' ').replace(/\s+/g, ' ').trim();
-  const setName = (card.s || '').replace(/[^a-zA-Z0-9 \-]/g, ' ').replace(/\s+/g, ' ').trim();
   const langTerm = (card.lang === 'JP') ? 'japanese' : '';
   const gradeTerm = gradeLabel === 'Raw' ? '' : gradeLabel;
-  return [name, setName, langTerm, gradeTerm].filter(Boolean).join(' ');
+  // Card number (e.g. "223 197") beats set name as a search term — eBay titles almost
+  // always include "223/197" but rarely say "Obsidian Flames", so the set name kills recall.
+  const numTerm = card.cn && card.ct ? `${card.cn} ${card.ct}` : (card.cn ? String(card.cn) : '');
+  return [name, numTerm, langTerm, gradeTerm].filter(Boolean).join(' ');
 }
 
 // Deal score 0-100: how attractive scanning this grade is. Combines three
@@ -8571,10 +8573,11 @@ function mktIsJunk(deal, card, requiredTokens, gradeFilter, fairValueGBP) {
     const re = new RegExp(`\\bpsa\\s*-?\\s*${gradeFilter}\\b`, 'i');
     if (!re.test(title)) return true;
   }
-  // Min-price floor
+  // Price window: fair value ±£15 (floor minimum £1)
   if (typeof deal.priceGBP === 'number' && fairValueGBP > 0) {
-    const floor = Math.max(3, fairValueGBP * 0.08);
-    if (deal.priceGBP < floor) return true;
+    const floor = Math.max(1, fairValueGBP - 15);
+    const ceil  = fairValueGBP + 15;
+    if (deal.priceGBP < floor || deal.priceGBP > ceil) return true;
   }
   return false;
 }
