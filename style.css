@@ -3735,12 +3735,30 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .mkt-deal:hover { border-color: var(--accent); }
 .mkt-deal.mkt-deal-alerted {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(232,182,52,0.4), 0 2px 12px rgba(232,182,52,0.15);
+  background: #15803d;
+  border-color: #22c55e;
+  box-shadow: 0 0 0 1px #22c55e, 0 4px 16px rgba(34,197,94,0.25);
 }
+.mkt-deal.mkt-deal-alerted .mkt-deal-main { color: #fff; }
+.mkt-deal.mkt-deal-alerted .mkt-deal-title { color: #fff; }
+.mkt-deal.mkt-deal-alerted:hover .mkt-deal-title { color: #fff; }
+.mkt-deal.mkt-deal-alerted .mkt-deal-meta,
+.mkt-deal.mkt-deal-alerted .mkt-deal-meta span { color: rgba(255,255,255,0.75); }
+.mkt-deal.mkt-deal-alerted .mkt-deal-price { color: #e8b634; }
+.mkt-deal.mkt-deal-alerted .mkt-deal-spread { color: rgba(255,255,255,0.8); }
+.mkt-deal.mkt-deal-alerted .mkt-deal-spread.pos { color: #86efac; }
+.mkt-deal.mkt-deal-alerted .mkt-deal-spread.neg { color: #fca5a5; }
+.mkt-deal.mkt-deal-alerted .mkt-deal-roi5 { color: rgba(255,255,255,0.8); }
+.mkt-deal.mkt-deal-alerted .mkt-deal-roi5.pos { color: #86efac; }
+.mkt-deal.mkt-deal-alerted .mkt-deal-roi5.neg { color: #fca5a5; }
+.mkt-deal.mkt-deal-alerted .mkt-src { opacity: 0.85; }
+.mkt-deal.mkt-deal-alerted .mkt-deal-actions { background: #166534; border-top-color: rgba(255,255,255,0.15); }
+.mkt-deal.mkt-deal-alerted .mkt-deal-open,
+.mkt-deal.mkt-deal-alerted .mkt-deal-reassign,
+.mkt-deal.mkt-deal-alerted .mkt-deal-dismiss { color: rgba(255,255,255,0.85); border-color: rgba(255,255,255,0.25); }
 .mkt-deal-alert-badge {
-  display: inline-block; margin-left: 6px; padding: 1px 5px;
-  background: var(--accent); color: #1a1200;
+  display: inline-block; margin-left: 6px; padding: 1px 6px;
+  background: rgba(255,255,255,0.25); color: #fff;
   font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em;
   border-radius: 3px; vertical-align: middle; white-space: nowrap;
 }
