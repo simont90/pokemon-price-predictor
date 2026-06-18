@@ -8573,11 +8573,16 @@ function mktIsJunk(deal, card, requiredTokens, gradeFilter, fairValueGBP) {
     const re = new RegExp(`\\bpsa\\s*-?\\s*${gradeFilter}\\b`, 'i');
     if (!re.test(title)) return true;
   }
-  // Price window: fair value ±£15 (floor minimum £1)
+  // Price filter — tight window for raw (user-specified ±£15), loose floor for graded
   if (typeof deal.priceGBP === 'number' && fairValueGBP > 0) {
-    const floor = Math.max(1, fairValueGBP - 15);
-    const ceil  = fairValueGBP + 15;
-    if (deal.priceGBP < floor || deal.priceGBP > ceil) return true;
+    if (gradeFilter === 'raw') {
+      const floor = Math.max(1, fairValueGBP - 15);
+      const ceil  = fairValueGBP + 15;
+      if (deal.priceGBP < floor || deal.priceGBP > ceil) return true;
+    } else {
+      const floor = Math.max(3, fairValueGBP * 0.08);
+      if (deal.priceGBP < floor) return true;
+    }
   }
   return false;
 }
