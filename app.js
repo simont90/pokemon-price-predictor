@@ -12164,7 +12164,7 @@ function _bestInBudgetPick(card, maxBudget, fx) {
   const hc = computeHoldCore(card);
   if (!hc.ok) return null;
   const candidates = (hc.strategies || []).filter(
-    s => s.key !== 'gamble' && s.risk === 'low' && s.roi >= 80 && s.today * fx <= maxBudget
+    s => s.key !== 'gamble' && s.risk === 'low' && s.roi > 0 && s.today * fx <= maxBudget
   );
   const pick = candidates.length ? _pickBestLTP(candidates) : null;
   if (!pick) return null;
