@@ -11114,6 +11114,10 @@ const SYNC_ENDPOINT_KEY  = 'pkm-sync-endpoint';
 const SYNC_META_KEY      = 'pkm-sync-meta';        // { lastPush, lastPull, lastErr }
 const SYNC_LAST_HASH_KEY = 'pkm-sync-last-hash';   // payload hash of last successful push
 
+// ---- Account auth constants (standalone — separate from pair-code legacy) ----
+const AUTH_TOKEN_KEY = 'pkm-auth-token';   // JWT (device-local, not synced)
+const AUTH_USER_KEY  = 'pkm-auth-user';    // { username, expiresAt } (device-local)
+
 // ---- helpers ----------------------------------------------------------------
 function syncGetPairCode()   { try { return localStorage.getItem(SYNC_PAIR_CODE_KEY) || ''; } catch { return ''; } }
 function syncSetPairCode(c)  { try { c ? localStorage.setItem(SYNC_PAIR_CODE_KEY, c) : localStorage.removeItem(SYNC_PAIR_CODE_KEY); } catch {} }
@@ -11316,7 +11320,143 @@ function _syncNudgeDone() {
   _syncNudgeHideTimer = setTimeout(() => el.classList.remove('is-visible', 'is-done'), 2200);
 }
 
+// ---- Account auth helpers ----
+function authGetToken()  { try { return localStorage.getItem(AUTH_TOKEN_KEY) || ''; } catch { return ''; } }
+function authGetUser()   { try { return JSON.parse(localStorage.getItem(AUTH_USER_KEY) || 'null'); } catch { return null; } }
+function authSetSession(token, username, expiresAt) {
+  try {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify({ username, expiresAt }));
+  } catch {}
+}
+function authClearSession() {
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+  } catch {}
+}
+function authIsActive() {
+  const token = authGetToken();
+  const user = authGetUser();
+  if (!token || !user) return false;
+  if (user.expiresAt && new Date(user.expiresAt) < new Date()) return false;
+  return true;
+}
+function authWorkerBase() {
+  return syncGetEndpoint() || MKT_WORKER_DEFAULT || '';
+}
+async function authRequest(path, opts = {}) {
+  const base = authWorkerBase();
+  if (!base) throw new Error('Worker URL not set. Configure it in the Cloud sync tab first.');
+  const resp = await fetch(`${base}${path}`, opts);
+  const json = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+  if (!resp.ok) throw new Error(json.error || `HTTP ${resp.status}`);
+  return json;
+}
+async function authRegister(username, password) {
+  return authRequest('/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+}
+async function authLogin(username, password) {
+  return authRequest('/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+}
+async function authSyncPush({ silent = false } = {}) {
+  if (!authIsActive()) return false;
+  const token = authGetToken();
+  const payload = syncBuildPayload();
+  const base = authWorkerBase();
+  if (!base) return false;
+  try {
+    const resp = await fetch(`${base}/user/sync`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!silent) authLogLine('Pushed to account sync', 'ok');
+    authUpdateStatus('Last push: ' + new Date().toLocaleTimeString('en-GB'));
+    return true;
+  } catch (err) {
+    if (!silent) authLogLine('Push failed: ' + err.message, 'err');
+    return false;
+  }
+}
+async function authSyncPull({ mode } = {}) {
+  if (!authIsActive()) return false;
+  const token = authGetToken();
+  const base = authWorkerBase();
+  if (!base) return false;
+  try {
+    const resp = await fetch(`${base}/user/sync`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const j = await resp.json();
+    if (!j || !j.data) { authLogLine('Nothing stored yet', 'info'); return false; }
+    const m = mode || syncReadMergeMode() || 'merge';
+    const result = syncApplyPayload(j, m);
+    authLogLine(`Pulled (${m}): ${result.merged} keys applied`, 'ok');
+    authUpdateStatus('Last pull: ' + new Date().toLocaleTimeString('en-GB'));
+    return true;
+  } catch (err) {
+    authLogLine('Pull failed: ' + err.message, 'err');
+    return false;
+  }
+}
+function authLogLine(msg, cls = '') {
+  const log = document.getElementById('authSyncLog') || document.getElementById('authLog');
+  if (!log) return;
+  const el = document.createElement('div');
+  el.className = `sync-log-line${cls ? ' sync-log-' + cls : ''}`;
+  el.textContent = '[' + new Date().toLocaleTimeString('en-GB') + '] ' + msg;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+function authUpdateStatus(text, cls = '') {
+  const el = document.getElementById('authSyncStatus');
+  if (!el) return;
+  el.className = 'sync-cloud-status' + (cls ? ' ' + cls : ' is-connected');
+  el.querySelector('.sync-cloud-text').textContent = text;
+}
+function authRenderState() {
+  const notIn = document.getElementById('authNotSignedIn');
+  const signedIn = document.getElementById('authSignedIn');
+  if (!notIn || !signedIn) return;
+  const active = authIsActive();
+  notIn.style.display = active ? 'none' : '';
+  signedIn.style.display = active ? '' : 'none';
+  if (active) {
+    const user = authGetUser();
+    const av = document.getElementById('authAvatar');
+    const nm = document.getElementById('authUsernameDisplay');
+    const ex = document.getElementById('authExpiry');
+    if (av) av.textContent = (user.username || '?')[0].toUpperCase();
+    if (nm) nm.textContent = user.username || '';
+    if (ex && user.expiresAt) {
+      const days = Math.round((new Date(user.expiresAt) - Date.now()) / 86400000);
+      ex.textContent = `Session expires in ${days} day${days !== 1 ? 's' : ''}`;
+    }
+  }
+}
+
 function syncSchedulePush() {
+  // Auth path takes priority; legacy pair-code is the fallback.
+  if (authIsActive()) {
+    clearTimeout(_syncPushTimer);
+    _syncNudgeShow();
+    _syncPushTimer = setTimeout(async () => {
+      await authSyncPush({ silent: true });
+      _syncNudgeDone();
+    }, 4000);
+    return;
+  }
   if (!syncGetPairCode() || !syncGetEndpoint()) return;
   clearTimeout(_syncPushTimer);
   _syncNudgeShow();
@@ -11636,9 +11776,95 @@ function syncBindOnce() {
     }
   });
 
+  // ---- Account auth tab event listeners ----
+  function authFormLog(msg, cls = '') {
+    const log = document.getElementById('authLog');
+    if (!log) return;
+    log.innerHTML = '';
+    const el = document.createElement('div');
+    el.className = `sync-log-line${cls ? ' sync-log-' + cls : ''}`;
+    el.textContent = msg;
+    log.appendChild(el);
+  }
+
+  async function authDoLogin(username, password, register = false) {
+    const btn = document.getElementById(register ? 'authRegisterBtn' : 'authLoginBtn');
+    if (btn) btn.disabled = true;
+    authFormLog('Connecting…', 'info');
+    try {
+      const fn = register ? authRegister : authLogin;
+      const res = await fn(username, password);
+      authSetSession(res.token, res.username, res.expiresAt);
+      authRenderState();
+      authLogLine((register ? 'Account created' : 'Signed in') + ' as ' + res.username, 'ok');
+      // Pull down any existing cloud data on first sign-in.
+      await authSyncPull({ mode: 'merge' });
+    } catch (err) {
+      authFormLog(err.message, 'err');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  document.getElementById('authLoginBtn')?.addEventListener('click', async () => {
+    const u = document.getElementById('authUsername')?.value.trim();
+    const p = document.getElementById('authPassword')?.value;
+    if (!u || !p) { authFormLog('Enter a username and password.', 'err'); return; }
+    await authDoLogin(u, p, false);
+  });
+  document.getElementById('authRegisterBtn')?.addEventListener('click', async () => {
+    const u = document.getElementById('authUsername')?.value.trim();
+    const p = document.getElementById('authPassword')?.value;
+    if (!u || !p) { authFormLog('Enter a username and password.', 'err'); return; }
+    await authDoLogin(u, p, true);
+  });
+  document.getElementById('authSyncNowBtn')?.addEventListener('click', async () => {
+    await authSyncPush({ silent: false });
+    await authSyncPull({ mode: 'merge' });
+  });
+  document.getElementById('authPushBtn')?.addEventListener('click', async () => {
+    await authSyncPush({ silent: false });
+  });
+  document.getElementById('authPullBtn')?.addEventListener('click', async () => {
+    await authSyncPull({ mode: syncReadMergeMode() || 'merge' });
+  });
+  document.getElementById('authLogoutBtn')?.addEventListener('click', () => {
+    authClearSession();
+    authRenderState();
+  });
+  document.getElementById('authDeleteAccountBtn')?.addEventListener('click', async () => {
+    if (!confirm('Delete your account? This removes all synced data permanently and cannot be undone.')) return;
+    const token = authGetToken();
+    const base = authWorkerBase();
+    try {
+      const resp = await fetch(`${base}/auth/account`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      authClearSession();
+      authRenderState();
+      authFormLog('Account deleted.', 'ok');
+    } catch (err) {
+      authLogLine('Delete failed: ' + err.message, 'err');
+    }
+  });
+
+  // Initialise auth UI state on load.
+  authRenderState();
+  if (authIsActive()) {
+    authSyncPull({ mode: 'merge' });
+  }
+
   // Pull on focus so a return visit picks up changes from other devices.
   let lastFocusPull = 0;
   window.addEventListener('focus', () => {
+    if (authIsActive()) {
+      if (Date.now() - lastFocusPull < 30_000) return;
+      lastFocusPull = Date.now();
+      authSyncPull({ mode: 'merge' });
+      return;
+    }
     if (!syncGetPairCode() || !syncGetEndpoint()) return;
     if (Date.now() - lastFocusPull < 30_000) return;
     lastFocusPull = Date.now();
@@ -11667,11 +11893,14 @@ function syncBindOnce() {
   }
 
   function syncRunDailyPull() {
-    if (!syncGetPairCode() || !syncGetEndpoint()) return;
     const todayStr = new Date().toISOString().slice(0, 10);
     localStorage.setItem(SYNC_DAILY_KEY, todayStr);
-    syncUpdateCloudLog('Daily 9 AM pull starting…', 'info');
-    syncCloudPull({ mode: 'merge' });
+    if (authIsActive()) {
+      authSyncPull({ mode: 'merge' });
+    } else if (syncGetPairCode() && syncGetEndpoint()) {
+      syncUpdateCloudLog('Daily 9 AM pull starting…', 'info');
+      syncCloudPull({ mode: 'merge' });
+    }
     syncScheduleDailyPull();
   }
 

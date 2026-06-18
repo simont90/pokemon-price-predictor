@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619b">
+  <link rel="stylesheet" href="style.css?v=20260619c">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -180,6 +180,7 @@
         <div class="sync-tabs" role="tablist">
           <button class="sync-tab is-active" data-tab="file" type="button" role="tab">File backup</button>
           <button class="sync-tab" data-tab="cloud" type="button" role="tab">Cloud sync</button>
+          <button class="sync-tab" data-tab="account" type="button" role="tab">Account</button>
         </div>
 
         <!-- Tab 1: File-based backup (works today, no setup) -->
@@ -233,6 +234,57 @@
 
           <div class="sync-tip">
             <strong>Tip for iPhone/iPad:</strong> After tapping Export, choose <em>Save to Files</em> and pick <strong>iCloud Drive › Pokemon Predictor</strong>. iCloud syncs it automatically. On another device, tap <em>Import from file</em> and pick the same backup. Or use AirDrop for one-shot transfers.
+          </div>
+        </div>
+
+        <!-- Tab 3: Account (username + password, standalone) -->
+        <div class="sync-tab-content sync-tab-account" data-tab="account" style="display:none">
+
+          <!-- Not signed in -->
+          <div id="authNotSignedIn" class="sync-auth-form">
+            <p class="sync-intro">Sign in to sync your collection automatically — no pair code needed. Your data is stored under your account on the same Cloudflare Worker.</p>
+            <div class="sync-field">
+              <label for="authUsername">Username</label>
+              <input id="authUsername" type="text" class="sync-input" placeholder="3–32 chars" autocomplete="username" maxlength="32">
+            </div>
+            <div class="sync-field">
+              <label for="authPassword">Password</label>
+              <input id="authPassword" type="password" class="sync-input" placeholder="min 8 characters" autocomplete="current-password">
+            </div>
+            <div class="sync-cloud-actions">
+              <button class="sync-btn sync-btn-primary" id="authLoginBtn" type="button">Sign in</button>
+              <button class="sync-btn" id="authRegisterBtn" type="button">Create account</button>
+            </div>
+            <div class="sync-cloud-log" id="authLog"></div>
+          </div>
+
+          <!-- Signed in -->
+          <div id="authSignedIn" class="sync-auth-signed" style="display:none">
+            <div class="sync-auth-user">
+              <span class="sync-auth-avatar" id="authAvatar"></span>
+              <div>
+                <div class="sync-auth-username" id="authUsernameDisplay"></div>
+                <div class="sync-auth-hint" id="authExpiry"></div>
+              </div>
+            </div>
+            <div class="sync-cloud-status" id="authSyncStatus">
+              <span class="sync-cloud-dot"></span>
+              <span class="sync-cloud-text">—</span>
+            </div>
+            <div class="sync-cloud-actions">
+              <button class="sync-btn sync-btn-primary" id="authSyncNowBtn" type="button">Sync now</button>
+              <button class="sync-btn" id="authPushBtn" type="button">Push</button>
+              <button class="sync-btn" id="authPullBtn" type="button">Pull</button>
+            </div>
+            <div class="sync-cloud-log" id="authSyncLog"></div>
+            <details class="sync-setup" style="margin-top:16px">
+              <summary>Danger zone</summary>
+              <p style="margin:8px 0;font-size:0.8em;color:var(--text-dim)">Logging out only clears your session on this device. Deleting your account removes all synced data permanently.</p>
+              <div class="sync-cloud-actions" style="margin-top:8px">
+                <button class="sync-btn sync-btn-ghost" id="authLogoutBtn" type="button">Log out</button>
+                <button class="sync-btn sync-btn-danger" id="authDeleteAccountBtn" type="button">Delete account</button>
+              </div>
+            </details>
           </div>
         </div>
 
@@ -1804,6 +1856,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619b"></script>
+  <script src="app.js?v=20260619c"></script>
 </body>
 </html>

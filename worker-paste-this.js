@@ -49,11 +49,141 @@ function corsHeaders(request) {
   const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
     'Access-Control-Allow-Origin': allow,
-    'Access-Control-Allow-Methods': 'GET, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, PUT, DELETE, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
   };
+}
+
+// ---- Auth helpers (JWT + PBKDF2 password hashing) ----
+async function _jwtKey(secret) {
+  return crypto.subtle.importKey('raw', new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
+function _b64u(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+function _b64uDec(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+async function jwtSign(payload, secret, days = 30) {
+  const key = await _jwtKey(secret);
+  const enc = new TextEncoder();
+  const h = _b64u(enc.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
+  const now = Math.floor(Date.now() / 1000);
+  const b = _b64u(enc.encode(JSON.stringify({ ...payload, iat: now, exp: now + days * 86400 })));
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(`${h}.${b}`));
+  return `${h}.${b}.${_b64u(sig)}`;
+}
+async function jwtVerify(token, secret) {
+  try {
+    const [h, b, s] = token.split('.');
+    if (!h || !b || !s) return null;
+    const key = await _jwtKey(secret);
+    const ok = await crypto.subtle.verify('HMAC', key, _b64uDec(s),
+      new TextEncoder().encode(`${h}.${b}`));
+    if (!ok) return null;
+    const p = JSON.parse(new TextDecoder().decode(_b64uDec(b)));
+    if (p.exp < Math.floor(Date.now() / 1000)) return null;
+    return p;
+  } catch { return null; }
+}
+async function pwHash(password, salt) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password),
+    'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 100000 }, key, 256);
+  return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function hexToU8(hex) {
+  const a = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) a[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+  return a;
+}
+async function authMiddleware(request, env) {
+  if (!env.JWT_SECRET) return null;
+  const auth = request.headers.get('Authorization') || '';
+  if (!auth.startsWith('Bearer ')) return null;
+  return jwtVerify(auth.slice(7), env.JWT_SECRET);
+}
+
+// ---- Auth route handlers ----
+async function handleAuthRegister(request, env) {
+  const ch = corsHeaders(request);
+  if (!env.SYNC_KV) return _jsonResp(503, { error: 'Storage not configured.' }, ch);
+  if (!env.JWT_SECRET) return _jsonResp(503, { error: 'JWT_SECRET not set in worker secrets.' }, ch);
+  let body; try { body = await request.json(); } catch { return _jsonResp(400, { error: 'Invalid JSON.' }, ch); }
+  const { username = '', password = '' } = body;
+  if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username))
+    return _jsonResp(400, { error: 'Username: 3–32 chars, letters/digits/._- only.' }, ch);
+  if (password.length < 8)
+    return _jsonResp(400, { error: 'Password must be at least 8 characters.' }, ch);
+  const uKey = `auth:user:${username.toLowerCase()}`;
+  if (await env.SYNC_KV.get(uKey)) return _jsonResp(409, { error: 'Username already taken.' }, ch);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('');
+  const hash = await pwHash(password, salt);
+  await env.SYNC_KV.put(uKey, JSON.stringify({ username, passwordHash: hash, salt: saltHex, createdAt: new Date().toISOString() }));
+  const token = await jwtSign({ sub: username.toLowerCase() }, env.JWT_SECRET);
+  return _jsonResp(200, { token, username, expiresAt: new Date(Date.now() + 30 * 86400000).toISOString() }, ch);
+}
+
+async function handleAuthLogin(request, env) {
+  const ch = corsHeaders(request);
+  if (!env.SYNC_KV) return _jsonResp(503, { error: 'Storage not configured.' }, ch);
+  if (!env.JWT_SECRET) return _jsonResp(503, { error: 'JWT_SECRET not set in worker secrets.' }, ch);
+  let body; try { body = await request.json(); } catch { return _jsonResp(400, { error: 'Invalid JSON.' }, ch); }
+  const { username = '', password = '' } = body;
+  const uKey = `auth:user:${username.toLowerCase()}`;
+  const raw = await env.SYNC_KV.get(uKey);
+  // Always hash (constant-time behaviour) before checking existence
+  const salt = raw ? hexToU8(JSON.parse(raw).salt) : crypto.getRandomValues(new Uint8Array(16));
+  const hash = await pwHash(password, salt);
+  if (!raw || hash !== JSON.parse(raw).passwordHash)
+    return _jsonResp(401, { error: 'Invalid username or password.' }, ch);
+  const user = JSON.parse(raw);
+  const token = await jwtSign({ sub: username.toLowerCase() }, env.JWT_SECRET);
+  return _jsonResp(200, { token, username: user.username, expiresAt: new Date(Date.now() + 30 * 86400000).toISOString() }, ch);
+}
+
+async function handleUserSync(request, env) {
+  const ch = corsHeaders(request);
+  if (!env.SYNC_KV) return _jsonResp(503, { error: 'Storage not configured.' }, ch);
+  const claims = await authMiddleware(request, env);
+  if (!claims) return _jsonResp(401, { error: 'Unauthorised — sign in first.' }, ch);
+  const kvKey = `user:data:${claims.sub}`;
+  if (request.method === 'GET') {
+    const stored = await env.SYNC_KV.get(kvKey);
+    if (!stored) return _jsonResp(200, { data: null, ts: 0 }, ch);
+    return new Response(stored, { headers: { ...ch, 'Content-Type': 'application/json' } });
+  }
+  if (request.method === 'PUT') {
+    const body = await request.text();
+    if (body.length > 5 * 1024 * 1024) return _jsonResp(413, { error: 'Payload too large (max 5 MB).' }, ch);
+    try { JSON.parse(body); } catch { return _jsonResp(400, { error: 'Body must be valid JSON.' }, ch); }
+    await env.SYNC_KV.put(kvKey, body);
+    return _jsonResp(200, { ok: true, ts: Date.now(), bytes: body.length }, ch);
+  }
+  if (request.method === 'DELETE') {
+    await env.SYNC_KV.delete(kvKey);
+    return _jsonResp(200, { ok: true }, ch);
+  }
+  return _jsonResp(405, { error: 'Method not allowed.' }, ch);
+}
+
+async function handleDeleteAccount(request, env) {
+  const ch = corsHeaders(request);
+  const claims = await authMiddleware(request, env);
+  if (!claims) return _jsonResp(401, { error: 'Unauthorised.' }, ch);
+  await Promise.all([
+    env.SYNC_KV?.delete(`auth:user:${claims.sub}`),
+    env.SYNC_KV?.delete(`user:data:${claims.sub}`),
+  ]);
+  return _jsonResp(200, { ok: true }, ch);
 }
 
 // ---- eBay OAuth client_credentials token (cached in memory per isolate) ----
@@ -326,6 +456,10 @@ async function handle(request, env) {
   if (url.pathname === '/mcp') return handleMcp(request, env, url);
   if (url.pathname === '/img-proxy') return handleImgProxy(request, env, url);
   if (url.pathname === '/grade-card' && request.method === 'POST') return handleGradeCard(request, env);
+  if (url.pathname === '/auth/register' && request.method === 'POST') return handleAuthRegister(request, env);
+  if (url.pathname === '/auth/login' && request.method === 'POST') return handleAuthLogin(request, env);
+  if (url.pathname === '/user/sync') return handleUserSync(request, env);
+  if (url.pathname === '/auth/account' && request.method === 'DELETE') return handleDeleteAccount(request, env);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 
   const q = url.searchParams.get('q') || '';
