@@ -5926,7 +5926,6 @@ function parseTCGCollectorMarkdown(md) {
 async function runManualAddSearch() {
   const q = $('maInput').value.trim();
   if (!q) { $('maStatus').textContent = 'Type a card name and/or number first.'; $('maStatus').className = 'ql-status error'; return; }
-  const isJP = $('maJP').checked;
   $('maStatus').className = 'ql-status';
   $('maStatus').textContent = 'Searching TCG Collector…';
   $('maResults').innerHTML = '';
@@ -5934,21 +5933,28 @@ async function runManualAddSearch() {
   try {
     const md = await fetchTCGCollectorMarkdown(q);
     let rows = parseTCGCollectorMarkdown(md);
-    if (isJP) {
-      rows = rows.filter(r => /japan/i.test(r.setName) || /\b(jp|japanese)\b/i.test(r.setName));
+    // When JP checkbox is on, sort JP-named sets first but don't hide EN results —
+    // many JP sets on TCG Collector use English names without "japanese" in the text,
+    // so filtering would silently drop all results.
+    const jpChecked = $('maJP').checked;
+    if (jpChecked) {
+      rows.sort((a, b) => {
+        const aJP = /japan/i.test(a.setName) || /\b(jp|japanese)\b/i.test(a.setName) ? 0 : 1;
+        const bJP = /japan/i.test(b.setName) || /\b(jp|japanese)\b/i.test(b.setName) ? 0 : 1;
+        return aJP - bJP;
+      });
     }
     if (!rows.length) {
       $('maStatus').className = 'ql-status error';
-      $('maStatus').textContent = isJP
-        ? 'No Japanese matches on TCG Collector. Try unchecking Japanese, or rephrase.'
-        : 'No cards on TCG Collector for that query. Try just the Pokémon name + number.';
+      $('maStatus').textContent = 'No cards on TCG Collector for that query. Try just the Pokémon name + number.';
       return;
     }
     $('maStatus').className = 'ql-status success';
     $('maStatus').textContent = `Found ${rows.length} card${rows.length === 1 ? '' : 's'}. Pick the right one.`;
     $('maResults').innerHTML = rows.map(renderManualAddCard).join('');
+    // Read checkbox at click time so the user can toggle JP after searching
     $('maResults').querySelectorAll('.ma-add-btn').forEach(b => {
-      b.addEventListener('click', () => addManualCardFromTCGC(JSON.parse(b.dataset.card), isJP));
+      b.addEventListener('click', () => addManualCardFromTCGC(JSON.parse(b.dataset.card), $('maJP').checked));
     });
   } catch (e) {
     console.error(e);
@@ -6721,20 +6727,22 @@ function renderPsaGradeRange(card, pullCost, desirability) {
   const anchor = getPsa10Anchor(card);
   const psa10Price = anchor.usd;
   const isJP = card.lang === 'JP';
+  // Show manual anchor input for JP cards OR any user-added card that lacks a
+  // tracked/live PSA 10 (i.e. not in the static DB and no PC live data yet).
+  const needsManual = (isJP || card._userAdded) && anchor.source !== 'tracked' && anchor.source !== 'live';
   const jpManualRow = $('psaJpManualRow');
   const jpManualInput = $('psaJpManualInput');
   const jpManualSave = $('psaJpManualSave');
   const jpManualSaved = $('psaJpManualSaved');
+  const jpManualLabel = $('psaJpManualLabel');
 
-  // JP cards without a live/tracked anchor: show section with just the manual input row
-  if (isJP && (!psa10Price || psa10Price <= 0) && anchor.source !== 'tracked' && anchor.source !== 'live') {
-    section.style.display = 'block';
-    if (jpManualRow) jpManualRow.style.display = 'flex';
-    // Prefill with existing override if any
+  function wireManualRow() {
+    if (!jpManualRow) return;
+    jpManualRow.style.display = 'flex';
+    if (jpManualLabel) jpManualLabel.textContent = isJP ? 'JP PSA 10 anchor price' : 'PSA 10 anchor price';
     const existing = getJpPsa10Override(card.i);
     if (jpManualInput) jpManualInput.value = existing ? existing.gbp : '';
     if (jpManualSaved) jpManualSaved.textContent = existing ? `Saved ${existing.date || ''}` : '';
-    // Wire Save button (replace listener each render)
     if (jpManualSave) {
       jpManualSave.onclick = () => {
         const val = parseFloat(jpManualInput?.value);
@@ -6745,7 +6753,12 @@ function renderPsaGradeRange(card, pullCost, desirability) {
         renderPsaGradeRange(card, pullCost, desirability);
       };
     }
-    // Hide chart-dependent elements
+  }
+
+  // No anchor and card needs manual input: show section with just the input row
+  if (needsManual && (!psa10Price || psa10Price <= 0)) {
+    section.style.display = 'block';
+    wireManualRow();
     ['psaAnchorBadge', 'psaGradeToggles', 'psaRangeChart', 'psaRangeFootnote'].forEach(id => {
       const el = $(id); if (el) el.style.display = 'none';
     });
@@ -6757,29 +6770,13 @@ function renderPsaGradeRange(card, pullCost, desirability) {
     return;
   }
   section.style.display = 'block';
-  // Restore chart elements visibility
+  // Restore chart element visibility
   ['psaGradeToggles', 'psaRangeChart', 'psaRangeFootnote'].forEach(id => {
-    const el = $(id); if (el) el.style.display = '';
-  });
-  // Show JP manual row for JP cards even when anchor exists (non-tracked/live)
+    const el = $(id); if (el) el.style.display = ''; });
+  // Show manual row alongside the chart for JP/user-added cards with estimated anchor
   if (jpManualRow) {
-    const showManual = isJP && anchor.source !== 'tracked' && anchor.source !== 'live';
-    jpManualRow.style.display = showManual ? 'flex' : 'none';
-    if (showManual) {
-      const existing = getJpPsa10Override(card.i);
-      if (jpManualInput) jpManualInput.value = existing ? existing.gbp : '';
-      if (jpManualSaved) jpManualSaved.textContent = existing ? `Saved ${existing.date || ''}` : '';
-      if (jpManualSave) {
-        jpManualSave.onclick = () => {
-          const val = parseFloat(jpManualInput?.value);
-          if (!val || val <= 0) return;
-          const dateStr = new Date().toISOString().slice(0, 10);
-          setJpPsa10Override(card.i, val, dateStr);
-          if (jpManualSaved) jpManualSaved.textContent = `Saved ${dateStr}`;
-          renderPsaGradeRange(card, pullCost, desirability);
-        };
-      }
-    }
+    if (needsManual) wireManualRow();
+    else jpManualRow.style.display = 'none';
   }
   const psaAnchorBadge = $('psaAnchorBadge');
   if (psaAnchorBadge) {
@@ -13492,6 +13489,15 @@ function syncApplyPayload(payload, mode) {
     if (typeof compareSlots !== 'undefined') compareSlots = JSON.parse(localStorage.getItem('pkm-compare') || '[null, null]');
     if (typeof watchlist !== 'undefined') watchlist = JSON.parse(localStorage.getItem('pkm-watchlist-v1') || '[]');
     if (typeof acquisitions !== 'undefined') acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}');
+  } catch {}
+  // Re-inject user-added cards that arrived from another device, then rebuild
+  // the search index so they appear immediately without a page reload.
+  try {
+    if (applied.includes('pkm-user-cards-v1') && typeof injectUserCards === 'function' && typeof buildSearchIndex === 'function' && cardData) {
+      injectUserCards();
+      buildSearchIndex(cardData.cards);
+      if (typeof buildCounterpartIndex === 'function') buildCounterpartIndex(cardData.cards);
+    }
   } catch {}
   // Trigger re-render of any visible panels.
   try { typeof renderPortfolio    === 'function' && renderPortfolio();    } catch {}
