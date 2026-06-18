@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619ab">
+  <link rel="stylesheet" href="style.css?v=20260619ac">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -697,6 +697,54 @@
             <button class="home-view-all" id="homeRecoRefresh">Refresh</button>
           </div>
           <div class="home-scroll-row" id="homeRecoList"><div class="home-empty">Scanning…</div></div>
+        </section>
+
+        <!-- Buy Raw Recommended -->
+        <section class="home-section-wrap">
+          <div class="home-section-hd">
+            <div class="home-section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/></svg>
+              Buy Raw
+            </div>
+            <span class="home-count-badge" id="homeRecoBuyRawCount">0</span>
+          </div>
+          <div class="home-scroll-row" id="homeRecoBuyRawList"><div class="home-empty">Scanning…</div></div>
+        </section>
+
+        <!-- Buy PSA 8 Recommended -->
+        <section class="home-section-wrap">
+          <div class="home-section-hd">
+            <div class="home-section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Buy PSA 8
+            </div>
+            <span class="home-count-badge" id="homeRecoPsa8Count">0</span>
+          </div>
+          <div class="home-scroll-row" id="homeRecoPsa8List"><div class="home-empty">Scanning…</div></div>
+        </section>
+
+        <!-- Buy PSA 9 Recommended -->
+        <section class="home-section-wrap">
+          <div class="home-section-hd">
+            <div class="home-section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+              Buy PSA 9
+            </div>
+            <span class="home-count-badge" id="homeRecoPsa9Count">0</span>
+          </div>
+          <div class="home-scroll-row" id="homeRecoPsa9List"><div class="home-empty">Scanning…</div></div>
+        </section>
+
+        <!-- Buy PSA 10 Recommended -->
+        <section class="home-section-wrap">
+          <div class="home-section-hd">
+            <div class="home-section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+              Buy PSA 10
+            </div>
+            <span class="home-count-badge" id="homeRecoPsa10Count">0</span>
+          </div>
+          <div class="home-scroll-row" id="homeRecoPsa10List"><div class="home-empty">Scanning…</div></div>
         </section>
 
       </div>
@@ -1912,6 +1960,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619ab"></script>
+  <script src="app.js?v=20260619ac"></script>
 </body>
 </html>

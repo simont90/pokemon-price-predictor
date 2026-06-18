@@ -11473,7 +11473,7 @@ function setupTheme() {
 // ─── Home Dashboard ───────────────────────────────────────────────
 // ── Home Recommendations ──────────────────────────────────────────────────
 const RECO_DISMISSED_KEY = 'pkm-reco-dismissed-v1';
-let _recoCached = null; // { results: [], ts: Date.now() }
+let _recoCached = null; // { general: [], raw: [], psa8: [], psa9: [], psa10: [], ts: number }
 
 function _getRecoDismissed() {
   try { return new Set(JSON.parse(localStorage.getItem(RECO_DISMISSED_KEY) || '[]')); }
@@ -11557,31 +11557,32 @@ function _gemScore(card, marketUSD) {
   return Math.min(3.0, bonus);
 }
 
-function buildHomeReco(limit = 15) {
-  if (!cardData || !cardData.cards) return [];
-  const dismissed   = _getRecoDismissed();
-  const ownedIds    = new Set(portfolio.map(p => p.id));
-  const wishIds     = new Set(wishlist.map(w => w.id));
-  const watchIds    = new Set(watchlist.map(w => w.id));
+// Single-pass reco builder. Returns all five curated lists at once so the
+// expensive card-loop + computeHoldCore work is only done once per rebuild.
+function buildAllHomeRecos(limit = 15) {
+  if (!cardData || !cardData.cards) return { general: [], raw: [], psa8: [], psa9: [], psa10: [] };
+  const dismissed = _getRecoDismissed();
+  const ownedIds  = new Set(portfolio.map(p => p.id));
+  const wishIds   = new Set(wishlist.map(w => w.id));
+  const watchIds  = new Set(watchlist.map(w => w.id));
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
-  const results = [];
-  const seenIds = new Set(); // dedup guard — should never fire, but prevents any edge-case duplicate
+  const general = [];
+  const byStrat  = { raw: [], psa8: [], psa9: [], psa10: [] };
+  const seenIds  = new Set();
 
   for (const c of cardData.cards) {
     if (dismissed.has(c.i)) continue;
-    if (ownedIds.has(c.i) || wishIds.has(c.i) || watchIds.has(c.i)) continue; // already tracking
-    if (seenIds.has(c.i)) continue; // dedup
+    if (ownedIds.has(c.i) || wishIds.has(c.i) || watchIds.has(c.i)) continue;
+    if (seenIds.has(c.i)) continue;
     seenIds.add(c.i);
 
-    // Manual raw price override takes priority over live/static market data
     const overrides = (typeof getHoldOverridesForCard === 'function') ? getHoldOverridesForCard(c.i) : {};
     const manualRawGBP = overrides && overrides.raw > 0 ? overrides.raw : null;
     const marketUSD = manualRawGBP ? manualRawGBP / fx : _recoStaticPrice(c);
 
-    if (!marketUSD || marketUSD < 8) continue; // skip bulk
-    if (marketUSD * fx > 1500) continue;        // skip stratospheric prices for reco
+    if (!marketUSD || marketUSD < 8) continue;
+    if (marketUSD * fx > 1500) continue;
 
-    // Pull cost
     let pullCost = 7.65;
     if (setsData && setsData[c.sc]) {
       const set = setsData[c.sc];
@@ -11598,10 +11599,10 @@ function buildHomeReco(limit = 15) {
 
     const modelUSD = (typeof predictPrice === 'function') ? (predictPrice(pullCost, des.total).priceUSD || 0) : 0;
     const upsidePct = modelUSD > marketUSD ? ((modelUSD - marketUSD) / marketUSD * 100) : 0;
+    const gemScore  = _gemScore(c, marketUSD);
     const onWatchlist = watchIds.has(c.i);
-    const gemScore = _gemScore(c, marketUSD);
 
-    results.push({
+    const base = {
       card: c,
       marketUSD,
       marketGBP: marketUSD * fx,
@@ -11613,11 +11614,30 @@ function buildHomeReco(limit = 15) {
       gemScore,
       onWatchlist,
       reasons: sig.reasons || [],
-    });
+    };
+    general.push(base);
+
+    // Strategy sections — cards where each grade has positive ROI, sorted by
+    // that grade's own risk-adjusted score (not necessarily the overall winner)
+    const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(c) : { ok: false };
+    if (hc.ok && hc.strategies) {
+      for (const sk of Object.keys(byStrat)) {
+        const strat = hc.strategies.find(s => s.key === sk);
+        if (strat && strat.roi > 0) {
+          byStrat[sk].push({
+            ...base,
+            strategyRoi:       strat.roi,
+            strategyRiskAdj:   strat.riskAdjusted,
+            strategyProfitGBP: strat.profit * fx,
+            strategyToday:     strat.today * fx,
+          });
+        }
+      }
+    }
   }
 
-  // STRONG BUY first, then combined score (signal + gem weighting) descending
-  results.sort((a, b) => {
+  // General: STRONG BUY first, then score + gem weighting
+  general.sort((a, b) => {
     const sA = a.signal === 'STRONG BUY' ? 1 : 0;
     const sB = b.signal === 'STRONG BUY' ? 1 : 0;
     const cA = a.score + a.gemScore * 1.5;
@@ -11625,7 +11645,22 @@ function buildHomeReco(limit = 15) {
     return sB - sA || cB - cA || b.upsidePct - a.upsidePct;
   });
 
-  return results.slice(0, limit);
+  // Strategy sections: STRONG BUY first, then risk-adjusted ROI of the winning strategy
+  Object.values(byStrat).forEach(arr =>
+    arr.sort((a, b) => {
+      const sA = a.signal === 'STRONG BUY' ? 1 : 0;
+      const sB = b.signal === 'STRONG BUY' ? 1 : 0;
+      return sB - sA || b.strategyRiskAdj - a.strategyRiskAdj || b.gemScore - a.gemScore;
+    })
+  );
+
+  return {
+    general: general.slice(0, limit),
+    raw:     byStrat.raw.slice(0, limit),
+    psa8:    byStrat.psa8.slice(0, limit),
+    psa9:    byStrat.psa9.slice(0, limit),
+    psa10:   byStrat.psa10.slice(0, limit),
+  };
 }
 
 function _recoTileHtml(r) {
@@ -11653,6 +11688,37 @@ function _recoTileHtml(r) {
       <div class="home-card-name">${esc(r.card.n)}</div>
       <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}${gem}</div>
       <div class="home-card-sub">${upside}</div>
+    </div>
+  </div>`;
+}
+
+function _recoStrategyTileHtml(r) {
+  const id = r.card.i;
+  const imgSrc = (typeof getCardImg === 'function') ? getCardImg(r.card) : '';
+  const img = imgSrc
+    ? `<img class="home-card-art" src="${esc(imgSrc)}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">`
+    : `<div class="home-card-art"></div>`;
+  const manual = r.manualPrice ? `<span class="reco-manual-tag">manual</span>` : '';
+  const gem    = r.gemScore >= 2.0 ? `<span class="reco-gem-tag">overlooked</span>` : '';
+  const roi    = r.strategyRoi !== undefined ? Math.round(r.strategyRoi) : 0;
+  const profit = r.strategyProfitGBP !== undefined ? fmtGBPDirect(r.strategyProfitGBP) : '';
+  const roiLine = roi > 0
+    ? `<span class="reco-upside pos">+${roi}% ROI · ${profit} profit (5yr)</span>`
+    : `<span class="reco-upside">${esc(r.card.s || '')}</span>`;
+  const watchTitle = r.onWatchlist ? 'On watchlist' : 'Add to watchlist';
+  const watchCls   = r.onWatchlist ? 'reco-watch reco-watch-active' : 'reco-watch';
+  return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
+    ${img}
+    <span class="home-card-signal ${r.signalCls}">${r.signal}</span>
+    <div class="reco-actions">
+      <button class="reco-btn reco-dismiss" data-id="${esc(id)}" title="Not interested">✕</button>
+      <button class="reco-btn reco-wish" data-id="${esc(id)}" title="Add to wishlist">♡</button>
+      <button class="reco-btn ${watchCls}" data-id="${esc(id)}" title="${watchTitle}">◎</button>
+    </div>
+    <div class="home-card-info">
+      <div class="home-card-name">${esc(r.card.n)}</div>
+      <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}${gem}</div>
+      <div class="home-card-sub">${roiLine}</div>
     </div>
   </div>`;
 }
@@ -11724,38 +11790,61 @@ function _recoListClick(e) {
   if (tile && !e.target.closest('.reco-btn')) _homeItemClick(tile.dataset.id);
 }
 
-function _renderHomeReco(forceRebuild) {
-  const list    = $('homeRecoList');
-  const countEl = $('homeRecoCount');
-  if (!list) return;
+const _STRAT_SECTIONS = [
+  { key: 'raw',  listId: 'homeRecoBuyRawList', countId: 'homeRecoBuyRawCount' },
+  { key: 'psa8', listId: 'homeRecoPsa8List',   countId: 'homeRecoPsa8Count'   },
+  { key: 'psa9', listId: 'homeRecoPsa9List',   countId: 'homeRecoPsa9Count'   },
+  { key: 'psa10',listId: 'homeRecoPsa10List',  countId: 'homeRecoPsa10Count'  },
+];
 
-  // Attach click handler once — avoids accumulation across re-renders
-  if (!list._recoHandlerBound) {
-    list.addEventListener('click', _recoListClick);
-    list._recoHandlerBound = true;
+function _bindRecoHandler(el) {
+  if (el && !el._recoHandlerBound) {
+    el.addEventListener('click', _recoListClick);
+    el._recoHandlerBound = true;
   }
+}
+
+function _renderHomeReco(forceRebuild) {
+  const list = $('homeRecoList');
+  if (!list) return;
+  _bindRecoHandler(list);
+  _STRAT_SECTIONS.forEach(s => _bindRecoHandler($(s.listId)));
 
   if (forceRebuild) _recoCached = null;
 
   if (!_recoCached) {
     list.innerHTML = '<div class="home-empty">Scanning…</div>';
+    _STRAT_SECTIONS.forEach(s => { const el = $(s.listId); if (el) el.innerHTML = '<div class="home-empty">Scanning…</div>'; });
     requestAnimationFrame(() => {
-      const results = buildHomeReco();
-      _recoCached = { results, ts: Date.now() };
-      _renderHomeRecoResults(results, list, countEl);
+      const all = buildAllHomeRecos();
+      _recoCached = { ...all, ts: Date.now() };
+      _renderHomeRecoResults(all.general, list, $('homeRecoCount'));
+      _STRAT_SECTIONS.forEach(s => _renderHomeRecoStratResults(all[s.key], $(s.listId), $(s.countId)));
     });
   } else {
-    _renderHomeRecoResults(_recoCached.results, list, countEl);
+    _renderHomeRecoResults(_recoCached.general, list, $('homeRecoCount'));
+    _STRAT_SECTIONS.forEach(s => _renderHomeRecoStratResults(_recoCached[s.key], $(s.listId), $(s.countId)));
   }
 }
 
 function _renderHomeRecoResults(results, list, countEl) {
+  if (!list) return;
   if (countEl) countEl.textContent = results.length;
   if (!results.length) {
     list.innerHTML = '<div class="home-empty">No new recommendations right now — all BUY signals are already in your collection or wishlist.</div>';
     return;
   }
   list.innerHTML = results.map(_recoTileHtml).join('');
+}
+
+function _renderHomeRecoStratResults(results, list, countEl) {
+  if (!list) return;
+  if (countEl) countEl.textContent = results.length;
+  if (!results.length) {
+    list.innerHTML = '<div class="home-empty">No cards match this strategy right now — check back after prices refresh.</div>';
+    return;
+  }
+  list.innerHTML = results.map(_recoStrategyTileHtml).join('');
 }
 
 function renderHomeDashboard() {
