@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619bf">
+  <link rel="stylesheet" href="style.css?v=20260619bg">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -773,6 +773,20 @@
 
       </div>
     </div><!-- /#pageHome -->
+
+    <!-- View All modal (home dashboard sections) -->
+    <div class="hva-overlay" id="hvaOverlay" style="display:none" aria-hidden="true"></div>
+    <section class="hva-modal" id="hvaModal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="hvaTitle">
+      <div class="hva-header">
+        <div class="hva-header-left">
+          <h2 class="hva-title" id="hvaTitle">Collection</h2>
+          <span class="hva-count" id="hvaCount"></span>
+        </div>
+        <input type="search" id="hvaSearch" class="hva-search" placeholder="Search by name…" autocomplete="off" spellcheck="false">
+        <button class="hva-close" id="hvaClose">✕ Close</button>
+      </div>
+      <div class="hva-grid" id="hvaGrid"></div>
+    </section>
 
     <!-- Search -->
     <div class="page" id="pagePredict" data-page="predict">
@@ -2013,6 +2027,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619bf"></script>
+  <script src="app.js?v=20260619bg"></script>
 </body>
 </html>

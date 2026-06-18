@@ -6732,6 +6732,120 @@ section.card .card-collapse-btn { padding: 10px; }
   line-height: 1.6;
 }
 
+/* ─── Home "View All" modal ───────────────────────────────── */
+.hva-overlay {
+  position: fixed; inset: 0; z-index: 1500;
+  background: rgba(0,0,0,0.72);
+  backdrop-filter: blur(4px);
+}
+.hva-modal {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1501;
+  width: min(96vw, 960px);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, rgba(255,255,255,0.08) 0%, rgba(14,15,19,0.90) 40%);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+.hva-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.hva-header-left { display: flex; align-items: baseline; gap: 8px; flex: 0 0 auto; }
+.hva-title { margin: 0; font-size: 17px; font-weight: 700; }
+.hva-count { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+.hva-search {
+  flex: 1; min-width: 140px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: var(--radius-sm);
+  color: var(--text); font-size: 14px;
+  outline: none;
+}
+.hva-search:focus { border-color: var(--accent); }
+.hva-close {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text); border-radius: 8px;
+  padding: 8px 14px; font-size: 14px; font-weight: 600;
+  cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.hva-close:hover { background: rgba(255,255,255,0.12); }
+.hva-grid {
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 14px;
+}
+.hva-tile {
+  display: flex; flex-direction: column;
+  border-radius: 14px; overflow: hidden;
+  cursor: pointer;
+  background: linear-gradient(160deg, rgba(255,255,255,0.07) 0%, rgba(0,0,0,0.14) 100%);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  transition: transform 0.18s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.15s;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.hva-tile:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.hva-tile:active { transform: scale(0.95); }
+.hva-tile-img {
+  width: 100%; aspect-ratio: 63/88;
+  object-fit: cover; display: block;
+  background: linear-gradient(135deg,rgba(30,33,50,0.9),rgba(10,11,20,0.9));
+}
+.hva-tile-info {
+  padding: 8px 10px 10px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.hva-tile-name {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.hva-tile-price {
+  font-size: 13px; font-weight: 700; font-family: var(--mono); color: var(--accent);
+}
+.hva-tile-sub { font-size: 10px; color: var(--text-muted); line-height: 1.3; }
+.hva-tile-signal {
+  position: absolute; top: 7px; right: 7px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 2px 6px; border-radius: 4px; text-transform: uppercase;
+  backdrop-filter: blur(6px);
+}
+.hva-tile-signal.sig-strong-buy { background: rgba(72,199,116,0.85); color: #000; }
+.hva-tile-signal.sig-buy        { background: rgba(72,199,116,0.55); color: #fff; }
+.hva-tile-signal.sig-sell       { background: rgba(255,77,109,0.75); color: #fff; }
+.hva-tile-signal.sig-hold       { background: rgba(255,255,255,0.15); color: var(--text-muted); }
+.hva-tile-signal.alert-buy      { background: rgba(72,199,116,0.85); color: #000; }
+.hva-tile-signal.alert-watch    { background: rgba(232,182,52,0.8); color: #000; }
+.hva-tile-signal.alert-far      { background: rgba(255,255,255,0.12); color: var(--text-muted); }
+.hva-empty {
+  grid-column: 1/-1; text-align: center;
+  color: var(--text-faint); font-size: 14px; padding: 40px 0;
+}
+@media (max-width: 500px) {
+  .hva-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+  .hva-header { gap: 8px; }
+  .hva-search { min-width: 100px; }
+}
+
 /* ─── Horizontal card tile scroll row ─────────────────────── */
 .home-scroll-row {
   display: flex;
@@ -6742,6 +6856,9 @@ section.card .card-collapse-btn { padding: 10px; }
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  /* Fade right edge to signal more content */
+  -webkit-mask-image: linear-gradient(to right, black 80%, transparent 100%);
+  mask-image: linear-gradient(to right, black 80%, transparent 100%);
 }
 .home-scroll-row::-webkit-scrollbar { display: none; }
 .home-card-tile {

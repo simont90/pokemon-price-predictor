@@ -12279,6 +12279,138 @@ function _renderHomeRecoStratResults(results, list, countEl) {
   list.innerHTML = results.map(_recoStrategyTileHtml).join('');
 }
 
+// ── Home "View All" modal ─────────────────────────────────────
+let _hvaItems  = [];  // [{id, name, img, price, sub, signal, sigClass}]
+let _hvaTitle  = '';
+
+function openHomeViewAll(title, items) {
+  _hvaTitle  = title;
+  _hvaItems  = items;
+  const modal   = $('hvaModal');
+  const overlay = $('hvaOverlay');
+  const search  = $('hvaSearch');
+  const titleEl = $('hvaTitle');
+  if (titleEl) titleEl.textContent = title;
+  if (search) search.value = '';
+  if (modal)   { modal.style.display   = 'flex'; modal.setAttribute('aria-hidden',   'false'); }
+  if (overlay) { overlay.style.display = 'block'; overlay.setAttribute('aria-hidden', 'false'); }
+  document.body.style.overflow = 'hidden';
+  renderHvaGrid('');
+  setTimeout(() => search?.focus(), 60);
+}
+function closeHomeViewAll() {
+  const modal   = $('hvaModal');
+  const overlay = $('hvaOverlay');
+  if (modal)   { modal.style.display   = 'none'; modal.setAttribute('aria-hidden',   'true'); }
+  if (overlay) { overlay.style.display = 'none'; overlay.setAttribute('aria-hidden', 'true'); }
+  document.body.style.overflow = '';
+}
+function renderHvaGrid(query) {
+  const grid    = $('hvaGrid');
+  const countEl = $('hvaCount');
+  if (!grid) return;
+  const q = (query || '').trim().toLowerCase();
+  const filtered = q ? _hvaItems.filter(it => it.name.toLowerCase().includes(q) || (it.sub || '').toLowerCase().includes(q)) : _hvaItems;
+  if (countEl) countEl.textContent = `${filtered.length} card${filtered.length !== 1 ? 's' : ''}`;
+  if (!filtered.length) {
+    grid.innerHTML = `<div class="hva-empty">${q ? 'No cards match that search.' : 'Nothing here yet.'}</div>`;
+    return;
+  }
+  grid.innerHTML = filtered.map(it => {
+    const img = it.img
+      ? `<img class="hva-tile-img" src="${esc(it.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+      : `<div class="hva-tile-img"></div>`;
+    const signal = it.sigClass && it.signal
+      ? `<span class="hva-tile-signal ${esc(it.sigClass)}">${esc(it.signal)}</span>` : '';
+    return `<div class="hva-tile" data-id="${esc(it.id)}">
+      ${img}${signal}
+      <div class="hva-tile-info">
+        <div class="hva-tile-name">${esc(it.name)}</div>
+        <div class="hva-tile-price">${it.price || '—'}</div>
+        ${it.sub ? `<div class="hva-tile-sub">${esc(it.sub)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  grid.querySelectorAll('.hva-tile').forEach(tile => {
+    tile.addEventListener('click', () => {
+      closeHomeViewAll();
+      _homeItemClick(tile.dataset.id);
+    });
+  });
+}
+function _buildCollectionItems() {
+  return portfolio.map(p => {
+    const card = cardData?.cards.find(c => c.i === p.id);
+    const cached = getCachedPrice(p.id);
+    const priceUSD = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
+    const priceGBP = usdToGbp(priceUSD);
+    let signal = null, sigClass = null;
+    if (card) {
+      let pull = 7.65;
+      if (setsData?.[card.sc]) {
+        const r = setsData[card.sc].rarities?.[card.rc];
+        if (r?.pullRate > 0) pull = Math.round(1 / r.pullRate) * r.count / 100;
+      }
+      const sig = computeSignal(card, pull, autoFillDesirability(card, pull).total);
+      if (sig) { signal = sig.signal; sigClass = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold'; }
+    }
+    return { id: p.id, name: p.name, img: p.img, price: fmtGBPDirect(priceGBP), sub: p.set, signal, sigClass };
+  });
+}
+function _buildWishlistItems() {
+  const maxBudget = getMaxBudgetGBP();
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  return wishlist.flatMap(w => {
+    const card = cardData?.cards.find(c => c.i === w.id);
+    if (!card) return [];
+    const hc = computeHoldCore(card);
+    const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
+    const cached = getCachedPrice(w.id) || getLastKnownPrice(w.id);
+    const usd = (budgetPick ? null : cached) ? (cached.pcUngraded || cached.market || cached.mid || card.p) : card.p;
+    const displayGBP = budgetPick ? budgetPick.displayGBP : usdToGbp(usd) || 0;
+    const target = w.targetGBP || 0;
+    let sigClass = 'alert-far', signal = 'Watching';
+    if (target > 0) {
+      if (displayGBP <= target) { sigClass = 'alert-buy'; signal = 'BUY NOW'; }
+      else if (displayGBP <= target * 1.10) { sigClass = 'alert-watch'; signal = 'Close'; }
+    }
+    const sub = [target > 0 ? `Target: ${fmtGBPDirect(target)}` : w.set, budgetPick ? budgetPick.stratLabel : ''].filter(Boolean).join(' · ');
+    return [{ id: w.id, name: w.name, img: w.img, price: displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', sub, signal, sigClass }];
+  });
+}
+function _buildWatchlistItems() {
+  const maxBudget = getMaxBudgetGBP();
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const alerts = (typeof computeActiveAlerts === 'function') ? computeActiveAlerts() : [];
+  const alertMap = Object.fromEntries(alerts.map(a => [a.id, a]));
+  return watchlist.flatMap(w => {
+    const card = cardData?.cards.find(c => c.i === w.id);
+    if (!card) return [];
+    const hc = computeHoldCore(card);
+    const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
+    const cached = getCachedPrice(w.id) || getLastKnownPrice(w.id);
+    const usd = (budgetPick ? null : cached) ? (cached.pcUngraded || cached.market || cached.mid || card.p) : card.p;
+    const displayGBP = budgetPick ? budgetPick.displayGBP : usdToGbp(usd) || 0;
+    const a = alertMap[w.id];
+    const signal = a ? a.signal : (w.addedSignal || '—');
+    const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
+    const sub = [w.set, budgetPick ? budgetPick.stratLabel : ''].filter(Boolean).join(' · ');
+    return [{ id: w.id, name: w.name, img: w.img, price: displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', sub, signal, sigClass: sc }];
+  });
+}
+function setupHomeViewAll() {
+  $('hvaClose')?.addEventListener('click', closeHomeViewAll);
+  $('hvaOverlay')?.addEventListener('click', closeHomeViewAll);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('hvaModal')?.style.display !== 'none') closeHomeViewAll();
+  });
+  let _hvaSearchTimer;
+  $('hvaSearch')?.addEventListener('input', e => {
+    clearTimeout(_hvaSearchTimer);
+    _hvaSearchTimer = setTimeout(() => renderHvaGrid(e.target.value), 120);
+  });
+}
+
 function renderHomeDashboard() {
   _renderHomeCollection();
   _renderHomeWishlist();
@@ -12563,9 +12695,10 @@ function setupPageNav() {
   }
 
   // Wire "View all" / "Refresh" buttons on the home page
-  document.getElementById('homeOpenCollection')?.addEventListener('click', () => { $('portfolioToggle')?.click(); });
-  document.getElementById('homeOpenWishlist')?.addEventListener('click', () => { $('wishlistToggle')?.click(); });
-  document.getElementById('homeOpenWatchlist')?.addEventListener('click', () => { $('alertsToggle')?.click(); });
+  document.getElementById('homeOpenCollection')?.addEventListener('click', () => openHomeViewAll('My Collection', _buildCollectionItems()));
+  document.getElementById('homeOpenWishlist')?.addEventListener('click', () => openHomeViewAll('Wishlist', _buildWishlistItems()));
+  document.getElementById('homeOpenWatchlist')?.addEventListener('click', () => openHomeViewAll('Watchlist', _buildWatchlistItems()));
+  setupHomeViewAll();
   document.getElementById('homeRecoRefresh')?.addEventListener('click', () => _renderHomeReco(true));
   document.getElementById('homeRefreshAll')?.addEventListener('click', () => {
     const btn = document.getElementById('homeRefreshAll');
