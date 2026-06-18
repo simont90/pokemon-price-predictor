@@ -8352,6 +8352,35 @@ function renderHoldStrategy(card) {
     Risk-adjusted ranking discounts ROI by variance so a coin-flip can't win "best" when
     a steadier graded copy delivers nearly the same return without the wait.
   `;
+
+  // Keep the signal badge in sync with the Hold Strategy conclusion for owned cards.
+  // updateSignal runs before renderHoldStrategy in the card-select flow, so its
+  // independent grading heuristic can contradict what the strategy table actually says.
+  // We correct that here: if the user owns the card, re-derive the badge from winner.
+  if (ownedCard) {
+    const badge = $('signalBadge');
+    const reason = $('signalReason');
+    if (badge) {
+      let sig, cls, why;
+      if (!winner) {
+        sig = 'SELL'; cls = 'signal-sell';
+        why = 'No strategy projects positive 5yr ROI';
+      } else if (winner.key === 'gamble') {
+        sig = 'GRADE'; cls = 'signal-grade';
+        why = 'Grading beats holding raw or buying a slab';
+      } else if (winner.key === 'raw') {
+        sig = 'HOLD'; cls = 'signal-hold';
+        why = 'Holding raw is the best risk-adjusted play';
+      } else {
+        // winner is a graded PSA tier — owning raw, should swap to slab
+        sig = 'SELL'; cls = 'signal-sell';
+        why = `Swap to ${winner.label} — slab outperforms raw long-term`;
+      }
+      badge.textContent = sig;
+      badge.className = `signal-badge ${cls}`;
+      if (reason) reason.textContent = why;
+    }
+  }
 }
 
 // =============================================================
