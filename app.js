@@ -8827,11 +8827,27 @@ async function mktAIGrade(btn) {
 
     if (grade != null) {
       const cardId = (typeof selectedCard !== 'undefined' && selectedCard) ? selectedCard.i : null;
+      const cardName = (typeof selectedCard !== 'undefined' && selectedCard) ? selectedCard.n : '';
       if (cardId) {
-        const aiGrades = JSON.parse(localStorage.getItem('pkm-ai-grades-v1') || '{}');
-        aiGrades[cardId] = { grade, ts: Date.now(), imageUrl,
-          breakdown: { centering: data.centering, corners: data.corners, edges: data.edges, surface: data.surface } };
-        localStorage.setItem('pkm-ai-grades-v1', JSON.stringify(aiGrades));
+        // Extract listing details from the surrounding deal card
+        const dealEl   = btn.closest('.mkt-deal');
+        const mainA    = dealEl?.querySelector('.mkt-deal-main');
+        const listingUrl = mainA?.href || '';
+        const priceEl  = dealEl?.querySelector('.mkt-deal-price');
+        const priceGBP = priceEl ? parseFloat(priceEl.textContent.replace('£', '')) || 0 : 0;
+        const breakdown = { centering: data.centering, corners: data.corners, edges: data.edges, surface: data.surface };
+
+        // Store every AI-graded deal at listing level (not card level)
+        const gradeDeals = JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]');
+        const idx = gradeDeals.findIndex(d => d.listingUrl === listingUrl);
+        const rec = { cardId, cardName, listingUrl, listingImg: imageUrl, priceGBP, aiGrade: grade, breakdown, ts: Date.now() };
+        if (idx >= 0) gradeDeals[idx] = rec; else gradeDeals.unshift(rec);
+        localStorage.setItem('pkm-ai-grade-deals-v1', JSON.stringify(gradeDeals.slice(0, 100)));
+
+        // Remove from candidates once graded
+        const cands = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
+        localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(cands.filter(c => c.listingUrl !== listingUrl)));
+
         try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); } catch {}
       }
     }
@@ -8888,6 +8904,22 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     const took = Math.round(performance.now() - t0);
     const rawDeals = data.deals || [];
     let deals = rawDeals.filter(d => !mktIsJunk(d, card, required, g.workerGrade, fairValueGBP));
+    // Auto-save raw deals with PSA 9-10 text estimate as grade candidates
+    if (g.workerGrade === 'raw') {
+      const newCands = deals
+        .filter(d => { const e = mktEstimateGradeFromText(d.title, d.condition); return e && (e.range === '9–10' || e.range === '8–10'); })
+        .map(d => ({ cardId: card.i, cardName: card.n, listingUrl: d.url, listingImg: d.image || '', priceGBP: d.priceGBP, ts: Date.now() }));
+      if (newCands.length) {
+        const existing = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
+        const graded   = new Set((JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]')).map(r => r.listingUrl));
+        const seen     = new Set(existing.map(c => c.listingUrl));
+        const fresh    = newCands.filter(c => !seen.has(c.listingUrl) && !graded.has(c.listingUrl));
+        if (fresh.length) {
+          localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify([...fresh, ...existing].slice(0, 60)));
+          try { _renderHomeGradeCandidates(); } catch {}
+        }
+      }
+    }
     // Re-score each deal against the true fair value (the worker's spread/signal
     // was relative to the inflated scan cap). Adds 5yr ROI projection and
     // low/medium/high risk band based on % over fair + hold economics.
@@ -12706,7 +12738,8 @@ function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass
   const sub = subText ? `<div class="home-card-sub">${esc(subText)}</div>` : '';
   const tileClass = ['home-card-tile', extraClass, opts.urgentBuy ? 'urgent-buy' : ''].filter(Boolean).join(' ');
   const hiddenAttr = opts.hidden ? ' style="display:none"' : '';
-  return `<div class="${tileClass}" data-id="${id}"${hiddenAttr}>
+  const dealUrlAttr = opts.dealUrl ? ` data-deal-url="${esc(opts.dealUrl)}"` : '';
+  return `<div class="${tileClass}" data-id="${esc(id)}"${hiddenAttr}${dealUrlAttr}>
     ${img}${signal}
     <button class="home-card-remove" aria-label="Remove">✕</button>
     <div class="home-card-info">
@@ -12732,7 +12765,12 @@ function _setupTileEvents(scrollEl, deleteFn) {
       return;
     }
     const tile = e.target.closest('.home-card-tile');
-    if (tile) _homeItemClick(tile.dataset.id);
+    if (!tile) return;
+    if (tile.dataset.dealUrl) {
+      window.open(tile.dataset.dealUrl, '_blank', 'noopener');
+    } else {
+      _homeItemClick(tile.dataset.id);
+    }
   });
 }
 
@@ -12748,56 +12786,59 @@ function _scheduleHomeRender() {
   }, 350);
 }
 
-// Cards AI-graded PSA 10 or PSA 9 that are in the user's collection.
+// eBay listings that were AI graded PSA 10 or PSA 9 via the marketplace scan.
+// Tiles link back to the eBay listing (not the card page).
 function _renderHomeAiGrades() {
   const list10 = $('homeAiG10List'), list9 = $('homeAiG9List');
   const wrap10 = $('homeAiG10Wrap'), wrap9 = $('homeAiG9Wrap');
   if (!list10 || !list9) return;
-  const aiGrades = JSON.parse(localStorage.getItem('pkm-ai-grades-v1') || '{}');
-  const ownedIds = new Set(portfolio.map(p => p.id));
-  const byGrade = g => Object.entries(aiGrades)
-    .filter(([id, r]) => r.grade === g && ownedIds.has(id))
-    .map(([id]) => portfolio.find(p => p.id === id)).filter(Boolean);
+  const allDeals = JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]');
+  const byGrade  = g => allDeals.filter(d => d.aiGrade === g);
   const g10 = byGrade(10), g9 = byGrade(9);
-  const h10 = g10.map(p => p.id).join('|'), h9 = g9.map(p => p.id).join('|');
+  const h10 = g10.map(d => d.listingUrl).join('|');
+  const h9  = g9.map(d => d.listingUrl).join('|');
   if (wrap10) wrap10.style.display = g10.length ? '' : 'none';
   if (wrap9)  wrap9.style.display  = g9.length  ? '' : 'none';
-  if (h10 !== _homeAiG10Hash || !list10.querySelector('.home-card-tile')) {
-    _homeAiG10Hash = h10;
-    const c = $('homeAiG10Count'); if (c) c.textContent = g10.length;
-    list10.innerHTML = g10.map(p => _homeTile(p.id, p.img, p.name, 'AI PSA 10', 'sig-strong-buy', 'PSA 10', '', p.set)).join('');
-    if (g10.length) _setupTileEvents(list10, () => {});
-  }
-  if (h9 !== _homeAiG9Hash || !list9.querySelector('.home-card-tile')) {
-    _homeAiG9Hash = h9;
-    const c = $('homeAiG9Count'); if (c) c.textContent = g9.length;
-    list9.innerHTML = g9.map(p => _homeTile(p.id, p.img, p.name, 'AI PSA 9', 'sig-buy', 'PSA 9', '', p.set)).join('');
-    if (g9.length) _setupTileEvents(list9, () => {});
-  }
+  const renderDeals = (deals, list, hash, hashKey, labelCls, label, countId) => {
+    if (hash === (hashKey === 10 ? _homeAiG10Hash : _homeAiG9Hash) && list.querySelector('.home-card-tile')) return;
+    if (hashKey === 10) _homeAiG10Hash = hash; else _homeAiG9Hash = hash;
+    const c = $(countId); if (c) c.textContent = deals.length;
+    list.innerHTML = deals.map(d =>
+      _homeTile(d.listingUrl, d.listingImg, d.cardName,
+        d.priceGBP ? `£${d.priceGBP.toFixed(2)}` : '',
+        labelCls, label, '', '', { dealUrl: d.listingUrl })
+    ).join('');
+    if (deals.length) _setupTileEvents(list, url => {
+      const store = JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]');
+      localStorage.setItem('pkm-ai-grade-deals-v1', JSON.stringify(store.filter(d => d.listingUrl !== url)));
+      _renderHomeAiGrades();
+    });
+  };
+  renderDeals(g10, list10, h10, 10, 'sig-strong-buy', 'PSA 10', 'homeAiG10Count');
+  renderDeals(g9,  list9,  h9,  9,  'sig-buy',        'PSA 9',  'homeAiG9Count');
 }
 
-// Owned raw cards with ≥25% gem rate that haven't been AI graded yet.
+// Raw eBay listings with PSA 9-10 text estimate, auto-saved by the marketplace
+// scan. Removed once AI graded. Tiles open the eBay listing directly.
 function _renderHomeGradeCandidates() {
   const list = $('homeGradeCandList'), wrap = $('homeGradeCandWrap');
   if (!list) return;
-  const aiGrades = JSON.parse(localStorage.getItem('pkm-ai-grades-v1') || '{}');
-  const candidates = portfolio.filter(p => {
-    if (aiGrades[p.id]) return false;
-    const card = cardData?.cards.find(c => c.i === p.id);
-    return card && typeof card.g === 'number' && card.g >= 0.25;
+  const cands = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
+  const hash  = cands.map(c => c.listingUrl).join('|');
+  if (wrap) wrap.style.display = cands.length ? '' : 'none';
+  if (hash === _homeGradeCandHash && list.querySelector('.home-card-tile')) return;
+  _homeGradeCandHash = hash;
+  const c = $('homeGradeCandCount'); if (c) c.textContent = cands.length;
+  list.innerHTML = cands.map(d =>
+    _homeTile(d.listingUrl, d.listingImg, d.cardName,
+      d.priceGBP ? `£${d.priceGBP.toFixed(2)}` : '',
+      'sig-buy', 'AI Grade?', '', '', { dealUrl: d.listingUrl })
+  ).join('');
+  if (cands.length) _setupTileEvents(list, url => {
+    const store = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
+    localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(store.filter(c => c.listingUrl !== url)));
+    _renderHomeGradeCandidates();
   });
-  const hash = candidates.map(p => p.id).join('|');
-  if (wrap) wrap.style.display = candidates.length ? '' : 'none';
-  if (hash !== _homeGradeCandHash || !list.querySelector('.home-card-tile')) {
-    _homeGradeCandHash = hash;
-    const c = $('homeGradeCandCount'); if (c) c.textContent = candidates.length;
-    list.innerHTML = candidates.map(p => {
-      const card = cardData?.cards.find(cc => cc.i === p.id);
-      const pct = card ? Math.round((card.g || 0) * 100) : 0;
-      return _homeTile(p.id, p.img, p.name, `${pct}% gem rate`, 'sig-buy', 'AI Grade?', '', p.set);
-    }).join('');
-    if (candidates.length) _setupTileEvents(list, () => {});
-  }
 }
 function _homeItemHash(items, prefix) {
   const s = items.map(i => { const c = getCachedPrice(i.id); return i.id + ':' + Math.round((c?.market || c?.mid || 0) * 100); }).join('|');
