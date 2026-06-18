@@ -241,6 +241,7 @@ body {
 .signal-badge.signal-hold { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(232,182,52,0.25); }
 .signal-badge.signal-sell { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
 .signal-badge.signal-strong-buy { background: var(--green); color: var(--bg); border: 1px solid var(--green); font-weight: 800; }
+.signal-badge.signal-grade { background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.35); }
 .signal-reason { font-size: 11px; color: var(--text-muted); line-height: 1.35; }
 
 .price-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }

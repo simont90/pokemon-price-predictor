@@ -2208,10 +2208,35 @@ function updateSignal(card, pullCost, desirability) {
   const result = computeSignal(card, pullCost, desirability);
   if (!result) { wrap.style.display = 'none'; return; }
 
+  const owned = portfolio.some(p => p.id === card.i);
+  let { signal, cls, reasons } = result;
+
+  if (owned) {
+    if (result.score <= -2) {
+      signal = 'SELL'; cls = 'signal-sell';
+    } else {
+      // Check grading upside: PSA 10 > 3× raw, or scan expects PSA 9+
+      const rawPrice = getCurrentPrice(card);
+      const psa10 = card.p10 || 0;
+      const acq = getAcq(card.i);
+      const expectedGrade = acq?.expectedGrade ?? null;
+      const hasGradingUpside = (psa10 > 0 && rawPrice > 0 && psa10 / rawPrice >= 3)
+        || (expectedGrade != null && expectedGrade >= 9);
+      if (hasGradingUpside && result.score >= 1) {
+        signal = 'GRADE'; cls = 'signal-grade';
+        reasons = expectedGrade
+          ? [`Scan expects PSA ${expectedGrade}`, ...result.reasons].slice(0, 3)
+          : [`PSA 10 is ${(psa10 / rawPrice).toFixed(1)}× raw`, ...result.reasons].slice(0, 3);
+      } else {
+        signal = 'HOLD'; cls = 'signal-hold';
+      }
+    }
+  }
+
   wrap.style.display = 'flex';
-  $('signalBadge').textContent = result.signal;
-  $('signalBadge').className = `signal-badge ${result.cls}`;
-  $('signalReason').textContent = result.reasons.join(' · ');
+  $('signalBadge').textContent = signal;
+  $('signalBadge').className = `signal-badge ${cls}`;
+  $('signalReason').textContent = reasons.join(' · ');
 }
 
 // ---- Calculations ----
