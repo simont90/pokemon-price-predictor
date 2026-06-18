@@ -11416,27 +11416,28 @@ function _gemScore(card, marketUSD) {
 
   // 3. Franchise-spillover candidates — generational nostalgia / game re-releases
   // Mega Evolution (XY era): renewed interest driven by Legends ZA bringing megas back.
+  // Require S/A-tier Pokémon + still cheap to avoid tagging already-expensive chases.
   const isMega = n.startsWith('mega ') || /\bm-[a-z]/i.test(n) || /mega evolution/i.test(r);
-  const isXYEra = sc.startsWith('XY') || (card.s || '').match(/^(XY|Flashfire|Phantom Forces|Primal Clash|Roaring Skies|Ancient Origins|BREAKthrough|BREAKpoint|Fates Collide|Steam Siege|Evolutions)/);
+  const isXYEra = sc.startsWith('XY') || (card.s || '').match(/^(XY|Flashfire|Phantom Forces|Primal Clash|Roaring Skies|Ancient Origins|BREAKthrough|BREAKpoint|Fates Collide|Steam Siege|Evolutions)/i);
   if (isMega || isXYEra) {
-    if (charScore >= 8.0 && marketUSD < 35) bonus += 1.5;
-    else if (charScore >= 6.5 && marketUSD < 18) bonus += 0.8;
+    if (charScore >= 9.0 && marketUSD < 30) bonus += 2.0; // S-tier mega still cheap
+    else if (charScore >= 8.0 && marketUSD < 20) bonus += 1.2;
+    else if (charScore >= 6.5 && marketUSD < 12) bonus += 0.6;
   }
 
-  // SWSH VMAX / Gigantamax (Gen 8): only generation with that mechanic.
-  // The cohort that grew up with Sword & Shield hasn't yet driven collector demand.
+  // SWSH Gigantamax only (not all VMAX) — Gigantamax is the truly generation-exclusive
+  // mechanic. Regular VMAX is too broad to be a meaningful signal.
   const isSwsh = sc.startsWith('SWSH') || sc.startsWith('SSH');
   const isGmax = n.includes('gigantamax') || n.includes('gmax');
-  const isVmax = n.includes('vmax');
-  if (isSwsh && (isGmax || isVmax)) {
+  if (isSwsh && isGmax) {
     if (charScore >= 8.0) bonus += 1.2;
-    else if (charScore >= 6.5) bonus += 0.6;
+    else if (charScore >= 6.5) bonus += 0.5;
   }
 
-  // 4. Cards from sets the market dismissed at release (historically overshadowed)
-  // These had strong rarity but launch competition/sentiment suppressed initial price.
+  // 4. High-rarity cards from sets the market dismissed at release
+  // Only the top rarity tiers (SIR/AR/IR) where the structural rarity is real.
   const overshadowedSets = /shrouded fable|hidden fates|celebrations|lost origin|chilling reign|evolving skies/i;
-  if (overshadowedSets.test(card.s || '') && (rc === 'SIR' || rc === 'IR' || rc === 'AR' || rc === 'UR')) {
+  if (overshadowedSets.test(card.s || '') && (rc === 'SIR' || rc === 'IR' || rc === 'AR')) {
     bonus += 0.8;
   }
 
@@ -11517,7 +11518,7 @@ function _recoTileHtml(r) {
     ? `<img class="home-card-art" src="${esc(r.card.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
     : `<div class="home-card-art"></div>`;
   const manual = r.manualPrice ? `<span class="reco-manual-tag">manual</span>` : '';
-  const gem = r.gemScore >= 1.5 ? `<span class="reco-gem-tag">overlooked</span>` : '';
+  const gem = r.gemScore >= 2.0 ? `<span class="reco-gem-tag">overlooked</span>` : '';
   const upside = r.upsidePct > 5
     ? `<span class="reco-upside pos">+${r.upsidePct.toFixed(0)}% model upside</span>`
     : `<span class="reco-upside">${esc(r.card.s || '')}</span>`;
