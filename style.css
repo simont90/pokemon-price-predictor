@@ -6257,6 +6257,9 @@ section.card .card-collapse-btn { padding: 10px; }
   flex-direction: column;
   gap: 28px;
 }
+/* Hide all USD sub-displays — currency shown via selector only */
+.price-tile-usd, .live-main-usd, .ql-price-usd, .predicted-usd, span.usd { display: none !important; }
+
 .home-budget-bar {
   display: flex;
   align-items: center;
@@ -6265,6 +6268,30 @@ section.card .card-collapse-btn { padding: 10px; }
   background: var(--surface);
   border-radius: var(--radius-md);
   margin: 0 4px;
+}
+.budget-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.currency-select {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 0.82em;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 0 2px;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  -webkit-appearance: auto;
+}
+.currency-select option {
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
 }
 .home-budget-label {
   font-size: 0.78em;

@@ -140,6 +140,12 @@ let cardData = null;
 let setsData = null;
 let fxRate = 0.79;
 let selectedCard = null;
+// Multi-currency display (device-local, not synced)
+const DISP_CURRENCY_KEY = 'display-currency';
+let _displayCurrency = localStorage.getItem(DISP_CURRENCY_KEY) || 'GBP';
+let _currencyRates   = { GBP: 1, USD: 1.27, EUR: 1.17, JPY: 190, AUD: 2.01, CAD: 1.74 };
+const _CURRENCY_SYMS = { GBP: '£', USD: '$', EUR: '€', JPY: '¥', AUD: 'A$', CAD: 'C$' };
+let _lastLiveData    = null;
 let searchIndex = [];
 const $ = id => document.getElementById(id);
 
@@ -384,8 +390,18 @@ async function init() {
 
     // Fetch exchange rate (small, non-blocking)
     try {
-      const fxR = await fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json());
-      if (fxR.rates?.GBP) fxRate = fxR.rates.GBP;
+      const fxR = await fetch('https://open.er-api.com/v6/latest/GBP').then(r => r.json());
+      if (fxR.rates?.USD) {
+        _currencyRates = {
+          GBP: 1,
+          USD: fxR.rates.USD || 1.27,
+          EUR: fxR.rates.EUR || 1.17,
+          JPY: fxR.rates.JPY || 190,
+          AUD: fxR.rates.AUD || 2.01,
+          CAD: fxR.rates.CAD || 1.74,
+        };
+        fxRate = 1 / fxR.rates.USD; // USD→GBP for internal calcs
+      }
     } catch (e) { /* use default */ }
 
     if (cardData) {
@@ -455,7 +471,8 @@ async function init() {
 
 // ---- Currency ----
 function usdToGbp(usd) { return usd * fxRate; }
-function fmtGBP(usd) { return `£${usdToGbp(usd).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+// fmtGBP converts USD → GBP first, then delegates to fmtGBPDirect for display currency conversion
+function fmtGBP(usd) { return fmtGBPDirect(usdToGbp(usd)); }
 function fmtUSD(usd) { return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 
 // ---- Character Analysis ----
@@ -1906,6 +1923,7 @@ async function fetchAndCacheFresh(card, originalId) {
 
 // Render live pricing panel
 function renderLivePrice(data) {
+  _lastLiveData = data;
   const loading = $('livePriceLoading');
   const content = $('livePriceContent');
   const status = $('livePriceStatus');
@@ -2845,8 +2863,7 @@ function updateAll() {
   const { priceUSD, sf, df } = predictPrice(pullCost, des);
   lastModelPriceUSD = priceUSD;
   const priceGBP = usdToGbp(priceUSD);
-  $('predictedPriceGBP').textContent = `£${Math.round(priceGBP).toLocaleString()}`;
-  $('predictedPriceUSD').textContent = `≈ ${fmtUSD(priceUSD)}`;
+  $('predictedPriceGBP').textContent = fmtGBPDirect(priceGBP);
   $('supplyFactor').textContent = `×${sf.toFixed(2)}`;
   $('demandFactor').textContent = `×${df.toFixed(2)}`;
 
@@ -7028,7 +7045,7 @@ async function pollWatchlistDeals() {
   const workerUrl = (typeof getMktWorkerUrl === 'function') ? getMktWorkerUrl() : '';
   if (!workerUrl) return;
   const fx = fxRate || 0.79;
-  const fxEur = 0.86;
+  const fxEur = _currencyRates.EUR > 0 ? 1 / _currencyRates.EUR : 0.86; // EUR→GBP from live rate
 
   // Rotate through watchlist cards to spread load — 3 per poll cycle
   const slice = watchlist.slice(0, 3);
@@ -8600,7 +8617,7 @@ async function fetchLiveDeals(card, opts) {
   if (topStatus) topStatus.textContent = `Scanning 5 grades · eBay UK + US + Cardmarket…`;
 
   const fxUsdToGbp = (typeof fxRate === 'number' ? fxRate : 0.79);
-  const fxEurToGbp = 0.86;
+  const fxEurToGbp = _currencyRates.EUR > 0 ? 1 / _currencyRates.EUR : 0.86;
   const required = mktRequiredTokens(card);
 
   // Define each grade tab with its fair-value anchor.
@@ -10076,7 +10093,11 @@ function fmtPct(v, signed) {
 }
 function fmtGBPDirect(gbp) {
   if (!Number.isFinite(gbp)) return '—';
-  return '£' + gbp.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const rate = _currencyRates[_displayCurrency] ?? 1;
+  const val  = gbp * rate;
+  const sym  = _CURRENCY_SYMS[_displayCurrency] || '';
+  if (_displayCurrency === 'JPY') return sym + Math.round(val).toLocaleString('en-GB');
+  return sym + val.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function renderAcquisition() {
@@ -12166,6 +12187,24 @@ function setupPageNav() {
     goBtn.addEventListener('click', commitInput);
     inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') commitInput(); });
   })();
+
+  // Currency selector
+  (() => {
+    const sel = document.getElementById('currencySelector');
+    if (!sel) return;
+    sel.value = _displayCurrency;
+    sel.addEventListener('change', () => {
+      _displayCurrency = sel.value;
+      localStorage.setItem(DISP_CURRENCY_KEY, _displayCurrency);
+      _renderHomeCollection();
+      _renderHomeWishlist();
+      _renderHomeWatchlist();
+      _renderHomeReco(true);
+      if (_lastLiveData) renderLivePrice(_lastLiveData);
+      if (selectedCard) updateAll();
+    });
+  })();
+
   document.getElementById('signalJumpHold')?.addEventListener('click', () => {
     $('holdStrategySection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });

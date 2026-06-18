@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619af">
+  <link rel="stylesheet" href="style.css?v=20260619ag">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -50,7 +50,7 @@
           </svg>
           <div>
             <h1>Price Predictor</h1>
-            <p class="tagline">Pokémon TCG · Live market data in GBP</p>
+            <p class="tagline">Live Market Data</p>
           </div>
         </div>
         <div class="header-right">
@@ -646,8 +646,17 @@
     <div class="page" id="pageHome" data-page="home" style="display:none">
       <div class="home-dashboard">
 
-        <!-- Budget slider -->
+        <!-- Personalisation bar: currency + budget -->
         <div class="home-budget-bar">
+          <select id="currencySelector" class="currency-select">
+            <option value="GBP">£ GBP</option>
+            <option value="USD">$ USD</option>
+            <option value="EUR">€ EUR</option>
+            <option value="JPY">¥ JPY</option>
+            <option value="AUD">A$ AUD</option>
+            <option value="CAD">C$ CAD</option>
+          </select>
+          <div class="budget-divider"></div>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.6;flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
           <span class="home-budget-label">Max per card</span>
           <input type="range" id="homeBudgetSlider" class="home-budget-slider" min="100" max="5000" step="50" value="5000">
@@ -1969,6 +1978,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619af"></script>
+  <script src="app.js?v=20260619ag"></script>
 </body>
 </html>
