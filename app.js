@@ -12836,13 +12836,18 @@ function _renderHomeGradeCandidates() {
   _homeGradeCandHash = hash;
   const countEl = $('homeGradeCandCount'); if (countEl) countEl.textContent = raw.length;
   list.innerHTML = cands.map(d => {
-    const fallbackImg = d.listingImg ? '' : (() => {
+    const cardDbImg = (() => {
       const c = cardData?.cards?.find(x => x.i === d.cardId);
-      return c?.img || '';
+      return c ? (c.img || getCardImg(c) || '') : '';
     })();
-    const displayImg = d.listingImg || fallbackImg;
-    const img = displayImg
-      ? `<img class="home-card-art" src="${esc(displayImg)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+    // Primary: eBay listing photo (for AI grading). Fallback: card DB art.
+    const primarySrc = d.listingImg || cardDbImg;
+    const fallbackSrc = d.listingImg ? cardDbImg : '';
+    const onerr = fallbackSrc
+      ? `this.onerror=null;this.src='${fallbackSrc.replace(/'/g, "\\'")}'`
+      : `this.style.opacity='0'`;
+    const img = primarySrc
+      ? `<img class="home-card-art" src="${esc(primarySrc)}" alt="" loading="lazy" onerror="${onerr}">`
       : `<div class="home-card-art"></div>`;
     const price = d.priceGBP ? `£${Number(d.priceGBP).toFixed(2)}` : '';
     return `<div class="home-card-tile" data-id="${esc(String(d.cardId))}" data-listing-url="${esc(d.listingUrl)}" data-listing-img="${esc(d.listingImg || '')}" data-card-name="${esc(d.cardName || '')}" data-price-gbp="${d.priceGBP || 0}">
