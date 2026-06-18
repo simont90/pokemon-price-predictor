@@ -9190,6 +9190,17 @@ function renderHoldStrategy(card) {
   // Footnote with assumptions.
   const gemPctStr = (gemRate * 100).toFixed(0);
   const baseGemPctStr = (baseGemRate * 100).toFixed(0);
+  // Reset footnote to hidden on each card change
+  $('holdFootnote').style.display = 'none';
+  $('holdFootnoteToggle').classList.remove('is-open');
+  $('holdFootnoteToggle').onclick = () => {
+    const fn = $('holdFootnote');
+    const btn = $('holdFootnoteToggle');
+    const nowOpen = fn.style.display === 'none';
+    fn.style.display = nowOpen ? 'block' : 'none';
+    btn.classList.toggle('is-open', nowOpen);
+  };
+
   $('holdFootnote').innerHTML = `
     <strong>UK grading assumptions:</strong> £${UK_GRADING_ALL_IN_GBP} all-in cost per card
     (PSA economy fee + Ludkins/GetGraded intermediary fee + insured round-trip shipping)

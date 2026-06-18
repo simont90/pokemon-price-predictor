@@ -4119,9 +4119,20 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .hold-v-flat   { background: rgba(148, 163, 184, 0.16); color: #cbd5e1; }
 .hold-v-skip   { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
 
+.hold-footnote-wrap { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+.hold-footnote-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; color: var(--text-faint);
+  background: none; border: none; cursor: pointer; padding: 0;
+  font-family: var(--font); -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s;
+}
+.hold-footnote-toggle:hover { color: var(--text-muted); }
+.hold-fn-chev { transition: transform 0.2s ease; flex-shrink: 0; }
+.hold-footnote-toggle.is-open .hold-fn-chev { transform: rotate(180deg); }
 .hold-footnote {
   font-size: 11px; color: var(--text-muted); line-height: 1.55;
-  margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border);
+  margin-top: 8px;
 }
 .hold-footnote strong { color: var(--text); }
 
