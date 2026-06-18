@@ -7906,10 +7906,10 @@ function renderHoldStrategy(card) {
 
   // Label the raw/grade strategies to show acquisition cost basis when applicable
   const rawDesc = usingAcqCost
-    ? `Cost basis: ${fmtGBP(acqCostGBP)} paid \u2014 holding ungraded 5 yrs`
+    ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} paid \u2014 holding ungraded 5 yrs`
     : 'Hold ungraded for 5 yrs';
   const gambleDesc = usingAcqCost
-    ? `Cost basis: ${fmtGBP(acqCostGBP)} + \u00a3${UK_GRADING_ALL_IN_GBP} grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% PSA 9+`
+    ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${UK_GRADING_ALL_IN_GBP} grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% PSA 9+`
     : `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`;
 
   const strategies = [
@@ -8023,7 +8023,7 @@ function renderHoldStrategy(card) {
       scanLine = `<div class="hold-rec-line hold-rec-scan">Card scan: expected <strong>PSA ${expectedGrade} (${gradeLbl})</strong>. ${gradeVerdict}</div>`;
     }
     const acqLine = usingAcqCost
-      ? `<div class="hold-rec-line hold-rec-acq">ROI based on your actual cost (${fmtGBP(acqCostGBP)}), not market price.</div>`
+      ? `<div class="hold-rec-line hold-rec-acq">ROI based on your actual cost (${fmtGBPDirect(acqCostGBP)}), not market price.</div>`
       : '';
 
     recEl.innerHTML = `
