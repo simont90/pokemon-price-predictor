@@ -12303,6 +12303,14 @@ function setupPageNav() {
   document.getElementById('homeOpenWishlist')?.addEventListener('click', () => { $('wishlistToggle')?.click(); });
   document.getElementById('homeOpenWatchlist')?.addEventListener('click', () => { $('alertsToggle')?.click(); });
   document.getElementById('homeRecoRefresh')?.addEventListener('click', () => _renderHomeReco(true));
+  document.getElementById('homeRefreshAll')?.addEventListener('click', () => {
+    const btn = document.getElementById('homeRefreshAll');
+    if (btn) { btn.classList.add('spinning'); setTimeout(() => btn.classList.remove('spinning'), 600); }
+    _renderHomeCollection();
+    _renderHomeWishlist();
+    _renderHomeWatchlist();
+    _renderHomeReco(true);
+  });
 
   // Budget slider + manual input
   (() => {

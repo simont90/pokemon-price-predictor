@@ -6453,6 +6453,23 @@ section.card .card-collapse-btn { padding: 10px; }
   flex-shrink: 0;
 }
 .home-budget-go:active { opacity: 0.8; }
+.home-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  padding: 4px 7px;
+  cursor: pointer;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.home-refresh-btn:hover { color: var(--accent); border-color: var(--accent); }
+.home-refresh-btn:active { opacity: 0.7; }
+.home-refresh-btn.spinning svg { animation: spin360 0.6s linear; }
+@keyframes spin360 { to { transform: rotate(360deg); } }
 .home-section-wrap { /* sections float directly on page background */ }
 .home-section-hd {
   display: flex;

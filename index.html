@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619ap">
+  <link rel="stylesheet" href="style.css?v=20260619aq">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -662,6 +662,10 @@
           <input type="range" id="homeBudgetSlider" class="home-budget-slider" min="100" max="5000" step="50" value="5000">
           <input type="number" id="homeBudgetInput" class="home-budget-input" min="100" step="50" placeholder="No limit">
           <button id="homeBudgetGo" class="home-budget-go">Go</button>
+          <div class="budget-divider"></div>
+          <button id="homeRefreshAll" class="home-refresh-btn" title="Refresh all lists">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          </button>
         </div>
 
         <!-- My Collection -->
@@ -1995,6 +1999,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619ap"></script>
+  <script src="app.js?v=20260619aq"></script>
 </body>
 </html>
