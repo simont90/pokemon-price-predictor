@@ -1101,6 +1101,18 @@ function doSearch(query) {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+// In iOS standalone PWA mode, window.open() creates an in-app SFSafariViewController
+// which gets intercepted by Universal Links (eBay, etc.) and leaves a blank white page.
+// Navigate the current window instead — iOS shows a "Back to app" button in Safari.
+function openExternalUrl(url) {
+  if (!url) return;
+  if (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) {
+    window.location.href = url;
+  } else {
+    window.open(url, '_blank', 'noopener');
+  }
+}
+
 // ================================================================
 // ---- LIVE PRICING ENGINE ----
 // ================================================================
@@ -10247,7 +10259,7 @@ function setupPriceInsight() {
   document.getElementById('dealToastClose')?.addEventListener('click', hideDealToast);
   document.getElementById('dealToastDismiss')?.addEventListener('click', hideDealToast);
   document.getElementById('dealToastView')?.addEventListener('click', () => {
-    if (_dealToastUrl) window.open(_dealToastUrl, '_blank', 'noopener');
+    if (_dealToastUrl) openExternalUrl(_dealToastUrl);
     hideDealToast();
   });
   document.getElementById('dealToastOpen')?.addEventListener('click', () => {
@@ -10262,6 +10274,19 @@ function setupPriceInsight() {
 
   // Start background eBay deal polling
   startDealPolling();
+
+  // In iOS standalone PWA, intercept all external <a> clicks to avoid the
+  // stuck-white-page caused by Universal Links opening SFSafariViewController.
+  if (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) {
+    document.addEventListener('click', e => {
+      const a = e.target.closest('a[href]');
+      if (!a) return;
+      const href = a.getAttribute('href');
+      if (!href || !href.startsWith('http')) return;
+      e.preventDefault();
+      window.location.href = href;
+    }, true);
+  }
 
   // Drag-resize layout
   initLayoutResizer();
