@@ -8859,11 +8859,12 @@ function computeHoldCore(card) {
   });
 
   const strategies = [
-    { label: 'Buy Raw',         key: 'raw',    today: rawEntryUSD_hc, yr5: rawSell5USD, profit: rawProfitUSD, roi: rawRoi,   variance: 0.20 },
-    { label: 'Buy Raw + Grade', key: 'gamble', today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, variance: 0.85 },
+    { label: 'Buy Raw',         key: 'raw',    today: rawEntryUSD_hc, yr5: rawSell5USD, profit: rawProfitUSD, roi: rawRoi,   variance: 0.20, risk: 'low' },
+    { label: 'Buy Raw + Grade', key: 'gamble', today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, variance: 0.85, risk: 'high' },
     ...gradedStrategies.map(s => ({
       ...s,
       variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : 0.32,
+      risk: s.grade === 10 ? 'low' : 'med',
     })),
   ];
   // Apply any user-entered eBay market overrides so the EN vs JP verdict
@@ -8908,15 +8909,9 @@ function computeHoldCore(card) {
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
   // BEST LONG-TERM PICK: never high-risk (gamble), must be Strong Hold (ROI ≥ 80%).
-  // This is the only criterion for the badge and home-page reco sections.
+  // Low Risk always beats Medium/High Risk within budget. See _pickBestLTP.
   const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 80);
-  const bestLongTermPick = ltpCandidates.length
-    ? ltpCandidates.reduce((a, b) => {
-        const pa = ltpCapitalPenalty(gbpFromUSD(a.today));
-        const pb = ltpCapitalPenalty(gbpFromUSD(b.today));
-        return (b.riskAdjusted - pb) > (a.riskAdjusted - pa) ? b : a;
-      })
-    : null;
+  const bestLongTermPick = _pickBestLTP(ltpCandidates);
 
   // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
   // funding/concentration risk that a £59 alternative doesn't. We only apply
@@ -8984,6 +8979,24 @@ const BUDGET_DEFAULT = 99999; // true no-limit sentinel
 function getMaxBudgetGBP() {
   const v = parseFloat(localStorage.getItem(BUDGET_KEY));
   return isFinite(v) && v > 0 ? v : BUDGET_DEFAULT;
+}
+
+// Pick the Best Long-Term Pick from a filtered candidate list.
+// Priority: (1) in-budget over over-budget, (2) Low Risk over Med/High Risk,
+// (3) within same risk tier: highest (riskAdjusted - ltpCapitalPenalty).
+const _LTP_RISK_ORD = { low: 0, med: 1, high: 2 };
+function _pickBestLTP(candidates) {
+  if (!candidates.length) return null;
+  return candidates.reduce((a, b) => {
+    const pa = ltpCapitalPenalty(gbpFromUSD(a.today));
+    const pb = ltpCapitalPenalty(gbpFromUSD(b.today));
+    const aOut = pa >= 99999, bOut = pb >= 99999;
+    if (aOut !== bOut) return bOut ? a : b; // in-budget always beats over-budget
+    const rA = _LTP_RISK_ORD[a.risk ?? 'med'] ?? 1;
+    const rB = _LTP_RISK_ORD[b.risk ?? 'med'] ?? 1;
+    if (rA !== rB) return rA < rB ? a : b;  // lower risk always wins within same budget tier
+    return (b.riskAdjusted - pb) > (a.riskAdjusted - pa) ? b : a;
+  });
 }
 
 // Render the EN ↔ JP side-by-side comparison inside the Hold Strategy card.
@@ -9368,17 +9381,9 @@ function renderHoldStrategy(card) {
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
   // BEST LONG-TERM PICK badge: never high-risk (gamble), must be Strong Hold (ROI ≥ 80%).
-  // overallWinner drives the recommendation text; bestLongTermPick drives the badge + signal.
-  // Uses ltpCapitalPenalty so a cheaper PSA 9 (£600, 400% ROI) beats a more expensive
-  // PSA 10 (£1600, 500% ROI) — both are strong holds but the cheaper entry is smarter capital.
+  // Low Risk always beats Medium/High Risk within budget. See _pickBestLTP.
   const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 80);
-  const bestLongTermPick = ltpCandidates.length
-    ? ltpCandidates.reduce((a, b) => {
-        const pa = ltpCapitalPenalty(gbpFromUSD(a.today));
-        const pb = ltpCapitalPenalty(gbpFromUSD(b.today));
-        return (b.riskAdjusted - pb) > (a.riskAdjusted - pa) ? b : a;
-      })
-    : null;
+  const bestLongTermPick = _pickBestLTP(ltpCandidates);
 
   const winner = overallWinner; // used for recommendation copy below
   // Store winner key so updateSignal can stay in sync regardless of call order.
@@ -11727,13 +11732,9 @@ function buildAllHomeRecos(limit = 15) {
     return sB - sA || cB - cA || b.upsidePct - a.upsidePct;
   });
 
-  // Strategy sections: STRONG BUY first, then risk-adjusted ROI of the winning strategy
+  // Strategy sections: sorted by strategy ROI descending (highest expected return first)
   Object.values(byStrat).forEach(arr =>
-    arr.sort((a, b) => {
-      const sA = a.signal === 'STRONG BUY' ? 1 : 0;
-      const sB = b.signal === 'STRONG BUY' ? 1 : 0;
-      return sB - sA || b.strategyRiskAdj - a.strategyRiskAdj || b.gemScore - a.gemScore;
-    })
+    arr.sort((a, b) => b.strategyRoi - a.strategyRoi)
   );
 
   return {
@@ -12050,26 +12051,40 @@ function _renderHomeCollection() {
 function _renderHomeWishlist() {
   const list = $('homeWishList'), countEl = $('homeWishCount');
   if (!list) return;
-  if (countEl) countEl.textContent = wishlist.length;
   if (wishlist.length === 0) {
+    if (countEl) countEl.textContent = '0';
     list.innerHTML = '<div class="home-empty">No wishlisted cards yet.<br>Tap ♥ on any card to add it.</div>';
     return;
   }
-  const tiles = wishlist.map(w => {
+  const maxBudget = getMaxBudgetGBP();
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const tiles = wishlist.flatMap(w => {
     const card = cardData?.cards.find(c => c.i === w.id);
-    const cached = getCachedPrice(w.id);
-    const priceUSD = cached ? (cached.pcUngraded || cached.market || cached.mid || (card ? card.p : 0)) : (card ? card.p : 0);
-    const priceGBP = usdToGbp(priceUSD);
+    if (!card) return [];
+    // Use BLP strategy price if available, else raw market price
+    let displayGBP;
+    const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(card) : { ok: false };
+    if (hc.ok && hc.bestLongTermPick) {
+      displayGBP = hc.bestLongTermPick.today * fx;
+    } else {
+      const cached = getCachedPrice(w.id);
+      const priceUSD = cached ? (cached.pcUngraded || cached.market || cached.mid || card.p || 0) : (card.p || 0);
+      displayGBP = usdToGbp(priceUSD);
+    }
+    if (displayGBP > maxBudget) return []; // hide cards outside budget
     const target = w.targetGBP || 0;
     let alertClass = 'alert-far', alertLabel = 'Watching';
     if (target > 0) {
-      if (priceGBP <= target) { alertClass = 'alert-buy'; alertLabel = 'BUY NOW'; }
-      else if (priceGBP <= target * 1.10) { alertClass = 'alert-watch'; alertLabel = 'Close'; }
+      if (displayGBP <= target) { alertClass = 'alert-buy'; alertLabel = 'BUY NOW'; }
+      else if (displayGBP <= target * 1.10) { alertClass = 'alert-watch'; alertLabel = 'Close'; }
     }
     const sub = target > 0 ? `Target: ${fmtGBPDirect(target)}` : (w.set || '');
-    return _homeTile(w.id, w.img, w.name, fmtGBPDirect(priceGBP), alertClass, alertLabel, '', sub);
+    return [_homeTile(w.id, w.img, w.name, fmtGBPDirect(displayGBP), alertClass, alertLabel, '', sub)];
   });
-  list.innerHTML = tiles.join('');
+  if (countEl) countEl.textContent = tiles.length;
+  list.innerHTML = tiles.length
+    ? tiles.join('')
+    : '<div class="home-empty">All wishlist cards exceed your budget. Adjust Max per card.</div>';
   _setupTileEvents(list, id => {
     wishlist = wishlist.filter(w => w.id !== id);
     saveWishlist(); renderWishlist(); updateWishlistButton();
@@ -12080,26 +12095,44 @@ function _renderHomeWishlist() {
 function _renderHomeWatchlist() {
   const list = $('homeWatchList'), countEl = $('homeWatchCount');
   if (!list) return;
-  if (countEl) countEl.textContent = watchlist.length;
   if (watchlist.length === 0) {
+    if (countEl) countEl.textContent = '0';
     list.innerHTML = '<div class="home-empty">No cards being watched yet.<br>Tap "Watch" on any card to track it.</div>';
     return;
   }
+  const maxBudget = getMaxBudgetGBP();
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
   const alerts = (typeof computeActiveAlerts === 'function') ? computeActiveAlerts() : [];
   const alertMap = Object.fromEntries(alerts.map(a => [a.id, a]));
-  const tiles = watchlist.map(w => {
+  const tiles = watchlist.flatMap(w => {
+    const card = cardData?.cards.find(c => c.i === w.id);
+    // Use BLP strategy price if available, else fall back to tracked market price
+    let displayGBP;
+    if (card) {
+      const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(card) : { ok: false };
+      if (hc.ok && hc.bestLongTermPick) {
+        displayGBP = hc.bestLongTermPick.today * fx;
+      }
+    }
+    if (!(displayGBP > 0)) {
+      const a = alertMap[w.id];
+      displayGBP = a ? a.currentPriceGBP : usdToGbp(w.addedPriceUSD || 0);
+    }
+    if (displayGBP > maxBudget) return []; // hide cards outside budget
     const a = alertMap[w.id];
-    const priceGBP = a ? a.currentPriceGBP : usdToGbp(w.addedPriceUSD || 0);
     const signal = a ? a.signal : (w.addedSignal || '—');
     const triggered = a ? (a.triggered && a.dismissedFor !== a.signal) : false;
     const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
-    return _homeTile(w.id, w.img, w.name,
-      priceGBP > 0 ? fmtGBPDirect(priceGBP) : '—',
+    return [_homeTile(w.id, w.img, w.name,
+      displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—',
       sc, signal,
       triggered ? 'alert-tile' : '',
-      w.set || '');
+      w.set || '')];
   });
-  list.innerHTML = tiles.join('');
+  if (countEl) countEl.textContent = tiles.length;
+  list.innerHTML = tiles.length
+    ? tiles.join('')
+    : '<div class="home-empty">All watched cards exceed your budget. Adjust Max per card.</div>';
   _setupTileEvents(list, id => {
     const idx = watchlist.findIndex(w => w.id === id);
     if (idx >= 0) { watchlist.splice(idx, 1); saveWatchlist(); }
