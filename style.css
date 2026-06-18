@@ -6886,6 +6886,22 @@ section.card .card-collapse-btn { padding: 10px; }
   background: #166534;
   border-top-color: rgba(255,255,255,0.15);
 }
+[data-theme="light"] .home-card-tile.urgent-buy .home-card-name,
+.home-card-tile.urgent-buy .home-card-name {
+  color: #fff;
+}
+[data-theme="light"] .home-card-tile.urgent-buy .home-card-price,
+.home-card-tile.urgent-buy .home-card-price {
+  color: #e8b634;
+}
+[data-theme="light"] .home-card-tile.urgent-buy .home-card-sub,
+.home-card-tile.urgent-buy .home-card-sub {
+  color: rgba(255,255,255,0.75);
+}
+[data-theme="light"] .home-card-tile.urgent-buy .home-card-remove,
+.home-card-tile.urgent-buy .home-card-remove {
+  color: rgba(255,255,255,0.6);
+}
 [data-theme="light"] .home-card-art {
   background: rgba(210,210,225,0.55);
 }
