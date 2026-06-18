@@ -3986,6 +3986,37 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   background: rgba(255, 118, 118, 0.10);
 }
 
+/* ---- Auto-grade estimate badge ---- */
+.mkt-grade-estimate {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 4px; font-size: 11px;
+}
+.mkt-grade-label {
+  background: rgba(232,182,52,0.15);
+  border: 1px solid rgba(232,182,52,0.3);
+  color: var(--accent);
+  padding: 1px 6px; border-radius: 999px;
+  font-size: 10px; font-weight: 600; font-family: var(--mono);
+}
+.mkt-grade-condition {
+  color: var(--text-muted); font-size: 10px;
+}
+.mkt-ai-grade-btn {
+  font-size: 11px; padding: 3px 8px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted); cursor: pointer;
+}
+.mkt-ai-grade-btn:hover { color: var(--accent); border-color: rgba(232,182,52,0.4); }
+.mkt-grade-ai-result {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 4px; font-size: 10px;
+}
+.mkt-grade-breakdown { color: var(--text-faint); font-family: var(--mono); }
+.mkt-grade-verdict { color: var(--text-muted); font-style: italic; }
+.mkt-grade-err { color: var(--red); }
+
 /* ---- Dismissed chip inside the grade-status line ---- */
 .mkt-dismissed-chip {
   display: inline-flex; align-items: center; gap: 4px;

@@ -8577,6 +8577,31 @@ function mktIsJunk(deal, card, requiredTokens, gradeFilter, fairValueGBP) {
   return false;
 }
 
+// Text-based grade estimate from listing title / condition field.
+// Returns { label, range } or null if nothing useful found.
+// Skips listings already identified as graded (PSA/CGC/etc.) — caller is responsible.
+function mktEstimateGradeFromText(title, condition) {
+  const text = `${title || ''} ${condition || ''}`;
+  const t = ` ${text.toLowerCase()} `;
+  const check = re => re.test(t);
+  // Order matters — match most specific first
+  if (check(/\b(pack fresh|unplayed|sealed)\b/))          return { label: 'Pack Fresh',   range: '9–10' };
+  if (check(/\b(near mint|nm-mt|nm\/mt)\b/))              return { label: 'Near Mint',    range: '8–9'  };
+  // "mint" without "near" — avoid matching "near mint"
+  if (check(/(?<![a-z])mint(?!-[a-z]|\s+condition\s+not\s+near)/) && !check(/\bnear\s+mint\b/)) return { label: 'Mint', range: '9–10' };
+  if (check(/\b(lightly played|lp)\b/))                   return { label: 'Lightly Played', range: '7–8' };
+  if (check(/\b(excellent|ex)\b/))                        return { label: 'Excellent',    range: '7–8'  };
+  if (check(/\b(very good|vg)\b/))                        return { label: 'Very Good',    range: '6–7'  };
+  if (check(/\b(moderately played|mp)\b/))                return { label: 'Mod. Played',  range: '5–6'  };
+  if (check(/\b(heavily played|hp)\b/))                   return { label: 'Hvy. Played',  range: '3–4'  };
+  // "good" without VG prefix already consumed above
+  if (check(/\b(good|gd)\b/))                             return { label: 'Good',         range: '5–6'  };
+  // Generic "played" only if LP/MP/HP not already matched
+  if (check(/\bplayed\b/))                                return { label: 'Played',       range: '4–6'  };
+  if (check(/\b(poor|damaged|dmg)\b/))                    return { label: 'Damaged',      range: '1–2'  };
+  return null;
+}
+
 // Marketplace scan: we no longer cap eBay/Cardmarket queries by price — every
 // listing comes back regardless of how over market it is, and we let the risk
 // band call out the crazy overpriced ones. The worker still requires a `max`
@@ -8677,12 +8702,34 @@ function mktRenderDealCard(d, meta) {
     : '';
   const isAlertedDeal = _mktAlertTriggered && (d.signal === 'STRONG VALUE' || d.signal === 'VALUE');
   const alertedBadge = isAlertedDeal ? `<span class="mkt-deal-alert-badge">Alert match</span>` : '';
+
+  const anyGradeRe = /\b(psa|cgc|bgs|ace|sgc)\s*-?\s*\d{1,2}\b|gem mint|gem[- ]mt/i;
+  const isAlreadyGraded = anyGradeRe.test(d.title || '');
+
+  // Tier 1: instant text estimate badge (raw listings only)
+  let gradeEstimateHtml = '';
+  if (!isAlreadyGraded) {
+    const est = mktEstimateGradeFromText(d.title, d.condition);
+    if (est) {
+      gradeEstimateHtml = `<div class="mkt-grade-estimate">
+          <span class="mkt-grade-label">~PSA ${esc(est.range)}</span>
+          <span class="mkt-grade-condition">${esc(est.label)}</span>
+        </div>`;
+    }
+  }
+
+  // Tier 2: AI Grade button (raw listings with an image only)
+  const aiGradeBtn = (!isAlreadyGraded && d.image)
+    ? `<button type="button" class="mkt-ai-grade-btn" data-url="${esc(d.image)}" onclick="mktAIGrade(this)">🔍 AI Grade</button>`
+    : '';
+
   return `
     <div class="mkt-deal ${meta.claimed ? 'is-claimed' : ''}${isAlertedDeal ? ' mkt-deal-alerted' : ''}">
       <a class="mkt-deal-main" href="${esc(d.url)}" target="_blank" rel="noopener">
         ${img}
         <div class="mkt-deal-body">
           <div class="mkt-deal-title">${esc(d.title)}${alertedBadge}</div>
+          ${gradeEstimateHtml}
           <div class="mkt-deal-meta">
             <span class="mkt-src ${sourceCls}">${esc(d.source)}</span>
             ${d.condition ? `<span>${esc(d.condition)}</span>` : ''}
@@ -8703,9 +8750,82 @@ function mktRenderDealCard(d, meta) {
         <button type="button" class="mkt-deal-open" data-url="${esc(d.url)}" title="Open listing on eBay">Open ↗</button>
         <button type="button" class="mkt-deal-reassign" data-payload="${enc}" title="Wrong card? Move this listing" aria-label="Move this listing to a different card">⇄ Move</button>
         <button type="button" class="mkt-deal-dismiss" data-payload="${enc}" title="Not relevant — hide this listing" aria-label="Dismiss this listing">✕ Hide</button>
+        ${aiGradeBtn}
       </div>
     </div>
   `;
+}
+
+// AI-powered grade button handler. Called from onclick in mktRenderDealCard.
+async function mktAIGrade(btn) {
+  const imageUrl = btn.dataset.url;
+  if (!imageUrl) return;
+  btn.textContent = 'Grading…';
+  btn.disabled = true;
+
+  const deal = btn.closest('.mkt-deal');
+  const body = deal && deal.querySelector('.mkt-deal-body');
+
+  // Find or create result container — insert after .mkt-grade-estimate if present
+  let resultEl = body && body.querySelector('.mkt-grade-ai-result');
+  if (!resultEl && body) {
+    resultEl = document.createElement('div');
+    resultEl.className = 'mkt-grade-ai-result';
+    const after = body.querySelector('.mkt-grade-estimate') || body.querySelector('.mkt-deal-title');
+    if (after && after.nextSibling) {
+      body.insertBefore(resultEl, after.nextSibling);
+    } else if (after) {
+      body.appendChild(resultEl);
+    }
+  }
+
+  try {
+    const resp = await fetch(`${getMktWorkerUrl()}/grade-card`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageUrl }),
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      let msg = txt; try { msg = JSON.parse(txt).error || txt; } catch {}
+      throw new Error(msg || `Worker ${resp.status}`);
+    }
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+
+    // Compute PSA grade using same logic as _cgCalcGrade
+    const scores = [data.centering, data.corners, data.edges, data.surface].filter(v => v != null);
+    let grade = null;
+    if (scores.length === 4) {
+      const min = Math.min(...scores);
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      if (min >= 10) grade = 10;
+      else if (min >= 8 && avg >= 9.5) grade = 10;
+      else if (min >= 8 && avg >= 8.5) grade = 9;
+      else if (min >= 8) grade = 8;
+      else if (min >= 6 && avg >= 7.5) grade = 7;
+      else if (min >= 6) grade = 6;
+      else if (min >= 4 && avg >= 6) grade = 5;
+      else grade = 4;
+    }
+
+    if (resultEl) {
+      resultEl.className = 'mkt-grade-ai-result';
+      resultEl.innerHTML = grade != null
+        ? `<span class="mkt-grade-label">AI: PSA ~${grade}</span>` +
+          `<span class="mkt-grade-breakdown">C:${data.centering} Co:${data.corners} E:${data.edges} S:${data.surface}</span>` +
+          (data.verdict ? `<span class="mkt-grade-verdict">${esc(data.verdict)}</span>` : '')
+        : `<span class="mkt-grade-err">Grade unavailable</span>`;
+    }
+  } catch (e) {
+    if (resultEl) {
+      resultEl.className = 'mkt-grade-ai-result';
+      resultEl.innerHTML = `<span class="mkt-grade-err">Grade unavailable</span>`;
+    }
+  } finally {
+    btn.textContent = '🔍 Re-grade';
+    btn.disabled = false;
+  }
 }
 
 // Fetch + render deals for one grade tab. Called in parallel by fetchLiveDeals.
