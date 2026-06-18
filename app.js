@@ -8442,12 +8442,14 @@ function mktRenderDealCard(d, meta) {
   const enc = (typeof btoa === 'function')
     ? btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
     : '';
+  const isAlertedDeal = _mktAlertTriggered && (d.signal === 'STRONG VALUE' || d.signal === 'VALUE');
+  const alertedBadge = isAlertedDeal ? `<span class="mkt-deal-alert-badge">Alert match</span>` : '';
   return `
-    <div class="mkt-deal ${meta.claimed ? 'is-claimed' : ''}">
+    <div class="mkt-deal ${meta.claimed ? 'is-claimed' : ''}${isAlertedDeal ? ' mkt-deal-alerted' : ''}">
       <a class="mkt-deal-main" href="${esc(d.url)}" target="_blank" rel="noopener">
         ${img}
         <div class="mkt-deal-body">
-          <div class="mkt-deal-title">${esc(d.title)}</div>
+          <div class="mkt-deal-title">${esc(d.title)}${alertedBadge}</div>
           <div class="mkt-deal-meta">
             <span class="mkt-src ${sourceCls}">${esc(d.source)}</span>
             ${d.condition ? `<span>${esc(d.condition)}</span>` : ''}
@@ -8581,6 +8583,7 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
 // Stale-scan guard: each call to fetchLiveDeals increments this token. Any
 // in-flight fetch whose token no longer matches discards its result.
 let mktScanToken = 0;
+let _mktAlertTriggered = false; // true when current card has an active watchlist alert
 
 // Wire up grade-tab clicks once. Idempotent.
 function setupMktGradeTabs() {
@@ -8615,6 +8618,23 @@ async function fetchLiveDeals(card, opts) {
   wrap.style.display = 'block';
   setupMktGradeTabs();
   if (topStatus) topStatus.textContent = `Scanning 5 grades · eBay UK + US + Cardmarket…`;
+
+  // Check for a triggered watchlist alert on this card and surface a banner.
+  const _cardAlerts = typeof computeActiveAlerts === 'function' ? computeActiveAlerts() : [];
+  const _cardAlert = _cardAlerts.find(a => a.id === card.i && a.triggered && a.dismissedFor !== a.signal);
+  _mktAlertTriggered = !!_cardAlert;
+  const alertBanner = $('mktAlertBanner');
+  if (alertBanner) {
+    if (_cardAlert) {
+      const reason = _cardAlert.transitioned
+        ? `Signal has moved to <strong>${_cardAlert.signal}</strong>`
+        : `Price dropped <strong>${_cardAlert.priceDropPct.toFixed(0)}%</strong> since you added it`;
+      alertBanner.innerHTML = `<span class="mkt-alert-banner-icon">&#9650;</span> Watchlist alert — ${reason}. Value listings are highlighted below.`;
+      alertBanner.style.display = 'flex';
+    } else {
+      alertBanner.style.display = 'none';
+    }
+  }
 
   const fxUsdToGbp = (typeof fxRate === 'number' ? fxRate : 0.79);
   const fxEurToGbp = _currencyRates.EUR > 0 ? 1 / _currencyRates.EUR : 0.86;
