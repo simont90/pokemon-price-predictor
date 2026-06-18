@@ -7993,6 +7993,53 @@ function closeReassignModal() {
   _mktReassignPickedCard = null;
   _mktReassignPickedGrade = null;
   _mktBulkPayloads = [];
+  _hideMraHover();
+}
+
+// Floating full-res card image preview on hover in the reassign picker
+let _mraHoverEl = null;
+function _getMraHoverEl() {
+  if (!_mraHoverEl) {
+    _mraHoverEl = document.createElement('div');
+    _mraHoverEl.id = 'mraImgHover';
+    _mraHoverEl.className = 'mra-img-hover';
+    _mraHoverEl.innerHTML = '<img class="mra-img-hover-img" alt="">';
+    _mraHoverEl.style.display = 'none';
+    document.body.appendChild(_mraHoverEl);
+  }
+  return _mraHoverEl;
+}
+function _showMraHover(imgSrc, x, y) {
+  if (!imgSrc) return;
+  const el = _getMraHoverEl();
+  const img = el.querySelector('img');
+  if (img.src !== imgSrc) img.src = imgSrc;
+  // Position: prefer right of cursor, flip left if too close to viewport edge
+  const W = window.innerWidth, H = window.innerHeight;
+  const PW = 220, PH = 308, GAP = 18;
+  let left = x + GAP, top = y - PH / 2;
+  if (left + PW > W - 8) left = x - PW - GAP;
+  if (top < 8) top = 8;
+  if (top + PH > H - 8) top = H - PH - 8;
+  el.style.left = left + 'px';
+  el.style.top = top + 'px';
+  el.style.display = 'block';
+}
+function _hideMraHover() {
+  const el = _mraHoverEl;
+  if (el) el.style.display = 'none';
+}
+function _attachMraHoverHandlers(container) {
+  container.querySelectorAll('.mra-result').forEach(btn => {
+    const id = btn.dataset.cardId;
+    if (!id || !searchIndex) return;
+    const card = searchIndex.find(c => String(c.i) === String(id));
+    const imgSrc = card && typeof getCardImg === 'function' ? getCardImg(card) : '';
+    if (!imgSrc) return;
+    btn.addEventListener('mouseenter', e => _showMraHover(imgSrc, e.clientX, e.clientY));
+    btn.addEventListener('mousemove', e => _showMraHover(imgSrc, e.clientX, e.clientY));
+    btn.addEventListener('mouseleave', _hideMraHover);
+  });
 }
 
 // Render the suggested-counterpart row inside #mraResults. Called by
@@ -8057,6 +8104,7 @@ function renderReassignSuggestions(fromCardId) {
       if (save) save.disabled = false;
     });
   });
+  _attachMraHoverHandlers(results);
 }
 
 function runReassignSearch() {
@@ -8125,6 +8173,8 @@ function runReassignSearch() {
       if (save) save.disabled = false;
     });
   });
+  _attachMraHoverHandlers(results);
+  _hideMraHover();
 }
 
 function updateBulkBar() {

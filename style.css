@@ -4089,6 +4089,24 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .mra-result.mra-suggested .mra-result-img {
   width: 80px; height: 112px; border-radius: 6px;
 }
+
+/* Full-res card preview on hover */
+.mra-img-hover {
+  position: fixed;
+  z-index: 1800;
+  pointer-events: none;
+  border-radius: 10px;
+  box-shadow: 0 16px 56px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.12);
+  overflow: hidden;
+  transition: opacity 0.1s;
+}
+.mra-img-hover-img {
+  display: block;
+  width: 220px;
+  height: 308px;
+  object-fit: contain;
+  background: #0e0f13;
+}
 .mra-result:hover { border-color: var(--accent); }
 .mra-result.is-picked {
   border-color: var(--accent);
