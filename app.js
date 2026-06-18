@@ -267,6 +267,7 @@ function getCachedPrice(cardId) {
 let livePrice = null; // Current card's live pricing data
 let livePriceFetchId = 0;
 let lastModelPriceUSD = 0; // Last result from predictPrice — used by inline deal checks
+let _holdWinnerKey = null; // Winner key from last renderHoldStrategy run — drives owned-card badge
 
 // ---- Portfolio (persisted to localStorage) ----
 let portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
@@ -1917,6 +1918,7 @@ function selectCard(id) {
   const card = cardData.cards.find(c => c.i === id);
   if (!card) return;
   selectedCard = card;
+  _holdWinnerKey = null; // reset until renderHoldStrategy runs for this card
 
   // Refresh Price Sync stats so "Refresh selected card" button enables
   if (typeof psUpdateStats === 'function') psUpdateStats();
@@ -2212,24 +2214,25 @@ function updateSignal(card, pullCost, desirability) {
   let { signal, cls, reasons } = result;
 
   if (owned) {
-    if (result.score <= -2) {
+    // Derive badge solely from the Hold Strategy winner (_holdWinnerKey).
+    // null  = renderHoldStrategy hasn't run yet for this card → safe default HOLD.
+    // 'none'= Hold Strategy ran but no strategy is ROI-positive → SELL.
+    if (_holdWinnerKey === null) {
+      signal = 'HOLD'; cls = 'signal-hold';
+      reasons = result.reasons;
+    } else if (_holdWinnerKey === 'none') {
       signal = 'SELL'; cls = 'signal-sell';
+      reasons = ['No strategy projects positive 5yr ROI'];
+    } else if (_holdWinnerKey === 'gamble') {
+      signal = 'GRADE'; cls = 'signal-grade';
+      reasons = ['Grading beats holding raw or buying a slab'];
+    } else if (_holdWinnerKey === 'raw') {
+      signal = 'HOLD'; cls = 'signal-hold';
+      reasons = ['Holding raw is the best risk-adjusted play'];
     } else {
-      // Check grading upside: PSA 10 > 3× raw, or scan expects PSA 9+
-      const rawPrice = getCurrentPrice(card);
-      const psa10 = card.p10 || 0;
-      const acq = getAcq(card.i);
-      const expectedGrade = acq?.expectedGrade ?? null;
-      const hasGradingUpside = (psa10 > 0 && rawPrice > 0 && psa10 / rawPrice >= 3)
-        || (expectedGrade != null && expectedGrade >= 9);
-      if (hasGradingUpside && result.score >= 1) {
-        signal = 'GRADE'; cls = 'signal-grade';
-        reasons = expectedGrade
-          ? [`Scan expects PSA ${expectedGrade}`, ...result.reasons].slice(0, 3)
-          : [`PSA 10 is ${(psa10 / rawPrice).toFixed(1)}× raw`, ...result.reasons].slice(0, 3);
-      } else {
-        signal = 'HOLD'; cls = 'signal-hold';
-      }
+      // psa10 / psa9 / psa8 / psa7 — graded tier beats raw
+      signal = 'SELL'; cls = 'signal-sell';
+      reasons = ['Slab outperforms raw long-term — consider upgrading'];
     }
   }
 
@@ -8095,6 +8098,10 @@ function renderHoldStrategy(card) {
   // option. But the recommendation copy answers BOTH the user's questions in
   // plain English so they don't have to read the table to extract the answer.
   const winner = overallWinner;
+  // Store winner key so updateSignal can stay in sync regardless of call order.
+  // 'none' = Hold Strategy ran but no strategy projects positive ROI.
+  // null   = Hold Strategy hasn't run yet for this card.
+  _holdWinnerKey = winner ? winner.key : 'none';
 
   // Build the two-line recommendation: raw-vs-graded verdict + best graded tier.
   const recEl = $('holdRecommendation');
@@ -8359,33 +8366,13 @@ function renderHoldStrategy(card) {
     a steadier graded copy delivers nearly the same return without the wait.
   `;
 
-  // Keep the signal badge in sync with the Hold Strategy conclusion for owned cards.
-  // updateSignal runs before renderHoldStrategy in the card-select flow, so its
-  // independent grading heuristic can contradict what the strategy table actually says.
-  // We correct that here: if the user owns the card, re-derive the badge from winner.
-  if (ownedCard) {
-    const badge = $('signalBadge');
-    const reason = $('signalReason');
-    if (badge) {
-      let sig, cls, why;
-      if (!winner) {
-        sig = 'SELL'; cls = 'signal-sell';
-        why = 'No strategy projects positive 5yr ROI';
-      } else if (winner.key === 'gamble') {
-        sig = 'GRADE'; cls = 'signal-grade';
-        why = 'Grading beats holding raw or buying a slab';
-      } else if (winner.key === 'raw') {
-        sig = 'HOLD'; cls = 'signal-hold';
-        why = 'Holding raw is the best risk-adjusted play';
-      } else {
-        // winner is a graded PSA tier — owning raw, should swap to slab
-        sig = 'SELL'; cls = 'signal-sell';
-        why = `Swap to ${winner.label} — slab outperforms raw long-term`;
-      }
-      badge.textContent = sig;
-      badge.className = `signal-badge ${cls}`;
-      if (reason) reason.textContent = why;
-    }
+  // _holdWinnerKey is now set above — updateSignal will read it next time it's called.
+  // Re-call updateSignal immediately so the badge reflects this card's Hold Strategy
+  // result without waiting for the next user interaction.
+  if (ownedCard && selectedCard) {
+    const { pullCost } = calcPullCost();
+    const des = calcDesirability();
+    updateSignal(selectedCard, pullCost, des);
   }
 }
 
