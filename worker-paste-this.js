@@ -211,9 +211,12 @@ async function handleImgProxy(request, env, url) {
   try { token = await getEbayToken(env); } catch {
     return new Response(JSON.stringify({ error: 'eBay auth failed — check worker secrets.' }), { status: 503, headers: { ...ch, 'Content-Type': 'application/json' } });
   }
+  // eBay Browse API item ID format: v1|{legacyItemId}|0
+  // Pipe characters must be percent-encoded in URL path segments.
+  const encodedItemId = `v1%7C${itemId}%7C0`;
   // Try UK marketplace first, fall back to US
   for (const mktId of ['EBAY_GB', 'EBAY_US']) {
-    const resp = await fetch(`https://api.ebay.com/buy/browse/v1/item/v1|${itemId}|0`, {
+    const resp = await fetch(`https://api.ebay.com/buy/browse/v1/item/${encodedItemId}`, {
       headers: { 'Authorization': `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': mktId, 'Accept': 'application/json' },
     });
     if (!resp.ok) continue;
