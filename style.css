@@ -282,7 +282,7 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .selected-card { border-color: var(--accent); border-width: 1.5px; }
 .selected-card-header { display: flex; flex-direction: column; gap: 0; margin-bottom: 18px; }
 .card-images { display: flex; gap: 8px; width: 100%; justify-content: center; padding: 14px 0 10px; }
-.card-thumb { width: auto; height: 220px; object-fit: contain; border-radius: 10px; background: var(--bg-raised); flex-shrink: 0; box-shadow: 0 16px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.25); }
+.card-thumb { width: auto; height: 440px; object-fit: contain; border-radius: 10px; background: var(--bg-raised); flex-shrink: 0; box-shadow: 0 16px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.25); }
 .card-thumb-jp { border: 1.5px solid var(--demand); opacity: 0.92; }
 .card-thumb-jp:hover { opacity: 1; }
 .selected-card-header { position: relative; overflow: hidden; border-radius: var(--radius-sm); }
@@ -2229,7 +2229,7 @@ textarea, select {
   .selected-card-header { margin-bottom: 10px; }
   .selected-card-info { text-align: left; width: 100%; }
   .card-name-row h2 { white-space: normal; font-size: 16px; }
-  .card-thumb { height: 260px !important; }
+  .card-thumb { height: 520px !important; }
   .compare-grid { grid-template-columns: 1fr 1fr; gap: 14px; }
 }
 
@@ -2237,7 +2237,7 @@ textarea, select {
 @media (min-width: 1024px) {
   .selected-card-header { margin-bottom: 12px; }
   .card-name-row h2 { white-space: normal; }
-  .card-thumb { height: 300px !important; }
+  .card-thumb { height: 600px !important; }
 }
 
 @media (min-width: 1024px) and (max-width: 1193px) {
@@ -2255,7 +2255,7 @@ textarea, select {
   .app { max-width: 1280px; }
   .main { gap: 28px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .main > * { min-width: 0; }
-  .card-thumb { height: 340px !important; }
+  .card-thumb { height: 680px !important; }
 }
 @media (min-width: 1366px) {
   .app { max-width: 1400px; padding-left: 32px; padding-right: 32px; }
@@ -2263,7 +2263,7 @@ textarea, select {
   .predicted-price { font-size: 56px; }
   .max-price { font-size: 44px; }
   .live-main-price { font-size: 36px; }
-  .card-thumb { height: 380px !important; }
+  .card-thumb { height: 760px !important; }
 }
 
 /* ================================================================
@@ -2279,7 +2279,7 @@ textarea, select {
   .predicted-price { font-size: 64px; }
   .max-price { font-size: 48px; }
   .live-main-price { font-size: 40px; }
-  .card-thumb { height: 440px !important; }
+  .card-thumb { height: 880px !important; }
 }
 @media (min-width: 2200px) {
   .app { max-width: 1920px; padding-left: 48px; padding-right: 48px; }
