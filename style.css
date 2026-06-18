@@ -6563,6 +6563,11 @@ section.card .card-collapse-btn { padding: 10px; }
   border-color: rgba(232,182,52,0.55);
   box-shadow: 0 0 0 1px rgba(232,182,52,0.35), 0 4px 20px rgba(232,182,52,0.18);
 }
+.home-card-tile.urgent-buy .home-card-info {
+  box-shadow: 0 0 0 2px #22c55e, 0 0 10px rgba(34,197,94,0.35);
+  border-radius: 0 0 10px 10px;
+  position: relative;
+}
 .home-card-art {
   width: 100%;
   aspect-ratio: 63 / 88;

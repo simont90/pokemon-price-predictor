@@ -12079,7 +12079,7 @@ function _homeItemClick(id) {
   setTimeout(() => selectCard(id), 80);
 }
 
-function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass, subText) {
+function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass, subText, opts = {}) {
   const img = imgUrl
     ? `<img class="home-card-art" src="${imgUrl}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
     : `<div class="home-card-art"></div>`;
@@ -12087,7 +12087,9 @@ function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass
     ? `<span class="home-card-signal ${signalClass}">${signalLabel}</span>`
     : '';
   const sub = subText ? `<div class="home-card-sub">${esc(subText)}</div>` : '';
-  return `<div class="home-card-tile${extraClass ? ' ' + extraClass : ''}" data-id="${id}">
+  const tileClass = ['home-card-tile', extraClass, opts.urgentBuy ? 'urgent-buy' : ''].filter(Boolean).join(' ');
+  const hiddenAttr = opts.hidden ? ' style="display:none"' : '';
+  return `<div class="${tileClass}" data-id="${id}"${hiddenAttr}>
     ${img}${signal}
     <button class="home-card-remove" aria-label="Remove">✕</button>
     <div class="home-card-info">
@@ -12188,8 +12190,7 @@ function _renderHomeWishlist() {
     if (!card) return [];
     const hc = computeHoldCore(card);
     const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
-    // Quality filter only applies when hold data exists; if no price data, show as fallback
-    if (hc.ok && !budgetPick) return [];
+    const filtered = hc.ok && !budgetPick; // has data but no qualifying strategy
     let displayGBP, stratLabel = '';
     if (budgetPick) {
       displayGBP = budgetPick.displayGBP;
@@ -12209,12 +12210,14 @@ function _renderHomeWishlist() {
     if (target > 0) subParts.push(`Target: ${fmtGBPDirect(target)}`);
     else if (w.set) subParts.push(w.set);
     if (stratLabel) subParts.push(stratLabel);
-    return [_homeTile(w.id, w.img, w.name, displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', alertClass, alertLabel, '', subParts.join(' · '))];
+    const urgentBuy = !!budgetPick && budgetPick.pick.roi >= 150;
+    return [_homeTile(w.id, w.img, w.name, displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', alertClass, alertLabel, '', subParts.join(' · '), { hidden: filtered, urgentBuy })];
   });
-  if (countEl) countEl.textContent = tiles.length;
+  const visibleCount = tiles.filter(t => !t.includes('style="display:none"')).length;
+  if (countEl) countEl.textContent = visibleCount;
   list.innerHTML = tiles.length
     ? tiles.join('')
-    : '<div class="home-empty">No wishlist cards meet the criteria: low risk, strong hold, within budget.</div>';
+    : '<div class="home-empty">No wishlist cards yet.<br>Tap ♥ on any card to add it.</div>';
   _setupTileEvents(list, id => {
     wishlist = wishlist.filter(w => w.id !== id);
     saveWishlist(); renderWishlist(); updateWishlistButton();
@@ -12239,8 +12242,7 @@ function _renderHomeWatchlist() {
     if (!card) return [];
     const hc = computeHoldCore(card);
     const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
-    // Quality filter only applies when hold data exists; if no price data, show as fallback
-    if (hc.ok && !budgetPick) return [];
+    const filtered = hc.ok && !budgetPick; // has data but no qualifying strategy
     let displayGBP, stratLabel = '';
     if (budgetPick) {
       displayGBP = budgetPick.displayGBP;
@@ -12257,13 +12259,15 @@ function _renderHomeWatchlist() {
     const subParts = [];
     if (w.set) subParts.push(w.set);
     if (stratLabel) subParts.push(stratLabel);
+    const urgentBuy = !!budgetPick && budgetPick.pick.roi >= 150;
     return [_homeTile(w.id, w.img, w.name,
       displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—',
       sc, signal,
       triggered ? 'alert-tile' : '',
-      subParts.join(' · '))];
+      subParts.join(' · '), { hidden: filtered, urgentBuy })];
   });
-  if (countEl) countEl.textContent = tiles.length;
+  const visibleCount = tiles.filter(t => !t.includes('style="display:none"')).length;
+  if (countEl) countEl.textContent = visibleCount;
   list.innerHTML = tiles.length
     ? tiles.join('')
     : '<div class="home-empty">No watched cards meet the criteria: low risk, strong hold, within budget.</div>';
