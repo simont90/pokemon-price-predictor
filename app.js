@@ -2912,7 +2912,20 @@ function updateDealCheck(modelPriceUSD) {
     $('dealResult').className = 'deal-result';
     return;
   }
-  const refUSD = selectedCard ? Math.min(modelPriceUSD, getCurrentPrice(selectedCard)) : modelPriceUSD;
+  const gradeKey = ($('dealGrade') && $('dealGrade').value) || 'raw';
+  let refUSD;
+  if (gradeKey !== 'raw' && selectedCard) {
+    const anchor = getPsa10Anchor(selectedCard);
+    const psa10USD = anchor && anchor.usd > 0 ? anchor.usd : 0;
+    if (psa10USD > 0) {
+      const gradeNum = parseInt(gradeKey.replace('psa', ''), 10) || 10;
+      refUSD = psa10USD * (PSA_RATIOS[gradeNum] || 1);
+    } else {
+      refUSD = Math.min(modelPriceUSD, getCurrentPrice(selectedCard));
+    }
+  } else {
+    refUSD = selectedCard ? Math.min(modelPriceUSD, getCurrentPrice(selectedCard)) : modelPriceUSD;
+  }
   const refGBP = usdToGbp(refUSD);
   const diff = refGBP - ebayGBP;
   const pct = ((diff / ebayGBP) * 100).toFixed(0);
