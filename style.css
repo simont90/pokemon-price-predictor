@@ -280,9 +280,9 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 
 /* Selected Card */
 .selected-card { border-color: var(--accent); border-width: 1.5px; }
-.selected-card-header { display: flex; gap: 16px; margin-bottom: 18px; }
-.card-images { display: flex; gap: 8px; flex-shrink: 0; }
-.card-thumb { width: 80px; height: 112px; object-fit: contain; border-radius: 8px; background: var(--bg-raised); flex-shrink: 0; }
+.selected-card-header { display: flex; flex-direction: column; gap: 0; margin-bottom: 18px; }
+.card-images { display: flex; gap: 8px; width: 100%; justify-content: center; padding: 14px 0 10px; }
+.card-thumb { width: auto; height: 220px; object-fit: contain; border-radius: 10px; background: var(--bg-raised); flex-shrink: 0; box-shadow: 0 16px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.25); }
 .card-thumb-jp { border: 1.5px solid var(--demand); opacity: 0.92; }
 .card-thumb-jp:hover { opacity: 1; }
 .selected-card-header { position: relative; overflow: hidden; border-radius: var(--radius-sm); }
@@ -330,6 +330,20 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .card-link.jp-link:hover { color: var(--demand); }
 .card-link.pc-link { color: var(--text-muted); }
 .card-link.pc-link:hover { color: var(--accent); }
+
+/* Edit dropdown within card-links */
+.card-edit-group { display: contents; }
+.card-edit-toggle {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: 6px; font-size: 11px; font-family: var(--font-main, inherit);
+  color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.card-edit-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.card-edit-toggle .cet-chev { transition: transform 0.2s; }
+.card-edit-items { display: none; }
+.card-edit-items.edit-open { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; padding-top: 4px; }
 
 /* HOLD / BUY / SELL Signal */
 .signal-badge-wrap { display: inline-flex; align-items: center; gap: 8px; position: relative; }
@@ -2212,30 +2226,18 @@ textarea, select {
   .header-right { flex-wrap: wrap; gap: 8px; }
   .card { padding: 22px; }
   .price-grid { grid-template-columns: repeat(4, 1fr); }
-  /* Stack the card panel vertically so the image shows at a reasonable size */
-  .selected-card-header { flex-direction: column; align-items: stretch; gap: 0; margin-bottom: 10px; }
+  .selected-card-header { margin-bottom: 10px; }
   .selected-card-info { text-align: left; width: 100%; }
   .card-name-row h2 { white-space: normal; font-size: 16px; }
-  .card-images {
-    display: flex; align-items: center; justify-content: center;
-    width: 100%; padding: 12px 0 10px; margin-bottom: 10px;
-    background: transparent;
-  }
-  .card-thumb { width: auto !important; height: 200px !important; border-radius: 10px; box-shadow: 0 16px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.25); }
+  .card-thumb { height: 260px !important; }
   .compare-grid { grid-template-columns: 1fr 1fr; gap: 14px; }
 }
 
 /* iPad mini landscape / iPad Pro 11" portrait (1024-1193px) */
-/* Desktop card hero: column layout + large image from 1024px up */
 @media (min-width: 1024px) {
-  .selected-card-header { flex-direction: column; align-items: stretch; gap: 0; margin-bottom: 12px; }
-  .selected-card-info { text-align: left; width: 100%; }
+  .selected-card-header { margin-bottom: 12px; }
   .card-name-row h2 { white-space: normal; }
-  .card-images {
-    display: flex; align-items: center; justify-content: center; gap: 16px;
-    width: 100%; padding: 16px 0 14px; margin-bottom: 12px; background: transparent;
-  }
-  .card-thumb { width: auto !important; height: 240px !important; border-radius: 10px; box-shadow: 0 16px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.25); }
+  .card-thumb { height: 300px !important; }
 }
 
 @media (min-width: 1024px) and (max-width: 1193px) {
@@ -2253,7 +2255,7 @@ textarea, select {
   .app { max-width: 1280px; }
   .main { gap: 28px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .main > * { min-width: 0; }
-  .card-thumb { height: 280px !important; }
+  .card-thumb { height: 340px !important; }
 }
 @media (min-width: 1366px) {
   .app { max-width: 1400px; padding-left: 32px; padding-right: 32px; }
@@ -2261,7 +2263,7 @@ textarea, select {
   .predicted-price { font-size: 56px; }
   .max-price { font-size: 44px; }
   .live-main-price { font-size: 36px; }
-  .card-thumb { height: 320px !important; }
+  .card-thumb { height: 380px !important; }
 }
 
 /* ================================================================
@@ -2277,7 +2279,7 @@ textarea, select {
   .predicted-price { font-size: 64px; }
   .max-price { font-size: 48px; }
   .live-main-price { font-size: 40px; }
-  .card-thumb { height: 380px !important; }
+  .card-thumb { height: 440px !important; }
 }
 @media (min-width: 2200px) {
   .app { max-width: 1920px; padding-left: 48px; padding-right: 48px; }

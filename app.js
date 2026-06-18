@@ -452,6 +452,7 @@ async function init() {
   setupPWANav();
   setupCollapsibleSections();
   setupCardLinksToggle();
+  setupCardEditToggle();
   setupHeaderMenu();
   // Bring back any cards the user has manually added in past sessions, then
   // rebuild the search index and refresh the displayed total card count.
@@ -9025,8 +9026,6 @@ async function fetchLiveDeals(card, opts) {
   // rough modern-holo proxy. Keeps the live-scan visible on cards the price
   // model can't anchor exactly.
   const psa10Price = psa10PriceRaw > 0 ? psa10PriceRaw : (rawPriceUSD > 0 ? rawPriceUSD * 5 : 0);
-  if (psa10Price <= 0 && !(rawPriceUSD > 0)) { wrap.style.display = 'none'; return; }
-
   wrap.style.display = 'block';
   setupMktGradeTabs();
   if (topStatus) topStatus.textContent = `Scanning 5 grades · eBay UK + US + Cardmarket…`;
@@ -13867,6 +13866,16 @@ function setupCardLinksToggle() {
     const open = links.classList.toggle('links-open');
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     toggle.querySelector('.clt-chev').style.transform = open ? 'rotate(180deg)' : '';
+  });
+}
+
+function setupCardEditToggle() {
+  const toggle = document.getElementById('cardEditToggle');
+  const items = document.getElementById('cardEditItems');
+  if (!toggle || !items) return;
+  toggle.addEventListener('click', () => {
+    const open = items.classList.toggle('edit-open');
+    toggle.querySelector('.cet-chev').style.transform = open ? 'rotate(180deg)' : '';
   });
 }
 
