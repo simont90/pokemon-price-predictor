@@ -4298,6 +4298,18 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   font-family: var(--font); font-size: 10px; font-weight: 800;
   letter-spacing: 0.04em; text-transform: uppercase;
 }
+.hold-tile-over-budget {
+  border: 1.5px solid rgba(248, 113, 113, 0.5);
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.05), var(--bg-raised) 60%);
+  opacity: 0.72;
+}
+.hold-over-budget-tag {
+  position: absolute; top: -10px; left: 12px;
+  padding: 3px 9px; border-radius: 5px;
+  background: #f87171; color: #1a0000;
+  font-family: var(--font); font-size: 10px; font-weight: 800;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
 .hold-tile-head { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .hold-tile-title { font-family: var(--font); font-weight: 700; font-size: 14px; color: var(--text); }
 .hold-tile-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }

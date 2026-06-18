@@ -9537,8 +9537,11 @@ function renderHoldStrategy(card) {
 
   // Render the comparison grid.
   const grid = $('holdGrid');
+  const _maxBudgetGBP = getMaxBudgetGBP();
   grid.innerHTML = strategies.map(s => {
-    const isWinner = bestLongTermPick && s.key === bestLongTermPick.key;
+    const todayGBP_tile = s.today * fx;
+    const isOverBudget = _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
+    const isWinner = bestLongTermPick && s.key === bestLongTermPick.key && !isOverBudget;
     const verdict = s.roi >= 80 ? { c: 'hold-v-strong', t: 'Strong hold' }
                   : s.roi >= 40 ? { c: 'hold-v-good',   t: 'Worth holding' }
                   : s.roi >= 15 ? { c: 'hold-v-fair',   t: 'Fair' }
@@ -9547,8 +9550,8 @@ function renderHoldStrategy(card) {
     const riskLabel = s.risk === 'low' ? 'Low risk' : s.risk === 'med' ? 'Medium risk' : 'High risk';
     const profitSign = s.profit >= 0 ? '+' : '−';
     return `
-      <div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${verdict.c} ${s.overridden ? 'hold-tile-overridden' : ''}">
-        ${isWinner ? '<div class="hold-winner-tag">\u2605 Best long-term pick</div>' : ''}
+      <div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${verdict.c} ${s.overridden ? 'hold-tile-overridden' : ''}">
+        ${isOverBudget ? '<div class="hold-over-budget-tag">Above budget</div>' : (isWinner ? '<div class="hold-winner-tag">\u2605 Best long-term pick</div>' : '')}
         ${s.overridden ? `<div class="hold-tile-override-tag" title="Using your manual market price">Market £${(+s.overrideGBP).toFixed(2)}</div>` : ''}
         <div class="hold-tile-head">
           <div class="hold-tile-title">${s.label}</div>
