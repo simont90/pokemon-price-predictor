@@ -12818,26 +12818,150 @@ function _renderHomeAiGrades() {
 }
 
 // Raw eBay listings with PSA 9-10 text estimate, auto-saved by the marketplace
-// scan. Removed once AI graded. Tiles open the eBay listing directly.
+// scan. Deduped by cardId (max 15 tiles). Main tile click → card page.
 function _renderHomeGradeCandidates() {
   const list = $('homeGradeCandList'), wrap = $('homeGradeCandWrap');
   if (!list) return;
-  const cands = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
-  const hash  = cands.map(c => c.listingUrl).join('|');
+  const raw = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
+  // One listing per card (cheapest), up to 15
+  const seenCards = new Set();
+  const cands = [];
+  for (const c of raw) {
+    if (!seenCards.has(c.cardId)) { seenCards.add(c.cardId); cands.push(c); }
+    if (cands.length >= 15) break;
+  }
+  const hash = cands.map(c => c.listingUrl).join('|');
   if (wrap) wrap.style.display = cands.length ? '' : 'none';
   if (hash === _homeGradeCandHash && list.querySelector('.home-card-tile')) return;
   _homeGradeCandHash = hash;
-  const c = $('homeGradeCandCount'); if (c) c.textContent = cands.length;
-  list.innerHTML = cands.map(d =>
-    _homeTile(d.listingUrl, d.listingImg, d.cardName,
-      d.priceGBP ? `£${d.priceGBP.toFixed(2)}` : '',
-      'sig-buy', 'AI Grade?', '', '', { dealUrl: d.listingUrl })
-  ).join('');
-  if (cands.length) _setupTileEvents(list, url => {
-    const store = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
-    localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(store.filter(c => c.listingUrl !== url)));
-    _renderHomeGradeCandidates();
+  const countEl = $('homeGradeCandCount'); if (countEl) countEl.textContent = raw.length;
+  list.innerHTML = cands.map(d => {
+    const img = d.listingImg
+      ? `<img class="home-card-art" src="${esc(d.listingImg)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+      : `<div class="home-card-art"></div>`;
+    const price = d.priceGBP ? `£${Number(d.priceGBP).toFixed(2)}` : '';
+    return `<div class="home-card-tile" data-id="${esc(String(d.cardId))}" data-listing-url="${esc(d.listingUrl)}" data-listing-img="${esc(d.listingImg || '')}" data-card-name="${esc(d.cardName || '')}" data-price-gbp="${d.priceGBP || 0}">
+      ${img}
+      <span class="home-card-signal sig-buy">AI Grade?</span>
+      <button class="home-card-remove" aria-label="Remove">✕</button>
+      <div class="home-card-info">
+        <div class="home-card-name">${esc(d.cardName || '')}</div>
+        <div class="home-card-price">${price}</div>
+        <div class="home-cand-actions">
+          <button class="home-cand-grade-btn">AI Grade</button>
+          <a class="home-cand-ebay-btn" href="${esc(d.listingUrl)}" target="_blank" rel="noopener">eBay ↗</a>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  if (cands.length) _setupGradeCandEvents(list);
+
+  const refreshBtn = $('homeGradeCandRefresh');
+  if (refreshBtn && !refreshBtn._wired) {
+    refreshBtn._wired = true;
+    refreshBtn.addEventListener('click', _gradeCandRefresh);
+  }
+}
+
+function _setupGradeCandEvents(list) {
+  list.addEventListener('click', async e => {
+    // Dismiss ✕
+    const removeBtn = e.target.closest('.home-card-remove');
+    if (removeBtn) {
+      e.stopPropagation();
+      const tile = removeBtn.closest('.home-card-tile');
+      if (!tile) return;
+      const listingUrl = tile.dataset.listingUrl;
+      tile.style.transition = 'transform 0.22s ease, opacity 0.22s ease';
+      tile.style.transform = 'scale(0.8)';
+      tile.style.opacity = '0';
+      setTimeout(() => {
+        const store = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
+        localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(store.filter(c => c.listingUrl !== listingUrl)));
+        _homeGradeCandHash = '';
+        _renderHomeGradeCandidates();
+      }, 210);
+      return;
+    }
+    // AI Grade button
+    const gradeBtn = e.target.closest('.home-cand-grade-btn');
+    if (gradeBtn) { e.stopPropagation(); _gradeHomeCandidate(gradeBtn); return; }
+    // eBay link — let <a> handle it
+    if (e.target.closest('.home-cand-ebay-btn')) return;
+    // Main tile → card page
+    const tile = e.target.closest('.home-card-tile');
+    if (tile && tile.dataset.id) _homeItemClick(tile.dataset.id);
   });
+}
+
+async function _gradeHomeCandidate(btn) {
+  const tile = btn.closest('.home-card-tile');
+  if (!tile) return;
+  const listingImg = tile.dataset.listingImg;
+  const listingUrl = tile.dataset.listingUrl;
+  const cardId     = tile.dataset.id;
+  const cardName   = tile.dataset.cardName;
+  const priceGBP   = parseFloat(tile.dataset.priceGbp) || 0;
+  if (!listingImg) { btn.textContent = 'No image'; return; }
+
+  btn.textContent = 'Grading…';
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch(`${getMktWorkerUrl()}/grade-card`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageUrl: listingImg }),
+    });
+    if (!resp.ok) throw new Error(`Worker ${resp.status}`);
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+
+    const scores = [data.centering, data.corners, data.edges, data.surface].filter(v => v != null);
+    let grade = null;
+    if (scores.length === 4) {
+      const min = Math.min(...scores), avg = scores.reduce((a, b) => a + b, 0) / 4;
+      if (min >= 10) grade = 10;
+      else if (min >= 8 && avg >= 9.5) grade = 10;
+      else if (min >= 8 && avg >= 8.5) grade = 9;
+      else if (min >= 8) grade = 8;
+      else if (min >= 6 && avg >= 7.5) grade = 7;
+      else if (min >= 6) grade = 6;
+      else if (min >= 4 && avg >= 6) grade = 5;
+      else grade = 4;
+    }
+
+    btn.textContent = grade != null ? `PSA ~${grade}` : 'No grade';
+    if (grade >= 9) btn.classList.add('home-cand-grade-good');
+
+    if (grade != null) {
+      const breakdown = { centering: data.centering, corners: data.corners, edges: data.edges, surface: data.surface };
+      const gradeDeals = JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]');
+      const idx = gradeDeals.findIndex(d => d.listingUrl === listingUrl);
+      const rec = { cardId, cardName, listingUrl, listingImg, priceGBP, aiGrade: grade, breakdown, ts: Date.now() };
+      if (idx >= 0) gradeDeals[idx] = rec; else gradeDeals.unshift(rec);
+      localStorage.setItem('pkm-ai-grade-deals-v1', JSON.stringify(gradeDeals.slice(0, 100)));
+
+      const cands = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
+      localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(cands.filter(c => c.listingUrl !== listingUrl)));
+
+      _homeGradeCandHash = '';
+      setTimeout(() => { try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); } catch {} }, 1500);
+    }
+  } catch (err) {
+    btn.textContent = 'Failed';
+    btn.disabled = false;
+  }
+}
+
+function _gradeCandRefresh() {
+  const graded = new Set((JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]')).map(r => r.listingUrl));
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const pruned = (JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]'))
+    .filter(c => !graded.has(c.listingUrl) && c.ts > cutoff);
+  localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(pruned));
+  _homeGradeCandHash = '';
+  _renderHomeGradeCandidates();
 }
 function _homeItemHash(items, prefix) {
   const s = items.map(i => { const c = getCachedPrice(i.id); return i.id + ':' + Math.round((c?.market || c?.mid || 0) * 100); }).join('|');

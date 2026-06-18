@@ -6733,6 +6733,36 @@ section.card .card-collapse-btn { padding: 10px; }
   flex-shrink: 0;
 }
 .home-count-badge:empty { display: none; }
+.home-section-refresh {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0; flex-shrink: 0;
+  background: transparent; border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.home-section-refresh:hover { border-color: var(--accent); color: var(--accent); }
+.home-section-refresh:active { transform: rotate(180deg); }
+/* Grade candidate tile action row */
+.home-cand-actions {
+  display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap;
+}
+.home-cand-grade-btn {
+  font-size: 10px; font-weight: 600; font-family: var(--font-main, inherit);
+  padding: 3px 8px; border-radius: 5px; cursor: pointer;
+  background: var(--accent-dim); border: 1px solid rgba(232,182,52,0.35);
+  color: var(--accent); transition: all 0.15s; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.home-cand-grade-btn:hover { background: var(--accent); color: #000; }
+.home-cand-grade-btn:disabled { opacity: 0.6; cursor: default; }
+.home-cand-grade-btn.home-cand-grade-good { background: var(--green-dim); border-color: var(--green-border); color: var(--green); }
+.home-cand-ebay-btn {
+  font-size: 10px; font-weight: 500; padding: 3px 7px; border-radius: 5px;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-faint); text-decoration: none; white-space: nowrap;
+  transition: all 0.15s; display: inline-flex; align-items: center;
+}
+.home-cand-ebay-btn:hover { border-color: var(--text-muted); color: var(--text); }
 .home-view-all {
   font-size: 12px;
   font-weight: 600;
