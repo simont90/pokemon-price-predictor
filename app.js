@@ -8130,8 +8130,10 @@ function renderHoldStrategy(card) {
     } else if (bestRaw && bestGraded) {
       const rawScore = bestRaw.riskAdjusted;
       const gradedScore = bestGraded.riskAdjusted;
+      const rawVerb = ownedCard
+        ? (bestRaw.key === 'gamble' ? 'Grade it' : 'Keep raw')
+        : (bestRaw.key === 'gamble' ? 'Buy raw + grade' : 'Buy raw');
       if (rawScore > gradedScore + 30) {
-        const rawVerb = ownedCard ? 'Keep raw' : 'Buy raw';
         rawVsGradedLine = `<strong>${rawVerb}</strong> — <strong>${bestRaw.label}</strong> beats the best graded option (${bestGraded.label}) by a wide margin on risk-adjusted return.${gambleCaveat}`;
       } else if (gradedScore > rawScore + 30) {
         rawVsGradedLine = `<strong>${ownedCard ? 'Sell raw, buy graded' : 'Buy graded'}</strong> — <strong>${bestGraded.label}</strong> beats the best raw approach (${bestRaw.label}) on risk-adjusted return. From the UK, skipping the ~${UK_GRADING_WAIT_MONTHS}-month grading wait is the better play here.`;
@@ -8141,7 +8143,11 @@ function renderHoldStrategy(card) {
     } else if (bestGraded) {
       rawVsGradedLine = `<strong>${ownedCard ? 'Sell raw, buy graded' : 'Buy graded'}</strong> — no raw-side option projects positive 5yr ROI for this card; only graded holds make sense.`;
     } else {
-      rawVsGradedLine = `<strong>${ownedCard ? 'Keep raw' : 'Buy raw'}</strong> — graded copies don't project a positive 5yr return at current prices; the raw card is the only sensible entry.`;
+      // No graded options profitable — raw side only
+      const rawVerb = ownedCard
+        ? (bestRaw && bestRaw.key === 'gamble' ? 'Grade it' : 'Keep raw')
+        : 'Buy raw';
+      rawVsGradedLine = `<strong>${rawVerb}</strong> — graded copies don't project a positive 5yr return at current prices; the raw card is the only sensible entry.`;
     }
 
     // Best graded tier line.
