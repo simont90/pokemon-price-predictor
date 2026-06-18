@@ -8876,6 +8876,13 @@ function computeHoldCore(card) {
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
+  // BEST LONG-TERM PICK: never high-risk (gamble), must be Strong Hold (ROI ≥ 80%).
+  // This is the only criterion for the badge and home-page reco sections.
+  const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 80);
+  const bestLongTermPick = ltpCandidates.length
+    ? ltpCandidates.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
+    : null;
+
   // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
   // funding/concentration risk that a £59 alternative doesn't. We only apply
   // this to the cross-card overallScore (EN ↔ JP smarter-buy verdict) — the
@@ -8891,6 +8898,7 @@ function computeHoldCore(card) {
     psa10USD: psa10Price,
     strategies,
     winner,
+    bestLongTermPick,
     bestRaw,
     bestGraded,
     winnerOutlayGBP,
@@ -9297,23 +9305,25 @@ function renderHoldStrategy(card) {
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
-  // The card visually highlighted as the winner is the overall best risk-adjusted
-  // option. But the recommendation copy answers BOTH the user's questions in
-  // plain English so they don't have to read the table to extract the answer.
-  const winner = overallWinner;
+  // BEST LONG-TERM PICK badge: never high-risk (gamble), must be Strong Hold (ROI ≥ 80%).
+  // overallWinner drives the recommendation text; bestLongTermPick drives the badge + signal.
+  const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 80);
+  const bestLongTermPick = ltpCandidates.length
+    ? ltpCandidates.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
+    : null;
+
+  const winner = overallWinner; // used for recommendation copy below
   // Store winner key so updateSignal can stay in sync regardless of call order.
-  // 'none' = Hold Strategy ran but no strategy projects positive ROI.
+  // 'none' = Hold Strategy ran but no strategy qualifies as BEST LONG-TERM PICK.
   // null   = Hold Strategy hasn't run yet for this card.
-  _holdWinnerKey = winner ? winner.key : 'none';
-  if (winner) {
-    const _wProfGBP = winner.profit * fx;
-    const _wROI = Math.round(winner.roi);
-    if (winner.key === 'raw') {
+  _holdWinnerKey = bestLongTermPick ? bestLongTermPick.key : 'none';
+  if (bestLongTermPick) {
+    const _wProfGBP = bestLongTermPick.profit * fx;
+    const _wROI = Math.round(bestLongTermPick.roi);
+    if (bestLongTermPick.key === 'raw') {
       _holdWinnerDesc = `Hold raw · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
-    } else if (winner.key === 'gamble') {
-      _holdWinnerDesc = `Buy raw and grade · ${_wROI}% EV ROI · ${fmtGBPDirect(_wProfGBP)} profit`;
     } else {
-      _holdWinnerDesc = `Buy ${winner.key.replace('psa', 'PSA ')} slab · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
+      _holdWinnerDesc = `Buy ${bestLongTermPick.key.replace('psa', 'PSA ')} slab · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
     }
   } else {
     _holdWinnerDesc = '';
@@ -9443,7 +9453,7 @@ function renderHoldStrategy(card) {
   // Render the comparison grid.
   const grid = $('holdGrid');
   grid.innerHTML = strategies.map(s => {
-    const isWinner = winner && s.key === winner.key;
+    const isWinner = bestLongTermPick && s.key === bestLongTermPick.key;
     const verdict = s.roi >= 80 ? { c: 'hold-v-strong', t: 'Strong hold' }
                   : s.roi >= 40 ? { c: 'hold-v-good',   t: 'Worth holding' }
                   : s.roi >= 15 ? { c: 'hold-v-fair',   t: 'Fair' }
@@ -11617,19 +11627,18 @@ function buildAllHomeRecos(limit = 15) {
     };
     general.push(base);
 
-    // Strategy sections — only cards where that specific strategy is the winner
-    // (i.e. marked "BEST LONG-TERM PICK" on the card's Hold Strategy).
-    // 'gamble' (Buy Raw + Grade) is grouped into the Buy Raw bucket.
+    // Strategy sections — only cards where that specific strategy is the BEST LONG-TERM PICK
+    // (not high-risk, ROI ≥ 80%). Matches exactly what gets the badge on the card's Hold Strategy.
     const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(c) : { ok: false };
-    if (hc.ok && hc.winner) {
-      const wk = hc.winner.key === 'gamble' ? 'raw' : hc.winner.key;
+    if (hc.ok && hc.bestLongTermPick) {
+      const wk = hc.bestLongTermPick.key;
       if (byStrat[wk]) {
         byStrat[wk].push({
           ...base,
-          strategyRoi:       hc.winner.roi,
-          strategyRiskAdj:   hc.winner.riskAdjusted,
-          strategyProfitGBP: hc.winner.profit * fx,
-          strategyToday:     hc.winner.today * fx,
+          strategyRoi:       hc.bestLongTermPick.roi,
+          strategyRiskAdj:   hc.bestLongTermPick.riskAdjusted,
+          strategyProfitGBP: hc.bestLongTermPick.profit * fx,
+          strategyToday:     hc.bestLongTermPick.today * fx,
         });
       }
     }
