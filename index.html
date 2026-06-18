@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619s">
+  <link rel="stylesheet" href="style.css?v=20260619t">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -684,6 +684,19 @@
             <button class="home-view-all" id="homeOpenWatchlist">View all</button>
           </div>
           <div class="home-scroll-row" id="homeWatchList"><div class="home-empty">No cards being watched yet.</div></div>
+        </section>
+
+        <!-- Recommendations -->
+        <section class="home-section-wrap" id="homeRecoWrap">
+          <div class="home-section-hd">
+            <div class="home-section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              Recommendations
+            </div>
+            <span class="home-count-badge" id="homeRecoCount">0</span>
+            <button class="home-view-all" id="homeRecoRefresh">Refresh</button>
+          </div>
+          <div class="home-scroll-row" id="homeRecoList"><div class="home-empty">Scanning…</div></div>
         </section>
 
       </div>
@@ -1897,6 +1910,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619s"></script>
+  <script src="app.js?v=20260619t"></script>
 </body>
 </html>

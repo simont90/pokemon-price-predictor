@@ -11358,10 +11358,242 @@ function setupTheme() {
 }
 
 // ─── Home Dashboard ───────────────────────────────────────────────
+// ── Home Recommendations ──────────────────────────────────────────────────
+const RECO_DISMISSED_KEY = 'pkm-reco-dismissed-v1';
+let _recoCached = null; // { results: [], ts: Date.now() }
+
+function _getRecoDismissed() {
+  try { return new Set(JSON.parse(localStorage.getItem(RECO_DISMISSED_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function _dismissReco(cardId) {
+  const s = _getRecoDismissed();
+  s.add(cardId);
+  try { localStorage.setItem(RECO_DISMISSED_KEY, JSON.stringify([...s])); } catch {}
+  _recoCached = null;
+}
+
+// Get the best available static/cached price for a card (doesn't touch livePrice).
+function _recoStaticPrice(c) {
+  const cached = getCachedPrice(c.i);
+  if (cached) {
+    if (cached.pcUngraded > 0) return cached.pcUngraded;
+    if (cached.market > 0) return cached.market;
+    if (cached.mid > 0) return cached.mid;
+  }
+  return c.p || 0;
+}
+
+function buildHomeReco(limit = 15) {
+  if (!cardData || !cardData.cards) return [];
+  const dismissed   = _getRecoDismissed();
+  const ownedIds    = new Set(portfolio.map(p => p.id));
+  const wishIds     = new Set(wishlist.map(w => w.id));
+  const watchIds    = new Set(watchlist.map(w => w.id));
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const results = [];
+
+  for (const c of cardData.cards) {
+    if (dismissed.has(c.i)) continue;
+    if (ownedIds.has(c.i) || wishIds.has(c.i)) continue; // already tracking
+
+    // Manual raw price override takes priority over live/static market data
+    const overrides = (typeof getHoldOverridesForCard === 'function') ? getHoldOverridesForCard(c.i) : {};
+    const manualRawGBP = overrides && overrides.raw > 0 ? overrides.raw : null;
+    const marketUSD = manualRawGBP ? manualRawGBP / fx : _recoStaticPrice(c);
+
+    if (!marketUSD || marketUSD < 8) continue; // skip bulk
+    if (marketUSD * fx > 1500) continue;        // skip stratospheric prices for reco
+
+    // Pull cost
+    let pullCost = 7.65;
+    if (setsData && setsData[c.sc]) {
+      const set = setsData[c.sc];
+      const rarity = set.rarities?.[c.rc];
+      if (rarity && rarity.pullRate > 0) {
+        const packsPerHit = Math.round(1 / rarity.pullRate);
+        pullCost = (packsPerHit * rarity.count) / 100;
+      }
+    }
+
+    const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(c, pullCost) : { total: 5 };
+    const sig = (typeof computeSignal === 'function') ? computeSignal(c, pullCost, des.total) : null;
+    if (!sig || (sig.signal !== 'BUY' && sig.signal !== 'STRONG BUY')) continue;
+
+    const modelUSD = (typeof predictPrice === 'function') ? (predictPrice(pullCost, des.total).priceUSD || 0) : 0;
+    const upsidePct = modelUSD > marketUSD ? ((modelUSD - marketUSD) / marketUSD * 100) : 0;
+    const onWatchlist = watchIds.has(c.i);
+
+    results.push({
+      card: c,
+      marketUSD,
+      marketGBP: marketUSD * fx,
+      manualPrice: !!manualRawGBP,
+      signal: sig.signal,
+      signalCls: sig.signal === 'STRONG BUY' ? 'sig-strong-buy' : 'sig-buy',
+      score: sig.score,
+      upsidePct,
+      onWatchlist,
+      reasons: sig.reasons || [],
+    });
+  }
+
+  // STRONG BUY first, then signal score descending
+  results.sort((a, b) => {
+    const sA = a.signal === 'STRONG BUY' ? 1 : 0;
+    const sB = b.signal === 'STRONG BUY' ? 1 : 0;
+    return sB - sA || b.score - a.score || b.upsidePct - a.upsidePct;
+  });
+
+  return results.slice(0, limit);
+}
+
+function _recoTileHtml(r) {
+  const id = r.card.i;
+  const img = r.card.img
+    ? `<img class="home-card-art" src="${esc(r.card.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+    : `<div class="home-card-art"></div>`;
+  const manual = r.manualPrice ? `<span class="reco-manual-tag">manual</span>` : '';
+  const upside = r.upsidePct > 5
+    ? `<span class="reco-upside pos">+${r.upsidePct.toFixed(0)}% model upside</span>`
+    : `<span class="reco-upside">${esc(r.card.s || '')}</span>`;
+  const watchTitle = r.onWatchlist ? 'On watchlist' : 'Add to watchlist';
+  const watchCls   = r.onWatchlist ? 'reco-watch reco-watch-active' : 'reco-watch';
+  return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
+    ${img}
+    <span class="home-card-signal ${r.signalCls}">${r.signal}</span>
+    <div class="reco-actions">
+      <button class="reco-btn reco-dismiss" data-id="${esc(id)}" title="Not interested">✕</button>
+      <button class="reco-btn reco-wish" data-id="${esc(id)}" title="Add to wishlist">♡</button>
+      <button class="reco-btn ${watchCls}" data-id="${esc(id)}" title="${watchTitle}">◎</button>
+    </div>
+    <div class="home-card-info">
+      <div class="home-card-name">${esc(r.card.n)}</div>
+      <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}</div>
+      <div class="home-card-sub">${upside}</div>
+    </div>
+  </div>`;
+}
+
+function _renderHomeReco(forceRebuild) {
+  const list    = $('homeRecoList');
+  const countEl = $('homeRecoCount');
+  if (!list) return;
+
+  if (forceRebuild) _recoCached = null;
+
+  if (!_recoCached) {
+    list.innerHTML = '<div class="home-empty">Scanning…</div>';
+    requestAnimationFrame(() => {
+      const results = buildHomeReco();
+      _recoCached = { results, ts: Date.now() };
+      _renderHomeRecoResults(results, list, countEl);
+    });
+  } else {
+    _renderHomeRecoResults(_recoCached.results, list, countEl);
+  }
+}
+
+function _renderHomeRecoResults(results, list, countEl) {
+  if (countEl) countEl.textContent = results.length;
+  if (!results.length) {
+    list.innerHTML = '<div class="home-empty">No new recommendations right now — all BUY signals are already in your collection or wishlist.</div>';
+    return;
+  }
+  list.innerHTML = results.map(_recoTileHtml).join('');
+
+  list.addEventListener('click', (e) => {
+    // Dismiss
+    const dismissBtn = e.target.closest('.reco-dismiss');
+    if (dismissBtn) {
+      e.stopPropagation();
+      const id = dismissBtn.dataset.id;
+      const tile = dismissBtn.closest('.home-card-tile');
+      if (tile) { tile.style.transition = 'transform 0.2s,opacity 0.2s'; tile.style.transform = 'scale(0.8)'; tile.style.opacity = '0'; }
+      setTimeout(() => { _dismissReco(id); _renderHomeReco(); }, 200);
+      return;
+    }
+    // Wishlist
+    const wishBtn = e.target.closest('.reco-wish');
+    if (wishBtn) {
+      e.stopPropagation();
+      const id = wishBtn.dataset.id;
+      const card = cardData && cardData.cards.find(c => c.i === id);
+      if (card) {
+        const alreadyIn = wishlist.some(w => w.id === id);
+        if (!alreadyIn) {
+          const currentUSD = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
+          const currentGBP = usdToGbp(currentUSD);
+          wishlist.push({
+            id,
+            name: card.n,
+            set: card.s,
+            lang: card.lang || 'EN',
+            img: (typeof getCardImg === 'function') ? getCardImg(card) : '',
+            addedDate: new Date().toISOString(),
+            addedPriceGBP: currentGBP,
+            targetGBP: +(currentGBP * 0.85).toFixed(2),
+          });
+          saveWishlist();
+          const btn = wishBtn;
+          btn.textContent = '♥';
+          btn.title = 'On wishlist';
+          btn.style.background = 'rgba(232,182,52,0.85)';
+          btn.style.color = '#1a1200';
+        }
+        _recoCached = null;
+        setTimeout(() => _renderHomeReco(), 600);
+      }
+      return;
+    }
+    // Watchlist
+    const watchBtn = e.target.closest('.reco-watch');
+    if (watchBtn) {
+      e.stopPropagation();
+      const id = watchBtn.dataset.id;
+      const card = cardData && cardData.cards.find(c => c.i === id);
+      if (card) {
+        const alreadyOn = watchlist.some(w => w.id === id);
+        if (!alreadyOn) {
+          const pull = 7.65;
+          const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pull).total : 50;
+          const sig = (typeof computeSignal === 'function') ? computeSignal(card, pull, des) : null;
+          watchlist.push({
+            id,
+            name: card.n,
+            set: card.s,
+            lang: card.lang || 'EN',
+            img: (typeof getCardImg === 'function') ? getCardImg(card) : '',
+            addedAt: new Date().toISOString(),
+            addedSignal: sig?.signal || 'BUY',
+            addedScore: sig?.score || 0,
+            addedPriceUSD: (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0,
+            lastNotifiedSignal: sig?.signal || 'BUY',
+            lastNotifiedAt: new Date().toISOString(),
+          });
+          saveWatchlist();
+          const btn = watchBtn;
+          btn.textContent = '◉';
+          btn.title = 'On watchlist';
+          btn.style.background = 'rgba(61,214,140,0.85)';
+          btn.style.color = '#072215';
+        }
+        _recoCached = null;
+        setTimeout(() => _renderHomeReco(), 600);
+      }
+      return;
+    }
+    // Tile click → open card
+    const tile = e.target.closest('.home-card-tile');
+    if (tile) _homeItemClick(tile.dataset.id);
+  }, { once: false });
+}
+
 function renderHomeDashboard() {
   _renderHomeCollection();
   _renderHomeWishlist();
   _renderHomeWatchlist();
+  _renderHomeReco();
 }
 
 function _homeItemClick(id) {
@@ -11548,10 +11780,11 @@ function setupPageNav() {
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   }
 
-  // Wire "View all" buttons on the home page
+  // Wire "View all" / "Refresh" buttons on the home page
   document.getElementById('homeOpenCollection')?.addEventListener('click', () => { $('portfolioToggle')?.click(); });
   document.getElementById('homeOpenWishlist')?.addEventListener('click', () => { $('wishlistToggle')?.click(); });
   document.getElementById('homeOpenWatchlist')?.addEventListener('click', () => { $('alertsToggle')?.click(); });
+  document.getElementById('homeRecoRefresh')?.addEventListener('click', () => _renderHomeReco(true));
 
   buttons.forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
   window.addEventListener('hashchange', () => go((location.hash || '#home').replace('#', '')));
@@ -12297,6 +12530,7 @@ const SYNC_KEYS = [
   'pkm-hold-overrides',             // Per-card grade-specific market price overrides
   'pkm-tcg-overrides-v1',          // TCGPlayer URL overrides (auto-enriched or manual)
   'pkm-jp-psa10-overrides-v1',     // Manually entered JP PSA 10 prices for EN↔JP comparison
+  'pkm-reco-dismissed-v1',         // Cards dismissed from Recommendations
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
