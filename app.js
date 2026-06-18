@@ -8948,6 +8948,7 @@ function capitalOutlayPenalty(outlayGBP) {
 // E.g. Raw at £418 (+398% ROI) beats PSA 10 at £1044 (+494% ROI) because
 // spending an extra £626 for 96 more ROI points is poor capital efficiency.
 function ltpCapitalPenalty(outlayGBP) {
+  if (outlayGBP > getMaxBudgetGBP()) return 99999;
   if (!(outlayGBP > 0)) return 0;
   if (outlayGBP < 50)   return 0;
   if (outlayGBP < 100)  return 10;
@@ -8962,7 +8963,7 @@ function ltpCapitalPenalty(outlayGBP) {
 
 // Read the user's max-spend-per-card budget (device-local pref, not synced).
 const BUDGET_KEY = 'budget-max-gbp';
-const BUDGET_DEFAULT = 5000; // shown as "No limit"
+const BUDGET_DEFAULT = 99999; // true no-limit sentinel
 function getMaxBudgetGBP() {
   const v = parseFloat(localStorage.getItem(BUDGET_KEY));
   return isFinite(v) && v > 0 ? v : BUDGET_DEFAULT;
@@ -12134,24 +12135,36 @@ function setupPageNav() {
   document.getElementById('homeOpenWatchlist')?.addEventListener('click', () => { $('alertsToggle')?.click(); });
   document.getElementById('homeRecoRefresh')?.addEventListener('click', () => _renderHomeReco(true));
 
-  // Budget slider
+  // Budget slider + manual input
   (() => {
-    const slider = document.getElementById('homeBudgetSlider');
-    const valEl  = document.getElementById('homeBudgetVal');
-    if (!slider || !valEl) return;
+    const slider  = document.getElementById('homeBudgetSlider');
+    const inputEl = document.getElementById('homeBudgetInput');
+    const goBtn   = document.getElementById('homeBudgetGo');
+    if (!slider || !inputEl || !goBtn) return;
+
+    function applyBudget(gbp, rebuild) {
+      const noLimit = !isFinite(gbp) || gbp >= BUDGET_DEFAULT;
+      slider.value  = noLimit ? 5000 : Math.min(Math.max(Math.round(gbp), 100), 5000);
+      inputEl.value = noLimit ? '' : Math.round(gbp);
+      localStorage.setItem(BUDGET_KEY, noLimit ? String(BUDGET_DEFAULT) : String(Math.round(gbp)));
+      if (rebuild) _renderHomeReco(true);
+    }
+
     const saved = parseFloat(localStorage.getItem(BUDGET_KEY));
-    if (isFinite(saved) && saved > 0) slider.value = Math.min(Math.max(saved, 100), 5000);
-    const refresh = () => {
-      const v = parseInt(slider.value, 10);
-      valEl.textContent = v >= 5000 ? 'No limit' : `£${v.toLocaleString()}`;
-    };
-    refresh();
+    applyBudget(isFinite(saved) && saved > 0 ? saved : BUDGET_DEFAULT, false);
+
     slider.addEventListener('input', () => {
-      refresh();
       const v = parseInt(slider.value, 10);
-      localStorage.setItem(BUDGET_KEY, v >= 5000 ? '99999' : String(v));
-      _renderHomeReco(true);
+      applyBudget(v >= 5000 ? BUDGET_DEFAULT : v, true);
     });
+
+    const commitInput = () => {
+      const raw = parseFloat(inputEl.value);
+      applyBudget(!isFinite(raw) || raw <= 0 ? BUDGET_DEFAULT : raw, true);
+    };
+
+    goBtn.addEventListener('click', commitInput);
+    inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') commitInput(); });
   })();
   document.getElementById('signalJumpHold')?.addEventListener('click', () => {
     $('holdStrategySection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });

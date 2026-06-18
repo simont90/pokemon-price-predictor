@@ -6278,14 +6278,40 @@ section.card .card-collapse-btn { padding: 10px; }
   cursor: pointer;
   min-width: 0;
 }
-.home-budget-val {
+.home-budget-input {
+  width: 76px;
   font-size: 0.88em;
   font-weight: 700;
   color: var(--accent);
-  min-width: 68px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
   text-align: right;
-  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
 }
+.home-budget-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-family: var(--font-body);
+}
+.home-budget-input::-webkit-outer-spin-button,
+.home-budget-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.home-budget-input[type=number] { -moz-appearance: textfield; }
+.home-budget-go {
+  font-size: 0.78em;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.home-budget-go:active { opacity: 0.8; }
 .home-section-wrap { /* sections float directly on page background */ }
 .home-section-hd {
   display: flex;
