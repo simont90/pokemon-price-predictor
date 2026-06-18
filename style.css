@@ -3628,13 +3628,15 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   margin-bottom: 12px; gap: 10px; flex-wrap: wrap;
 }
 .mkt-alert-banner {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 12px; padding: 9px 12px;
-  background: rgba(232,182,52,0.12); border: 1px solid rgba(232,182,52,0.45);
-  border-radius: var(--radius-sm); font-size: 12.5px; color: var(--text);
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px; padding: 10px 12px;
+  background: var(--green-dim); border: 1px solid var(--green-border);
+  border-radius: var(--radius-sm);
 }
-.mkt-alert-banner-icon { color: var(--accent); font-size: 11px; flex-shrink: 0; }
-.mkt-alert-banner strong { color: var(--accent); }
+.mkt-alert-banner-trigger {
+  font-size: 12px; color: var(--text); flex: 1; min-width: 0;
+}
+.mkt-alert-banner-trigger strong { color: var(--green); }
 .mkt-live-header h3 {
   margin: 0; font-size: 13px; font-weight: 700; color: var(--green);
   letter-spacing: 0.02em; text-transform: uppercase;

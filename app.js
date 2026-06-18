@@ -8626,10 +8626,15 @@ async function fetchLiveDeals(card, opts) {
   const alertBanner = $('mktAlertBanner');
   if (alertBanner) {
     if (_cardAlert) {
-      const reason = _cardAlert.transitioned
-        ? `Signal has moved to <strong>${_cardAlert.signal}</strong>`
-        : `Price dropped <strong>${_cardAlert.priceDropPct.toFixed(0)}%</strong> since you added it`;
-      alertBanner.innerHTML = `<span class="mkt-alert-banner-icon">&#9650;</span> Watchlist alert — ${reason}. Value listings are highlighted below.`;
+      const sigClass = _cardAlert.signal === 'STRONG BUY' ? 'sig-strong' : _cardAlert.signal === 'BUY' ? 'sig-buy' : 'sig-hold';
+      const trigBits = [];
+      if (_cardAlert.transitioned) trigBits.push(`Signal flipped <strong>${_cardAlert.addedSignal}</strong> → <strong>${_cardAlert.signal}</strong>`);
+      if (_cardAlert.bigDrop) trigBits.push(`Price down <strong>${_cardAlert.priceDropPct.toFixed(1)}%</strong> since added`);
+      if (!trigBits.length) trigBits.push(`Signal: <strong>${_cardAlert.signal}</strong>`);
+      alertBanner.innerHTML = `
+        <span class="alert-signal-badge ${sigClass}">${_cardAlert.signal}</span>
+        <span class="mkt-alert-banner-trigger">${trigBits.join(' · ')} — value listings highlighted below</span>
+      `;
       alertBanner.style.display = 'flex';
     } else {
       alertBanner.style.display = 'none';
