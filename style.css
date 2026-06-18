@@ -3508,13 +3508,19 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   font-size: 12px; color: var(--text-faint); text-align: center; padding: 16px 0;
 }
 .mkt-deal {
+  display: flex; flex-direction: column;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s;
+  overflow: hidden;
+}
+.mkt-deal:hover { border-color: var(--accent); }
+.mkt-deal-main {
   display: grid; grid-template-columns: 56px 1fr auto;
   gap: 10px; padding: 10px;
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); text-decoration: none; color: var(--text);
-  transition: all 0.15s;
+  text-decoration: none; color: var(--text);
 }
-.mkt-deal:hover { border-color: var(--accent); transform: translateY(-1px); }
+.mkt-deal-main:hover .mkt-deal-title { color: var(--accent); }
 .mkt-deal-img {
   width: 56px; height: 76px; object-fit: cover; border-radius: 4px;
   background: var(--bg);
@@ -3523,7 +3529,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .mkt-deal-title {
   font-size: 12px; font-weight: 600; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden;
+  overflow: hidden; transition: color 0.12s;
 }
 .mkt-deal-meta {
   font-size: 10px; color: var(--text-muted);
@@ -3551,47 +3557,45 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .mkt-deal-spread.pos { color: var(--green); }
 .mkt-deal-spread.neg { color: var(--red); }
 
-/* ---- Reassign-listing button on each deal card ---- */
-.mkt-deal-reassign {
-  margin-top: 4px;
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 8px;
+/* ---- Per-listing actions row: Open · Move · Hide ---- */
+.mkt-deal-actions {
+  display: flex; gap: 8px; align-items: center;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* Shared base for all three action buttons */
+.mkt-deal-open,
+.mkt-deal-reassign,
+.mkt-deal-dismiss {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 0 14px;
+  min-height: 36px;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  font-family: var(--mono); font-size: 10px; font-weight: 600;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  border-radius: 6px;
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.03em; text-transform: uppercase;
+  border-radius: 8px;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition: all 0.12s ease;
 }
-.mkt-deal-reassign:hover {
+.mkt-deal-open {
+  color: var(--accent);
+  border-color: rgba(232,182,52,0.35);
+  background: rgba(232,182,52,0.07);
+}
+.mkt-deal-open:hover, .mkt-deal-open:active {
+  background: rgba(232,182,52,0.15);
+  border-color: var(--accent);
+}
+.mkt-deal-reassign:hover, .mkt-deal-reassign:active {
   color: var(--accent);
   border-color: var(--accent);
   background: rgba(255, 192, 77, 0.08);
 }
-
-/* ---- Per-listing actions: Move + Dismiss share one row ---- */
-.mkt-deal-actions {
-  display: flex; gap: 6px; align-items: center;
-  margin-top: 4px;
-}
-.mkt-deal-actions .mkt-deal-reassign { margin-top: 0; }
-
-/* ---- Dismiss button — sits next to Move, slightly muted red ---- */
-.mkt-deal-dismiss {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 8px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-family: var(--mono); font-size: 10px; font-weight: 600;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-.mkt-deal-dismiss:hover {
+.mkt-deal-dismiss:hover, .mkt-deal-dismiss:active {
   color: #ff8a8a;
   border-color: rgba(255, 118, 118, 0.55);
   background: rgba(255, 118, 118, 0.10);
