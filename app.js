@@ -8722,6 +8722,8 @@ queueMicrotask(setupMarketplaceWorker);
 // is modest vs the tier fee so we include it in the tier figures as a buffer.
 const UK_GRADING_FEE_STD_GBP    = 65;   // ≤ $1500 final value tier
 const UK_GRADING_FEE_PREM_GBP   = 135;  // $1501–$2500 final value tier
+const UK_PENNY_SLEEVE_GBP        = 0.03; // per-card submission material
+const UK_TOPLOADER_GBP           = 0.25; // per-card submission material
 const UK_GRADING_VALUE_THRESHOLD_USD = 1500;
 const UK_GRADING_WAIT_STD_MONTHS  = 1.75;  // 30–40 business days ≈ 7 wk
 const UK_GRADING_WAIT_PREM_MONTHS = 1.25;  // 20–30 business days ≈ 5 wk
@@ -8738,6 +8740,13 @@ function getUkGradingWaitMonths(psa10USD) {
 }
 function getUkGradingWaitDisplay(psa10USD) {
   return (psa10USD && psa10USD > UK_GRADING_VALUE_THRESHOLD_USD) ? '4–6 wk' : '6–8 wk';
+}
+// Submission materials cost (penny sleeve + toploader).
+// For owned cards: deducts items already present per acquisition data.
+// For non-owned cards (cardId null/undefined): assumes both are needed.
+function getGradingMaterialsCostGBP(cardId) {
+  const acq = (cardId && typeof getAcq === 'function') ? (getAcq(cardId) || {}) : {};
+  return (acq.hasPennySleeve ? 0 : UK_PENNY_SLEEVE_GBP) + (acq.hasToploader ? 0 : UK_TOPLOADER_GBP);
 }
 // UK raw card shipping: mostly UK domestic sellers, £3–8 range, £5 midpoint.
 const UK_RAW_SHIPPING_GBP = 5;
@@ -8817,6 +8826,7 @@ function computeHoldCore(card) {
 
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
   const gradingFeeUSD = getUkGradingFeeGBP(psa10Price) / fx;
+  const gradingMaterialsUSD = getGradingMaterialsCostGBP(card?.i) / fx;
   const waitYears = getUkGradingWaitMonths(psa10Price) / 12;
   const waitDiscount = 1 / (1 + OPPORTUNITY_COST_ANNUAL * waitYears);
   const baseGemRate = (typeof card.g === 'number' && card.g > 0) ? card.g : DEFAULT_GEM_RATE;
@@ -8842,7 +8852,7 @@ function computeHoldCore(card) {
     + SUBGEM_DISTRIBUTION.rawLike * rawYr5USD;
   const gradeYr5EV = (gemRate * psa10Yr5 + (1 - gemRate) * subgemEV) * waitDiscount;
   const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
-  const gradeCost = rawEntryUSD_hc + gradingFeeUSD;
+  const gradeCost = rawEntryUSD_hc + gradingFeeUSD + gradingMaterialsUSD;
   const gradeProfit = gradeSell5EV - gradeCost;
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
 
@@ -9173,6 +9183,8 @@ function renderHoldStrategy(card) {
   const gradingWaitMonths = getUkGradingWaitMonths(psa10Price);
   const gradingWaitDisplay = getUkGradingWaitDisplay(psa10Price);
   const gradingFeeUSD = gradingFeeGBP / fx;
+  const gradingMaterialsGBP = getGradingMaterialsCostGBP(card.i);
+  const gradingMaterialsUSD = gradingMaterialsGBP / fx;
   const waitYears = gradingWaitMonths / 12;
   // Opportunity-cost discount applied to the post-grade 5yr value: while the
   // card sits at PSA for a few weeks your capital is locked. We pretend that
@@ -9225,8 +9237,8 @@ function renderHoldStrategy(card) {
   // Apply opportunity-cost discount because your capital is locked for the wait.
   const gradeYr5EV = gradeYr5EVRaw * waitDiscount;
   const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
-  // Cost basis: what the user paid for the raw card + grading fee
-  const gradeCost = rawEntryUSD + gradingFeeUSD;
+  // Cost basis: raw card + grading fee + submission materials (penny sleeve + toploader if not already present)
+  const gradeCost = rawEntryUSD + gradingFeeUSD + gradingMaterialsUSD;
   const gradeProfit = gradeSell5EV - gradeCost;
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
 
@@ -9671,7 +9683,7 @@ function renderHoldStrategy(card) {
   };
 
   $('holdFootnote').innerHTML = `
-    <strong>UK grading assumptions:</strong> £${gradingFeeGBP} per card via PSA
+    <strong>UK grading assumptions:</strong> £${gradingFeeGBP} grading fee + £0.28 materials (penny sleeve + toploader, waived if already present) per card via PSA
     (${psa10Price > UK_GRADING_VALUE_THRESHOLD_USD ? '$1,501–$2,500 value tier, 20–30 business day turnaround' : '≤$1,500 value tier, 30–40 business day turnaround'};
     submitted via Ludkins / GetGraded). Wait discount applied at
     ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a. opportunity cost so capital locked during the ~${gradingWaitDisplay} turnaround
@@ -10172,16 +10184,28 @@ function renderAcquisition() {
   const realisedROI = costGBP > 0 ? ((realisedNetGBP - costGBP) / costGBP) * 100 : null;
 
   // Max ROI scenario: PSA 10 in 5 years
-  let maxROI = null, maxProfit = null, maxValueGBP = null;
+  let maxROI = null, maxProfit = null, maxValueGBP = null, maxGradingFeeGBP = 0;
   if (psa10USD > 0) {
     const psa10NowUSD = estimateGradePrice(card, 10, psa10USD);
     const psa10In5USD = projectGradePrice(card, 10, psa10NowUSD, 5);
     const psa10In5GBP = usdToGbp(psa10In5USD);
     const gradingFeeGBP = getUkGradingFeeGBP(psa10USD);
-    const netGBP = psa10In5GBP * (1 - FRICTION) - gradingFeeGBP;
+    const materialsCostGBP = getGradingMaterialsCostGBP(card.i);
+    const netGBP = psa10In5GBP * (1 - FRICTION) - gradingFeeGBP - materialsCostGBP;
+    maxGradingFeeGBP = gradingFeeGBP + materialsCostGBP;
     maxValueGBP = psa10In5GBP;
     maxROI = costGBP > 0 ? ((netGBP - costGBP) / costGBP) * 100 : null;
     maxProfit = netGBP - costGBP;
+  }
+
+  // Storage materials: show checkboxes and reflect current acquisition state
+  const storageDiv = document.getElementById('acqStorage');
+  if (storageDiv) {
+    storageDiv.style.display = 'flex';
+    const sleeveCheck = document.getElementById('acqHasSleeve');
+    const toploaderCheck = document.getElementById('acqHasToploader');
+    if (sleeveCheck) sleeveCheck.checked = !!acq.hasPennySleeve;
+    if (toploaderCheck) toploaderCheck.checked = !!acq.hasToploader;
   }
 
   // Cost basis card
@@ -10231,7 +10255,7 @@ function renderAcquisition() {
     profEl.textContent = (maxProfit >= 0 ? '+' : '') + fmtGBPDirect(maxProfit);
     profEl.classList.toggle('acq-pos', maxProfit >= 0);
     profEl.classList.toggle('acq-neg', maxProfit < 0);
-    profSub.textContent = `after £40 grading + 10% sell fees`;
+    profSub.textContent = `after ${fmtGBPDirect(maxGradingFeeGBP)} grading + materials + 10% sell fees`;
   } else {
     maxEl.textContent = '—';
     maxSub.textContent = 'PSA 10 anchor unavailable for this card';
@@ -10243,11 +10267,12 @@ function renderAcquisition() {
   const ladder = document.getElementById('acqLadder');
   if (psa10USD > 0) {
     const grades = [10, 9, 8, 7];
+    const ladderMaterialsGBP = getGradingMaterialsCostGBP(card.i);
     const rows = grades.map(g => {
       const todayUSD = estimateGradePrice(card, g, psa10USD);
       const yr5USD = projectGradePrice(card, g, todayUSD, 5);
       const yr5GBP = usdToGbp(yr5USD);
-      const gradingFee = 40;
+      const gradingFee = getUkGradingFeeGBP(psa10USD) + ladderMaterialsGBP;
       const net = yr5GBP * (1 - FRICTION) - gradingFee;
       const r = costGBP > 0 ? ((net - costGBP) / costGBP) * 100 : null;
       const cls = r >= 200 ? 'acq-pos' : r < 0 ? 'acq-neg' : '';
@@ -10345,6 +10370,20 @@ function setupAcquisition() {
   wire('acqSinglePrice', 'singlePriceGBP', v => v === '' ? '' : parseFloat(v));
   wire('acqSingleDate', 'singleDate');
   wire('acqSingleSrc', 'singleWhere');
+
+  // Storage materials checkboxes
+  const wireCheck = (id, key) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      updateAcq({ [key]: el.checked });
+      if (selectedCard && typeof renderHoldStrategy === 'function') {
+        try { renderHoldStrategy(selectedCard); } catch {}
+      }
+    });
+  };
+  wireCheck('acqHasSleeve', 'hasPennySleeve');
+  wireCheck('acqHasToploader', 'hasToploader');
 }
 
 // =============================================================

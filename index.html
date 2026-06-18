@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619ah">
+  <link rel="stylesheet" href="style.css?v=20260619ai">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1091,6 +1091,17 @@
           <div class="acq-empty" id="acqEmpty">Tap a source above to log how you got this card.</div>
 
           <!-- ROI readout -->
+          <!-- Storage materials already present — reduces grading submission cost -->
+          <div class="acq-storage" id="acqStorage" style="display:none">
+            <span class="acq-storage-label">Already in:</span>
+            <label class="acq-storage-check">
+              <input type="checkbox" id="acqHasSleeve"> Penny sleeve
+            </label>
+            <label class="acq-storage-check">
+              <input type="checkbox" id="acqHasToploader"> Toploader
+            </label>
+          </div>
+
           <div class="acq-roi" id="acqRoi" style="display:none">
             <div class="acq-roi-row">
               <div class="acq-roi-cell">
@@ -1978,6 +1989,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619ah"></script>
+  <script src="app.js?v=20260619ai"></script>
 </body>
 </html>
