@@ -389,23 +389,35 @@ async function handleGradeCard(request, env) {
     ? { type: 'image', source: { type: 'url', url: imageUrl } }
     : { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageB64 } };
 
-  const prompt = `You are a PSA trading card grading expert assessing a photo of a Pokémon card.
+  const prompt = `You are a PSA trading card grading expert assessing a Pokémon card photo taken by a private seller.
 
-IMPORTANT: Photos show lighting reflections, glare, and texture that are NOT real defects — only score below 10 if a genuine physical defect is clearly visible (actual corner wear, real edge chips, true scratches, obvious miscentering). Do not penalise for photo quality, reflections, holographic sheen, or normal print texture.
+PHOTO CONTEXT: Most seller photos are taken with the card still in a penny sleeve or toploader, and from non-professional angles. This means:
+- Sleeve glare, reflection, and plastic texture are NOT card defects — ignore them.
+- You may not be able to fully see corner tips or edge detail — if visibility is poor, default to 8 (cautious) rather than assuming 10.
+- Holo shimmer, rainbow pattern, and light bounce off foil are NOT surface scratches.
 
-Score each criterion using ONLY these values: 4, 6, 8, or 10.
+WHAT PSA ACTUALLY GRADES (focus here):
 
-centering: 10=≤55/45 both axes (looks centred), 8=up to 65/35, 6=up to 75/25, 4=worse than 75/25
-corners: 10=razor-sharp no visible wear, 8=barely-visible tip wear, 6=slight rounding, 4=rounded or chipped
-edges: 10=clean no fraying, 8=slight fraying barely visible, 6=visible nicks/chips, 4=heavy chips
-surface: 10=no scratches or marks (reflections are NOT marks), 8=genuine faint scratches, 6=visible scratches or print lines, 4=creases/staining
+1. CENTERING — the single most objective factor. Compare left/right border widths and top/bottom border widths.
+   PSA 10 = ≤55/45 on both axes (borders look visually even)
+   PSA 9  = ≤60/40
+   PSA 8  = ≤65/35
+   PSA 7  = ≤70/30
+   Score: 10=clearly centred, 8=slightly off, 6=noticeably off, 4=severely off
 
-If the card looks gem mint in the photo, all scores should be 10.
+2. WHITENING — the #1 reason cards fail PSA 10. Look for white fibre or print showing through on corner tips and along edges, especially on dark-bordered cards. Even faint whitening on one corner caps at PSA 9.
+   corners: 10=razor-sharp tips, zero whitening; 8=near-invisible micro-fraying at most; 6=visible whitening or rounding on one or more corners; 4=clear rounding or chipping
+   edges: 10=all four edges clean with no white fibre; 8=barely detectable at one point; 6=visible whitening or nicks; 4=heavy damage
 
-Then write one sentence (under 20 words) with a realistic best-case and worst-case PSA grade.
+3. SURFACE — scratches and print defects only. Not reflections.
+   10=no marks; 8=faint genuine scratches only under direct light; 6=clearly visible scratches or print lines; 4=creases, indentations, or staining
+
+Grade conservatively: if you cannot confirm a feature is defect-free due to the photo angle or sleeve, score 8 not 10.
+
+Write one sentence under 20 words identifying the primary grading risk (centering, whitening, or surface).
 
 Reply with ONLY this JSON — no markdown, no extra text:
-{"centering":10,"corners":8,"edges":10,"surface":8,"verdict":"Best case PSA 9, worst case PSA 7 — corners are the ceiling."}
+{"centering":10,"corners":8,"edges":10,"surface":10,"verdict":"Likely PSA 9 — faint corner whitening on top-right is the ceiling."}
 
 Valid score values: 4, 6, 8, or 10 only.`;
 
