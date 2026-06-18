@@ -11455,7 +11455,7 @@ function buildHomeReco(limit = 15) {
 
   for (const c of cardData.cards) {
     if (dismissed.has(c.i)) continue;
-    if (ownedIds.has(c.i) || wishIds.has(c.i)) continue; // already tracking
+    if (ownedIds.has(c.i) || wishIds.has(c.i) || watchIds.has(c.i)) continue; // already tracking
 
     // Manual raw price override takes priority over live/static market data
     const overrides = (typeof getHoldOverridesForCard === 'function') ? getHoldOverridesForCard(c.i) : {};
@@ -11514,8 +11514,9 @@ function buildHomeReco(limit = 15) {
 
 function _recoTileHtml(r) {
   const id = r.card.i;
-  const img = r.card.img
-    ? `<img class="home-card-art" src="${esc(r.card.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+  const imgSrc = (typeof getCardImg === 'function') ? getCardImg(r.card) : '';
+  const img = imgSrc
+    ? `<img class="home-card-art" src="${esc(imgSrc)}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">`
     : `<div class="home-card-art"></div>`;
   const manual = r.manualPrice ? `<span class="reco-manual-tag">manual</span>` : '';
   const gem = r.gemScore >= 2.0 ? `<span class="reco-gem-tag">overlooked</span>` : '';
@@ -11540,10 +11541,83 @@ function _recoTileHtml(r) {
   </div>`;
 }
 
+function _recoListClick(e) {
+  // Dismiss
+  const dismissBtn = e.target.closest('.reco-dismiss');
+  if (dismissBtn) {
+    e.stopPropagation();
+    const id = dismissBtn.dataset.id;
+    const tile = dismissBtn.closest('.home-card-tile');
+    if (tile) { tile.style.transition = 'transform 0.2s,opacity 0.2s'; tile.style.transform = 'scale(0.8)'; tile.style.opacity = '0'; }
+    setTimeout(() => { _dismissReco(id); _renderHomeReco(true); }, 200);
+    return;
+  }
+  // Wishlist
+  const wishBtn = e.target.closest('.reco-wish');
+  if (wishBtn) {
+    e.stopPropagation();
+    const id = wishBtn.dataset.id;
+    const card = cardData && cardData.cards.find(c => c.i === id);
+    if (card && !wishlist.some(w => w.id === id)) {
+      const currentUSD = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
+      const currentGBP = usdToGbp(currentUSD);
+      wishlist.push({
+        id, name: card.n, set: card.s, lang: card.lang || 'EN',
+        img: getCardImg(card),
+        addedDate: new Date().toISOString(),
+        addedPriceGBP: currentGBP,
+        targetGBP: +(currentGBP * 0.85).toFixed(2),
+      });
+      saveWishlist();
+      wishBtn.textContent = '♥'; wishBtn.title = 'On wishlist';
+      wishBtn.style.background = 'rgba(232,182,52,0.85)'; wishBtn.style.color = '#1a1200';
+      _recoCached = null;
+      setTimeout(() => _renderHomeReco(true), 500);
+    }
+    return;
+  }
+  // Watchlist
+  const watchBtn = e.target.closest('.reco-watch');
+  if (watchBtn) {
+    e.stopPropagation();
+    const id = watchBtn.dataset.id;
+    const card = cardData && cardData.cards.find(c => c.i === id);
+    if (card && !watchlist.some(w => w.id === id)) {
+      const pull = 7.65;
+      const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pull).total : 50;
+      const sig = (typeof computeSignal === 'function') ? computeSignal(card, pull, des) : null;
+      watchlist.push({
+        id, name: card.n, set: card.s, lang: card.lang || 'EN',
+        img: getCardImg(card),
+        addedAt: new Date().toISOString(),
+        addedSignal: sig?.signal || 'BUY', addedScore: sig?.score || 0,
+        addedPriceUSD: (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0,
+        lastNotifiedSignal: sig?.signal || 'BUY',
+        lastNotifiedAt: new Date().toISOString(),
+      });
+      saveWatchlist();
+      watchBtn.textContent = '◉'; watchBtn.title = 'On watchlist';
+      watchBtn.style.background = 'rgba(61,214,140,0.85)'; watchBtn.style.color = '#072215';
+      _recoCached = null;
+      setTimeout(() => _renderHomeReco(true), 500);
+    }
+    return;
+  }
+  // Tile click → open card
+  const tile = e.target.closest('.home-card-tile');
+  if (tile && !e.target.closest('.reco-btn')) _homeItemClick(tile.dataset.id);
+}
+
 function _renderHomeReco(forceRebuild) {
   const list    = $('homeRecoList');
   const countEl = $('homeRecoCount');
   if (!list) return;
+
+  // Attach click handler once — avoids accumulation across re-renders
+  if (!list._recoHandlerBound) {
+    list.addEventListener('click', _recoListClick);
+    list._recoHandlerBound = true;
+  }
 
   if (forceRebuild) _recoCached = null;
 
@@ -11566,92 +11640,6 @@ function _renderHomeRecoResults(results, list, countEl) {
     return;
   }
   list.innerHTML = results.map(_recoTileHtml).join('');
-
-  list.addEventListener('click', (e) => {
-    // Dismiss
-    const dismissBtn = e.target.closest('.reco-dismiss');
-    if (dismissBtn) {
-      e.stopPropagation();
-      const id = dismissBtn.dataset.id;
-      const tile = dismissBtn.closest('.home-card-tile');
-      if (tile) { tile.style.transition = 'transform 0.2s,opacity 0.2s'; tile.style.transform = 'scale(0.8)'; tile.style.opacity = '0'; }
-      setTimeout(() => { _dismissReco(id); _renderHomeReco(); }, 200);
-      return;
-    }
-    // Wishlist
-    const wishBtn = e.target.closest('.reco-wish');
-    if (wishBtn) {
-      e.stopPropagation();
-      const id = wishBtn.dataset.id;
-      const card = cardData && cardData.cards.find(c => c.i === id);
-      if (card) {
-        const alreadyIn = wishlist.some(w => w.id === id);
-        if (!alreadyIn) {
-          const currentUSD = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
-          const currentGBP = usdToGbp(currentUSD);
-          wishlist.push({
-            id,
-            name: card.n,
-            set: card.s,
-            lang: card.lang || 'EN',
-            img: (typeof getCardImg === 'function') ? getCardImg(card) : '',
-            addedDate: new Date().toISOString(),
-            addedPriceGBP: currentGBP,
-            targetGBP: +(currentGBP * 0.85).toFixed(2),
-          });
-          saveWishlist();
-          const btn = wishBtn;
-          btn.textContent = '♥';
-          btn.title = 'On wishlist';
-          btn.style.background = 'rgba(232,182,52,0.85)';
-          btn.style.color = '#1a1200';
-        }
-        _recoCached = null;
-        setTimeout(() => _renderHomeReco(), 600);
-      }
-      return;
-    }
-    // Watchlist
-    const watchBtn = e.target.closest('.reco-watch');
-    if (watchBtn) {
-      e.stopPropagation();
-      const id = watchBtn.dataset.id;
-      const card = cardData && cardData.cards.find(c => c.i === id);
-      if (card) {
-        const alreadyOn = watchlist.some(w => w.id === id);
-        if (!alreadyOn) {
-          const pull = 7.65;
-          const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pull).total : 50;
-          const sig = (typeof computeSignal === 'function') ? computeSignal(card, pull, des) : null;
-          watchlist.push({
-            id,
-            name: card.n,
-            set: card.s,
-            lang: card.lang || 'EN',
-            img: (typeof getCardImg === 'function') ? getCardImg(card) : '',
-            addedAt: new Date().toISOString(),
-            addedSignal: sig?.signal || 'BUY',
-            addedScore: sig?.score || 0,
-            addedPriceUSD: (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0,
-            lastNotifiedSignal: sig?.signal || 'BUY',
-            lastNotifiedAt: new Date().toISOString(),
-          });
-          saveWatchlist();
-          const btn = watchBtn;
-          btn.textContent = '◉';
-          btn.title = 'On watchlist';
-          btn.style.background = 'rgba(61,214,140,0.85)';
-          btn.style.color = '#072215';
-        }
-        _recoCached = null;
-        setTimeout(() => _renderHomeReco(), 600);
-      }
-      return;
-    }
-    // Tile click → open card
-    const tile = e.target.closest('.home-card-tile');
-    if (tile) _homeItemClick(tile.dataset.id);
-  }, { once: false });
 }
 
 function renderHomeDashboard() {
