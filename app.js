@@ -6211,6 +6211,12 @@ init();
 // defaults — for any individual card the ratio varies, but they're good
 // enough to drive a "should I buy a PSA 7 instead?" decision.
 
+const PSA_COLORS = {
+  10: '#e8b634', 9: '#3dd68c', 8: '#4a9eff', 7: '#a78bfa',
+  6: '#fb923c',  5: '#f472b6', 4: '#94a3b8', 3: '#708090',
+  2: '#9ca3af',  1: '#c4c9d4',
+};
+
 // Price ratio of each grade vs PSA 10 (PSA 10 = 1.0).
 const PSA_RATIOS = {
   10: 1.00,
@@ -6262,7 +6268,12 @@ function projectGradePrice(card, grade, currentGradePrice, years) {
   return currentGradePrice * Math.pow(1 + adjRate, years);
 }
 
-// Render the PSA 1-10 grade range table on the selected card.
+let _psaActiveGrades = new Set([10, 9, 8, 7]);
+let _psaChartRows    = [];
+let _psaHoverYear    = null;
+let _psaChartState   = null;
+
+// Render the PSA 1-10 grade range chart on the selected card.
 function renderPsaGradeRange(card, pullCost, desirability) {
   const section = $('psaRangeSection');
   if (!section || !card) return;
@@ -6287,50 +6298,239 @@ function renderPsaGradeRange(card, pullCost, desirability) {
 
   const rawPriceUSD = getCurrentPrice(card);
   const grades = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-  const rows = grades.map(g => {
+
+  // Compute all years 0-5 for each grade
+  _psaChartRows = grades.map(g => {
     const todayUSD = estimateGradePrice(card, g, psa10Price);
-    const yr1USD = projectGradePrice(card, g, todayUSD, 1);
-    const yr3USD = projectGradePrice(card, g, todayUSD, 3);
-    const yr5USD = projectGradePrice(card, g, todayUSD, 5);
-    const roi5 = todayUSD > 0 ? ((yr5USD - todayUSD) / todayUSD) * 100 : 0;
-    // Verdict: compare 5yr value to today's entry + small assumed friction
-    // (5% buy/sell fees). For ungraded raw we also subtract the £20 grading fee.
-    let verdict, verdictClass;
-    if (roi5 >= 80) { verdict = 'Strong pick'; verdictClass = 'psa-v-strong'; }
-    else if (roi5 >= 40) { verdict = 'Worth a look'; verdictClass = 'psa-v-good'; }
-    else if (roi5 >= 15) { verdict = 'Fair'; verdictClass = 'psa-v-fair'; }
-    else { verdict = 'Skip'; verdictClass = 'psa-v-skip'; }
-    return { g, todayUSD, yr1USD, yr3USD, yr5USD, roi5, verdict, verdictClass };
+    const prices = [0,1,2,3,4,5].map(yr => yr === 0 ? todayUSD : projectGradePrice(card, g, todayUSD, yr));
+    const roi5 = todayUSD > 0 ? ((prices[5] - todayUSD) / todayUSD) * 100 : 0;
+    let verdict;
+    if (roi5 >= 80) verdict = 'Strong pick';
+    else if (roi5 >= 40) verdict = 'Worth a look';
+    else if (roi5 >= 15) verdict = 'Fair';
+    else verdict = 'Skip';
+    return { g, prices, roi5, verdict };
   });
 
-  const tbody = $('psaRangeTable').querySelector('tbody');
-  // Cell highlighting: emphasise PSA 10 row + the grade with highest 5yr ROI.
-  const bestRoiIdx = rows.reduce((bestI, r, i, arr) => r.roi5 > arr[bestI].roi5 ? i : bestI, 0);
-  tbody.innerHTML = rows.map((r, i) => {
-    const isBest = i === bestRoiIdx;
-    const isPsa10 = r.g === 10;
-    const roiSign = r.roi5 >= 0 ? '+' : '';
-    return `<tr class="${isPsa10 ? 'psa-row-10' : ''} ${isBest ? 'psa-row-best' : ''}">
-      <td class="psa-g">PSA ${r.g}${isBest ? ' <span class="psa-best-pill">Best ROI</span>' : ''}</td>
-      <td class="psa-money">${fmtGBP(r.todayUSD)}</td>
-      <td class="psa-money">${fmtGBP(r.yr1USD)}</td>
-      <td class="psa-money">${fmtGBP(r.yr3USD)}</td>
-      <td class="psa-money psa-yr5">${fmtGBP(r.yr5USD)}</td>
-      <td class="psa-roi ${r.roi5 >= 0 ? 'psa-roi-pos' : 'psa-roi-neg'}">${roiSign}${r.roi5.toFixed(0)}%</td>
-      <td><span class="psa-verdict ${r.verdictClass}">${r.verdict}</span></td>
-    </tr>`;
-  }).join('');
+  const bestRow = _psaChartRows.reduce((b, r) => r.roi5 > b.roi5 ? r : b);
 
+  // Grade toggle pills
+  const togglesEl = $('psaGradeToggles');
+  if (togglesEl) {
+    togglesEl.innerHTML = grades.map(g => {
+      const active = _psaActiveGrades.has(g);
+      const isBest = g === bestRow.g;
+      return `<button class="psa-grade-btn${active ? ' is-active' : ''}" data-grade="${g}"
+        style="--gc:${PSA_COLORS[g]}" title="${isBest ? 'Best 5yr ROI · ' : ''}${_psaChartRows.find(r=>r.g===g).verdict}">
+        PSA ${g}${isBest ? ' ★' : ''}
+      </button>`;
+    }).join('');
+    togglesEl.querySelectorAll('.psa-grade-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const g = parseInt(btn.dataset.grade, 10);
+        if (_psaActiveGrades.has(g)) {
+          if (_psaActiveGrades.size <= 1) return;
+          _psaActiveGrades.delete(g);
+        } else {
+          _psaActiveGrades.add(g);
+        }
+        btn.classList.toggle('is-active', _psaActiveGrades.has(g));
+        drawPsaChart();
+      });
+    });
+  }
+
+  // Footnote
   const rateLabel = (RARITY_RATES[card.rc] || RARITY_RATES['']).label;
-  const annualPctAt10 = (((rows[0].yr1USD / rows[0].todayUSD) - 1) * 100).toFixed(1);
-  const bestRow = rows[bestRoiIdx];
-  const rawPart = (rawPriceUSD && !isNaN(rawPriceUSD) && rawPriceUSD > 0) ? ` · raw ≈ ${fmtGBP(rawPriceUSD)}` : '';
+  const annualPctAt10 = (((_psaChartRows[0].prices[1] / _psaChartRows[0].prices[0]) - 1) * 100).toFixed(1);
+  const rawPart = (rawPriceUSD && rawPriceUSD > 0) ? ` · raw ≈ ${fmtGBP(rawPriceUSD)}` : '';
   $('psaRangeFootnote').innerHTML = `
-    Anchored on PSA 10 = ${fmtGBP(psa10Price)}${rawPart} · ${rateLabel} base rate ·
-    Expected ${annualPctAt10}% annual growth at PSA 10.
+    Anchored on PSA 10 = ${fmtGBP(psa10Price)}${rawPart} · ${rateLabel} · ${annualPctAt10}% annual growth at PSA 10.
     Model suggests <strong>PSA ${bestRow.g}</strong> offers the strongest 5yr ROI (${bestRow.roi5 >= 0 ? '+' : ''}${bestRow.roi5.toFixed(0)}%).
-    Ratios are typical-modern; individual cards can deviate ±30%.
+    Toggle grades above to compare. Ratios are typical-modern; individual cards can deviate ±30%.
   `;
+
+  // Draw immediately if visible, otherwise wait for section expand or column resize
+  requestAnimationFrame(() => {
+    const canvas = $('psaRangeChart');
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width > 10) {
+      drawPsaChart(null);
+      setupPsaChartHover();
+    } else {
+      // Section is collapsed — redraw when it becomes visible
+      const ro = new ResizeObserver(() => {
+        const r = canvas.getBoundingClientRect();
+        if (r.width > 10) { ro.disconnect(); drawPsaChart(null); setupPsaChartHover(); }
+      });
+      ro.observe(canvas);
+    }
+  });
+}
+
+function drawPsaChart(hoverYr) {
+  const canvas = $('psaRangeChart');
+  if (!canvas || !_psaChartRows.length) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width) return;
+  canvas.width  = rect.width  * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const gridCol  = isLight ? 'rgba(0,0,0,0.08)'  : 'rgba(255,255,255,0.07)';
+  const labelCol = isLight ? '#6b7280' : '#555768';
+
+  const activeRows = _psaChartRows.filter(r => _psaActiveGrades.has(r.g));
+  if (!activeRows.length) return;
+
+  const allGBP = activeRows.flatMap(r => r.prices.map(p => usdToGbp(p)));
+  const maxP = Math.max(...allGBP) * 1.18;
+
+  const pad = { l: 56, r: 52, t: 16, b: 32 };
+  const cw = W - pad.l - pad.r;
+  const ch = H - pad.t - pad.b;
+
+  function xv(yr) { return pad.l + (yr / 5) * cw; }
+  function yv(p)  { return maxP > 0 ? pad.t + ch * (1 - p / maxP) : pad.t + ch; }
+
+  _psaChartState = { pad, cw, maxP, xv, yv, W, H };
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid + Y labels
+  for (let i = 0; i <= 4; i++) {
+    const gp = (maxP / 4) * i;
+    const gy = yv(gp);
+    ctx.strokeStyle = gridCol; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
+    ctx.fillStyle = labelCol;
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`£${Math.round(gp).toLocaleString()}`, pad.l - 6, gy + 4);
+  }
+
+  // X labels
+  ctx.textAlign = 'center';
+  ctx.fillStyle = labelCol;
+  ctx.font = '11px Space Grotesk, sans-serif';
+  for (let yr = 0; yr <= 5; yr++) {
+    ctx.fillText(yr === 0 ? 'Now' : `${yr}yr`, xv(yr), H - 8);
+  }
+
+  // Draw grade lines (lower grades first so PSA 10 renders on top)
+  [...activeRows].reverse().forEach(row => {
+    const col = PSA_COLORS[row.g];
+    const gbp  = row.prices.map(p => usdToGbp(p));
+
+    // Subtle area fill
+    ctx.globalAlpha = 0.07;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(xv(0), yv(gbp[0]));
+    for (let yr = 1; yr <= 5; yr++) ctx.lineTo(xv(yr), yv(gbp[yr]));
+    ctx.lineTo(xv(5), yv(0)); ctx.lineTo(xv(0), yv(0)); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Smooth bezier line
+    ctx.strokeStyle = col;
+    ctx.lineWidth = row.g === 10 ? 2.5 : 1.8;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(xv(0), yv(gbp[0]));
+    for (let yr = 1; yr <= 5; yr++) {
+      const cx = (xv(yr - 1) + xv(yr)) / 2;
+      ctx.bezierCurveTo(cx, yv(gbp[yr-1]), cx, yv(gbp[yr]), xv(yr), yv(gbp[yr]));
+    }
+    ctx.stroke();
+
+    // End label (grade number)
+    const endGBP = gbp[5];
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(xv(5), yv(endGBP), 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.font = `${row.g === 10 ? 'bold ' : ''}10px JetBrains Mono, monospace`;
+    ctx.textAlign = 'left';
+    ctx.fillText(String(row.g), xv(5) + 7, yv(endGBP) + 4);
+  });
+
+  // Start dots
+  activeRows.forEach(row => {
+    ctx.fillStyle = PSA_COLORS[row.g];
+    ctx.beginPath(); ctx.arc(xv(0), yv(usdToGbp(row.prices[0])), 3, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // Hover crosshair + highlight dots
+  if (hoverYr != null) {
+    const hx = xv(hoverYr);
+    ctx.strokeStyle = isLight ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(hx, pad.t); ctx.lineTo(hx, H - pad.b); ctx.stroke();
+    ctx.setLineDash([]);
+    activeRows.forEach(row => {
+      const col = PSA_COLORS[row.g];
+      const hy = yv(usdToGbp(row.prices[hoverYr]));
+      ctx.fillStyle = isLight ? '#fff' : '#0a0b12';
+      ctx.beginPath(); ctx.arc(hx, hy, 5.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(hx, hy, 3.5, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+}
+
+function setupPsaChartHover() {
+  const canvas = $('psaRangeChart');
+  const tooltip = $('psaChartTooltip');
+  if (!canvas || !tooltip) return;
+  // Remove old listeners by cloning
+  const fresh = canvas.cloneNode(true);
+  canvas.parentNode.replaceChild(fresh, canvas);
+  const c = $('psaRangeChart');
+
+  function getYr(e) {
+    if (!_psaChartState) return null;
+    const r = c.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const rel = (cx - r.left - _psaChartState.pad.l) / _psaChartState.cw * 5;
+    return Math.max(0, Math.min(5, Math.round(rel)));
+  }
+
+  function showTip(yr, e) {
+    _psaHoverYear = yr;
+    drawPsaChart(yr);
+    const activeRows = _psaChartRows.filter(r => _psaActiveGrades.has(r.g));
+    const label = yr === 0 ? 'Today' : `Year ${yr}`;
+    const rows = activeRows.map(row => {
+      const gbp = usdToGbp(row.prices[yr]);
+      const roi = yr === 0 ? '' : `+${(((row.prices[yr] - row.prices[0]) / row.prices[0]) * 100).toFixed(0)}%`;
+      return `<div class="psa-tip-row">
+        <span class="psa-tip-dot" style="background:${PSA_COLORS[row.g]}"></span>
+        <span class="psa-tip-grade">PSA ${row.g}</span>
+        <span class="psa-tip-price">${fmtGBP(gbp)}</span>
+        ${yr > 0 ? `<span class="psa-tip-roi">${roi}</span>` : ''}
+      </div>`;
+    }).join('');
+    tooltip.innerHTML = `<div class="psa-tip-head">${label}</div>${rows}`;
+    tooltip.style.display = 'block';
+  }
+
+  function hideTip() {
+    _psaHoverYear = null;
+    tooltip.style.display = 'none';
+    drawPsaChart(null);
+  }
+
+  c.addEventListener('mousemove', e => { const yr = getYr(e); if (yr !== null) showTip(yr, e); });
+  c.addEventListener('mouseleave', hideTip);
+  c.addEventListener('touchstart', e => { e.preventDefault(); const yr = getYr(e); if (yr !== null) showTip(yr, e); }, { passive: false });
+  c.addEventListener('touchmove',  e => { e.preventDefault(); const yr = getYr(e); if (yr !== null) showTip(yr, e); }, { passive: false });
+  c.addEventListener('touchend', hideTip);
+
+  // Redraw on column resize
+  new ResizeObserver(() => { if (_psaChartRows.length) drawPsaChart(_psaHoverYear); }).observe(c);
 }
 
 // =============================================================

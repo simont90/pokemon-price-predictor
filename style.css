@@ -2991,46 +2991,46 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   gap: 16px; margin-bottom: 14px; flex-wrap: wrap;
 }
 .psa-range-header h2 { margin: 0 0 4px 0; }
-.psa-range-grid { overflow-x: auto; }
-.psa-range-table {
-  width: 100%; border-collapse: collapse; font-family: var(--mono);
-  font-size: 13px; min-width: 560px;
+
+/* Grade toggle pills */
+.psa-grade-toggles { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.psa-grade-btn {
+  padding: 4px 11px; font-size: 11px; font-weight: 600; font-family: var(--font);
+  background: transparent; border: 1.5px solid var(--border);
+  border-radius: var(--radius-pill); color: var(--text-faint);
+  cursor: pointer; transition: all 0.15s; line-height: 1.4;
 }
-.psa-range-table thead th {
-  text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
-  color: var(--text-faint); font-size: 10px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em;
+.psa-grade-btn.is-active {
+  border-color: var(--gc, var(--accent));
+  color: var(--gc, var(--accent));
+  background: color-mix(in srgb, var(--gc, var(--accent)) 13%, transparent);
 }
-.psa-range-table tbody td {
-  padding: 8px 10px; border-bottom: 1px solid var(--border);
-  color: var(--text); vertical-align: middle;
+.psa-grade-btn:not(.is-active):hover { color: var(--text); border-color: var(--border-light); }
+
+/* Chart */
+.psa-chart-wrap { position: relative; }
+.psa-range-chart { width: 100%; height: 220px; display: block; cursor: crosshair; }
+
+/* Hover tooltip */
+.psa-chart-tooltip {
+  position: absolute; top: 10px; right: 8px;
+  background: var(--bg-card, #1a1c26);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px 13px; min-width: 155px;
+  pointer-events: none; z-index: 5;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
-.psa-range-table tbody tr:last-child td { border-bottom: none; }
-.psa-range-table tbody tr:hover { background: var(--bg-raised); }
-.psa-row-10 td { background: rgba(232, 182, 52, 0.04); }
-.psa-row-best td { background: rgba(61, 214, 140, 0.06); }
-.psa-row-10.psa-row-best td { background: rgba(61, 214, 140, 0.08); }
-.psa-g { font-weight: 600; color: var(--accent); white-space: nowrap; }
-.psa-best-pill {
-  display: inline-block; margin-left: 6px; padding: 1px 6px;
-  font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
-  background: var(--green-dim); color: var(--green);
-  border-radius: 999px; font-family: var(--font);
+.psa-tip-head {
+  font-size: 10px; font-weight: 700; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 7px;
 }
-.psa-money { font-variant-numeric: tabular-nums; }
-.psa-yr5 { color: var(--accent); font-weight: 600; }
-.psa-roi { font-weight: 600; font-variant-numeric: tabular-nums; }
-.psa-roi-pos { color: var(--green); }
-.psa-roi-neg { color: var(--red); }
-.psa-verdict {
-  display: inline-block; padding: 2px 8px; border-radius: 999px;
-  font-size: 10px; font-weight: 700; font-family: var(--font);
-  letter-spacing: 0.03em; text-transform: uppercase;
-}
-.psa-v-strong { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
-.psa-v-good   { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(232, 182, 52, 0.3); }
-.psa-v-fair   { background: var(--bg-raised); color: var(--text-muted); border: 1px solid var(--border); }
-.psa-v-skip   { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
+.psa-tip-row { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+.psa-tip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.psa-tip-grade { font-size: 11px; color: var(--text-muted); min-width: 38px; }
+.psa-tip-price { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); flex: 1; }
+.psa-tip-roi { font-size: 10px; color: var(--green); font-weight: 600; }
+
 .psa-range-footnote {
   font-size: 11px; color: var(--text-muted); line-height: 1.5;
   margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);

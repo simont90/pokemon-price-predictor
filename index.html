@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619i">
+  <link rel="stylesheet" href="style.css?v=20260619k">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1228,21 +1228,10 @@
               <p class="card-desc">What each PSA grade is worth today, and where the model says it goes over 5 years. Use this to decide if a lower grade is worth picking up.</p>
             </div>
           </div>
-          <div class="psa-range-grid">
-            <table class="psa-range-table" id="psaRangeTable">
-              <thead>
-                <tr>
-                  <th>Grade</th>
-                  <th>Today</th>
-                  <th>Yr 1</th>
-                  <th>Yr 3</th>
-                  <th>Yr 5</th>
-                  <th>5yr ROI</th>
-                  <th>Verdict</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
+          <div class="psa-grade-toggles" id="psaGradeToggles"></div>
+          <div class="psa-chart-wrap">
+            <canvas id="psaRangeChart" class="psa-range-chart"></canvas>
+            <div class="psa-chart-tooltip" id="psaChartTooltip" style="display:none"></div>
           </div>
           <p class="psa-range-footnote" id="psaRangeFootnote"></p>
         </section>
@@ -1884,6 +1873,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619i"></script>
+  <script src="app.js?v=20260619k"></script>
 </body>
 </html>
