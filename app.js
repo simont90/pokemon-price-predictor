@@ -12822,7 +12822,13 @@ function _renderHomeAiGrades() {
 function _renderHomeGradeCandidates() {
   const list = $('homeGradeCandList'), wrap = $('homeGradeCandWrap');
   if (!list) return;
-  const raw = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
+  let raw = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
+  // Auto-prune entries that have no listing image (can't AI grade without one)
+  const withImg = raw.filter(c => c.listingImg);
+  if (withImg.length !== raw.length) {
+    raw = withImg;
+    localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(raw));
+  }
   const cands = raw.slice(0, 15);
   const hash = cands.map(c => c.listingUrl).join('|');
   if (wrap) wrap.style.display = cands.length ? '' : 'none';
