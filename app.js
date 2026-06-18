@@ -12838,7 +12838,15 @@ function _renderHomeGradeCandidates() {
   list.innerHTML = cands.map(d => {
     const cardDbImg = (() => {
       const c = cardData?.cards?.find(x => x.i === d.cardId);
-      return c ? (c.img || getCardImg(c) || '') : '';
+      if (c) {
+        const url = c.img || getCardImg(c) || '';
+        if (url && !url.startsWith('data:')) return url;
+      }
+      // Derive URL from cardId format ({setCode}-{cardNum}) when card not in DB
+      const idStr = String(d.cardId || '');
+      if (idStr.startsWith('jp-')) return '';
+      const dash = idStr.indexOf('-');
+      return dash > 0 ? `https://images.pokemontcg.io/${idStr.slice(0, dash)}/${idStr.slice(dash + 1)}.png` : '';
     })();
     // Primary: eBay listing photo (for AI grading). Fallback: card DB art.
     const primarySrc = d.listingImg || cardDbImg;
@@ -12923,7 +12931,11 @@ async function _gradeHomeCandidate(btn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageUrl: listingImg }),
     });
-    if (!resp.ok) throw new Error(`Worker ${resp.status}`);
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      let msg = txt; try { msg = JSON.parse(txt).error || txt; } catch {}
+      throw new Error(msg || `Worker ${resp.status}`);
+    }
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
 
@@ -12959,7 +12971,9 @@ async function _gradeHomeCandidate(btn) {
       setTimeout(() => { try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); } catch {} }, 1500);
     }
   } catch (err) {
+    console.error('[AI Grade]', err.message);
     btn.textContent = 'Failed';
+    btn.title = err.message;
     btn.disabled = false;
   }
 }

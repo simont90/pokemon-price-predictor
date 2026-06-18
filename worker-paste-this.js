@@ -381,13 +381,31 @@ async function handleGradeCard(request, env) {
   let body;
   try { body = await request.json(); } catch { return _jsonResp(400, { error: 'Invalid JSON body.' }, ch); }
 
-  const { imageUrl, imageB64, mimeType = 'image/jpeg' } = body || {};
+  let { imageUrl, imageB64, mimeType = 'image/jpeg' } = body || {};
   if (!imageUrl && !imageB64) return _jsonResp(400, { error: 'Provide imageUrl or imageB64.' }, ch);
   if (!env.ANTHROPIC_API_KEY) return _jsonResp(503, { error: 'ANTHROPIC_API_KEY not configured in worker secrets.' }, ch);
 
-  const imageContent = imageUrl
-    ? { type: 'image', source: { type: 'url', url: imageUrl } }
-    : { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageB64 } };
+  // Fetch image server-side and convert to base64 — avoids relying on Claude's API fetching
+  // arbitrary CDN URLs which can fail for eBay images or other restricted hosts.
+  if (imageUrl && !imageB64) {
+    let imgResp;
+    try {
+      imgResp = await fetch(imageUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CardGrader/1.0)' },
+      });
+    } catch (e) {
+      return _jsonResp(502, { error: `Could not fetch image: ${e.message}` }, ch);
+    }
+    if (!imgResp.ok) return _jsonResp(502, { error: `Image fetch failed: HTTP ${imgResp.status}` }, ch);
+    mimeType = imgResp.headers.get('Content-Type')?.split(';')[0] || 'image/jpeg';
+    const buf = await imgResp.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    imageB64 = btoa(binary);
+  }
+
+  const imageContent = { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageB64 } };
 
   const prompt = `You are a PSA trading card grading expert assessing a Pokémon card photo taken by a private seller.
 
