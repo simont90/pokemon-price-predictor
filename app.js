@@ -8693,6 +8693,19 @@ function getUkGradingWaitMonths(psa10USD) {
 function getUkGradingWaitDisplay(psa10USD) {
   return (psa10USD && psa10USD > UK_GRADING_VALUE_THRESHOLD_USD) ? '4–6 wk' : '6–8 wk';
 }
+// UK raw card shipping: mostly UK domestic sellers, £3–8 range, £5 midpoint.
+const UK_RAW_SHIPPING_GBP = 5;
+// UK slab shipping: PSA slabs are almost exclusively US/EU origin, so tracked
+// international shipping is a real cost. ~20% of value for cheap slabs where
+// shipping is proportionally large; flat tiered rates above that.
+function estimateUkSlabShipping(slabValueGBP) {
+  if (!slabValueGBP || slabValueGBP <= 0) return 0;
+  if (slabValueGBP < 40)  return Math.max(8,  slabValueGBP * 0.20);
+  if (slabValueGBP < 100) return 15;
+  if (slabValueGBP < 250) return 18;
+  if (slabValueGBP < 600) return 22;
+  return 25;
+}
 const OPPORTUNITY_COST_ANNUAL = 0.06; // pre-tax return you could earn elsewhere while capital is locked
 const BUY_SELL_FRICTION = 0.10;      // 10% combined buy + sell fees (fair tier midpoint)
 
@@ -8766,8 +8779,10 @@ function computeHoldCore(card) {
   // Strategy 1 — Buy Raw, hold ungraded
   const rawYr5USD = projectGradePrice(card, 9, rawUSD, 5) / GRADE_GROWTH_PREMIUM[9] * 1.0;
   const rawSell5USD = rawYr5USD * (1 - BUY_SELL_FRICTION);
-  const rawProfitUSD = rawSell5USD - rawUSD;
-  const rawRoi = rawUSD > 0 ? (rawProfitUSD / rawUSD) * 100 : 0;
+  const rawShipUSD_hc = UK_RAW_SHIPPING_GBP / fx;
+  const rawEntryUSD_hc = rawUSD + rawShipUSD_hc;
+  const rawProfitUSD = rawSell5USD - rawEntryUSD_hc;
+  const rawRoi = rawEntryUSD_hc > 0 ? (rawProfitUSD / rawEntryUSD_hc) * 100 : 0;
 
   // Strategy 2 — Buy Raw + Grade (EV across grade outcomes)
   const psa7Yr5  = projectGradePrice(card, 7,  estimateGradePrice(card, 7,  psa10Price), 5);
@@ -8781,14 +8796,16 @@ function computeHoldCore(card) {
     + SUBGEM_DISTRIBUTION.rawLike * rawYr5USD;
   const gradeYr5EV = (gemRate * psa10Yr5 + (1 - gemRate) * subgemEV) * waitDiscount;
   const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
-  const gradeCost = rawUSD + gradingFeeUSD;
+  const gradeCost = rawEntryUSD_hc + gradingFeeUSD;
   const gradeProfit = gradeSell5EV - gradeCost;
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
 
   // Strategies 3-6 — Buy graded at each tier
   const gradedStrategies = [7, 8, 9, 10].map(g => {
-    const today = estimateGradePrice(card, g, psa10Price);
-    const yr5 = projectGradePrice(card, g, today, 5);
+    const baseUSD = estimateGradePrice(card, g, psa10Price);
+    const slabShipUSD = estimateUkSlabShipping(baseUSD * fx) / fx;
+    const today = baseUSD + slabShipUSD;
+    const yr5 = projectGradePrice(card, g, baseUSD, 5);
     const sell = yr5 * (1 - BUY_SELL_FRICTION);
     const profit = sell - today;
     const roi = today > 0 ? (profit / today) * 100 : 0;
@@ -8796,7 +8813,7 @@ function computeHoldCore(card) {
   });
 
   const strategies = [
-    { label: 'Buy Raw',         key: 'raw',    today: rawUSD,    yr5: rawSell5USD, profit: rawProfitUSD, roi: rawRoi,   variance: 0.20 },
+    { label: 'Buy Raw',         key: 'raw',    today: rawEntryUSD_hc, yr5: rawSell5USD, profit: rawProfitUSD, roi: rawRoi,   variance: 0.20 },
     { label: 'Buy Raw + Grade', key: 'gamble', today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, variance: 0.85 },
     ...gradedStrategies.map(s => ({
       ...s,
@@ -8821,7 +8838,7 @@ function computeHoldCore(card) {
   // Guard: only activates when grade absolute profit > 2.5× raw AND > £25 floor.
   const rawGBP_hc   = rawUSD * fx;
   const psa10GBP_hc = psa10Price * fx;
-  const underwaterAtEntry = (rawUSD + gradingFeeUSD) > psa10Price;
+  const underwaterAtEntry = (rawEntryUSD_hc + gradingFeeUSD) > psa10Price;
   if (rawGBP_hc > 0 && rawGBP_hc < psa10GBP_hc * 0.18) {
     const rawProfGBP_hc  = Math.max(0, rawProfitUSD * fx);
     const gradePlan_hc   = strategies.find(s => s.key === 'gamble');
@@ -9084,13 +9101,17 @@ function renderHoldStrategy(card) {
   // rawCostUSD = what the user paid (or current market if no acquisition logged)
   const rawCostUSD = acqCostUSD ?? rawUSD;
   const usingAcqCost = acqCostUSD != null;
+  // UK raw shipping: domestic sellers, £3-8 range; zero when already owned or using recorded acq cost.
+  const rawShipGBP = (!ownedCard && !usingAcqCost) ? UK_RAW_SHIPPING_GBP : 0;
+  const rawShipUSD = rawShipGBP / fx;
+  const rawEntryUSD = rawCostUSD + rawShipUSD;
 
   // ----- Strategy 1: Buy Raw, hold ungraded -----
   const rawYr5USD = projectGradePrice(card, 9, rawUSD, 5) / GRADE_GROWTH_PREMIUM[9] * 1.0;
   // ^ Projections anchor to current market price, not acq cost. ROI uses acq cost.
   const rawSell5USD = rawYr5USD * (1 - BUY_SELL_FRICTION);
-  const rawProfitUSD = rawSell5USD - rawCostUSD;
-  const rawRoi = rawCostUSD > 0 ? (rawProfitUSD / rawCostUSD) * 100 : 0;
+  const rawProfitUSD = rawSell5USD - rawEntryUSD;
+  const rawRoi = rawEntryUSD > 0 ? (rawProfitUSD / rawEntryUSD) * 100 : 0;
 
   // ----- Strategy 2: Buy Raw + Grade (EV across grades) -----
   const psa7Yr5  = projectGradePrice(card, 7,  estimateGradePrice(card, 7,  psa10Price), 5);
@@ -9107,7 +9128,7 @@ function renderHoldStrategy(card) {
   const gradeYr5EV = gradeYr5EVRaw * waitDiscount;
   const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
   // Cost basis: what the user paid for the raw card + grading fee
-  const gradeCost = rawCostUSD + gradingFeeUSD;
+  const gradeCost = rawEntryUSD + gradingFeeUSD;
   const gradeProfit = gradeSell5EV - gradeCost;
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
 
@@ -9173,28 +9194,32 @@ function renderHoldStrategy(card) {
 
   // ----- Strategies 3-6: Buy graded at each tier -----
   const gradedStrategies = [7, 8, 9, 10].map(g => {
-    const today = estimateGradePrice(card, g, psa10Price);
-    const yr5 = projectGradePrice(card, g, today, 5);
+    const baseUSD = estimateGradePrice(card, g, psa10Price);
+    const slabShipGBP = estimateUkSlabShipping(baseUSD * fx);
+    const today = baseUSD + slabShipGBP / fx;
+    const yr5 = projectGradePrice(card, g, baseUSD, 5);  // project from market price, not inflated entry
     const sell = yr5 * (1 - BUY_SELL_FRICTION);
     const profit = sell - today;
     const roi = today > 0 ? (profit / today) * 100 : 0;
-    return { label: `Buy PSA ${g}`, key: `psa${g}`, grade: g, today, yr5, profit, roi };
+    return { label: `Buy PSA ${g}`, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi };
   });
 
   // Label the raw/grade strategies to show acquisition cost basis when applicable
   const rawDesc = usingAcqCost
     ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} paid \u2014 holding ungraded 5 yrs`
-    : 'Hold ungraded for 5 yrs';
+    : rawShipGBP > 0
+      ? `Hold ungraded for 5 yrs \u2014 incl. ~\u00a3${rawShipGBP} UK shipping`
+      : 'Hold ungraded for 5 yrs';
   const gambleDesc = usingAcqCost
     ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${gradingFeeGBP} grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% PSA 9+`
     : `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`;
 
   const strategies = [
-    { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',      desc: rawDesc,     today: rawCostUSD, yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20, acqCost: usingAcqCost },
+    { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',      desc: rawDesc,     today: rawEntryUSD, yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20, acqCost: usingAcqCost },
     { label: usingAcqCost ? 'Grade My Card' : 'Buy Raw + Grade',  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: gradingWaitMonths, lossProb, lossEV, acqCost: usingAcqCost },
     ...gradedStrategies.map((s, i) => ({
       ...s,
-      desc: i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling',
+      desc: (i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling') + (s.slabShipGBP > 0 ? ` — incl. ~£${s.slabShipGBP.toFixed(0)} intl. shipping` : ''),
       // Variance falls as grade rises (less subjective re-grade risk).
       risk: s.grade === 10 ? 'low' : s.grade === 9 ? 'med' : 'med',
       variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : 0.32,
@@ -9227,7 +9252,7 @@ function renderHoldStrategy(card) {
   // so grading can win when it delivers far more actual money.
   const rawMktGBP   = rawUSD * fx;
   const psa10GBP_h  = psa10Price * fx;
-  const gradeCostGBP_h   = rawMktGBP + gradingFeeGBP;
+  const gradeCostGBP_h   = rawEntryUSD * fx + gradingFeeGBP;
   const underwaterAtEntry = gradeCostGBP_h > psa10GBP_h;
   const underwaterGBP     = Math.max(0, gradeCostGBP_h - psa10GBP_h);
   if (rawMktGBP > 0 && rawMktGBP < psa10GBP_h * 0.18) {
