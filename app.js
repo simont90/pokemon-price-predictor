@@ -11617,21 +11617,20 @@ function buildAllHomeRecos(limit = 15) {
     };
     general.push(base);
 
-    // Strategy sections — cards where each grade has positive ROI, sorted by
-    // that grade's own risk-adjusted score (not necessarily the overall winner)
+    // Strategy sections — only cards where that specific strategy is the winner
+    // (i.e. marked "BEST LONG-TERM PICK" on the card's Hold Strategy).
+    // 'gamble' (Buy Raw + Grade) is grouped into the Buy Raw bucket.
     const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(c) : { ok: false };
-    if (hc.ok && hc.strategies) {
-      for (const sk of Object.keys(byStrat)) {
-        const strat = hc.strategies.find(s => s.key === sk);
-        if (strat && strat.roi > 0) {
-          byStrat[sk].push({
-            ...base,
-            strategyRoi:       strat.roi,
-            strategyRiskAdj:   strat.riskAdjusted,
-            strategyProfitGBP: strat.profit * fx,
-            strategyToday:     strat.today * fx,
-          });
-        }
+    if (hc.ok && hc.winner) {
+      const wk = hc.winner.key === 'gamble' ? 'raw' : hc.winner.key;
+      if (byStrat[wk]) {
+        byStrat[wk].push({
+          ...base,
+          strategyRoi:       hc.winner.roi,
+          strategyRiskAdj:   hc.winner.riskAdjusted,
+          strategyProfitGBP: hc.winner.profit * fx,
+          strategyToday:     hc.winner.today * fx,
+        });
       }
     }
   }
