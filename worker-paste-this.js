@@ -209,43 +209,36 @@ async function handleImgProxy(request, env, url) {
   if (!m) return _jsonResp(400, { error: 'Paste a direct eBay listing URL (must contain /itm/{id}).' }, ch);
   const itemId = m[1];
 
-  if (!env.EBAY_CLIENT_ID) return _jsonResp(503, { error: 'EBAY_CLIENT_ID not configured in worker secrets.' }, ch);
+  // Use Browse API item endpoint — same OAuth token as /search, no extra permissions.
+  // Pipe chars in the item ID path segment must be percent-encoded.
+  let token;
+  try { token = await getEbayToken(env); } catch (e) {
+    return _jsonResp(503, { error: `eBay auth failed: ${e.message}` }, ch);
+  }
 
-  // eBay Shopping API — GetSingleItem with PictureDetails selector.
-  // No OAuth needed, just App ID. Try UK site first, fall back to US.
-  const base = `https://open.api.ebay.com/shopping?callname=GetSingleItem&responseencoding=JSON&appid=${env.EBAY_CLIENT_ID}&version=967&ItemID=${itemId}&IncludeSelector=PictureDetails`;
+  const encodedId = `v1%7C${itemId}%7C0`;
+  const hi = u => u.replace(/s-l\d+(\.\w+)$/, 's-l1600$1');
 
-  let data;
-  for (const siteid of ['3', '0']) {
+  for (const mktId of ['EBAY_GB', 'EBAY_US']) {
+    let resp;
     try {
-      const resp = await fetch(`${base}&siteid=${siteid}`, { headers: { Accept: 'application/json' } });
-      if (resp.ok) { data = await resp.json(); break; }
-    } catch {}
+      resp = await fetch(`https://api.ebay.com/buy/browse/v1/item/${encodedId}`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': mktId, 'Accept': 'application/json' },
+      });
+    } catch { continue; }
+    if (!resp.ok) continue;
+    const item = await resp.json();
+    const images = [];
+    if (item.image?.imageUrl) images.push(hi(item.image.imageUrl));
+    for (const img of (item.additionalImages || [])) {
+      if (img.imageUrl) images.push(hi(img.imageUrl));
+    }
+    if (!images.length) continue;
+    return new Response(JSON.stringify({ images, title: item.title || '', itemId }), {
+      headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
+    });
   }
-
-  if (!data) return _jsonResp(502, { error: 'eBay Shopping API unreachable.' }, ch);
-  if (data.Ack === 'Failure' || !data.Item) {
-    const msg = data.Errors?.[0]?.ShortMessage || 'Item not found or listing has ended.';
-    return _jsonResp(404, { error: msg }, ch);
-  }
-
-  const item = data.Item;
-  const rawUrls = item.PictureURL || item.PictureDetails?.PictureURL || [];
-  const seen = new Set();
-  const images = [];
-  for (const u of rawUrls) {
-    if (!u || seen.has(u)) continue;
-    seen.add(u);
-    images.push(u.replace(/s-l\d+(\.\w+)$/, 's-l1600$1'));
-  }
-  if (!images.length && item.GalleryURL) {
-    images.push(item.GalleryURL.replace(/s-l\d+(\.\w+)$/, 's-l1600$1'));
-  }
-  if (!images.length) return _jsonResp(404, { error: 'No images found for this listing.' }, ch);
-
-  return new Response(JSON.stringify({ images, title: item.Title || '', itemId }), {
-    headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
-  });
+  return _jsonResp(404, { error: 'Listing not found or images unavailable.' }, ch);
 }
 
 // ---- AI card grading ----
