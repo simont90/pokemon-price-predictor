@@ -6343,6 +6343,19 @@ function setupEditCard() {
       const result = await fetchPokemonTcgIoLinks(selectedCard.i);
       if (result && result.tcgplayerUrl) {
         setTcgOverride(selectedCard.i, result.tcgplayerUrl);
+        // Also save the card image if the API returned one and the card has no usable image yet
+        if (result.imageUrl) {
+          const currentImg = selectedCard.img || '';
+          const hasGoodImg = currentImg && /\.(webp|jpg|jpeg|png|gif|avif)(\?|#|$)/i.test(currentImg);
+          if (!hasGoodImg) {
+            selectedCard.img = result.imageUrl;
+            if (typeof setCardOverride === 'function') setCardOverride(selectedCard.i, { img: result.imageUrl });
+            try {
+              const el = document.getElementById('cardImage');
+              if (el) el.src = result.imageUrl;
+            } catch {}
+          }
+        }
         status.textContent = 'Found — TCGPlayer link saved.';
         if (livePrice) renderLivePriceData(livePrice);
       } else {
@@ -7472,6 +7485,7 @@ async function fetchPokemonTcgIoLinks(cardId) {
         cardmarketUrl: (d.cardmarket && d.cardmarket.url) || null,
         tcgplayerUrl: (d.tcgplayer && d.tcgplayer.url) || null,
         cmPrices: (d.cardmarket && d.cardmarket.prices) || null,
+        imageUrl: (d.images && (d.images.large || d.images.small)) || null,
       };
       pokemonTcgIoCache.set(cardId, result);
       return result;
@@ -8880,7 +8894,11 @@ function computeHoldCore(card) {
   // This is the only criterion for the badge and home-page reco sections.
   const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 80);
   const bestLongTermPick = ltpCandidates.length
-    ? ltpCandidates.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
+    ? ltpCandidates.reduce((a, b) => {
+        const pa = ltpCapitalPenalty(gbpFromUSD(a.today));
+        const pb = ltpCapitalPenalty(gbpFromUSD(b.today));
+        return (b.riskAdjusted - pb) > (a.riskAdjusted - pa) ? b : a;
+      })
     : null;
 
   // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
@@ -8922,6 +8940,24 @@ function capitalOutlayPenalty(outlayGBP) {
   if (outlayGBP < 500)  return 30;
   if (outlayGBP < 1000) return 50;
   return 70;
+}
+
+// Capital penalty used exclusively for BEST LONG-TERM PICK selection.
+// Significantly heavier than capitalOutlayPenalty so that a cheaper option
+// with similar ROI wins: e.g. PSA 9 at £600 with 400% ROI beats PSA 10 at
+// £1600 with 500% ROI — because tying up £1600 in one card is a real risk
+// for a budget-conscious collector who could deploy that capital more wisely.
+function ltpCapitalPenalty(outlayGBP) {
+  if (!(outlayGBP > 0)) return 0;
+  if (outlayGBP < 50)   return 0;
+  if (outlayGBP < 100)  return 10;
+  if (outlayGBP < 200)  return 25;
+  if (outlayGBP < 350)  return 50;
+  if (outlayGBP < 500)  return 80;
+  if (outlayGBP < 800)  return 120;
+  if (outlayGBP < 1200) return 170;
+  if (outlayGBP < 2000) return 230;
+  return 300;
 }
 
 // Render the EN ↔ JP side-by-side comparison inside the Hold Strategy card.
@@ -9307,9 +9343,15 @@ function renderHoldStrategy(card) {
 
   // BEST LONG-TERM PICK badge: never high-risk (gamble), must be Strong Hold (ROI ≥ 80%).
   // overallWinner drives the recommendation text; bestLongTermPick drives the badge + signal.
+  // Uses ltpCapitalPenalty so a cheaper PSA 9 (£600, 400% ROI) beats a more expensive
+  // PSA 10 (£1600, 500% ROI) — both are strong holds but the cheaper entry is smarter capital.
   const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 80);
   const bestLongTermPick = ltpCandidates.length
-    ? ltpCandidates.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
+    ? ltpCandidates.reduce((a, b) => {
+        const pa = ltpCapitalPenalty(gbpFromUSD(a.today));
+        const pb = ltpCapitalPenalty(gbpFromUSD(b.today));
+        return (b.riskAdjusted - pb) > (a.riskAdjusted - pa) ? b : a;
+      })
     : null;
 
   const winner = overallWinner; // used for recommendation copy below
