@@ -2913,6 +2913,7 @@ function updateDealCheck(modelPriceUSD) {
     return;
   }
   const gradeKey = ($('dealGrade') && $('dealGrade').value) || 'raw';
+  const shippingGBP = parseFloat($('dealShipping')?.value) || 0;
   let refUSD;
   if (gradeKey !== 'raw' && selectedCard) {
     const anchor = getPsa10Anchor(selectedCard);
@@ -2926,20 +2927,24 @@ function updateDealCheck(modelPriceUSD) {
   } else {
     refUSD = selectedCard ? Math.min(modelPriceUSD, getCurrentPrice(selectedCard)) : modelPriceUSD;
   }
-  const refGBP = usdToGbp(refUSD);
+  const cardRefGBP = usdToGbp(refUSD);
+  const refGBP = cardRefGBP + shippingGBP;
   const diff = refGBP - ebayGBP;
   const pct = ((diff / ebayGBP) * 100).toFixed(0);
+  const refLabel = shippingGBP > 0
+    ? `${fmtGBP(cardRefGBP)} + ${fmtGBP(shippingGBP)} ship = ${fmtGBP(refGBP)}`
+    : fmtGBP(refGBP);
 
   let cls, verdict, note;
   if (diff > refGBP * 0.05) {
     cls = 'good-deal'; verdict = 'Good Deal';
-    note = `${Math.abs(pct)}% below max buy price of ${fmtGBP(refUSD)}`;
+    note = `${Math.abs(pct)}% below ${refLabel}`;
   } else if (diff < -refGBP * 0.05) {
     cls = 'bad-deal'; verdict = 'Too Expensive';
-    note = `${Math.abs(pct)}% above max buy price of ${fmtGBP(refUSD)}`;
+    note = `${Math.abs(pct)}% above ${refLabel}`;
   } else {
     cls = 'ok-deal'; verdict = 'Fair Price';
-    note = `Within 5% of max buy price (${fmtGBP(refUSD)})`;
+    note = `Within 5% of ${refLabel}`;
   }
 
   $('dealResult').className = `deal-result ${cls}`;
@@ -4671,8 +4676,8 @@ function computeCompareVerdict(a, b) {
 
 // ---- Events ----
 function setupInputs() {
-  ['packRate','cardsInTier','characterPremium','artworkHype','universalAppeal','ebayPrice']
-    .forEach(id => $(id).addEventListener('input', updateAll));
+  ['packRate','cardsInTier','characterPremium','artworkHype','universalAppeal','ebayPrice','dealShipping']
+    .forEach(id => $(id)?.addEventListener('input', updateAll));
   const dealGradeEl = $('dealGrade');
   if (dealGradeEl) dealGradeEl.addEventListener('change', updateAll);
 }

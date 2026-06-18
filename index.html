@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619bj">
+  <link rel="stylesheet" href="style.css?v=20260619bk">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1511,6 +1511,7 @@
           <div class="deal-check-inputs">
             <div class="input-group"><label for="ebayPrice">eBay listing price (£)</label><input type="number" id="ebayPrice" min="0" step="0.01" value="" placeholder="e.g. 45.00" class="number-input ebay-input"></div>
             <div class="input-group deal-grade-group"><label for="dealGrade">Grade</label><select id="dealGrade" class="deal-grade-select"><option value="raw">Raw</option><option value="psa7">PSA 7</option><option value="psa8">PSA 8</option><option value="psa9">PSA 9</option><option value="psa10">PSA 10</option></select></div>
+            <div class="input-group deal-ship-group"><label for="dealShipping">+ Shipping (£)</label><input type="number" id="dealShipping" min="0" step="0.01" value="" placeholder="e.g. 18" class="number-input"></div>
           </div>
           <div class="deal-result" id="dealResult"><div class="deal-placeholder">Enter an eBay price to check</div></div>
           <button type="button" id="dealSaveHold" class="deal-save-btn" style="display:none">Save to Hold Strategy</button>
@@ -2027,6 +2028,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619bj"></script>
+  <script src="app.js?v=20260619bk"></script>
 </body>
 </html>
