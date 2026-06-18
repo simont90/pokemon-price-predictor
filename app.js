@@ -282,6 +282,20 @@ function setTcgOverride(cardId, url) {
   } catch {}
 }
 
+// ---- Manual JP PSA 10 price overrides (for EN↔JP scenario comparison) ----
+const JP_PSA10_OVERRIDE_KEY = 'pkm-jp-psa10-overrides-v1';
+function getJpPsa10Override(cardId) {
+  try { return JSON.parse(localStorage.getItem(JP_PSA10_OVERRIDE_KEY) || '{}')[cardId] || null; } catch { return null; }
+}
+function setJpPsa10Override(cardId, gbp, dateStr) {
+  try {
+    const map = JSON.parse(localStorage.getItem(JP_PSA10_OVERRIDE_KEY) || '{}');
+    if (gbp > 0) map[cardId] = { gbp, date: dateStr };
+    else delete map[cardId];
+    localStorage.setItem(JP_PSA10_OVERRIDE_KEY, JSON.stringify(map));
+  } catch {}
+}
+
 // ---- Live Price State ----
 let livePrice = null; // Current card's live pricing data
 let livePriceFetchId = 0;
@@ -862,78 +876,114 @@ function buildCounterpartRecommendation(card) {
     reason = `The ${cheaperLang === 'JP' ? 'Japanese' : 'English'} version is ${savingsPct.toFixed(0)}% cheaper (£${cheaperGBPv.toFixed(2)} vs £${pricierGBPv.toFixed(2)}).${cheaperLang === 'JP' ? ' For raw collecting or sealing in a binder, JP is the value play.' : ' Rare case where the English printing undercuts the Japanese — worth a closer look.'}${cheaperLang === 'JP' && !psaSame ? ceilingNote : ''}`;
   }
 
-  // ── Three buyer-scenario advisories ─────────────────────────────────────
+  // ── Three buyer-scenario advisories using Hold Strategy model data ───────
   const selfIsEN = card.lang !== 'JP';
   const enCardRef = selfIsEN ? card : other;
   const jpCardRef = selfIsEN ? other : card;
-  const enRawGBP  = selfIsEN ? selfGBP  : otherGBP;
+  const enRawGBP  = selfIsEN ? selfGBP : otherGBP;
   const jpRawGBP  = selfIsEN ? otherGBP : selfGBP;
-  const enPSA10GBP = (enCardRef.p10 > 0) ? usdToGbp(enCardRef.p10) : 0;
-  const jpPSA10GBP = (jpCardRef.p10 > 0) ? usdToGbp(jpCardRef.p10) : 0;
-  const GRAD_COST = 40;   // UK all-in PSA cost (GBP)
-  const DEF_GEM   = 0.18; // conservative default gem rate
-  const JP_GEM_FACTOR = 0.65; // JP modern typically 65% of EN gem rate (centering/surface)
-  const enGemRate = (enCardRef.g > 0) ? enCardRef.g : DEF_GEM;
-  const jpGemRate = (jpCardRef.g > 0) ? jpCardRef.g : (DEF_GEM * JP_GEM_FACTOR);
-  const cheaperPriceTxt = `£${usdToGbp(cheaperUSD).toFixed(2)}`;
-  const pricierPriceTxt = `£${usdToGbp(pricierUSD).toFixed(2)}`;
 
-  // Scenario 1 — Buy raw, keep raw: purely price-driven
-  let s1;
-  if (savingsPct < 8) {
-    s1 = `Prices within ${savingsPct.toFixed(0)}% — pick the art you prefer.`;
-  } else {
-    s1 = `<strong>${cheaperLang}</strong> is ${savingsPct.toFixed(0)}% cheaper (${cheaperLang === 'JP' ? `JP ${cheaperPriceTxt}` : `EN ${cheaperPriceTxt}`} vs ${cheaperLang === 'JP' ? `EN ${pricierPriceTxt}` : `JP ${pricierPriceTxt}`}). For binder or display, ${cheaperLang} saves £${savingsGBP.toFixed(2)}.`;
-  }
+  // Run the same hold model used by the Hold Strategy card for both versions
+  const enHold = (typeof computeHoldCore === 'function') ? computeHoldCore(enCardRef) : null;
+  const jpHold = (typeof computeHoldCore === 'function') ? computeHoldCore(jpCardRef) : null;
+  const getStrat = (hold, key) => (hold && hold.ok ? hold.strategies.find(s => s.key === key) : null);
+  const fmtRoi = roi => `<span class="cp-sr ${roi >= 0 ? 'pos' : 'neg'}">${roi >= 0 ? '+' : ''}${roi.toFixed(0)}%</span>`;
+  const fmtP = usd => usd > 0 ? `£${usdToGbp(usd).toFixed(0)}` : '—';
 
-  // Scenario 2 — Buy raw to grade: EV = PSA10_price × gem_rate − raw − £40
-  let s2;
-  if (enPSA10GBP > 0 && jpPSA10GBP > 0 && enRawGBP > 0 && jpRawGBP > 0) {
-    const enEV = enPSA10GBP * enGemRate - enRawGBP - GRAD_COST;
-    const jpEV = jpPSA10GBP * jpGemRate - jpRawGBP - GRAD_COST;
-    const fmt  = v => `${v >= 0 ? '+' : ''}£${Math.abs(v).toFixed(0)}`;
-    if (Math.abs(enEV - jpEV) < 5) {
-      s2 = `Similar grade EV: EN ${fmt(enEV)} (${(enGemRate*100).toFixed(0)}% gem) · JP ${fmt(jpEV)} (${(jpGemRate*100).toFixed(0)}% gem). Lean <strong>EN</strong> — deeper PSA 10 resale market.`;
-    } else if (enEV > jpEV) {
-      s2 = `<strong>EN</strong> is the better grade target — EV ${fmt(enEV)} (PSA 10 £${enPSA10GBP.toFixed(0)}, ${(enGemRate*100).toFixed(0)}% gem) vs JP ${fmt(jpEV)} (${(jpGemRate*100).toFixed(0)}% gem). EN PSA 10 market is also more liquid.`;
+  // JP PSA 10 anchor quality — drives whether we trust the grade scenarios
+  const jpAnchorSrc = jpHold ? jpHold.anchorSource : null;
+  const jpPsa10Real = jpAnchorSrc === 'tracked' || jpAnchorSrc === 'live' || jpAnchorSrc === 'manual-override';
+  const jpPsa10Manual = getJpPsa10Override(jpCardRef.i); // user-saved manual entry
+
+  // ── S1: Raw, keep raw ──
+  // ROI% is the same for both (same character/rarity/set age growth model);
+  // winner is purely the cheaper entry price.
+  let s1, s1winner;
+  {
+    const enS = getStrat(enHold, 'raw');
+    const jpS = getStrat(jpHold, 'raw');
+    const roiSuffix = enS ? ` · both ${fmtRoi(enS.roi)} 5yr ROI` : '';
+    if (savingsPct < 8) {
+      s1winner = 'TIE';
+      s1 = `Within 8% — pick the art you prefer. EN £${enRawGBP.toFixed(0)} · JP £${jpRawGBP.toFixed(0)}${roiSuffix}.`;
+    } else if (cheaperLang === 'JP') {
+      s1winner = 'JP';
+      const yr5 = jpS ? ` → 5yr ${fmtP(jpS.yr5)}` : '';
+      s1 = `JP: entry £${jpRawGBP.toFixed(0)}${yr5}${enS ? ' · ' + fmtRoi(enS.roi) : ''} · Saves £${savingsGBP.toFixed(0)} vs EN £${enRawGBP.toFixed(0)}.`;
     } else {
-      s2 = `<strong>JP</strong> has the stronger grading upside — EV ${fmt(jpEV)} (PSA 10 £${jpPSA10GBP.toFixed(0)}, ${(jpGemRate*100).toFixed(0)}% gem) vs EN ${fmt(enEV)}. JP PSA 10 market is thinner — allow longer to sell.`;
+      s1winner = 'EN';
+      const yr5 = enS ? ` → 5yr ${fmtP(enS.yr5)}` : '';
+      s1 = `EN: entry £${enRawGBP.toFixed(0)}${yr5}${enS ? ' · ' + fmtRoi(enS.roi) : ''} · Saves £${savingsGBP.toFixed(0)} vs JP £${jpRawGBP.toFixed(0)}.`;
     }
-  } else if (enPSA10GBP > 0 && enRawGBP > 0) {
-    const enEV = enPSA10GBP * enGemRate - enRawGBP - GRAD_COST;
-    s2 = `<strong>EN</strong>: PSA 10 £${enPSA10GBP.toFixed(0)}, ~${(enGemRate*100).toFixed(0)}% gem rate, grade EV ${enEV >= 0 ? '+' : ''}£${Math.abs(enEV).toFixed(0)} after £${GRAD_COST} cost. No JP PSA 10 data to compare.`;
-  } else if (jpPSA10GBP > 0 && jpRawGBP > 0) {
-    const jpEV = jpPSA10GBP * jpGemRate - jpRawGBP - GRAD_COST;
-    s2 = `<strong>JP</strong> data: PSA 10 £${jpPSA10GBP.toFixed(0)}, ~${(jpGemRate*100).toFixed(0)}% gem rate, EV ${jpEV >= 0 ? '+' : ''}£${Math.abs(jpEV).toFixed(0)}. Lean <strong>EN</strong> unless you have a pristine JP copy in hand — typically better centering.`;
-  } else {
-    s2 = `EN cards generally achieve higher PSA 10 rates on modern sets — better centering and surface consistency. Buy EN raw to grade unless you have already inspected a pristine JP copy.`;
   }
 
-  // Scenario 3 — Buy already slabbed (PSA 10)
-  let s3;
-  if (enPSA10GBP > 0 && jpPSA10GBP > 0) {
-    const slabDiff = Math.abs(enPSA10GBP - jpPSA10GBP);
-    const slabPct  = slabDiff / Math.max(enPSA10GBP, jpPSA10GBP) * 100;
-    const cheapSlab = enPSA10GBP <= jpPSA10GBP ? 'EN' : 'JP';
-    if (slabPct < 8) {
-      s3 = `PSA 10 prices close (EN £${enPSA10GBP.toFixed(0)} · JP £${jpPSA10GBP.toFixed(0)}). Lean <strong>EN</strong> — larger resale pool and faster exit.`;
-    } else if (cheapSlab === 'EN') {
-      s3 = `<strong>EN PSA 10</strong> at £${enPSA10GBP.toFixed(0)} vs JP £${jpPSA10GBP.toFixed(0)} — EN is cheaper and has deeper liquidity. Strong EN slab pick.`;
+  // ── S2: Raw to grade ──
+  // Uses the full hold model "gamble" strategy (probability-weighted across all grade outcomes).
+  let s2, s2winner = 'EN', s2NeedsJpPsa10 = false;
+  {
+    const enG = getStrat(enHold, 'gamble');
+    const jpG = getStrat(jpHold, 'gamble');
+    if (enG && jpG && jpPsa10Real) {
+      const enCost = fmtP(enG.today); const enYr5 = fmtP(enG.yr5);
+      const jpCost = fmtP(jpG.today); const jpYr5 = fmtP(jpG.yr5);
+      const diff = enG.riskAdjusted - jpG.riskAdjusted;
+      if (Math.abs(diff) < 8) {
+        s2winner = 'EN';
+        s2 = `Grade EV similar — lean EN for liquidity. EN: ${enCost} in → ${enYr5} ${fmtRoi(enG.roi)} · JP: ${jpCost} → ${jpYr5} ${fmtRoi(jpG.roi)}.`;
+      } else if (enG.riskAdjusted > jpG.riskAdjusted) {
+        s2winner = 'EN';
+        s2 = `EN has stronger grading upside. EN: ${enCost} in → ${enYr5} ${fmtRoi(enG.roi)} · JP: ${jpCost} → ${jpYr5} ${fmtRoi(jpG.roi)}.`;
+      } else {
+        s2winner = 'JP';
+        s2 = `JP edges EN on risk-adjusted grade EV. JP: ${jpCost} in → ${jpYr5} ${fmtRoi(jpG.roi)} · EN: ${enCost} → ${enYr5} ${fmtRoi(enG.roi)} · JP slab market is thinner.`;
+      }
+    } else if (enG) {
+      s2winner = 'EN';
+      s2NeedsJpPsa10 = true;
+      const src = jpAnchorSrc === 'estimated' ? '(estimated PSA 10)' : '—';
+      s2 = `EN: £${fmtP(enG.today)} in → ${fmtP(enG.yr5)} ${fmtRoi(enG.roi)} · JP PSA 10 ${src} — add it below to compare.`;
     } else {
-      s3 = `<strong>JP PSA 10</strong> at £${jpPSA10GBP.toFixed(0)} saves £${slabDiff.toFixed(0)} vs EN £${enPSA10GBP.toFixed(0)} (${slabPct.toFixed(0)}% cheaper). Fine to hold long-term; JP slabs take longer to sell than EN if you exit.`;
+      s2winner = 'EN'; s2NeedsJpPsa10 = true;
+      s2 = `EN grades more consistently on modern sets. Add JP PSA 10 price below to run the full comparison.`;
     }
-  } else if (enPSA10GBP > 0) {
-    s3 = `<strong>EN PSA 10</strong> at £${enPSA10GBP.toFixed(0)}. No JP PSA 10 price tracked — EN slab is the default for liquidity.`;
-  } else if (jpPSA10GBP > 0) {
-    s3 = `<strong>JP PSA 10</strong> at £${jpPSA10GBP.toFixed(0)}. No EN PSA 10 data — check eBay sold listings for EN slab prices before committing.`;
-  } else {
-    s3 = `No PSA 10 data for either version. EN PSA 10 is generally more liquid. Check eBay sold listings to compare slab prices.`;
   }
 
+  // ── S3: Buy slabbed PSA 10 ──
+  // Uses the hold model "psa10" strategy for each side.
+  let s3, s3winner = 'EN', s3NeedsJpPsa10 = false;
+  {
+    const enP = getStrat(enHold, 'psa10');
+    const jpP = getStrat(jpHold, 'psa10');
+    if (enP && jpP && jpPsa10Real) {
+      const enCost = fmtP(enP.today); const enYr5 = fmtP(enP.yr5);
+      const jpCost = fmtP(jpP.today); const jpYr5 = fmtP(jpP.yr5);
+      const enScore = enP.riskAdjusted - (typeof capitalOutlayPenalty === 'function' ? capitalOutlayPenalty(usdToGbp(enP.today)) : 0);
+      const jpScore = jpP.riskAdjusted - (typeof capitalOutlayPenalty === 'function' ? capitalOutlayPenalty(usdToGbp(jpP.today)) : 0);
+      const diff = enScore - jpScore;
+      if (Math.abs(diff) < 5) {
+        s3winner = 'EN';
+        s3 = `Similar upside — lean EN. EN PSA 10: ${enCost} → ${enYr5} ${fmtRoi(enP.roi)} · JP: ${jpCost} → ${jpYr5} ${fmtRoi(jpP.roi)} · deeper EN resale pool.`;
+      } else if (enScore > jpScore) {
+        s3winner = 'EN';
+        s3 = `EN PSA 10: ${enCost} → ${enYr5} ${fmtRoi(enP.roi)} · JP: ${jpCost} → ${jpYr5} ${fmtRoi(jpP.roi)}.`;
+      } else {
+        s3winner = 'JP';
+        s3 = `JP PSA 10: ${jpCost} → ${jpYr5} ${fmtRoi(jpP.roi)} · EN: ${enCost} → ${enYr5} ${fmtRoi(enP.roi)} · JP slabs exit more slowly.`;
+      }
+    } else if (enP) {
+      s3winner = 'EN'; s3NeedsJpPsa10 = true;
+      s3 = `EN PSA 10: ${fmtP(enP.today)} → ${fmtP(enP.yr5)} ${fmtRoi(enP.roi)} · Add JP PSA 10 price below to compare.`;
+    } else {
+      s3winner = 'EN'; s3NeedsJpPsa10 = true;
+      s3 = `No PSA 10 data. Add JP PSA 10 price below — EN is generally more liquid if no data exists.`;
+    }
+  }
+
+  const needsJpPsa10 = s2NeedsJpPsa10 || s3NeedsJpPsa10;
   const scenarios = [
-    { key: 'raw-keep',    label: 'Raw, keep raw', text: s1 },
-    { key: 'raw-grade',   label: 'Raw to grade',  text: s2 },
-    { key: 'buy-slabbed', label: 'Buy slabbed',   text: s3 },
+    { key: 'raw-keep',    label: 'Raw, keep raw', winner: s1winner, text: s1 },
+    { key: 'raw-grade',   label: 'Raw to grade',  winner: s2winner, text: s2 },
+    { key: 'buy-slabbed', label: 'Buy slabbed',   winner: s3winner, text: s3 },
   ];
 
   return {
@@ -943,6 +993,9 @@ function buildCounterpartRecommendation(card) {
     verdict, reason,
     totalCounterparts: cp.counterparts.length,
     scenarios,
+    needsJpPsa10,
+    jpCardRef,
+    jpPsa10Manual,
   };
 }
 function cheaperGBP(a, b, cheaper) { return usdToGbp(cheaper === a ? getCurrentPrice(a) : getCurrentPrice(b)); }
@@ -1038,12 +1091,49 @@ function renderCounterpartFlag(card) {
   const scenariosEl = document.getElementById('cpScenarios');
   if (scenariosEl) {
     if (rec.scenarios && rec.scenarios.length && rec.verdict !== 'link-only') {
+      const winnerChip = (w) => {
+        if (!w || w === 'TIE') return '<span class="cp-sw cp-sw-tie">— Either</span>';
+        return `<span class="cp-sw cp-sw-${w.toLowerCase()}">★ ${w}</span>`;
+      };
       scenariosEl.innerHTML = rec.scenarios.map(s =>
         `<div class="cp-scenario">
-          <span class="cp-scenario-label">${s.label}</span>
+          <div class="cp-scenario-head">
+            <span class="cp-scenario-label">${s.label}</span>
+            ${winnerChip(s.winner)}
+          </div>
           <span class="cp-scenario-text">${s.text}</span>
         </div>`
       ).join('');
+
+      // JP PSA 10 manual input — shown when grade scenarios can't compare
+      if (rec.needsJpPsa10 && rec.jpCardRef) {
+        const jp = rec.jpCardRef;
+        const existing = rec.jpPsa10Manual;
+        const existingHtml = existing
+          ? `<span class="cp-jp10-saved">Saved £${existing.gbp.toFixed(0)} · ${existing.date}</span>`
+          : '';
+        scenariosEl.innerHTML += `
+          <div class="cp-jp10-row" id="cpJp10Row">
+            <span class="cp-jp10-label">JP PSA 10 price</span>
+            <input id="cpJp10Input" class="cp-jp10-input" type="number" min="0" step="0.01"
+              placeholder="£ market price" value="${existing ? existing.gbp : ''}">
+            <button id="cpJp10Save" class="cp-jp10-save" type="button" data-cardid="${esc(jp.i)}">Save</button>
+            ${existingHtml}
+          </div>`;
+        const saveBtn = scenariosEl.querySelector('#cpJp10Save');
+        if (saveBtn) {
+          saveBtn.addEventListener('click', () => {
+            const input = scenariosEl.querySelector('#cpJp10Input');
+            const gbp = parseFloat(input?.value || '');
+            if (!gbp || gbp <= 0) { if (input) input.style.outline = '1px solid var(--red)'; return; }
+            const d = new Date();
+            const dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+            setJpPsa10Override(jp.i, gbp, dateStr);
+            renderCounterpartFlag(selectedCard);
+          });
+        }
+      }
+
       scenariosEl.style.display = 'flex';
     } else {
       scenariosEl.style.display = 'none';
@@ -10341,6 +10431,12 @@ function getPsa10Anchor(card) {
   const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(card.i) : null;
   if (cached && cached.pcPsa10 > 0) return { usd: cached.pcPsa10, source: 'live' };
   // Estimate from raw × rarity multiplier
+  // User-entered JP PSA 10 override (from EN↔JP scenario panel)
+  const jpManual = (typeof getJpPsa10Override === 'function') ? getJpPsa10Override(card.i) : null;
+  if (jpManual && jpManual.gbp > 0) {
+    const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+    return { usd: jpManual.gbp / fx, source: 'manual-override', date: jpManual.date };
+  }
   const raw = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : (card.p || 0);
   if (raw > 0) {
     const mult = PSA10_FROM_RAW[card.rc] || PSA10_FROM_RAW[''];
@@ -12127,6 +12223,7 @@ const SYNC_KEYS = [
   'pkm-acquisitions-v1',            // How each card was obtained (pack / single + cost)
   'pkm-hold-overrides',             // Per-card grade-specific market price overrides
   'pkm-tcg-overrides-v1',          // TCGPlayer URL overrides (auto-enriched or manual)
+  'pkm-jp-psa10-overrides-v1',     // Manually entered JP PSA 10 prices for EN↔JP comparison
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';

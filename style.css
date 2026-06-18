@@ -1760,11 +1760,10 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   border-top: 1px solid var(--border);
 }
 .cp-scenario {
-  display: grid;
-  grid-template-columns: 100px 1fr;
-  gap: 8px;
-  align-items: baseline;
-  padding: 5px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 0;
   border-bottom: 1px solid var(--border-light, var(--border));
 }
 .cp-scenario:last-child { border-bottom: none; }
@@ -1774,7 +1773,6 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-faint);
-  padding-top: 1px;
   line-height: 1.4;
 }
 .cp-scenario-text {
@@ -1783,6 +1781,57 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   line-height: 1.45;
 }
 .cp-scenario-text strong { color: var(--text); font-weight: 600; }
+
+/* Scenario head: label left, winner chip right */
+.cp-scenario-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+/* Winner chips */
+.cp-sw {
+  display: inline-flex; align-items: center;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+  padding: 2px 7px; border-radius: 4px; white-space: nowrap;
+  text-transform: uppercase; flex-shrink: 0;
+}
+.cp-sw-en  { background: rgba(59,130,246,0.14); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
+.cp-sw-jp  { background: rgba(244,63,94,0.14);  color: #fda4af; border: 1px solid rgba(244,63,94,0.3); }
+.cp-sw-tie { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(232,182,52,0.3); }
+[data-theme="light"] .cp-sw-en  { color: #1d4ed8; background: rgba(37,99,235,0.09); border-color: rgba(37,99,235,0.25); }
+[data-theme="light"] .cp-sw-jp  { color: #be123c; background: rgba(190,18,60,0.07); border-color: rgba(190,18,60,0.22); }
+[data-theme="light"] .cp-sw-tie { color: #92400e; background: rgba(232,182,52,0.10); border-color: rgba(232,182,52,0.30); }
+/* ROI colour spans inside scenario text */
+.cp-sr { font-family: var(--mono); font-weight: 700; font-size: 11px; }
+.cp-sr.pos { color: var(--green); }
+.cp-sr.neg { color: var(--red); }
+
+/* JP PSA 10 manual input row */
+.cp-jp10-row {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 8px 0 4px; margin-top: 2px;
+  border-top: 1px dashed var(--border);
+}
+.cp-jp10-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-faint); white-space: nowrap;
+}
+.cp-jp10-input {
+  flex: 1; min-width: 90px; max-width: 130px;
+  font-size: 12px; font-family: var(--mono);
+  background: var(--bg-raised); border: 1px solid var(--border);
+  color: var(--text); border-radius: 6px; padding: 5px 8px;
+}
+.cp-jp10-save {
+  padding: 5px 12px;
+  background: var(--accent-dim); border: 1px solid rgba(232,182,52,0.35);
+  color: var(--accent); border-radius: 6px;
+  font-family: var(--font); font-size: 11px; font-weight: 700;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.cp-jp10-save:hover { background: rgba(232,182,52,0.18); }
+.cp-jp10-saved {
+  font-size: 10px; color: var(--text-faint); font-style: italic;
+  width: 100%;
+}
 
 .cp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .cp-btn {
