@@ -1104,6 +1104,7 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .fc-tt-lbl { font-size: 11px; color: var(--text-muted); flex: 1; }
 .fc-tt-val { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); }
 .fc-info { font-size: 11px; color: var(--text-faint); margin-bottom: 12px; text-align: center; }
+.fc-reason { font-size: 11px; color: var(--text-muted); font-style: italic; line-height: 1.45; margin-top: 4px; }
 .fc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .fc-table th { text-align: center; color: var(--text-faint); font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .fc-table th:first-child { text-align: left; }
