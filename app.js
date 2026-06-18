@@ -12411,6 +12411,83 @@ function setupHomeViewAll() {
   });
 }
 
+function setupHomeScrollControls() {
+  document.querySelectorAll('.home-section-wrap').forEach(wrap => {
+    const row = wrap.querySelector('.home-scroll-row');
+    if (!row) return;
+    const hd = wrap.querySelector('.home-section-hd');
+
+    if (hd && !hd.querySelector('.home-scroll-arrows')) {
+      const arrows = document.createElement('div');
+      arrows.className = 'home-scroll-arrows';
+      arrows.innerHTML =
+        '<button class="home-scroll-btn prev" aria-label="Scroll left">‹</button>' +
+        '<button class="home-scroll-btn next" aria-label="Scroll right">›</button>';
+      const viewAll = hd.querySelector('.home-view-all');
+      if (viewAll) hd.insertBefore(arrows, viewAll);
+      else hd.appendChild(arrows);
+    }
+
+    if (!wrap.querySelector('.home-scroll-bar')) {
+      const bar = document.createElement('div');
+      bar.className = 'home-scroll-bar';
+      bar.setAttribute('aria-hidden', 'true');
+      bar.innerHTML = '<div class="home-scroll-thumb"></div>';
+      row.insertAdjacentElement('afterend', bar);
+    }
+
+    const prev  = hd?.querySelector('.home-scroll-btn.prev');
+    const next  = hd?.querySelector('.home-scroll-btn.next');
+    const bar   = wrap.querySelector('.home-scroll-bar');
+    const thumb = wrap.querySelector('.home-scroll-thumb');
+
+    function update() {
+      const { scrollLeft: sl, scrollWidth: sw, clientWidth: cw } = row;
+      if (prev) prev.disabled = sl <= 2;
+      if (next) next.disabled = sl >= sw - cw - 2;
+      if (!thumb || !bar) return;
+      const ratio = cw / sw;
+      bar.style.opacity = ratio >= 1 ? '0' : '1';
+      bar.style.pointerEvents = ratio >= 1 ? 'none' : 'auto';
+      const barW = bar.offsetWidth;
+      const thumbW = Math.max(36, ratio * barW);
+      const thumbX = sw > cw ? (sl / (sw - cw)) * (barW - thumbW) : 0;
+      thumb.style.width = thumbW + 'px';
+      thumb.style.transform = 'translateX(' + thumbX + 'px)';
+    }
+
+    const step = () => Math.round(row.clientWidth * 0.75);
+    if (prev) prev.addEventListener('click', () => row.scrollBy({ left: -step(), behavior: 'smooth' }));
+    if (next) next.addEventListener('click', () => row.scrollBy({ left:  step(), behavior: 'smooth' }));
+
+    row.addEventListener('scroll', update, { passive: true });
+
+    if (thumb && bar) {
+      let dragging = false, startX = 0, startScroll = 0;
+      thumb.addEventListener('pointerdown', e => {
+        dragging = true;
+        startX = e.clientX;
+        startScroll = row.scrollLeft;
+        thumb.classList.add('dragging');
+        thumb.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      });
+      thumb.addEventListener('pointermove', e => {
+        if (!dragging) return;
+        const { scrollWidth: sw, clientWidth: cw } = row;
+        const scale = (sw - cw) / Math.max(1, bar.offsetWidth - thumb.offsetWidth);
+        row.scrollLeft = startScroll + (e.clientX - startX) * scale;
+      });
+      const endDrag = () => { dragging = false; thumb.classList.remove('dragging'); };
+      thumb.addEventListener('pointerup', endDrag);
+      thumb.addEventListener('pointercancel', endDrag);
+    }
+
+    update();
+    new MutationObserver(update).observe(row, { childList: true });
+  });
+}
+
 function renderHomeDashboard() {
   _renderHomeCollection();
   _renderHomeWishlist();
@@ -12699,6 +12776,7 @@ function setupPageNav() {
   document.getElementById('homeOpenWishlist')?.addEventListener('click', () => openHomeViewAll('Wishlist', _buildWishlistItems()));
   document.getElementById('homeOpenWatchlist')?.addEventListener('click', () => openHomeViewAll('Watchlist', _buildWatchlistItems()));
   setupHomeViewAll();
+  setupHomeScrollControls();
   document.getElementById('homeRecoRefresh')?.addEventListener('click', () => _renderHomeReco(true));
   document.getElementById('homeRefreshAll')?.addEventListener('click', () => {
     const btn = document.getElementById('homeRefreshAll');

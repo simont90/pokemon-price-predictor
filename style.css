@@ -6846,17 +6846,78 @@ section.card .card-collapse-btn { padding: 10px; }
 .home-scroll-row {
   display: flex;
   gap: 12px;
-  padding: 4px 20px 16px;
+  padding: 4px 20px 10px;
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: hidden;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  /* Fade right edge to signal more content */
-  -webkit-mask-image: linear-gradient(to right, black 80%, transparent 100%);
-  mask-image: linear-gradient(to right, black 80%, transparent 100%);
 }
 .home-scroll-row::-webkit-scrollbar { display: none; }
+
+/* ─── Home scroll controls — arrows + glass thumb ────────── */
+.home-scroll-arrows {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.home-scroll-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 1px;
+  transition: background 0.15s, opacity 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.home-scroll-btn:hover:not(:disabled) { background: var(--glass-bg); }
+.home-scroll-btn:disabled { opacity: 0.2; cursor: default; }
+
+.home-scroll-bar {
+  height: 4px;
+  margin: 0 20px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.07);
+  position: relative;
+  overflow: hidden;
+  transition: opacity 0.3s;
+}
+.home-scroll-thumb {
+  position: absolute;
+  top: 0; left: 0;
+  height: 100%;
+  min-width: 36px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.24);
+  cursor: grab;
+  touch-action: none;
+  transition: background 0.15s;
+  will-change: transform;
+}
+.home-scroll-thumb:hover { background: rgba(255,255,255,0.42); }
+.home-scroll-thumb.dragging { cursor: grabbing; background: rgba(232,182,52,0.7); }
+
+[data-theme="light"] .home-scroll-btn {
+  background: rgba(255,255,255,0.52);
+  border-color: rgba(0,0,0,0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #1c1c1e;
+}
+[data-theme="light"] .home-scroll-bar { background: rgba(0,0,0,0.08); }
+[data-theme="light"] .home-scroll-thumb { background: rgba(0,0,0,0.20); }
+[data-theme="light"] .home-scroll-thumb:hover { background: rgba(0,0,0,0.32); }
+[data-theme="light"] .home-scroll-thumb.dragging { background: rgba(232,182,52,0.75); }
 .home-card-tile {
   flex-shrink: 0;
   width: 150px;
