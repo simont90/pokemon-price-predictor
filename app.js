@@ -8984,7 +8984,7 @@ function ltpCapitalPenalty(outlayGBP) {
 }
 
 // Read the user's max-spend-per-card budget (device-local pref, not synced).
-const BUDGET_KEY = 'budget-max-gbp';
+const BUDGET_KEY = 'pkm-budget-max-gbp';
 const BUDGET_DEFAULT = 99999; // true no-limit sentinel
 function getMaxBudgetGBP() {
   const v = parseFloat(localStorage.getItem(BUDGET_KEY));
@@ -12308,6 +12308,19 @@ function setupPageNav() {
       if (rebuild) _renderHomeReco(true);
     }
 
+    // Expose for post-sync UI refresh (reads from localStorage, updates slider+input only)
+    window._applyBudgetUI = () => {
+      const gbp = getMaxBudgetGBP();
+      applyBudget(gbp, true);
+    };
+
+    // One-time migration from old unprefixed key
+    const oldRaw = localStorage.getItem('budget-max-gbp');
+    if (oldRaw !== null && localStorage.getItem(BUDGET_KEY) === null) {
+      localStorage.setItem(BUDGET_KEY, oldRaw);
+      localStorage.removeItem('budget-max-gbp');
+    }
+
     const saved = parseFloat(localStorage.getItem(BUDGET_KEY));
     applyBudget(isFinite(saved) && saved > 0 ? saved : BUDGET_DEFAULT, false);
 
@@ -13091,6 +13104,7 @@ const SYNC_KEYS = [
   'pkm-tcg-overrides-v1',          // TCGPlayer URL overrides (auto-enriched or manual)
   'pkm-jp-psa10-overrides-v1',     // Manually entered JP PSA 10 prices for EN↔JP comparison
   'pkm-reco-dismissed-v1',         // Cards dismissed from Recommendations
+  'pkm-budget-max-gbp',           // Max per card budget slider
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
@@ -13201,6 +13215,7 @@ function syncApplyPayload(payload, mode) {
   try { typeof renderWatchlist    === 'function' && renderWatchlist();    } catch {}
   try { typeof renderAlerts       === 'function' && renderAlerts();       } catch {}
   try { typeof renderHomeDashboard === 'function' && renderHomeDashboard(); } catch {}
+  try { typeof window._applyBudgetUI === 'function' && window._applyBudgetUI(); } catch {}
   return { applied: applied.length, keys: applied };
 }
 
