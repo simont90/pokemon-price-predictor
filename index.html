@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619g">
+  <link rel="stylesheet" href="style.css?v=20260619h">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -351,6 +351,7 @@
       <div class="alerts-tab-row">
         <button class="alerts-tab is-active" data-tab="active" id="alertsTabActive">Active alerts</button>
         <button class="alerts-tab" data-tab="watching" id="alertsTabWatching">All watched</button>
+        <button class="alerts-tab" data-tab="deals" id="alertsTabDeals">eBay deals<span class="alerts-tab-count" id="dealHistoryCount" style="display:none"></span></button>
       </div>
       <div class="portfolio-list" id="alertsList">
         <div class="portfolio-empty">Nothing on your watchlist yet. Open a card and tap “Watch this card” to start tracking it. You’ll see a notification here the moment the model flips it to BUY or STRONG BUY.</div>
@@ -1875,13 +1876,14 @@
     </div>
     <div class="deal-toast-body" id="dealToastBody"></div>
     <div class="deal-toast-foot">
-      <button class="deal-toast-btn" id="dealToastView" type="button">View on eBay</button>
+      <button class="deal-toast-btn" id="dealToastOpen" type="button">Open card</button>
+      <button class="deal-toast-btn deal-toast-btn-secondary" id="dealToastView" type="button">View on eBay</button>
       <button class="deal-toast-dismiss" id="dealToastDismiss" type="button">Dismiss</button>
     </div>
   </div>
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619g"></script>
+  <script src="app.js?v=20260619h"></script>
 </body>
 </html>

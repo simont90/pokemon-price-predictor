@@ -6539,6 +6539,54 @@ section.card .card-collapse-btn { padding: 10px; }
   transition: color 0.15s;
 }
 .deal-toast-dismiss:hover { color: var(--text); }
+.deal-toast-btn-secondary {
+  background: var(--bg-raised); color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.deal-toast-btn-secondary:hover { background: var(--border); color: var(--text); }
+
+/* ====  Alerts tab count badge  ==== */
+.alerts-tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  margin-left: 5px; font-size: 9px; font-weight: 700;
+  background: var(--accent); color: #1a1200;
+  border-radius: var(--radius-pill);
+}
+
+/* ====  Deal history list  ==== */
+.deal-history-item {
+  display: grid; grid-template-columns: 48px 1fr auto;
+  gap: 10px; padding: 10px; align-items: center;
+  background: var(--bg-raised); border-radius: var(--radius-sm);
+  border: 1px solid var(--border); transition: border-color 0.15s;
+  margin-bottom: 6px;
+}
+.deal-history-item:hover { border-color: var(--border-light); }
+.deal-history-info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.deal-history-name {
+  font-weight: 600; font-size: 13px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.deal-history-price { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.deal-history-gbp { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--accent); }
+.deal-history-saving { font-size: 10px; color: var(--green); font-weight: 600; }
+.deal-history-fair { font-size: 10px; color: var(--text-faint); }
+.deal-history-time { font-size: 10px; color: var(--text-faint); }
+.deal-history-actions { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
+.deal-open-card-btn {
+  padding: 5px 10px; font-size: 11px; font-weight: 600;
+  background: var(--accent); color: #1a1200; border: none;
+  border-radius: 6px; cursor: pointer; white-space: nowrap;
+  transition: background 0.15s;
+}
+.deal-open-card-btn:hover { background: var(--accent-hover, #f0c040); }
+.deal-ebay-link {
+  font-size: 10px; color: var(--text-faint); text-decoration: none;
+  padding: 3px 7px; border: 1px solid var(--border); border-radius: 5px;
+  transition: color 0.15s, border-color 0.15s; white-space: nowrap;
+}
+.deal-ebay-link:hover { color: var(--text); border-color: var(--border-light); }
 
 /* ====  Portfolio ROI chart  ==== */
 .portfolio-roi-section {

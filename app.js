@@ -6337,14 +6337,29 @@ function renderPsaGradeRange(card, pullCost, desirability) {
 
 const WATCHLIST_KEY = 'pkm-watchlist-v1';
 const WATCHLIST_ALERT_DISMISS_KEY = 'pkm-watchlist-dismissed-v1';
-const SEEN_DEALS_KEY = 'pkm-seen-deal-ids'; // device-local, NOT synced
+const SEEN_DEALS_KEY    = 'pkm-seen-deal-ids';    // device-local, NOT synced
+const DEAL_HISTORY_KEY  = 'pkm-deal-history-v1';  // device-local, NOT synced
 
 // ---- eBay deal polling + toast ----
 let _seenDealIds = new Set();
 try { _seenDealIds = new Set(JSON.parse(localStorage.getItem(SEEN_DEALS_KEY) || '[]')); } catch {}
 
-let _dealToastUrl = null;
+let _dealHistory = [];
+try { _dealHistory = JSON.parse(localStorage.getItem(DEAL_HISTORY_KEY) || '[]'); } catch {}
+
+let _dealToastUrl  = null;
+let _dealToastCard = null; // card object for the currently visible toast
 let _toastHideTimer = null;
+
+function _timeAgo(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 function hideDealToast() {
   const el = document.getElementById('dealToast');
@@ -6353,8 +6368,9 @@ function hideDealToast() {
 }
 
 function showDealToast(card, deal, fairValueGBP) {
-  _dealToastUrl = deal.url || null;
-  const el = document.getElementById('dealToast');
+  _dealToastUrl  = deal.url || null;
+  _dealToastCard = card;
+  const el   = document.getElementById('dealToast');
   const body = document.getElementById('dealToastBody');
   if (!el || !body) return;
 
@@ -6364,6 +6380,80 @@ function showDealToast(card, deal, fairValueGBP) {
   el.style.display = 'block';
   clearTimeout(_toastHideTimer);
   _toastHideTimer = setTimeout(hideDealToast, 14000);
+
+  // Persist to deal history
+  const entry = {
+    id: deal.url || deal.title || `${card.i}-${Date.now()}`,
+    cardId: card.i,
+    cardName: card.n,
+    cardImg: (typeof getCardImg === 'function') ? getCardImg(card) : '',
+    signal: deal.signal || '',
+    priceGBP: deal.priceGBP || 0,
+    fairValueGBP: fairValueGBP || 0,
+    spreadPct: deal.spreadPct || 0,
+    url: deal.url || '',
+    ts: Date.now()
+  };
+  _dealHistory.unshift(entry);
+  if (_dealHistory.length > 50) _dealHistory = _dealHistory.slice(0, 50);
+  localStorage.setItem(DEAL_HISTORY_KEY, JSON.stringify(_dealHistory));
+  _updateDealHistoryBadge();
+}
+
+function _updateDealHistoryBadge() {
+  const badge = document.getElementById('dealHistoryCount');
+  if (!badge) return;
+  if (_dealHistory.length > 0) {
+    badge.textContent = _dealHistory.length > 9 ? '9+' : String(_dealHistory.length);
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderDealHistory() {
+  const list = $('alertsList');
+  if (!list) return;
+  if (_dealHistory.length === 0) {
+    list.innerHTML = `<div class="portfolio-empty">No deal alerts yet. Deals appear here when a watched card shows strong eBay value — you'll get a notification automatically.</div>`;
+    return;
+  }
+  const now = Date.now();
+  list.innerHTML = _dealHistory.map((entry, idx) => {
+    const age = _timeAgo(now - entry.ts);
+    const sigClass = (entry.signal || '').includes('STRONG') ? 'sig-strong' : 'sig-buy';
+    const savingStr = entry.spreadPct > 0 ? `${entry.spreadPct.toFixed(0)}% below fair` : '';
+    const priceStr = entry.priceGBP ? `£${entry.priceGBP.toFixed(2)}` : '';
+    const fairStr  = entry.fairValueGBP ? `£${entry.fairValueGBP.toFixed(2)}` : '';
+    return `
+      <div class="deal-history-item">
+        ${entry.cardImg ? `<img class="alert-item-img" src="${esc(entry.cardImg)}" alt="" onerror="this.style.display='none'">` : '<div class="alert-item-img"></div>'}
+        <div class="deal-history-info">
+          <div class="deal-history-name">${esc(entry.cardName)}</div>
+          <div class="deal-history-price">
+            <span class="alert-item-signal ${sigClass}">${esc(entry.signal)}</span>
+            ${priceStr ? `<span class="deal-history-gbp">${priceStr}</span>` : ''}
+            ${savingStr ? `<span class="deal-history-saving">${savingStr}</span>` : ''}
+            ${fairStr ? `<span class="deal-history-fair">fair ${fairStr}</span>` : ''}
+          </div>
+          <div class="deal-history-time">${age}</div>
+        </div>
+        <div class="deal-history-actions">
+          <button class="deal-open-card-btn" data-idx="${idx}" type="button">Open card</button>
+          ${entry.url ? `<a class="deal-ebay-link" href="${esc(entry.url)}" target="_blank" rel="noopener noreferrer">eBay ↗</a>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  list.querySelectorAll('.deal-open-card-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const entry = _dealHistory[parseInt(btn.dataset.idx, 10)];
+      if (!entry) return;
+      $('alertsPanel').style.display = 'none';
+      selectCard(entry.cardId);
+      document.querySelector('.page-nav-btn[data-page="predict"]')?.click();
+    });
+  });
 }
 
 async function pollWatchlistDeals() {
@@ -6543,6 +6633,7 @@ function setupWatchlist() {
   $('alertsClose')?.addEventListener('click', () => { $('alertsPanel').style.display = 'none'; });
   $('alertsTabActive')?.addEventListener('click', () => switchAlertsTab('active'));
   $('alertsTabWatching')?.addEventListener('click', () => switchAlertsTab('watching'));
+  $('alertsTabDeals')?.addEventListener('click', () => switchAlertsTab('deals'));
   // Recompute the badge count every time the panel re-opens, and once at boot
   // so users see notifications immediately if a card has moved while they
   // were away.
@@ -6554,6 +6645,8 @@ function switchAlertsTab(tab) {
   _alertsTab = tab;
   $('alertsTabActive')?.classList.toggle('is-active', tab === 'active');
   $('alertsTabWatching')?.classList.toggle('is-active', tab === 'watching');
+  $('alertsTabDeals')?.classList.toggle('is-active', tab === 'deals');
+  if (tab === 'deals') { renderDealHistory(); return; }
   renderAlertsList();
 }
 
@@ -10157,6 +10250,15 @@ function setupPriceInsight() {
     if (_dealToastUrl) window.open(_dealToastUrl, '_blank', 'noopener');
     hideDealToast();
   });
+  document.getElementById('dealToastOpen')?.addEventListener('click', () => {
+    if (!_dealToastCard) return;
+    hideDealToast();
+    selectCard(_dealToastCard.i);
+    document.querySelector('.page-nav-btn[data-page="predict"]')?.click();
+  });
+
+  // Show deal history badge if there's existing history from previous sessions
+  _updateDealHistoryBadge();
 
   // Start background eBay deal polling
   startDealPolling();
