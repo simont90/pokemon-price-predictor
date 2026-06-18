@@ -1282,23 +1282,28 @@ function doSearch(query) {
   query = query.trim().toLowerCase();
   if (query.length < 2) { results.classList.remove('open'); return; }
 
-  let matches = searchIndex.filter(c => c._search.includes(query));
-
+  // num/total pattern (e.g. "764/742" or "#764/742") — _search doesn't contain
+  // the slash form, so filter by card number directly and sort by exact cn+ct match.
   const numSlashMatch = query.match(/^#?(\d+)\/(\d+)$/);
+  let matches;
   if (numSlashMatch) {
     const [, num, total] = numSlashMatch;
+    matches = searchIndex.filter(c => String(c.cn) === num || c._search.includes(num));
     matches.sort((a, b) => {
       const aExact = (String(a.cn) === num && String(a.ct) === total) ? 2 : String(a.cn) === num ? 1 : 0;
       const bExact = (String(b.cn) === num && String(b.ct) === total) ? 2 : String(b.cn) === num ? 1 : 0;
       return bExact - aExact;
     });
-  } else if (/^\d+$/.test(query) || /^#\d+/.test(query)) {
-    const num = query.replace('#', '');
-    matches.sort((a, b) => {
-      const aExact = String(a.cn) === num ? 1 : 0;
-      const bExact = String(b.cn) === num ? 1 : 0;
-      return bExact - aExact;
-    });
+  } else {
+    matches = searchIndex.filter(c => c._search.includes(query));
+    if (/^\d+$/.test(query) || /^#\d+/.test(query)) {
+      const num = query.replace('#', '');
+      matches.sort((a, b) => {
+        const aExact = String(a.cn) === num ? 1 : 0;
+        const bExact = String(b.cn) === num ? 1 : 0;
+        return bExact - aExact;
+      });
+    }
   }
 
   matches.sort((a, b) => {
