@@ -843,12 +843,87 @@ function buildCounterpartRecommendation(card) {
     reason = `The ${cheaperLang === 'JP' ? 'Japanese' : 'English'} version is ${savingsPct.toFixed(0)}% cheaper (£${cheaperGBPv.toFixed(2)} vs £${pricierGBPv.toFixed(2)}).${cheaperLang === 'JP' ? ' For raw collecting or sealing in a binder, JP is the value play.' : ' Rare case where the English printing undercuts the Japanese — worth a closer look.'}${cheaperLang === 'JP' && !psaSame ? ceilingNote : ''}`;
   }
 
+  // ── Three buyer-scenario advisories ─────────────────────────────────────
+  const selfIsEN = card.lang !== 'JP';
+  const enCardRef = selfIsEN ? card : other;
+  const jpCardRef = selfIsEN ? other : card;
+  const enRawGBP  = selfIsEN ? selfGBP  : otherGBP;
+  const jpRawGBP  = selfIsEN ? otherGBP : selfGBP;
+  const enPSA10GBP = (enCardRef.p10 > 0) ? usdToGbp(enCardRef.p10) : 0;
+  const jpPSA10GBP = (jpCardRef.p10 > 0) ? usdToGbp(jpCardRef.p10) : 0;
+  const GRAD_COST = 40;   // UK all-in PSA cost (GBP)
+  const DEF_GEM   = 0.18; // conservative default gem rate
+  const JP_GEM_FACTOR = 0.65; // JP modern typically 65% of EN gem rate (centering/surface)
+  const enGemRate = (enCardRef.g > 0) ? enCardRef.g : DEF_GEM;
+  const jpGemRate = (jpCardRef.g > 0) ? jpCardRef.g : (DEF_GEM * JP_GEM_FACTOR);
+  const cheaperPriceTxt = `£${usdToGbp(cheaperUSD).toFixed(2)}`;
+  const pricierPriceTxt = `£${usdToGbp(pricierUSD).toFixed(2)}`;
+
+  // Scenario 1 — Buy raw, keep raw: purely price-driven
+  let s1;
+  if (savingsPct < 8) {
+    s1 = `Prices within ${savingsPct.toFixed(0)}% — pick the art you prefer.`;
+  } else {
+    s1 = `<strong>${cheaperLang}</strong> is ${savingsPct.toFixed(0)}% cheaper (${cheaperLang === 'JP' ? `JP ${cheaperPriceTxt}` : `EN ${cheaperPriceTxt}`} vs ${cheaperLang === 'JP' ? `EN ${pricierPriceTxt}` : `JP ${pricierPriceTxt}`}). For binder or display, ${cheaperLang} saves £${savingsGBP.toFixed(2)}.`;
+  }
+
+  // Scenario 2 — Buy raw to grade: EV = PSA10_price × gem_rate − raw − £40
+  let s2;
+  if (enPSA10GBP > 0 && jpPSA10GBP > 0 && enRawGBP > 0 && jpRawGBP > 0) {
+    const enEV = enPSA10GBP * enGemRate - enRawGBP - GRAD_COST;
+    const jpEV = jpPSA10GBP * jpGemRate - jpRawGBP - GRAD_COST;
+    const fmt  = v => `${v >= 0 ? '+' : ''}£${Math.abs(v).toFixed(0)}`;
+    if (Math.abs(enEV - jpEV) < 5) {
+      s2 = `Similar grade EV: EN ${fmt(enEV)} (${(enGemRate*100).toFixed(0)}% gem) · JP ${fmt(jpEV)} (${(jpGemRate*100).toFixed(0)}% gem). Lean <strong>EN</strong> — deeper PSA 10 resale market.`;
+    } else if (enEV > jpEV) {
+      s2 = `<strong>EN</strong> is the better grade target — EV ${fmt(enEV)} (PSA 10 £${enPSA10GBP.toFixed(0)}, ${(enGemRate*100).toFixed(0)}% gem) vs JP ${fmt(jpEV)} (${(jpGemRate*100).toFixed(0)}% gem). EN PSA 10 market is also more liquid.`;
+    } else {
+      s2 = `<strong>JP</strong> has the stronger grading upside — EV ${fmt(jpEV)} (PSA 10 £${jpPSA10GBP.toFixed(0)}, ${(jpGemRate*100).toFixed(0)}% gem) vs EN ${fmt(enEV)}. JP PSA 10 market is thinner — allow longer to sell.`;
+    }
+  } else if (enPSA10GBP > 0 && enRawGBP > 0) {
+    const enEV = enPSA10GBP * enGemRate - enRawGBP - GRAD_COST;
+    s2 = `<strong>EN</strong>: PSA 10 £${enPSA10GBP.toFixed(0)}, ~${(enGemRate*100).toFixed(0)}% gem rate, grade EV ${enEV >= 0 ? '+' : ''}£${Math.abs(enEV).toFixed(0)} after £${GRAD_COST} cost. No JP PSA 10 data to compare.`;
+  } else if (jpPSA10GBP > 0 && jpRawGBP > 0) {
+    const jpEV = jpPSA10GBP * jpGemRate - jpRawGBP - GRAD_COST;
+    s2 = `<strong>JP</strong> data: PSA 10 £${jpPSA10GBP.toFixed(0)}, ~${(jpGemRate*100).toFixed(0)}% gem rate, EV ${jpEV >= 0 ? '+' : ''}£${Math.abs(jpEV).toFixed(0)}. Lean <strong>EN</strong> unless you have a pristine JP copy in hand — typically better centering.`;
+  } else {
+    s2 = `EN cards generally achieve higher PSA 10 rates on modern sets — better centering and surface consistency. Buy EN raw to grade unless you have already inspected a pristine JP copy.`;
+  }
+
+  // Scenario 3 — Buy already slabbed (PSA 10)
+  let s3;
+  if (enPSA10GBP > 0 && jpPSA10GBP > 0) {
+    const slabDiff = Math.abs(enPSA10GBP - jpPSA10GBP);
+    const slabPct  = slabDiff / Math.max(enPSA10GBP, jpPSA10GBP) * 100;
+    const cheapSlab = enPSA10GBP <= jpPSA10GBP ? 'EN' : 'JP';
+    if (slabPct < 8) {
+      s3 = `PSA 10 prices close (EN £${enPSA10GBP.toFixed(0)} · JP £${jpPSA10GBP.toFixed(0)}). Lean <strong>EN</strong> — larger resale pool and faster exit.`;
+    } else if (cheapSlab === 'EN') {
+      s3 = `<strong>EN PSA 10</strong> at £${enPSA10GBP.toFixed(0)} vs JP £${jpPSA10GBP.toFixed(0)} — EN is cheaper and has deeper liquidity. Strong EN slab pick.`;
+    } else {
+      s3 = `<strong>JP PSA 10</strong> at £${jpPSA10GBP.toFixed(0)} saves £${slabDiff.toFixed(0)} vs EN £${enPSA10GBP.toFixed(0)} (${slabPct.toFixed(0)}% cheaper). Fine to hold long-term; JP slabs take longer to sell than EN if you exit.`;
+    }
+  } else if (enPSA10GBP > 0) {
+    s3 = `<strong>EN PSA 10</strong> at £${enPSA10GBP.toFixed(0)}. No JP PSA 10 price tracked — EN slab is the default for liquidity.`;
+  } else if (jpPSA10GBP > 0) {
+    s3 = `<strong>JP PSA 10</strong> at £${jpPSA10GBP.toFixed(0)}. No EN PSA 10 data — check eBay sold listings for EN slab prices before committing.`;
+  } else {
+    s3 = `No PSA 10 data for either version. EN PSA 10 is generally more liquid. Check eBay sold listings to compare slab prices.`;
+  }
+
+  const scenarios = [
+    { key: 'raw-keep',    label: 'Raw, keep raw', text: s1 },
+    { key: 'raw-grade',   label: 'Raw to grade',  text: s2 },
+    { key: 'buy-slabbed', label: 'Buy slabbed',   text: s3 },
+  ];
+
   return {
     other, otherLang: cp.counterpartLang,
     selfUSD, otherUSD, selfGBP, otherGBP,
     cheaper, cheaperLang, pricier, savingsPct, savingsGBP,
     verdict, reason,
     totalCounterparts: cp.counterparts.length,
+    scenarios,
   };
 }
 function cheaperGBP(a, b, cheaper) { return usdToGbp(cheaper === a ? getCurrentPrice(a) : getCurrentPrice(b)); }
@@ -939,6 +1014,22 @@ function renderCounterpartFlag(card) {
     reasonHtml = `<em style="color:var(--accent)">Note:</em> the closest match in our database is a different rarity tier (${esc(selfTier)} ↔ ${esc(otherTier)}) — the artwork won't be identical. ${reasonHtml}`;
   }
   reason.innerHTML = reasonHtml;
+
+  // Buyer scenario advisories
+  const scenariosEl = document.getElementById('cpScenarios');
+  if (scenariosEl) {
+    if (rec.scenarios && rec.scenarios.length && rec.verdict !== 'link-only') {
+      scenariosEl.innerHTML = rec.scenarios.map(s =>
+        `<div class="cp-scenario">
+          <span class="cp-scenario-label">${s.label}</span>
+          <span class="cp-scenario-text">${s.text}</span>
+        </div>`
+      ).join('');
+      scenariosEl.style.display = 'flex';
+    } else {
+      scenariosEl.style.display = 'none';
+    }
+  }
 
   // Wire actions
   openBtn.textContent = `Open ${otherLang} version →`;
