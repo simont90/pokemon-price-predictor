@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619y">
+  <link rel="stylesheet" href="style.css?v=20260619z">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -772,6 +772,8 @@
               <div class="signal-badge-wrap" id="signalWrap" style="display:none">
                 <div class="signal-badge" id="signalBadge"></div>
                 <div class="signal-reason" id="signalReason"></div>
+                <div class="signal-hold-desc" id="signalHoldDesc" style="display:none"></div>
+                <button class="btn-jump-hold" id="signalJumpHold" style="display:none">Jump to Hold Strategy ↓</button>
               </div>
               <!-- EN ↔ JP Counterpart Flag -->
               <div class="counterpart-flag" id="counterpartFlag" style="display:none">
@@ -1910,6 +1912,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619y"></script>
+  <script src="app.js?v=20260619z"></script>
 </body>
 </html>

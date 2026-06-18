@@ -300,7 +300,8 @@ function setJpPsa10Override(cardId, gbp, dateStr) {
 let livePrice = null; // Current card's live pricing data
 let livePriceFetchId = 0;
 let lastModelPriceUSD = 0; // Last result from predictPrice — used by inline deal checks
-let _holdWinnerKey = null; // Winner key from last renderHoldStrategy run — drives owned-card badge
+let _holdWinnerKey = null;  // Winner key from last renderHoldStrategy run — drives owned-card badge
+let _holdWinnerDesc = '';   // One-line summary of the winner — shown in signal section
 
 // ---- Portfolio (persisted to localStorage) ----
 let portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
@@ -2181,7 +2182,8 @@ function selectCard(id) {
   const card = cardData.cards.find(c => c.i === id);
   if (!card) return;
   selectedCard = card;
-  _holdWinnerKey = null; // reset until renderHoldStrategy runs for this card
+  _holdWinnerKey = null;  // reset until renderHoldStrategy runs for this card
+  _holdWinnerDesc = '';
 
   // Refresh Price Sync stats so "Refresh selected card" button enables
   if (typeof psUpdateStats === 'function') psUpdateStats();
@@ -2521,6 +2523,19 @@ function updateSignal(card, pullCost, desirability) {
   $('signalBadge').textContent = signal;
   $('signalBadge').className = `signal-badge ${cls}`;
   $('signalReason').textContent = signalSentence(signal, reasons, owned);
+
+  const holdDescEl = $('signalHoldDesc');
+  const jumpBtnEl  = $('signalJumpHold');
+  if (holdDescEl && jumpBtnEl) {
+    if (_holdWinnerDesc) {
+      holdDescEl.textContent = _holdWinnerDesc;
+      holdDescEl.style.display = '';
+      jumpBtnEl.style.display  = '';
+    } else {
+      holdDescEl.style.display = 'none';
+      jumpBtnEl.style.display  = 'none';
+    }
+  }
 }
 
 // ---- Calculations ----
@@ -9290,6 +9305,19 @@ function renderHoldStrategy(card) {
   // 'none' = Hold Strategy ran but no strategy projects positive ROI.
   // null   = Hold Strategy hasn't run yet for this card.
   _holdWinnerKey = winner ? winner.key : 'none';
+  if (winner) {
+    const _wProfGBP = winner.profit * fx;
+    const _wROI = Math.round(winner.roi);
+    if (winner.key === 'raw') {
+      _holdWinnerDesc = `Hold raw · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
+    } else if (winner.key === 'gamble') {
+      _holdWinnerDesc = `Buy raw and grade · ${_wROI}% EV ROI · ${fmtGBPDirect(_wProfGBP)} profit`;
+    } else {
+      _holdWinnerDesc = `Buy ${winner.key.replace('psa', 'PSA ')} slab · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
+    }
+  } else {
+    _holdWinnerDesc = '';
+  }
 
   // Build the two-line recommendation: raw-vs-graded verdict + best graded tier.
   const recEl = $('holdRecommendation');
@@ -11725,6 +11753,35 @@ function renderHomeDashboard() {
   _renderHomeReco();
 }
 
+// Silently refresh stale tracked card prices in the background when the user
+// navigates home. Re-renders collection/wishlist/watchlist progressively as
+// each price arrives, then force-rebuilds recommendations at the end.
+async function _homeAutoRefresh() {
+  if (_psState.running || !cardData) return;
+  const cache = getPriceCache();
+  const now = Date.now();
+  const staleIds = psTrackedIds().filter(id => {
+    const e = cache[id];
+    return !e || (now - (e._ts || 0)) > PRICE_CACHE_TTL;
+  });
+  if (!staleIds.length) return;
+  _psState = { running: true, cancel: false, done: 0, total: staleIds.length };
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < staleIds.length && !_psState.cancel) {
+      const id = staleIds[cursor++];
+      await psRefreshOne(id);
+      _psState.done++;
+      try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PRICE_SYNC_CONCURRENCY, staleIds.length) }, worker));
+  psSetLastSync(Date.now());
+  _psState.running = false;
+  try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
+  try { _renderHomeReco(true); } catch {}
+}
+
 function _homeItemClick(id) {
   document.querySelector('.page-nav-btn[data-page="predict"]')?.click();
   setTimeout(() => selectCard(id), 80);
@@ -11904,7 +11961,7 @@ function setupPageNav() {
       window._urRanOnce = true;
       setTimeout(() => { try { urRunScan(); } catch (e) {} }, 100);
     }
-    if (page === 'home') renderHomeDashboard();
+    if (page === 'home') { renderHomeDashboard(); _homeAutoRefresh(); }
     try { if (location.hash.replace('#', '') !== page) history.replaceState(null, '', '#' + page); } catch (e) {}
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   }
@@ -11914,6 +11971,9 @@ function setupPageNav() {
   document.getElementById('homeOpenWishlist')?.addEventListener('click', () => { $('wishlistToggle')?.click(); });
   document.getElementById('homeOpenWatchlist')?.addEventListener('click', () => { $('alertsToggle')?.click(); });
   document.getElementById('homeRecoRefresh')?.addEventListener('click', () => _renderHomeReco(true));
+  document.getElementById('signalJumpHold')?.addEventListener('click', () => {
+    $('holdStrategySection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   buttons.forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
   window.addEventListener('hashchange', () => go((location.hash || '#home').replace('#', '')));
