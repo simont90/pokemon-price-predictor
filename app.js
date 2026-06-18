@@ -8814,6 +8814,27 @@ function computeHoldCore(card) {
     s.riskAdjusted = s.roi - (s.variance * 100 * 0.35) + upsideBonus;
   });
 
+  // Cheap-entry normalisation: when raw trades at < 18% of PSA10, the raw ROI%
+  // is amplified by a tiny denominator (e.g. 300% on a £5 card = only £15 profit).
+  // Blend in a normalised-return metric (absolute £ profit / PSA10 GBP value × 100)
+  // so grading strategies that deliver substantially more actual money can win.
+  // Guard: only activates when grade absolute profit > 2.5× raw AND > £25 floor.
+  const rawGBP_hc   = rawUSD * fx;
+  const psa10GBP_hc = psa10Price * fx;
+  const underwaterAtEntry = (rawUSD + gradingFeeUSD) > psa10Price;
+  if (rawGBP_hc > 0 && rawGBP_hc < psa10GBP_hc * 0.18) {
+    const rawProfGBP_hc  = Math.max(0, rawProfitUSD * fx);
+    const gradePlan_hc   = strategies.find(s => s.key === 'gamble');
+    const gradeAbsGBP_hc = gradePlan_hc ? Math.max(0, gradePlan_hc.profit * fx) : 0;
+    if (gradeAbsGBP_hc > rawProfGBP_hc * 2.5 && gradeAbsGBP_hc > 25) {
+      const blendW = Math.min(0.75, 0.50 + (gradeAbsGBP_hc - rawProfGBP_hc * 2.5) / 200);
+      strategies.forEach(s => {
+        const normRet = Math.max(0, s.profit * fx) / psa10GBP_hc * 100;
+        s.riskAdjusted = s.riskAdjusted * (1 - blendW) + normRet * blendW;
+      });
+    }
+  }
+
   const positives = strategies.filter(s => s.roi > 0);
   const winner = positives.length
     ? positives.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
@@ -8845,6 +8866,7 @@ function computeHoldCore(card) {
     overallScore: winner ? (winner.riskAdjusted - outlayPenalty) : -Infinity,
     anchorSource: anchor && anchor.source,
     gemRate,
+    underwaterAtEntry,
   };
 }
 
@@ -9199,6 +9221,28 @@ function renderHoldStrategy(card) {
     s.riskAdjusted = s.roi - (s.variance * 100 * 0.35) + upsideBonus;
   });
 
+  // Cheap-entry normalisation: mirrors the same logic in computeHoldCore.
+  // When raw trades at < 18% of PSA10, % ROI is dominated by a tiny denominator
+  // (300% on a £5 card = only £15 profit). Blend in normalised-return scoring
+  // so grading can win when it delivers far more actual money.
+  const rawMktGBP   = rawUSD * fx;
+  const psa10GBP_h  = psa10Price * fx;
+  const gradeCostGBP_h   = rawMktGBP + gradingFeeGBP;
+  const underwaterAtEntry = gradeCostGBP_h > psa10GBP_h;
+  const underwaterGBP     = Math.max(0, gradeCostGBP_h - psa10GBP_h);
+  if (rawMktGBP > 0 && rawMktGBP < psa10GBP_h * 0.18) {
+    const rawProfGBP_h  = Math.max(0, rawProfitUSD * fx);
+    const gradePlan_h   = strategies.find(s => s.key === 'gamble');
+    const gradeAbsGBP_h = gradePlan_h ? Math.max(0, gradePlan_h.profit * fx) : 0;
+    if (gradeAbsGBP_h > rawProfGBP_h * 2.5 && gradeAbsGBP_h > 25) {
+      const blendW_h = Math.min(0.75, 0.50 + (gradeAbsGBP_h - rawProfGBP_h * 2.5) / 200);
+      strategies.forEach(s => {
+        const normRet = Math.max(0, s.profit * fx) / psa10GBP_h * 100;
+        s.riskAdjusted = s.riskAdjusted * (1 - blendW_h) + normRet * blendW_h;
+      });
+    }
+  }
+
   // Pick winners. Two separate questions per the user's ask:
   //   1. Raw vs Graded — which broad approach wins? Compare best raw-side
   //      option (Raw, Raw+Grade) vs best already-graded option (PSA 7-10).
@@ -9242,6 +9286,13 @@ function renderHoldStrategy(card) {
         gambleCaveat = ` Heads-up: this means shipping to a UK third-party (Ludkins / GetGraded), waiting ~${gradingWaitDisplay} with your capital locked, and accepting a <strong>${(lossProb*100).toFixed(0)}% chance of a sub-PSA 9 outcome that loses money (avg −${fmtGBP(Math.abs(gbpFromUSD(lossEV)))})</strong>.`;
       } else {
         gambleCaveat = ` Heads-up: still a ~${gradingWaitDisplay} UK grading wait with capital locked — every PSA outcome turns a profit on this card, but you forfeit liquidity until the grades come back.`;
+      }
+      // Flag when grading is recommended despite PSA10 today trading below all-in cost.
+      // This is valid when the 5yr projection justifies the upfront gap, but the user
+      // should know the entry is currently underwater.
+      if (underwaterAtEntry) {
+        const psa10Proj5GBP = psa10Yr5 * (1 - BUY_SELL_FRICTION) * fx;
+        gambleCaveat += ` Note: PSA 10 today (${fmtGBPDirect(psa10GBP_h)}) is <strong>£${underwaterGBP.toFixed(0)} below your all-in cost</strong> of ${fmtGBPDirect(gradeCostGBP_h)} — grading is recommended on the 5yr projection (${fmtGBPDirect(psa10Proj5GBP)}), not current slab pricing.`;
       }
     }
     let rawVsGradedLine;
