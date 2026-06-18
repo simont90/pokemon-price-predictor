@@ -2205,6 +2205,15 @@ function computeSignal(card, pullCost, desirability) {
   return { signal, cls, reasons: reasons.slice(0, 3), score };
 }
 
+function signalSentence(signal, reasons, owned) {
+  if (owned && reasons.length) return reasons[0];
+  const r = reasons.join(', ').toLowerCase();
+  if (signal === 'STRONG BUY') return `Strong entry point right now — ${r}.`;
+  if (signal === 'BUY') return `Worth picking up — ${r}.`;
+  if (signal === 'SELL') return `Consider selling — ${r}.`;
+  return r ? `Hold for now — ${r}.` : 'Price looks fair at current levels.';
+}
+
 function updateSignal(card, pullCost, desirability) {
   const wrap = $('signalWrap');
   const result = computeSignal(card, pullCost, desirability);
@@ -2237,9 +2246,10 @@ function updateSignal(card, pullCost, desirability) {
   }
 
   wrap.style.display = 'flex';
+  wrap.classList.remove('is-expanded'); // reset tap-expanded state on card change
   $('signalBadge').textContent = signal;
   $('signalBadge').className = `signal-badge ${cls}`;
-  $('signalReason').textContent = reasons.join(' · ');
+  $('signalReason').textContent = signalSentence(signal, reasons, owned);
 }
 
 // ---- Calculations ----
@@ -3339,6 +3349,152 @@ function updatePortfolioButton() {
 
 function savePortfolio() {
   localStorage.setItem('pkm-portfolio', JSON.stringify(portfolio));
+}
+
+// ---- Collection ROI chart ----
+function renderRoiChart() {
+  const section = document.getElementById('portfolioRoiSection');
+  const summaryRow = document.getElementById('roiSummaryRow');
+  const canvas = document.getElementById('roiCanvas');
+  const legendEl = document.getElementById('roiLegend');
+  if (!section || !summaryRow || !canvas) return;
+
+  // Build per-card data
+  const rows = [];
+  for (const p of portfolio) {
+    const cost = getAcqCostBasisGBP(p.id);
+    if (!cost) continue;
+    const acq = getAcq(p.id);
+    const card = cardData?.cards.find(c => c.i === p.id);
+    if (!card) continue;
+
+    // Model value: derive pull cost from card rarity, use autoFill desirability
+    const pull = (function () {
+      try {
+        if (setsData && setsData[card.sc]) {
+          const set = setsData[card.sc];
+          const rarity = set.rarities?.[card.rc];
+          if (rarity && rarity.pullRate > 0) return (Math.round(1 / rarity.pullRate) * rarity.count) / 100;
+        }
+      } catch {}
+      return 7.65;
+    })();
+    const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pull).total : 50;
+    const { priceUSD } = predictPrice(pull, des);
+    const modelGBP = usdToGbp(priceUSD);
+    const roi = ((modelGBP - cost) / cost) * 100;
+
+    rows.push({
+      name: card.n,
+      source: acq?.source || 'single',
+      ts: acq?.ts || (p.addedDate ? new Date(p.addedDate).getTime() : 0),
+      cost,
+      modelGBP,
+      roi,
+    });
+  }
+
+  if (rows.length === 0) {
+    summaryRow.innerHTML = '<p class="roi-empty">No acquisition data yet — log how you obtained cards via the Acquisition section.</p>';
+    canvas.style.display = 'none';
+    if (legendEl) legendEl.innerHTML = '';
+    return;
+  }
+
+  rows.sort((a, b) => a.ts - b.ts);
+
+  const singles = rows.filter(r => r.source === 'single');
+  const packs   = rows.filter(r => r.source === 'pack');
+
+  function groupStats(arr) {
+    const invested = arr.reduce((s, r) => s + r.cost, 0);
+    const value    = arr.reduce((s, r) => s + r.modelGBP, 0);
+    const roi      = invested > 0 ? ((value - invested) / invested) * 100 : null;
+    return { count: arr.length, invested, value, roi };
+  }
+  const ss = groupStats(singles);
+  const ps = groupStats(packs);
+  const all = groupStats(rows);
+
+  function statCard(label, s, dotColor) {
+    const roiStr = s.roi !== null
+      ? `<span class="roi-stat-roi ${s.roi >= 0 ? 'pos' : 'neg'}">${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(1)}% ROI</span>`
+      : '';
+    return `<div class="roi-stat-card">
+      <div class="roi-stat-label">${dotColor ? `<span class="roi-legend-dot" style="background:${dotColor}"></span>` : ''}${label}</div>
+      <div class="roi-stat-value">${fmtGBP(s.value)}</div>
+      <div class="roi-stat-sub">from ${fmtGBP(s.invested)} · ${s.count} card${s.count !== 1 ? 's' : ''}</div>
+      ${roiStr}
+    </div>`;
+  }
+  summaryRow.innerHTML =
+    (singles.length ? statCard('Singles', ss, '#e8b634') : '') +
+    (packs.length   ? statCard('Pack rips', ps, '#34d399') : '') +
+    statCard('Total', all, '');
+
+  // Draw bar chart
+  canvas.style.display = 'block';
+  const DPR = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth || 500;
+  const H = 220;
+  canvas.width  = W * DPR;
+  canvas.height = H * DPR;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(DPR, DPR);
+
+  const PAD = { top: 24, right: 16, bottom: 32, left: 48 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  // Y-axis: ROI% range
+  const allRoi = rows.map(r => r.roi);
+  const minRoi = Math.min(0, ...allRoi);
+  const maxRoi = Math.max(0, ...allRoi);
+  const roiSpan = maxRoi - minRoi || 1;
+
+  function toY(roi) {
+    return PAD.top + chartH - ((roi - minRoi) / roiSpan) * chartH;
+  }
+  const zeroY = toY(0);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  for (let pct = Math.ceil(minRoi / 25) * 25; pct <= maxRoi + 1; pct += 25) {
+    const y = toY(pct);
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + chartW, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '9px JetBrains Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText((pct >= 0 ? '+' : '') + pct + '%', PAD.left - 4, y + 3);
+  }
+
+  // Zero line
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PAD.left, zeroY); ctx.lineTo(PAD.left + chartW, zeroY); ctx.stroke();
+
+  // Bars
+  const barW = Math.max(4, Math.min(28, (chartW / rows.length) - 3));
+  rows.forEach((r, i) => {
+    const x = PAD.left + (i / rows.length) * chartW + (chartW / rows.length - barW) / 2;
+    const barTop = toY(Math.max(0, r.roi));
+    const barBot = toY(Math.min(0, r.roi));
+    const barH = Math.max(2, Math.abs(barBot - barTop));
+    ctx.fillStyle = r.source === 'pack' ? 'rgba(52,211,153,0.8)' : 'rgba(232,182,52,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(x, barTop, barW, barH, 3);
+    ctx.fill();
+  });
+
+  // Legend
+  if (legendEl) {
+    const parts = [];
+    if (singles.length) parts.push(`<span><span class="roi-legend-dot" style="background:#e8b634"></span>Singles (${singles.length})</span>`);
+    if (packs.length)   parts.push(`<span><span class="roi-legend-dot" style="background:#34d399"></span>Pack rips (${packs.length})</span>`);
+    parts.push(`<span style="color:var(--text-faint);margin-left:auto">Each bar = one card · model estimate</span>`);
+    legendEl.innerHTML = parts.join('');
+  }
 }
 
 function renderPortfolio() {
@@ -5976,6 +6132,95 @@ function renderPsaGradeRange(card, pullCost, desirability) {
 
 const WATCHLIST_KEY = 'pkm-watchlist-v1';
 const WATCHLIST_ALERT_DISMISS_KEY = 'pkm-watchlist-dismissed-v1';
+const SEEN_DEALS_KEY = 'pkm-seen-deal-ids'; // device-local, NOT synced
+
+// ---- eBay deal polling + toast ----
+let _seenDealIds = new Set();
+try { _seenDealIds = new Set(JSON.parse(localStorage.getItem(SEEN_DEALS_KEY) || '[]')); } catch {}
+
+let _dealToastUrl = null;
+let _toastHideTimer = null;
+
+function hideDealToast() {
+  const el = document.getElementById('dealToast');
+  if (el) el.style.display = 'none';
+  clearTimeout(_toastHideTimer);
+}
+
+function showDealToast(card, deal, fairValueGBP) {
+  _dealToastUrl = deal.url || null;
+  const el = document.getElementById('dealToast');
+  const body = document.getElementById('dealToastBody');
+  if (!el || !body) return;
+
+  const priceStr = deal.priceGBP ? `£${deal.priceGBP.toFixed(2)}` : '';
+  const savePct  = deal.spreadPct > 0 ? ` — ${deal.spreadPct.toFixed(0)}% below fair value` : '';
+  body.innerHTML = `<strong>${card.n}</strong><br>${deal.signal}: ${priceStr}${savePct}`;
+  el.style.display = 'block';
+  clearTimeout(_toastHideTimer);
+  _toastHideTimer = setTimeout(hideDealToast, 14000);
+}
+
+async function pollWatchlistDeals() {
+  if (!cardData || !watchlist.length || document.visibilityState !== 'visible') return;
+  const workerUrl = (typeof getMktWorkerUrl === 'function') ? getMktWorkerUrl() : '';
+  if (!workerUrl) return;
+  const fx = fxRate || 0.79;
+  const fxEur = 0.86;
+
+  // Rotate through watchlist cards to spread load — 3 per poll cycle
+  const slice = watchlist.slice(0, 3);
+  for (const w of slice) {
+    const card = cardData.cards.find(c => c.i === w.id);
+    if (!card) continue;
+    const pull = (function () {
+      try {
+        if (setsData && setsData[card.sc]) {
+          const set = setsData[card.sc];
+          const rarity = set.rarities?.[card.rc];
+          if (rarity && rarity.pullRate > 0) return (Math.round(1 / rarity.pullRate) * rarity.count) / 100;
+        }
+      } catch {}
+      return 7.65;
+    })();
+    const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pull).total : 50;
+    const { priceUSD } = predictPrice(pull, des);
+    const fairGBP = usdToGbp(priceUSD);
+    if (!fairGBP || fairGBP <= 0) continue;
+    const q = (typeof buildSearchQuery === 'function') ? buildSearchQuery(card, 'raw') : card.n;
+    const url = `${workerUrl}/search?q=${encodeURIComponent(q)}&max=${fairGBP.toFixed(2)}&grade=raw&fx=${fx}&fxEur=${fxEur}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      for (const d of (data.deals || [])) {
+        const sc = (typeof mktScoreDeal === 'function') ? mktScoreDeal(d, card, 'raw', fairGBP, fx) : null;
+        if (!sc || sc.spreadPct < 15) continue; // only STRONG VALUE (>=25) or VALUE (>=8, capped at 15 here)
+        const key = d.url || d.title;
+        if (!key || _seenDealIds.has(key)) continue;
+        _seenDealIds.add(key);
+        if (_seenDealIds.size > 500) {
+          const [oldest] = _seenDealIds;
+          _seenDealIds.delete(oldest);
+        }
+        localStorage.setItem(SEEN_DEALS_KEY, JSON.stringify([..._seenDealIds]));
+        showDealToast(card, { ...d, ...sc }, fairGBP);
+        return; // one toast at a time
+      }
+    } catch {}
+  }
+}
+
+let _dealPollTimer = null;
+function startDealPolling() {
+  if (_dealPollTimer) return; // already running
+  _dealPollTimer = setInterval(pollWatchlistDeals, 5 * 60 * 1000); // every 5 min
+  // First check after 30s (give the app time to settle)
+  setTimeout(pollWatchlistDeals, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') pollWatchlistDeals();
+  });
+}
 let watchlist = [];
 try { watchlist = JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]'); } catch { watchlist = []; }
 // Active alerts the user has dismissed (cardId -> signal they dismissed for).
@@ -9683,6 +9928,33 @@ function setupPriceInsight() {
   };
   wireLoadAll('portfolioLoadAllGraphs', 'portfolioList', 'portfolioLoadAllStatus');
   wireLoadAll('wishlistLoadAllGraphs',  'wishlistList',  'wishlistLoadAllStatus');
+
+  // ROI chart toggle
+  document.getElementById('portfolioRoiBtn')?.addEventListener('click', () => {
+    const sec = document.getElementById('portfolioRoiSection');
+    if (!sec) return;
+    const visible = sec.style.display !== 'none';
+    sec.style.display = visible ? 'none' : 'block';
+    if (!visible) renderRoiChart();
+  });
+
+  // Signal badge tap (mobile — toggle tooltip)
+  document.getElementById('signalBadge')?.addEventListener('click', () => {
+    if (!window.matchMedia('(hover: hover)').matches) {
+      document.getElementById('signalWrap')?.classList.toggle('is-expanded');
+    }
+  });
+
+  // Deal toast buttons
+  document.getElementById('dealToastClose')?.addEventListener('click', hideDealToast);
+  document.getElementById('dealToastDismiss')?.addEventListener('click', hideDealToast);
+  document.getElementById('dealToastView')?.addEventListener('click', () => {
+    if (_dealToastUrl) window.open(_dealToastUrl, '_blank', 'noopener');
+    hideDealToast();
+  });
+
+  // Start background eBay deal polling
+  startDealPolling();
 }
 
 // =============================================================

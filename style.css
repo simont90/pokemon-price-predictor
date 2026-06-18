@@ -232,7 +232,7 @@ body {
 .card-link.pc-link:hover { color: var(--accent); }
 
 /* HOLD / BUY / SELL Signal */
-.signal-badge-wrap { display: flex; align-items: center; gap: 8px; }
+.signal-badge-wrap { display: inline-flex; align-items: center; gap: 8px; position: relative; }
 .signal-badge {
   font-size: 11px; font-weight: 700; letter-spacing: 0.1em; padding: 4px 12px;
   border-radius: 6px; text-transform: uppercase; white-space: nowrap;
@@ -242,7 +242,43 @@ body {
 .signal-badge.signal-sell { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
 .signal-badge.signal-strong-buy { background: var(--green); color: var(--bg); border: 1px solid var(--green); font-weight: 800; }
 .signal-badge.signal-grade { background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.35); }
-.signal-reason { font-size: 11px; color: var(--text-muted); line-height: 1.35; }
+.signal-badge { cursor: help; }
+/* Signal tooltip — hidden by default, appears on hover (desktop) or tap (mobile) */
+.signal-reason {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 120;
+  min-width: 200px;
+  max-width: 300px;
+  background: var(--bg-glass, #1e2030);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 13px;
+  font-size: 12px;
+  color: var(--text);
+  white-space: normal;
+  line-height: 1.5;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
+.signal-reason::before {
+  content: '';
+  position: absolute;
+  top: -5px; left: 12px;
+  width: 8px; height: 8px;
+  background: var(--bg-glass, #1e2030);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  transform: rotate(45deg);
+}
+@media (hover: hover) {
+  .signal-badge-wrap:hover .signal-reason { opacity: 1; transform: translateY(0); pointer-events: auto; }
+}
+.signal-badge-wrap.is-expanded .signal-reason { opacity: 1; transform: translateY(0); pointer-events: auto; }
 
 .price-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
 .price-tile { background: var(--bg-raised); border-radius: var(--radius-sm); padding: 12px; text-align: center; display: flex; flex-direction: column; gap: 2px; }
@@ -1849,6 +1885,18 @@ textarea, select {
 }
 
 /* iPad mini landscape / iPad Pro 11" portrait (1024-1193px) */
+/* Desktop card hero: column layout + large image from 1024px up */
+@media (min-width: 1024px) {
+  .selected-card-header { flex-direction: column; align-items: stretch; gap: 0; margin-bottom: 12px; }
+  .selected-card-info { text-align: left; width: 100%; }
+  .card-name-row h2 { white-space: normal; }
+  .card-images {
+    display: flex; align-items: center; justify-content: center; gap: 16px;
+    width: 100%; padding: 16px 0 14px; margin-bottom: 12px; background: transparent;
+  }
+  .card-thumb { width: auto !important; height: 240px !important; border-radius: 10px; box-shadow: 0 16px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.25); }
+}
+
 @media (min-width: 1024px) and (max-width: 1193px) {
   .app { max-width: 1100px; }
   .main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
@@ -1864,6 +1912,7 @@ textarea, select {
   .app { max-width: 1280px; }
   .main { gap: 28px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .main > * { min-width: 0; }
+  .card-thumb { height: 280px !important; }
 }
 @media (min-width: 1366px) {
   .app { max-width: 1400px; padding-left: 32px; padding-right: 32px; }
@@ -1871,6 +1920,7 @@ textarea, select {
   .predicted-price { font-size: 56px; }
   .max-price { font-size: 44px; }
   .live-main-price { font-size: 36px; }
+  .card-thumb { height: 320px !important; }
 }
 
 /* ================================================================
@@ -1886,6 +1936,7 @@ textarea, select {
   .predicted-price { font-size: 64px; }
   .max-price { font-size: 48px; }
   .live-main-price { font-size: 40px; }
+  .card-thumb { height: 380px !important; }
 }
 @media (min-width: 2200px) {
   .app { max-width: 1920px; padding-left: 48px; padding-right: 48px; }
@@ -6330,4 +6381,76 @@ section.card .card-collapse-btn { padding: 10px; }
   .card-links { display: none; flex-wrap: wrap; gap: 6px; }
   .card-links.links-open { display: flex; }
 }
+
+/* ====  Deal toast notification  ==== */
+.deal-toast {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  z-index: 9999;
+  width: 300px;
+  background: var(--bg-raised);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px 16px 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(232,182,52,0.15);
+  animation: toastIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes toastIn {
+  from { transform: translateX(120%); opacity: 0; }
+  to   { transform: translateX(0);   opacity: 1; }
+}
+.deal-toast-head {
+  display: flex; align-items: center; gap: 7px;
+  margin-bottom: 7px;
+}
+.deal-toast-icon { color: var(--accent); flex-shrink: 0; }
+.deal-toast-title { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 0.04em; text-transform: uppercase; flex: 1; }
+.deal-toast-close {
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  padding: 2px; line-height: 1; font-size: 13px; flex-shrink: 0;
+}
+.deal-toast-close:hover { color: var(--text); }
+.deal-toast-body { font-size: 13px; color: var(--text); line-height: 1.5; margin-bottom: 10px; }
+.deal-toast-body strong { color: var(--accent); }
+.deal-toast-foot { display: flex; gap: 8px; }
+.deal-toast-btn {
+  flex: 1; padding: 6px 10px; font-size: 11.5px; font-weight: 600;
+  background: var(--accent); color: #1a1c26; border: none;
+  border-radius: 7px; cursor: pointer; transition: background 0.15s;
+}
+.deal-toast-btn:hover { background: var(--accent-hover, #f0c040); }
+.deal-toast-dismiss {
+  padding: 6px 10px; font-size: 11.5px; font-weight: 600;
+  background: var(--bg); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
+  transition: color 0.15s;
+}
+.deal-toast-dismiss:hover { color: var(--text); }
+
+/* ====  Portfolio ROI chart  ==== */
+.portfolio-roi-section {
+  padding: 12px 0 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.roi-summary-row {
+  display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.roi-stat-card {
+  flex: 1; min-width: 120px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.roi-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-faint); margin-bottom: 4px; }
+.roi-stat-value { font-size: 16px; font-weight: 700; font-family: var(--mono); color: var(--text); }
+.roi-stat-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+.roi-stat-roi { font-size: 11px; font-weight: 600; margin-top: 4px; }
+.roi-stat-roi.pos { color: var(--green); }
+.roi-stat-roi.neg { color: var(--red, #f87171); }
+#roiCanvas { display: block; width: 100%; border-radius: 8px; }
+.roi-chart-legend { display: flex; gap: 14px; margin-top: 10px; font-size: 11px; color: var(--text-muted); }
+.roi-legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+.roi-empty { font-size: 12px; color: var(--text-faint); text-align: center; padding: 20px 0; }
 
