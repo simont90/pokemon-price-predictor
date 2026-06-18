@@ -8011,16 +8011,42 @@ function renderHoldStrategy(card) {
       gradedLine = `No graded tier projects positive 5yr ROI — every graded copy is overpriced relative to the model.`;
     }
 
-    // Card scan + acquisition cost context lines
+    // Card scan — actionable advice specific to this copy's condition
     let scanLine = '';
     if (expectedGrade) {
-      const gradeLbl = PSA_GRADE_LABELS ? PSA_GRADE_LABELS[expectedGrade] : '';
-      const gradeVerdict = expectedGrade >= 9
-        ? `Strong candidate for grading — expected PSA ${expectedGrade} outcome makes the fee worthwhile.`
-        : expectedGrade >= 7
-        ? `Worth considering for grading — expected PSA ${expectedGrade} is viable but verify the numbers in the table.`
-        : `Grading likely not worth the fee at expected PSA ${expectedGrade} — sell raw or upgrade your copy.`;
-      scanLine = `<div class="hold-rec-line hold-rec-scan">Card scan: expected <strong>PSA ${expectedGrade} (${gradeLbl})</strong>. ${gradeVerdict}</div>`;
+      const gradeLbl = PSA_GRADE_LABELS?.[expectedGrade] || '';
+      const hasCard = acqForCard != null;
+      const gradeStrat = strategies.find(s => s.key === 'gamble');
+      const gradeClearsFee = gradeStrat && gradeStrat.roi > 0;
+      const gradeBeatsGraded = gradeStrat && bestGraded && gradeStrat.yr5 >= bestGraded.yr5;
+      let action = '';
+
+      if (expectedGrade >= 9) {
+        action = hasCard
+          ? `Your scan predicts <strong>PSA ${expectedGrade} (${gradeLbl})</strong> — grade it. At that level the fee is comfortably earned back.`
+          : `Buying raw is viable here: a <strong>PSA ${expectedGrade}</strong> result is realistic and the grading fee is justified. <em>Buy Raw + Grade</em> is the play.`;
+      } else if (expectedGrade === 8) {
+        if (gradeClearsFee && gradeBeatsGraded) {
+          action = hasCard
+            ? `Expected <strong>PSA 8 (${gradeLbl})</strong> still clears the grading fee on this card — worth submitting.`
+            : `Expected <strong>PSA 8</strong> makes grading worthwhile here. Buy raw and grade rather than hunting an already-graded copy.`;
+        } else {
+          const altGrade = bestGraded ? `PSA ${bestGraded.grade}` : 'PSA 8';
+          action = hasCard
+            ? `At expected <strong>PSA 8 (${gradeLbl})</strong>, buying an already-graded copy edges out submitting this one after fees. Consider selling raw and buying a <strong>${altGrade}</strong> instead.`
+            : `At expected <strong>PSA 8</strong>, an already-graded copy is the cleaner entry — grading fees eat too much of the upside. Look for a <strong>${altGrade}</strong>.`;
+        }
+      } else if (expectedGrade === 7) {
+        action = hasCard
+          ? `Expected <strong>PSA 7 (${gradeLbl})</strong> won't clear grading fees. Hold raw long-term, or find a sharper copy to submit instead.`
+          : `This copy grades at <strong>PSA 7</strong> — not enough margin after fees. Either buy raw and hold, or find a cleaner copy.`;
+      } else {
+        const altGrade = bestGraded ? `PSA ${bestGraded.grade}` : 'a graded copy';
+        action = hasCard
+          ? `At expected <strong>PSA ${expectedGrade} (${gradeLbl})</strong> this copy is too worn to grade economically. Hold raw or replace it with a better copy before submitting.`
+          : `This copy grades at <strong>PSA ${expectedGrade}</strong> — too worn to recover grading costs. Pass on it, or buy <strong>${altGrade}</strong> directly.`;
+      }
+      scanLine = `<div class="hold-rec-line hold-rec-scan">${action}</div>`;
     }
     const acqLine = usingAcqCost
       ? `<div class="hold-rec-line hold-rec-acq">ROI based on your actual cost (${fmtGBPDirect(acqCostGBP)}), not market price.</div>`
