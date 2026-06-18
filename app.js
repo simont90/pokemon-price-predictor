@@ -7903,6 +7903,7 @@ function renderHoldStrategy(card) {
   // (they've inspected the card, so it's not sight-unseen).
   const acqForCard = getAcq(card.i);
   const expectedGrade = acqForCard?.expectedGrade ?? null;
+  const ownedCard = portfolio.some(p => p.id === card.i);
   const gemRate = expectedGrade
     ? baseGemRate  // no sight-unseen penalty when card condition is known
     : baseGemRate * ONLINE_BUY_GEM_PENALTY;
@@ -8020,7 +8021,7 @@ function renderHoldStrategy(card) {
     : `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`;
 
   const strategies = [
-    { label: 'Buy Raw',          key: 'raw',      desc: rawDesc,     today: rawCostUSD, yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20, acqCost: usingAcqCost },
+    { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',      desc: rawDesc,     today: rawCostUSD, yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20, acqCost: usingAcqCost },
     { label: usingAcqCost ? 'Grade My Card' : 'Buy Raw + Grade',  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: UK_GRADING_WAIT_MONTHS, lossProb, lossEV, acqCost: usingAcqCost },
     ...gradedStrategies.map((s, i) => ({
       ...s,
@@ -8105,16 +8106,17 @@ function renderHoldStrategy(card) {
       const rawScore = bestRaw.riskAdjusted;
       const gradedScore = bestGraded.riskAdjusted;
       if (rawScore > gradedScore + 30) {
-        rawVsGradedLine = `<strong>Buy raw</strong> — <strong>${bestRaw.label}</strong> beats the best graded option (${bestGraded.label}) by a wide margin on risk-adjusted return.${gambleCaveat}`;
+        const rawVerb = ownedCard ? 'Keep raw' : 'Buy raw';
+        rawVsGradedLine = `<strong>${rawVerb}</strong> — <strong>${bestRaw.label}</strong> beats the best graded option (${bestGraded.label}) by a wide margin on risk-adjusted return.${gambleCaveat}`;
       } else if (gradedScore > rawScore + 30) {
-        rawVsGradedLine = `<strong>Buy graded</strong> — <strong>${bestGraded.label}</strong> beats the best raw approach (${bestRaw.label}) on risk-adjusted return. From the UK, skipping the ~${UK_GRADING_WAIT_MONTHS}-month grading wait is the better play here.`;
+        rawVsGradedLine = `<strong>${ownedCard ? 'Sell raw, buy graded' : 'Buy graded'}</strong> — <strong>${bestGraded.label}</strong> beats the best raw approach (${bestRaw.label}) on risk-adjusted return. From the UK, skipping the ~${UK_GRADING_WAIT_MONTHS}-month grading wait is the better play here.`;
       } else {
         rawVsGradedLine = `<strong>Close call</strong> — ${bestRaw.label} and ${bestGraded.label} are within a few points of each other. From the UK, the tie-breaker is usually the ~${UK_GRADING_WAIT_MONTHS}-month grading wait and ${(lossProb*100).toFixed(0)}% loss case on Raw + Grade — the graded copy gives you an instant, certain position.`;
       }
     } else if (bestGraded) {
-      rawVsGradedLine = `<strong>Buy graded</strong> — no raw-side option projects positive 5yr ROI for this card; only graded holds make sense.`;
+      rawVsGradedLine = `<strong>${ownedCard ? 'Sell raw, buy graded' : 'Buy graded'}</strong> — no raw-side option projects positive 5yr ROI for this card; only graded holds make sense.`;
     } else {
-      rawVsGradedLine = `<strong>Buy raw</strong> — graded copies don't project a positive 5yr return at current prices; the raw card is the only sensible entry.`;
+      rawVsGradedLine = `<strong>${ownedCard ? 'Keep raw' : 'Buy raw'}</strong> — graded copies don't project a positive 5yr return at current prices; the raw card is the only sensible entry.`;
     }
 
     // Best graded tier line.
