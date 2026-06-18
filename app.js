@@ -8599,19 +8599,21 @@ function mktEstimateGradeFromText(title, condition) {
   const t = ` ${text.toLowerCase()} `;
   const check = re => re.test(t);
   // Order matters — match most specific first
+  // Ranges are deliberately conservative — eBay sellers routinely over-describe
+  // condition by 1-2 PSA points, so we shift estimates down to match reality.
   if (check(/\b(pack fresh|unplayed|sealed)\b/))          return { label: 'Pack Fresh',   range: '9–10' };
-  if (check(/\b(near mint|nm-mt|nm\/mt)\b/))              return { label: 'Near Mint',    range: '8–9'  };
+  if (check(/\b(near mint|nm-mt|nm\/mt)\b/))              return { label: 'Near Mint',    range: '7–9'  };
   // "mint" without "near" — avoid matching "near mint"
-  if (check(/(?<![a-z])mint(?!-[a-z]|\s+condition\s+not\s+near)/) && !check(/\bnear\s+mint\b/)) return { label: 'Mint', range: '9–10' };
-  if (check(/\b(lightly played|lp)\b/))                   return { label: 'Lightly Played', range: '7–8' };
-  if (check(/\b(excellent|ex)\b/))                        return { label: 'Excellent',    range: '7–8'  };
-  if (check(/\b(very good|vg)\b/))                        return { label: 'Very Good',    range: '6–7'  };
-  if (check(/\b(moderately played|mp)\b/))                return { label: 'Mod. Played',  range: '5–6'  };
-  if (check(/\b(heavily played|hp)\b/))                   return { label: 'Hvy. Played',  range: '3–4'  };
+  if (check(/(?<![a-z])mint(?!-[a-z]|\s+condition\s+not\s+near)/) && !check(/\bnear\s+mint\b/)) return { label: 'Mint', range: '8–10' };
+  if (check(/\b(lightly played|lp)\b/))                   return { label: 'Lightly Played', range: '6–7' };
+  if (check(/\b(excellent|ex)\b/))                        return { label: 'Excellent',    range: '6–7'  };
+  if (check(/\b(very good|vg)\b/))                        return { label: 'Very Good',    range: '5–6'  };
+  if (check(/\b(moderately played|mp)\b/))                return { label: 'Mod. Played',  range: '4–5'  };
+  if (check(/\b(heavily played|hp)\b/))                   return { label: 'Hvy. Played',  range: '2–3'  };
   // "good" without VG prefix already consumed above
-  if (check(/\b(good|gd)\b/))                             return { label: 'Good',         range: '5–6'  };
+  if (check(/\b(good|gd)\b/))                             return { label: 'Good',         range: '4–5'  };
   // Generic "played" only if LP/MP/HP not already matched
-  if (check(/\bplayed\b/))                                return { label: 'Played',       range: '4–6'  };
+  if (check(/\bplayed\b/))                                return { label: 'Played',       range: '3–5'  };
   if (check(/\b(poor|damaged|dmg)\b/))                    return { label: 'Damaged',      range: '1–2'  };
   return null;
 }
@@ -8823,6 +8825,16 @@ async function mktAIGrade(btn) {
       else grade = 4;
     }
 
+    if (grade != null) {
+      const cardId = (typeof selectedCard !== 'undefined' && selectedCard) ? selectedCard.i : null;
+      if (cardId) {
+        const aiGrades = JSON.parse(localStorage.getItem('pkm-ai-grades-v1') || '{}');
+        aiGrades[cardId] = { grade, ts: Date.now(), imageUrl,
+          breakdown: { centering: data.centering, corners: data.corners, edges: data.edges, surface: data.surface } };
+        localStorage.setItem('pkm-ai-grades-v1', JSON.stringify(aiGrades));
+        try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); } catch {}
+      }
+    }
     if (resultEl) {
       resultEl.className = 'mkt-grade-ai-result';
       resultEl.innerHTML = grade != null
@@ -12644,6 +12656,8 @@ function renderHomeDashboard() {
   _renderHomeCollection();
   _renderHomeWishlist();
   _renderHomeWatchlist();
+  _renderHomeAiGrades();
+  _renderHomeGradeCandidates();
   _renderHomeReco(true); // always rebuild — tracked-card sets may have changed since last render
 }
 
@@ -12673,6 +12687,7 @@ async function _homeAutoRefresh() {
   psSetLastSync(Date.now());
   _psState.running = false;
   try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
+  try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); } catch {}
   try { _renderHomeReco(true); } catch {}
 }
 
@@ -12723,12 +12738,66 @@ function _setupTileEvents(scrollEl, deleteFn) {
 
 // ─── Home render deduplication ─────────────────────────────
 let _homeCollHash = '', _homeWishHash = '', _homeWatchHash = '';
+let _homeAiG10Hash = '', _homeAiG9Hash = '', _homeGradeCandHash = '';
 let _homeRenderTimer = null;
 function _scheduleHomeRender() {
   clearTimeout(_homeRenderTimer);
   _homeRenderTimer = setTimeout(() => {
     try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
+    try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); } catch {}
   }, 350);
+}
+
+// Cards AI-graded PSA 10 or PSA 9 that are in the user's collection.
+function _renderHomeAiGrades() {
+  const list10 = $('homeAiG10List'), list9 = $('homeAiG9List');
+  const wrap10 = $('homeAiG10Wrap'), wrap9 = $('homeAiG9Wrap');
+  if (!list10 || !list9) return;
+  const aiGrades = JSON.parse(localStorage.getItem('pkm-ai-grades-v1') || '{}');
+  const ownedIds = new Set(portfolio.map(p => p.id));
+  const byGrade = g => Object.entries(aiGrades)
+    .filter(([id, r]) => r.grade === g && ownedIds.has(id))
+    .map(([id]) => portfolio.find(p => p.id === id)).filter(Boolean);
+  const g10 = byGrade(10), g9 = byGrade(9);
+  const h10 = g10.map(p => p.id).join('|'), h9 = g9.map(p => p.id).join('|');
+  if (wrap10) wrap10.style.display = g10.length ? '' : 'none';
+  if (wrap9)  wrap9.style.display  = g9.length  ? '' : 'none';
+  if (h10 !== _homeAiG10Hash || !list10.querySelector('.home-card-tile')) {
+    _homeAiG10Hash = h10;
+    const c = $('homeAiG10Count'); if (c) c.textContent = g10.length;
+    list10.innerHTML = g10.map(p => _homeTile(p.id, p.img, p.name, 'AI PSA 10', 'sig-strong-buy', 'PSA 10', '', p.set)).join('');
+    if (g10.length) _setupTileEvents(list10, () => {});
+  }
+  if (h9 !== _homeAiG9Hash || !list9.querySelector('.home-card-tile')) {
+    _homeAiG9Hash = h9;
+    const c = $('homeAiG9Count'); if (c) c.textContent = g9.length;
+    list9.innerHTML = g9.map(p => _homeTile(p.id, p.img, p.name, 'AI PSA 9', 'sig-buy', 'PSA 9', '', p.set)).join('');
+    if (g9.length) _setupTileEvents(list9, () => {});
+  }
+}
+
+// Owned raw cards with ≥25% gem rate that haven't been AI graded yet.
+function _renderHomeGradeCandidates() {
+  const list = $('homeGradeCandList'), wrap = $('homeGradeCandWrap');
+  if (!list) return;
+  const aiGrades = JSON.parse(localStorage.getItem('pkm-ai-grades-v1') || '{}');
+  const candidates = portfolio.filter(p => {
+    if (aiGrades[p.id]) return false;
+    const card = cardData?.cards.find(c => c.i === p.id);
+    return card && typeof card.g === 'number' && card.g >= 0.25;
+  });
+  const hash = candidates.map(p => p.id).join('|');
+  if (wrap) wrap.style.display = candidates.length ? '' : 'none';
+  if (hash !== _homeGradeCandHash || !list.querySelector('.home-card-tile')) {
+    _homeGradeCandHash = hash;
+    const c = $('homeGradeCandCount'); if (c) c.textContent = candidates.length;
+    list.innerHTML = candidates.map(p => {
+      const card = cardData?.cards.find(cc => cc.i === p.id);
+      const pct = card ? Math.round((card.g || 0) * 100) : 0;
+      return _homeTile(p.id, p.img, p.name, `${pct}% gem rate`, 'sig-buy', 'AI Grade?', '', p.set);
+    }).join('');
+    if (candidates.length) _setupTileEvents(list, () => {});
+  }
 }
 function _homeItemHash(items, prefix) {
   const s = items.map(i => { const c = getCachedPrice(i.id); return i.id + ':' + Math.round((c?.market || c?.mid || 0) * 100); }).join('|');
