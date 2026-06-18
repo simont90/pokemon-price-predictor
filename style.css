@@ -324,6 +324,12 @@ body {
 .max-price-card h2 { margin-bottom: 2px; }
 .max-price { font-size: 44px; font-weight: 700; font-family: var(--mono); color: var(--green); line-height: 1.1; letter-spacing: -0.02em; margin: 12px 0 4px; }
 .max-price-logic { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+/* Price & Potential merged card */
+.pp-card { text-align: center; }
+.pp-model { margin-bottom: 0; }
+.pp-divider { margin: 18px 0; border-top: 1px solid var(--border); }
+.pp-maxbuy { text-align: center; }
+.pp-maxbuy-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 2px; }
 
 /* Deal Check */
 .deal-card h2 { margin-bottom: 2px; }
@@ -706,6 +712,7 @@ body {
 .grade-content { margin-top: 12px; }
 .grade-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .grade-row:last-child { border-bottom: none; }
+.grade-row-scan { background: rgba(232,182,52,0.06); margin: 0 -8px; padding: 8px; border-radius: 4px; border-bottom: none; }
 .grade-label { font-size: 12px; color: var(--text-muted); }
 .grade-val { font-family: var(--mono); font-size: 14px; font-weight: 600; }
 .grade-gain { color: var(--green); }
@@ -815,6 +822,29 @@ body {
 /* Forecast */
 .forecast-card h2 { margin-bottom: 4px; }
 #forecastChart { margin: 12px 0 8px; border-radius: var(--radius-sm); background: var(--bg-raised); }
+/* Forecast canvas + interactive tooltip */
+.fc-canvas-wrap { position: relative; margin-bottom: 8px; cursor: crosshair; }
+.fc-tooltip {
+  position: absolute;
+  top: 10px;
+  background: var(--bg-card, #1a1b26);
+  border: 1px solid var(--accent, #e8b634);
+  border-radius: 8px;
+  padding: 10px 12px;
+  pointer-events: none;
+  z-index: 10;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.fc-tt-year { font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.fc-tt-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.fc-tt-row:last-child { margin-bottom: 0; }
+.fc-tt-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.fc-tt-opt { background: rgba(232,182,52,0.5); }
+.fc-tt-exp { background: #e8b634; }
+.fc-tt-con { background: rgba(138,138,138,0.7); }
+.fc-tt-lbl { font-size: 11px; color: var(--text-muted); flex: 1; }
+.fc-tt-val { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); }
 .fc-info { font-size: 11px; color: var(--text-faint); margin-bottom: 12px; text-align: center; }
 .fc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .fc-table th { text-align: center; color: var(--text-faint); font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 8px; border-bottom: 1px solid var(--border); }

@@ -391,6 +391,7 @@ async function init() {
   setupPriceSync();
   setupAcquisition();
   setupCardGrader();
+  initForecastInteractivity();
   setupPriceInsight();
   setupAiChat();
   setupTheme();
@@ -2336,7 +2337,9 @@ function renderForecast(card, pullCost, desirability) {
   drawForecastChart(canvas, fc);
 }
 
-function drawForecastChart(canvas, fc) {
+let _fcState = null;
+
+function drawForecastChart(canvas, fc, hoverYear = null) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -2359,6 +2362,9 @@ function drawForecastChart(canvas, fc) {
 
   function x(year) { return pad.l + (year / 5) * cw; }
   function y(price) { return pad.t + ch - ((price - minP) / (maxP - minP)) * ch; }
+
+  // Store state for interactive hover
+  _fcState = { fc, W, H, pad, cw, current, minP, maxP, x, y };
 
   ctx.strokeStyle = '#2a2d3a';
   ctx.lineWidth = 1;
@@ -2421,6 +2427,81 @@ function drawForecastChart(canvas, fc) {
   ctx.font = 'bold 13px JetBrains Mono, monospace';
   ctx.textAlign = 'right';
   ctx.fillText(`£${Math.round(finalGBP).toLocaleString()}`, x(5) - 10, y(finalGBP) - 10);
+
+  // Hover crosshair
+  if (hoverYear !== null) {
+    const hx = x(hoverYear);
+    ctx.strokeStyle = 'rgba(232, 182, 52, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(hx, pad.t); ctx.lineTo(hx, H - pad.b); ctx.stroke();
+    ctx.setLineDash([]);
+    const pts = [
+      { price: hoverYear === 0 ? current : usdToGbp(fc.scenarios.conservative[hoverYear - 1].priceUSD), col: 'rgba(138,138,138,0.8)' },
+      { price: hoverYear === 0 ? current : usdToGbp(fc.scenarios.expected[hoverYear - 1].priceUSD), col: '#e8b634' },
+      { price: hoverYear === 0 ? current : usdToGbp(fc.scenarios.optimistic[hoverYear - 1].priceUSD), col: 'rgba(232,182,52,0.5)' },
+    ];
+    pts.forEach(p => {
+      ctx.fillStyle = p.col;
+      ctx.beginPath(); ctx.arc(hx, y(p.price), 5, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+}
+
+function setupForecastHover(canvas) {
+  const tooltip = document.getElementById('fcTooltip');
+  if (!tooltip) return;
+
+  function getHoverYear(e) {
+    if (!_fcState) return null;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const relX = clientX - rect.left;
+    const { pad, cw } = _fcState;
+    const raw = (relX - pad.l) / cw * 5;
+    return Math.max(0, Math.min(5, Math.round(raw)));
+  }
+
+  function showTooltip(yr, e) {
+    if (!_fcState) return;
+    const { fc, current } = _fcState;
+    const label = yr === 0 ? 'Now' : `Year ${yr}`;
+    const con = yr === 0 ? current : usdToGbp(fc.scenarios.conservative[yr - 1].priceUSD);
+    const exp = yr === 0 ? current : usdToGbp(fc.scenarios.expected[yr - 1].priceUSD);
+    const opt = yr === 0 ? current : usdToGbp(fc.scenarios.optimistic[yr - 1].priceUSD);
+    const fmt = v => `£${Math.round(v).toLocaleString()}`;
+    tooltip.innerHTML = `
+      <div class="fc-tt-year">${label}</div>
+      <div class="fc-tt-row"><span class="fc-tt-dot fc-tt-opt"></span><span class="fc-tt-lbl">Optimistic</span><span class="fc-tt-val">${fmt(opt)}</span></div>
+      <div class="fc-tt-row"><span class="fc-tt-dot fc-tt-exp"></span><span class="fc-tt-lbl">Expected</span><span class="fc-tt-val">${fmt(exp)}</span></div>
+      <div class="fc-tt-row"><span class="fc-tt-dot fc-tt-con"></span><span class="fc-tt-lbl">Conservative</span><span class="fc-tt-val">${fmt(con)}</span></div>
+    `;
+    tooltip.style.display = 'block';
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const relX = clientX - rect.left;
+    const tipW = 170;
+    const left = relX + tipW + 12 > rect.width ? relX - tipW - 8 : relX + 12;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = '10px';
+    drawForecastChart(canvas, fc, yr);
+  }
+
+  function hideTooltip() {
+    tooltip.style.display = 'none';
+    if (_fcState) drawForecastChart(canvas, _fcState.fc, null);
+  }
+
+  canvas.addEventListener('mousemove', e => { const yr = getHoverYear(e); if (yr !== null) showTooltip(yr, e); });
+  canvas.addEventListener('mouseleave', hideTooltip);
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); const yr = getHoverYear(e); if (yr !== null) showTooltip(yr, e); }, { passive: false });
+  canvas.addEventListener('touchmove', e => { e.preventDefault(); const yr = getHoverYear(e); if (yr !== null) showTooltip(yr, e); }, { passive: false });
+  canvas.addEventListener('touchend', hideTooltip);
+}
+
+function initForecastInteractivity() {
+  const canvas = document.getElementById('forecastChart');
+  if (canvas) setupForecastHover(canvas);
 }
 
 // ---- UI Update ----
@@ -3084,31 +3165,48 @@ function renderGradingROI(apiData) {
   section.style.display = 'block';
   const rawPrice = getCurrentPrice(card);
   const psa10Price = (staticPsa10 && staticPsa10 > 0) ? staticPsa10 : pcPsa10;
-  const gemRate = card.g ? (card.g * 100).toFixed(1) : null;
   const gradingFee = 20;
+
+  // Use scan expected grade if available — no sight-unseen penalty for cards in hand
+  const scanAcq = (typeof getAcq === 'function') ? getAcq(card.i) : null;
+  const expectedGrade = scanAcq?.expectedGrade ?? null;
+  const baseGemRate = (typeof card.g === 'number' && card.g > 0) ? card.g : DEFAULT_GEM_RATE;
+  const gemPct = expectedGrade ? baseGemRate : (card.g || null);
+  const gemRateDisplay = gemPct !== null ? (gemPct * 100).toFixed(1) : null;
 
   const valueGain = psa10Price - rawPrice;
   const roi = ((valueGain - gradingFee) / (rawPrice + gradingFee)) * 100;
   const netProfit = valueGain - gradingFee;
   const multiplier = psa10Price / rawPrice;
 
-  let evGrade = null, evNote = '';
-  if (gemRate !== null) {
-    const gemPct = card.g;
-    evGrade = (gemPct * (psa10Price - gradingFee)) + ((1 - gemPct) * (rawPrice * 0.85 - gradingFee));
+  // If scan gives an expected grade, compute that grade's realistic EV
+  let scanRow = '';
+  if (expectedGrade) {
+    const scanTargetPrice = psa10Price * (PSA_RATIOS[expectedGrade] || 1);
+    const scanGain = scanTargetPrice - rawPrice - gradingFee;
+    const scanRoi = ((scanTargetPrice - rawPrice - gradingFee) / (rawPrice + gradingFee) * 100).toFixed(0);
+    const scanCls = scanGain >= 0 ? 'grade-gain' : 'grade-loss';
+    const scanGradeLabel = PSA_GRADE_LABELS?.[expectedGrade] || '';
+    scanRow = `<div class="grade-row grade-row-scan"><span class="grade-label">Scan target (PSA ${expectedGrade} · ${scanGradeLabel})</span><span class="grade-val ${scanCls}">${scanGain >= 0 ? '+' : ''}${fmtGBP(scanGain)} (${scanRoi}% ROI)</span></div>`;
+  }
+
+  // EV across outcomes using gem rate
+  let evNote = '';
+  if (gemPct !== null) {
+    const evGrade = (gemPct * (psa10Price - gradingFee)) + ((1 - gemPct) * (rawPrice * 0.85 - gradingFee));
     const evRoi = ((evGrade - rawPrice) / rawPrice * 100).toFixed(0);
-    evNote = `Expected value: ${fmtGBP(evGrade)} (${evRoi > 0 ? '+' : ''}${evRoi}% ROI at ${gemRate}% gem rate)`;
+    evNote = `<div class="grade-row"><span class="grade-label">EV across outcomes</span><span class="grade-val">${fmtGBP(evGrade)} (${evRoi > 0 ? '+' : ''}${evRoi}% ROI at ${gemRateDisplay}% gem rate)</span></div>`;
   }
 
   let verdictClass, verdictTitle, verdictDetail;
-  if (roi > 100 && (gemRate === null || card.g > 0.3)) {
+  if (roi > 100 && (gemPct === null || gemPct > 0.3)) {
     verdictClass = 'grade-worth';
     verdictTitle = 'Worth Grading';
-    verdictDetail = `${multiplier.toFixed(1)}× raw-to-PSA 10 multiplier with ${netProfit > 0 ? fmtGBP(netProfit) : ''} potential profit`;
+    verdictDetail = `${multiplier.toFixed(1)}× raw-to-PSA 10 multiplier${netProfit > 0 ? ` · ${fmtGBP(netProfit)} potential profit` : ''}`;
   } else if (roi > 30) {
     verdictClass = 'grade-maybe';
     verdictTitle = 'Consider Grading';
-    verdictDetail = gemRate ? `${gemRate}% gem rate — profitable if it hits PSA 10` : `${multiplier.toFixed(1)}× multiplier but check gem rate first`;
+    verdictDetail = gemRateDisplay ? `${gemRateDisplay}% gem rate — profitable if it hits PSA 10` : `${multiplier.toFixed(1)}× multiplier — check gem rate first`;
   } else {
     verdictClass = 'grade-skip';
     verdictTitle = 'Skip Grading';
@@ -3116,13 +3214,11 @@ function renderGradingROI(apiData) {
   }
 
   $('gradeContent').innerHTML = `
-    <div class="grade-row"><span class="grade-label">Raw Price</span><span class="grade-val">${fmtGBP(rawPrice)}</span></div>
-    <div class="grade-row"><span class="grade-label">PSA 10 Price</span><span class="grade-val grade-gain">${fmtGBP(psa10Price)}</span></div>
-    <div class="grade-row"><span class="grade-label">Value Gain</span><span class="grade-val grade-gain">+${fmtGBP(valueGain)} (${multiplier.toFixed(1)}×)</span></div>
-    <div class="grade-row"><span class="grade-label">Grading Fee (~$20)</span><span class="grade-val grade-loss">-${fmtGBP(gradingFee)}</span></div>
-    <div class="grade-row"><span class="grade-label">Net Profit (if PSA 10)</span><span class="grade-val ${netProfit > 0 ? 'grade-gain' : 'grade-loss'}">${netProfit > 0 ? '+' : ''}${fmtGBP(netProfit)}</span></div>
-    ${gemRate !== null ? `<div class="grade-row"><span class="grade-label">Gem Rate</span><span class="grade-val">${gemRate}%</span></div>` : ''}
-    ${evNote ? `<div class="grade-row"><span class="grade-label">Expected Value</span><span class="grade-val">${fmtGBP(evGrade)}</span></div>` : ''}
+    <div class="grade-row"><span class="grade-label">Raw price</span><span class="grade-val">${fmtGBP(rawPrice)}</span></div>
+    <div class="grade-row"><span class="grade-label">PSA 10 price</span><span class="grade-val grade-gain">${fmtGBP(psa10Price)}</span></div>
+    <div class="grade-row"><span class="grade-label">Net profit (if PSA 10)</span><span class="grade-val ${netProfit > 0 ? 'grade-gain' : 'grade-loss'}">${netProfit > 0 ? '+' : ''}${fmtGBP(netProfit)} (${multiplier.toFixed(1)}×)</span></div>
+    ${scanRow}
+    ${evNote}
     <div class="grade-verdict ${verdictClass}">
       <div class="grade-verdict-title">${verdictTitle}</div>
       <div class="grade-verdict-detail">${verdictDetail}</div>
@@ -8170,12 +8266,10 @@ function renderHoldStrategy(card) {
     const lossPct = (lossProb*100).toFixed(0);
     outcomeHost.innerHTML = `
       <div class="hold-out-head">
-        <div class="hold-out-title">What you actually get when you grade</div>
         <div class="hold-out-summary">
           <span class="hold-out-chip hold-out-chip-good">${goodPct}% PSA 9 or 10</span>
           <span class="hold-out-chip hold-out-chip-bad">${lossPct}% loss case</span>
           <span class="hold-out-chip hold-out-chip-wait">${UK_GRADING_WAIT_MONTHS} mo wait (UK)</span>
-          <span class="hold-out-chip hold-out-chip-online">Online buy: ${(ONLINE_BUY_GEM_PENALTY*100).toFixed(0)}% of hand-picked gem rate</span>
         </div>
       </div>
       <div class="hold-out-grid-head">
