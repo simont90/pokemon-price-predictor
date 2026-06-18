@@ -2547,8 +2547,8 @@ function updateSignal(card, pullCost, desirability) {
       signal = 'HOLD'; cls = 'signal-hold';
       reasons = result.reasons;
     } else if (_holdWinnerKey === 'none') {
-      signal = 'SELL'; cls = 'signal-sell';
-      reasons = ['No strategy projects positive 5yr ROI'];
+      signal = 'HOLD'; cls = 'signal-hold';
+      reasons = ['Appreciation too low to beat opportunity cost — hold, don\'t add'];
     } else if (_holdWinnerKey === 'gamble') {
       signal = 'GRADE'; cls = 'signal-grade';
       reasons = ['Grading beats holding raw or buying a slab'];
@@ -6855,9 +6855,9 @@ function renderPsaGradeRange(card, pullCost, desirability) {
     const prices = [0,1,2,3,4,5].map(yr => yr === 0 ? todayUSD : projectGradePrice(card, g, todayUSD, yr));
     const roi5 = todayUSD > 0 ? ((prices[5] - todayUSD) / todayUSD) * 100 : 0;
     let verdict;
-    if (roi5 >= 80) verdict = 'Strong pick';
-    else if (roi5 >= 40) verdict = 'Worth a look';
-    else if (roi5 >= 15) verdict = 'Fair';
+    if (roi5 >= 50) verdict = 'Strong pick';
+    else if (roi5 >= 25) verdict = 'Worth a look';
+    else if (roi5 >= 10) verdict = 'Fair';
     else verdict = 'Skip';
     return { g, prices, roi5, verdict };
   });
@@ -9387,9 +9387,10 @@ function computeHoldCore(card) {
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
-  // BEST LONG-TERM PICK: never high-risk (gamble), must be Strong Hold (ROI ≥ 80%).
-  // Low Risk always beats Medium/High Risk within budget. See _pickBestLTP.
-  const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 80);
+  // BEST LONG-TERM PICK: never high-risk (gamble), ROI must beat a basic
+  // opportunity cost (≥35% over 5 yrs ≈ 6.2% annual — roughly savings/bond rate).
+  // Threshold lowered from 80% to match recalibrated post-bubble growth rates.
+  const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 35);
   const bestLongTermPick = _pickBestLTP(ltpCandidates);
 
   // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
@@ -9861,9 +9862,9 @@ function renderHoldStrategy(card) {
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
-  // BEST LONG-TERM PICK badge: never high-risk (gamble), must be Strong Hold (ROI ≥ 80%).
-  // Low Risk always beats Medium/High Risk within budget. See _pickBestLTP.
-  const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 80);
+  // BEST LONG-TERM PICK badge: never high-risk (gamble), ROI must beat opportunity
+  // cost (≥35% over 5 yrs ≈ 6.2% annual). Threshold recalibrated for post-bubble rates.
+  const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 35);
   const bestLongTermPick = _pickBestLTP(ltpCandidates);
 
   const winner = overallWinner; // used for recommendation copy below
@@ -13541,7 +13542,7 @@ function urScanRaw() {
     const logDiscount = Math.log(rawDiscount); // 0 at parity, grows slowly
 
     const rarityRate = (RARITY_RATES[c.rc] || RARITY_RATES['']).base;
-    if (rarityRate < 0.05) continue; // commons rarely move
+    if (rarityRate < 0.03) continue; // standard commons rarely move
 
     const ageMonths = getSetAgeMonths(c.sc);
     const ageFactor = ageMonths > 48 ? 1.30 : ageMonths > 24 ? 1.12 : ageMonths < 6 ? 0.85 : 1.0;
@@ -13586,7 +13587,7 @@ function urScanRaw() {
       score,
       gradeRoi,
       reasons,
-      signal: rawDiscount >= 1.8 || gradeRoi >= 1.5 ? 'STRONG BUY' : 'BUY',
+      signal: rawDiscount >= 1.8 || gradeRoi >= 0.8 ? 'STRONG BUY' : 'BUY',
     });
   }
   out.sort((a, b) => b.score - a.score);
@@ -13648,7 +13649,7 @@ function urScanGrade(fmt) {
         upsidePct: (discount - 1) * 100,
         score,
         reasons: urReasonsGrade(c, { discount, charMult, ageMonths, rarityRate, roi5: Math.min(roi5, 5), g, anchor }),
-        signal: roi5 > 1.5 ? 'STRONG BUY' : 'BUY',
+        signal: roi5 > 0.8 ? 'STRONG BUY' : 'BUY',
       };
       if (!best || cand.score > best.score) best = cand;
     }
