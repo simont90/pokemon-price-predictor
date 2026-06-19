@@ -14918,7 +14918,10 @@ function syncUpdateStatus() {
   const code = syncGetPairCode();
   const last = Math.max(meta.lastPush || 0, meta.lastPull || 0);
   if (el) {
-    if (!code) el.textContent = 'Not paired';
+    if (authIsActive()) {
+      const user = authGetUser();
+      el.textContent = user?.username ? `Account · ${user.username}` : 'Account sync active';
+    } else if (!code) el.textContent = 'Not paired';
     else if (meta.lastErr) el.textContent = `Error · ${meta.lastErr.slice(0, 60)}`;
     else el.textContent = last ? `Synced ${syncFmtTimeAgo(last)}` : `Paired · awaiting first sync`;
   }
