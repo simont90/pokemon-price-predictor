@@ -3761,15 +3761,9 @@ function initLayoutResizer() {
   const saved = (() => { try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || 'null'); } catch { return null; } })();
 
   if (saved) {
-    // Restore column split (desktop only)
-    if (isDesktop && colResizer && saved.cols && saved.cols !== '') {
-      const parts = saved.cols.split(' ').map(parseFloat).filter(Boolean);
-      if (parts.length >= 2) {
-        const leftPx = parts[0], rightPx = parts[parts.length - 1];
-        const total = leftPx + rightPx;
-        if (total > 0) applyColSplit(leftPx / total, false);
-      }
-    }
+    // Column split is intentionally NOT restored — it resets to 50/50 (CSS default)
+    // on every load so a narrow column saved on one device/session never breaks
+    // the layout on another. Users can still drag-to-resize within a session.
     if (saved.tiles) {
       Object.entries(saved.tiles).forEach(([key, h]) => {
         const el = document.getElementById(key) || document.querySelector(`[data-layout-id="${key}"]`);
@@ -3995,7 +3989,6 @@ function initLayoutResizer() {
 
   // ── Save / restore helpers ───────────────────────────────────────────
   function saveLayout() {
-    const cols = getComputedStyle(main).gridTemplateColumns;
     const tiles = {};
     document.querySelectorAll('.inputs-column > .card, .output-column > .card').forEach(c => {
       const key = c.id || c.dataset.layoutId;
@@ -4003,7 +3996,7 @@ function initLayoutResizer() {
       if (c.style.maxHeight) tiles[key] = `clamp:${c.style.maxHeight}`;
       else if (c.style.minHeight) tiles[key] = c.style.minHeight;
     });
-    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify({ cols, tiles })); } catch {}
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify({ tiles })); } catch {}
   }
 
   // Expose applyColSplit so re-renders can call positionColResizer

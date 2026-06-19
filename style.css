@@ -5950,6 +5950,19 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   .nav-pill { width: 58px; }
 }
 
+/* Desktop: nav pill should be compact and content-sized, not full-viewport-width */
+@media (min-width: 821px) {
+  .page-nav {
+    width: max-content;
+    max-width: min(600px, calc(100vw - 32px));
+  }
+  .page-nav-btn {
+    flex: none;
+    padding: 10px 24px;
+    min-width: 88px;
+  }
+}
+
 .page { width: 100%; }
 
 .page-intro {
