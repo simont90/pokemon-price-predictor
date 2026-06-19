@@ -425,11 +425,7 @@ async function init() {
       }
     } catch (e) { /* use default */ }
 
-    if (cardData) {
-      if (loadingText) loadingText.textContent = 'Building search index...';
-      buildSearchIndex(cardData.cards);
-      buildCounterpartIndex(cardData.cards);
-    }
+    if (loadingText) loadingText.textContent = 'Initialising…';
 
     $('fxValue').textContent = `£${fxRate.toFixed(4)}`;
     if (cardData) {
@@ -3746,6 +3742,7 @@ function updatePortfolioButton() {
 
 function savePortfolio() {
   localStorage.setItem('pkm-portfolio', JSON.stringify(portfolio));
+  _recoCached = null;
 }
 
 // ---- Layout drag-resize ----
@@ -4327,6 +4324,7 @@ function updateWishlistButton() {
 
 function saveWishlist() {
   localStorage.setItem('pkm-wishlist', JSON.stringify(wishlist));
+  _recoCached = null;
 }
 
 function renderWishlist() {
@@ -7297,7 +7295,7 @@ try { watchlist = JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]'); } cat
 let dismissedAlerts = {};
 try { dismissedAlerts = JSON.parse(localStorage.getItem(WATCHLIST_ALERT_DISMISS_KEY) || '{}'); } catch { dismissedAlerts = {}; }
 
-function saveWatchlist() { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist)); }
+function saveWatchlist() { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist)); _recoCached = null; }
 function saveDismissed() { localStorage.setItem(WATCHLIST_ALERT_DISMISS_KEY, JSON.stringify(dismissedAlerts)); }
 
 function isWatched(cardId) { return watchlist.some(w => w.id === cardId); }
@@ -12631,6 +12629,11 @@ function buildAllHomeRecos(limit = 15) {
   const general = [];
   const byStrat  = { raw: [], psa8: [], psa9: [], psa10: [] };
   const seenIds  = new Set();
+  // Pre-parse per-card stores once — avoids ~50k localStorage reads inside the loop.
+  let allOverrides = {};
+  let priceCache = {};
+  try { allOverrides = JSON.parse(localStorage.getItem(HOLD_OVERRIDE_KEY) || '{}') || {}; } catch {}
+  try { priceCache = JSON.parse(localStorage.getItem(PRICE_CACHE_KEY) || '{}') || {}; } catch {}
 
   for (const c of cardData.cards) {
     if (dismissed.has(c.i)) continue;
@@ -12638,9 +12641,11 @@ function buildAllHomeRecos(limit = 15) {
     if (seenIds.has(c.i)) continue;
     seenIds.add(c.i);
 
-    const overrides = (typeof getHoldOverridesForCard === 'function') ? getHoldOverridesForCard(c.i) : {};
-    const manualRawGBP = overrides && overrides.raw > 0 ? overrides.raw : null;
-    const marketUSD = manualRawGBP ? manualRawGBP / fx : _recoStaticPrice(c);
+    const overrides = allOverrides[c.i] || {};
+    const manualRawGBP = overrides.raw > 0 ? overrides.raw : null;
+    const pcEntry = priceCache[c.i];
+    const cachedUSD = pcEntry ? (pcEntry.pcUngraded || pcEntry.market || pcEntry.mid || 0) : 0;
+    const marketUSD = manualRawGBP ? manualRawGBP / fx : (cachedUSD || c.p || 0);
 
     if (!marketUSD || marketUSD < 8) continue;
     if (marketUSD * fx > maxBudget) continue; // general section: budget filter on raw price
@@ -13120,7 +13125,7 @@ function renderHomeDashboard() {
   _renderHomeWatchlist();
   _renderHomeAiGrades();
   _renderHomeGradeCandidates();
-  _renderHomeReco(true); // always rebuild — tracked-card sets may have changed since last render
+  _renderHomeReco(); // use cache if valid; savePortfolio/Wishlist/Watchlist null it on change
 }
 
 // Silently refresh stale tracked card prices in the background when the user
