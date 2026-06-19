@@ -70,7 +70,7 @@ function _b64uDec(s) {
   while (s.length % 4) s += '=';
   return Uint8Array.from(atob(s), c => c.charCodeAt(0));
 }
-async function jwtSign(payload, secret, days = 30) {
+async function jwtSign(payload, secret, days = 120) {
   const key = await _jwtKey(secret);
   const enc = new TextEncoder();
   const h = _b64u(enc.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
@@ -129,7 +129,7 @@ async function handleAuthRegister(request, env) {
   const hash = await pwHash(password, salt);
   await env.SYNC_KV.put(uKey, JSON.stringify({ username, passwordHash: hash, salt: saltHex, createdAt: new Date().toISOString() }));
   const token = await jwtSign({ sub: username.toLowerCase() }, env.JWT_SECRET);
-  return _jsonResp(200, { token, username, expiresAt: new Date(Date.now() + 30 * 86400000).toISOString() }, ch);
+  return _jsonResp(200, { token, username, expiresAt: new Date(Date.now() + 120 * 86400000).toISOString() }, ch);
 }
 
 async function handleAuthLogin(request, env) {
@@ -147,7 +147,7 @@ async function handleAuthLogin(request, env) {
     return _jsonResp(401, { error: 'Invalid username or password.' }, ch);
   const user = JSON.parse(raw);
   const token = await jwtSign({ sub: username.toLowerCase() }, env.JWT_SECRET);
-  return _jsonResp(200, { token, username: user.username, expiresAt: new Date(Date.now() + 30 * 86400000).toISOString() }, ch);
+  return _jsonResp(200, { token, username: user.username, expiresAt: new Date(Date.now() + 120 * 86400000).toISOString() }, ch);
 }
 
 async function handleUserSync(request, env) {
