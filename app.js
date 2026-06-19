@@ -13287,13 +13287,28 @@ function _renderHomeGradeCandidates() {
     raw = withImg;
     localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(raw));
   }
-  const cands = raw.slice(0, 15);
+
+  // Filter out cards already in the collection — no point buying another raw copy.
+  // Exception: keep if the raw price is ≤ 40% of the PSA 10 fair value, which is
+  // genuine grading arbitrage worth flagging even for owned cards.
+  const ownedIds = new Set(portfolio.map(p => p.id));
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const filtered = raw.filter(d => {
+    if (!ownedIds.has(d.cardId)) return true;
+    const dbCard = cardData?.cards?.find(x => x.i === d.cardId);
+    const p10USD = getCachedPrice(d.cardId)?.pcPsa10 || dbCard?.p10 || 0;
+    if (!p10USD || !d.priceGBP) return false;
+    return d.priceGBP <= p10USD * fx * 0.40;
+  });
+
+  const cands = filtered.slice(0, 15);
   const hash = cands.map(c => c.listingUrl).join('|');
   if (wrap) wrap.style.display = cands.length ? '' : 'none';
   if (hash === _homeGradeCandHash && list.querySelector('.home-card-tile')) return;
   _homeGradeCandHash = hash;
-  const countEl = $('homeGradeCandCount'); if (countEl) countEl.textContent = raw.length;
+  const countEl = $('homeGradeCandCount'); if (countEl) countEl.textContent = filtered.length;
   list.innerHTML = cands.map(d => {
+    const isUpgradeCandidate = ownedIds.has(d.cardId);
     const cardDbImg = (() => {
       const c = cardData?.cards?.find(x => x.i === d.cardId);
       if (c) {
@@ -13316,9 +13331,11 @@ function _renderHomeGradeCandidates() {
       ? `<img class="home-card-art" src="${esc(primarySrc)}" alt="" loading="lazy" onerror="${onerr}">`
       : `<div class="home-card-art"></div>`;
     const price = d.priceGBP ? `£${Number(d.priceGBP).toFixed(2)}` : '';
-    return `<div class="home-card-tile" data-id="${esc(String(d.cardId))}" data-listing-url="${esc(d.listingUrl)}" data-listing-img="${esc(d.listingImg || '')}" data-card-name="${esc(d.cardName || '')}" data-price-gbp="${d.priceGBP || 0}">
+    const signalLabel = isUpgradeCandidate ? 'PSA 10 Upgrade?' : 'AI Grade?';
+    const signalCls   = isUpgradeCandidate ? 'sig-strong-buy' : 'sig-buy';
+    return `<div class="home-card-tile${isUpgradeCandidate ? ' is-upgrade-cand' : ''}" data-id="${esc(String(d.cardId))}" data-listing-url="${esc(d.listingUrl)}" data-listing-img="${esc(d.listingImg || '')}" data-card-name="${esc(d.cardName || '')}" data-price-gbp="${d.priceGBP || 0}">
       ${img}
-      <span class="home-card-signal sig-buy">AI Grade?</span>
+      <span class="home-card-signal ${signalCls}">${signalLabel}</span>
       <button class="home-card-remove" aria-label="Remove">✕</button>
       <div class="home-card-info">
         <div class="home-card-name">${esc(d.cardName || '')}</div>
