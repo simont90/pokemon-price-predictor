@@ -1388,6 +1388,17 @@ function doSearch(query) {
 
   results.querySelectorAll('.search-result-item').forEach(el => {
     el.addEventListener('click', () => selectCard(el.dataset.id));
+    // Prefetch price data after 180 ms hover so it's cached by the time the user clicks.
+    let _pt;
+    el.addEventListener('mouseenter', () => {
+      _pt = setTimeout(() => {
+        const c = cardData?.cards.find(x => x.i === el.dataset.id);
+        if (c && !getCachedPrice(c.i)) {
+          fetchFreshPriceData(c).then(d => { if (d) setCachedPrice(c.i, d); }).catch(() => {});
+        }
+      }, 180);
+    });
+    el.addEventListener('mouseleave', () => clearTimeout(_pt));
   });
   results.classList.add('open');
 }
@@ -13666,7 +13677,7 @@ function setupPageNav() {
       window._urRanOnce = true;
       setTimeout(() => { try { urRunScan(); } catch (e) {} }, 100);
     }
-    if (page === 'home') { renderHomeDashboard(); _homeAutoRefresh(); }
+    if (page === 'home') { renderHomeDashboard(); _homeAutoRefresh(); _syncOnHomeNav(); }
     try { if (location.hash.replace('#', '') !== page) history.replaceState(null, '', '#' + page); } catch (e) {}
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   }
@@ -14922,6 +14933,18 @@ async function authSyncPull({ mode } = {}) {
     authLogLine('Pull failed: ' + err.message, 'err');
     return false;
   }
+}
+// Push then pull on every home-tab navigation so all devices stay current.
+async function _syncOnHomeNav() {
+  try {
+    if (authIsActive()) {
+      await authSyncPush({ silent: true });
+      await authSyncPull({ mode: 'merge' });
+    } else if (syncGetPairCode() && syncGetEndpoint()) {
+      await syncCloudPush({ silent: true });
+      await syncCloudPull({ mode: 'merge' });
+    }
+  } catch {}
 }
 function authLogLine(msg, cls = '') {
   const log = document.getElementById('authSyncLog') || document.getElementById('authLog');
