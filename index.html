@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619cg">
+  <link rel="stylesheet" href="style.css?v=20260619ch">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -196,14 +196,14 @@
         </div>
       </div>
       <div class="sync-body">
-        <div class="sync-tabs" role="tablist">
-          <button class="sync-tab is-active" data-tab="file" type="button" role="tab">File backup</button>
+        <div class="sync-tabs" role="tablist" style="display:none">
+          <button class="sync-tab" data-tab="file" type="button" role="tab">File backup</button>
           <button class="sync-tab" data-tab="cloud" type="button" role="tab">Cloud sync</button>
-          <button class="sync-tab" data-tab="account" type="button" role="tab">Account</button>
+          <button class="sync-tab is-active" data-tab="account" type="button" role="tab">Account</button>
         </div>
 
         <!-- Tab 1: File-based backup (works today, no setup) -->
-        <div class="sync-tab-content sync-tab-file is-active" data-tab="file">
+        <div class="sync-tab-content sync-tab-file" data-tab="file" style="display:none">
           <p class="sync-intro">
             Save your data to a file you can drop in iCloud Drive (Files app). On your iPhone or iPad, open the same file and tap <strong>Import</strong>.
             <strong>Works today, no account needed.</strong>
@@ -257,7 +257,7 @@
         </div>
 
         <!-- Tab 3: Account (username + password, standalone) -->
-        <div class="sync-tab-content sync-tab-account" data-tab="account" style="display:none">
+        <div class="sync-tab-content sync-tab-account is-active" data-tab="account">
 
           <!-- Not signed in -->
           <div id="authNotSignedIn" class="sync-auth-form">
@@ -2108,6 +2108,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619cg"></script>
+  <script src="app.js?v=20260619ch"></script>
 </body>
 </html>
