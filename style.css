@@ -6284,6 +6284,34 @@ section.card.is-collapsed { padding-bottom: 18px; }
   transition: color 0.18s ease, border-color 0.18s ease;
 }
 .ho-clear:hover { color: #fca5a5; border-color: rgba(248, 113, 113, 0.4); }
+.ho-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ho-na-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.ho-na-check {
+  accent-color: var(--accent);
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ho-na-label-text {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+}
+.ho-row-na { opacity: 0.5; }
+.ho-input-na { opacity: 0.35; pointer-events: none; }
 
 /* Strategy tile when override is active */
 .hold-tile-overridden {

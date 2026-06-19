@@ -9378,19 +9378,19 @@ function computeHoldCore(card) {
     }
   }
 
-  const positives = strategies.filter(s => s.roi > 0);
+  const positives = strategies.filter(s => !s.na && s.roi > 0);
   const winner = positives.length
     ? positives.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
     : null;
-  const rawSide = strategies.filter(s => (s.key === 'raw' || s.key === 'gamble') && s.roi > 0);
-  const gradedSide = strategies.filter(s => s.key.startsWith('psa') && s.roi > 0);
+  const rawSide = strategies.filter(s => !s.na && (s.key === 'raw' || s.key === 'gamble') && s.roi > 0);
+  const gradedSide = strategies.filter(s => !s.na && s.key.startsWith('psa') && s.roi > 0);
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
   // BEST LONG-TERM PICK: never high-risk (gamble), ROI must beat a basic
   // opportunity cost (≥35% over 5 yrs ≈ 6.2% annual — roughly savings/bond rate).
   // Threshold lowered from 80% to match recalibrated post-bubble growth rates.
-  const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 35);
+  const ltpCandidates = strategies.filter(s => !s.na && s.key !== 'gamble' && s.roi >= 35);
   const bestLongTermPick = _pickBestLTP(ltpCandidates);
 
   // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
@@ -9852,19 +9852,19 @@ function renderHoldStrategy(card) {
   //   1. Raw vs Graded — which broad approach wins? Compare best raw-side
   //      option (Raw, Raw+Grade) vs best already-graded option (PSA 7-10).
   //   2. Which graded tier (PSA 7/8/9/10) is the best long-term hold?
-  const positives = strategies.filter(s => s.roi > 0);
+  const positives = strategies.filter(s => !s.na && s.roi > 0);
   const overallWinner = positives.length
     ? positives.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
     : null;
 
-  const rawSide = strategies.filter(s => (s.key === 'raw' || s.key === 'gamble') && s.roi > 0);
-  const gradedSide = strategies.filter(s => s.key.startsWith('psa') && s.roi > 0);
+  const rawSide = strategies.filter(s => !s.na && (s.key === 'raw' || s.key === 'gamble') && s.roi > 0);
+  const gradedSide = strategies.filter(s => !s.na && s.key.startsWith('psa') && s.roi > 0);
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
   // BEST LONG-TERM PICK badge: never high-risk (gamble), ROI must beat opportunity
   // cost (≥35% over 5 yrs ≈ 6.2% annual). Threshold recalibrated for post-bubble rates.
-  const ltpCandidates = strategies.filter(s => s.key !== 'gamble' && s.roi >= 35);
+  const ltpCandidates = strategies.filter(s => !s.na && s.key !== 'gamble' && s.roi >= 35);
   const bestLongTermPick = _pickBestLTP(ltpCandidates);
 
   const winner = overallWinner; // used for recommendation copy below
@@ -10008,7 +10008,7 @@ function renderHoldStrategy(card) {
   // Render the comparison grid.
   const grid = $('holdGrid');
   const _maxBudgetGBP = getMaxBudgetGBP();
-  grid.innerHTML = strategies.map(s => {
+  grid.innerHTML = strategies.filter(s => !s.na).map(s => {
     const todayGBP_tile = s.today * fx;
     const isOverBudget = _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
     const isWinner = bestLongTermPick && s.key === bestLongTermPick.key && !isOverBudget;
@@ -13831,6 +13831,23 @@ function clearHoldOverridesForCard(cardId) {
   delete all[cardId];
   try { localStorage.setItem(HOLD_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
 }
+function setHoldOverrideNA(cardId, gradeKey, isNA) {
+  if (!cardId) return;
+  const all = _holdOverridesAll();
+  all[cardId] = all[cardId] || {};
+  if (isNA) {
+    all[cardId]._na = all[cardId]._na || {};
+    all[cardId]._na[gradeKey] = true;
+    delete all[cardId][gradeKey]; // clear any price override for this grade
+  } else {
+    if (all[cardId]._na) {
+      delete all[cardId]._na[gradeKey];
+      if (!Object.keys(all[cardId]._na).length) delete all[cardId]._na;
+    }
+  }
+  if (!Object.keys(all[cardId]).length) delete all[cardId];
+  try { localStorage.setItem(HOLD_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
+}
 
 // Apply user-entered market prices to a strategies array (mutates in place).
 // We override the "today" buy price only — 5yr target stays from the model.
@@ -13840,6 +13857,7 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
   if (!card || !card.i || !Array.isArray(strategies)) return;
   const overrides = getHoldOverridesForCard(card.i);
   if (!overrides || !Object.keys(overrides).length) return;
+  const naFlags = overrides._na || {};
   const fxRateLocal = (typeof fx === 'number' && fx > 0) ? fx : 0.79;
   // Map strategy key → which override key feeds it.
   // The "gamble" (Buy Raw + Grade) row buys raw upfront, so it uses the raw override.
@@ -13847,6 +13865,7 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
   strategies.forEach(s => {
     const ok = sourceKey[s.key];
     if (!ok) return;
+    if (naFlags[ok]) { s.na = true; return; }
     const gbp = overrides[ok];
     if (gbp == null || !isFinite(gbp) || gbp <= 0) return;
     const usd = gbp / fxRateLocal;
@@ -13890,7 +13909,8 @@ function renderHoldOverridePanel(card) {
     { key: 'psa9',  label: 'PSA 9' },
     { key: 'psa10', label: 'PSA 10' },
   ];
-  const activeCount = rows.filter(r => overrides[r.key] != null).length;
+  const naFlags = overrides._na || {};
+  const activeCount = rows.filter(r => overrides[r.key] != null || naFlags[r.key]).length;
   const summaryNote = activeCount > 0
     ? `<span class="ho-active">${activeCount} active override${activeCount === 1 ? '' : 's'}</span>`
     : `<span class="ho-hint">Override fair value with actual eBay prices</span>`;
@@ -13905,18 +13925,23 @@ function renderHoldOverridePanel(card) {
         <p class="ho-blurb">If eBay listings are clearing well above (or below) the model's fair value, drop the actual GBP price into the matching grade. The strategy ROI & winner will recompute using your number as the buy-in.</p>
         <div class="ho-grid">
           ${rows.map(r => {
+            const isPSA = r.key !== 'raw';
+            const isNA = isPSA && !!naFlags[r.key];
             const fv = fvGBP(r.key);
             const val = overrides[r.key] != null ? overrides[r.key] : '';
             const placeholder = fv != null ? `Fair value £${fv.toFixed(2)}` : 'Enter GBP';
-            const fvNote = fv != null ? `<span class="ho-fv">Fair £${fv.toFixed(2)}</span>` : '';
+            const fvNote = fv != null && !isNA ? `<span class="ho-fv">Fair £${fv.toFixed(2)}</span>` : '';
             return `
-              <div class="ho-row">
-                <label class="ho-row-label" for="ho-in-${r.key}">${r.label}</label>
+              <div class="ho-row ${isNA ? 'ho-row-na' : ''}">
+                <div class="ho-row-head">
+                  <label class="ho-row-label" for="ho-in-${r.key}">${r.label}</label>
+                  ${isPSA ? `<label class="ho-na-wrap"><input type="checkbox" class="ho-na-check" data-grade="${r.key}"${isNA ? ' checked' : ''}><span class="ho-na-label-text">N/A</span></label>` : ''}
+                </div>
                 <div class="ho-input-wrap">
                   <span class="ho-cur">£</span>
-                  <input type="number" id="ho-in-${r.key}" class="ho-input" data-grade="${r.key}"
+                  <input type="number" id="ho-in-${r.key}" class="ho-input${isNA ? ' ho-input-na' : ''}" data-grade="${r.key}"
                          min="0" step="0.01" inputmode="decimal"
-                         value="${val}" placeholder="${placeholder}">
+                         value="${val}" placeholder="${placeholder}"${isNA ? ' disabled' : ''}>
                 </div>
                 ${fvNote}
               </div>
@@ -13946,6 +13971,13 @@ function renderHoldOverridePanel(card) {
     inp.addEventListener('blur', (e) => {
       const grade = inp.getAttribute('data-grade');
       setHoldOverride(card.i, grade, inp.value);
+      try { renderHoldStrategy(card); } catch {}
+    });
+  });
+  host.querySelectorAll('.ho-na-check').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const grade = chk.getAttribute('data-grade');
+      setHoldOverrideNA(card.i, grade, chk.checked);
       try { renderHoldStrategy(card); } catch {}
     });
   });
