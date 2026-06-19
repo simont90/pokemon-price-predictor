@@ -12228,9 +12228,20 @@ function setupAiChat() {
 
   btn.addEventListener('click', aiOpenPanel);
   close && close.addEventListener('click', aiClosePanel);
+  document.getElementById('aiChatMinimise')?.addEventListener('click', aiClosePanel);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.getElementById('aiChatPanel').classList.contains('open')) aiClosePanel();
   });
+
+  // Swipe-down on handle to dismiss (mobile bottom sheet)
+  const handle = document.getElementById('aiChatHandle');
+  if (handle) {
+    let _hTouchY = 0;
+    handle.addEventListener('touchstart', e => { _hTouchY = e.touches[0].clientY; }, { passive: true });
+    handle.addEventListener('touchend', e => {
+      if (e.changedTouches[0].clientY - _hTouchY > 50) aiClosePanel();
+    }, { passive: true });
+  }
   settingsBtn && settingsBtn.addEventListener('click', () => aiToggleSettings());
   clearBtn && clearBtn.addEventListener('click', () => {
     if (!confirm('Clear chat history?')) return;
@@ -13585,6 +13596,14 @@ function setupPageNav() {
       nav.style.setProperty('--nav-glow', '0');
     }, { passive: true });
   }
+
+  // Shrink nav to icon-only when scrolling down, expand on scroll-up
+  let _prevNavScrollY = window.scrollY;
+  window.addEventListener('scroll', () => {
+    const y = window.scrollY;
+    if (nav) nav.classList.toggle('shrunk', y > _prevNavScrollY && y > 80);
+    _prevNavScrollY = y;
+  }, { passive: true });
 }
 
 // =============================================================
