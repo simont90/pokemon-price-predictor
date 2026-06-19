@@ -9674,9 +9674,11 @@ function renderHoldStrategy(card) {
     ? baseGemRate  // no sight-unseen penalty when card condition is known
     : baseGemRate * ONLINE_BUY_GEM_PENALTY;
 
-  // If acquisition cost is recorded, use it as the cost basis for raw/grade strategies
-  // so ROI reflects what the user actually paid, not the current market price.
-  const acqCostGBP = getAcqCostBasisGBP(card.i);
+  // Slab acquisition: cost basis applies to the specific PSA grade tile, not raw.
+  const slabAcq = getAcqSlabInfo(card.i);
+  // If acquisition cost is recorded (pack/single), use it as raw cost basis.
+  // Slab acquisitions are handled per-grade in gradedStrategies, not here.
+  const acqCostGBP = (!slabAcq) ? getAcqCostBasisGBP(card.i) : null;
   const acqCostUSD = (acqCostGBP && acqCostGBP > 0) ? acqCostGBP / fx : null;
   // rawCostUSD = what the user paid (or current market if no acquisition logged)
   const rawCostUSD = acqCostUSD ?? rawUSD;
@@ -9772,16 +9774,21 @@ function renderHoldStrategy(card) {
     }
   });
 
-  // ----- Strategies 3-6: Buy graded at each tier -----
+  // ----- Strategies 3-6: Buy (or Keep) graded at each tier -----
   const gradedStrategies = [7, 8, 9, 10].map(g => {
+    const isOwnedSlab = slabAcq && slabAcq.grade === g;
     const baseUSD = estimateGradePrice(card, g, psa10Price);
-    const slabShipGBP = estimateUkSlabShipping(baseUSD * fx);
-    const today = baseUSD + slabShipGBP / fx;
-    const yr5 = projectGradePrice(card, g, baseUSD, 5);  // project from market price, not inflated entry
+    const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
+    // For owned slabs: cost basis is what was paid; projections still anchor to current market.
+    const today = isOwnedSlab ? slabAcq.costGBP / fx : baseUSD + slabShipGBP / fx;
+    const yr5 = projectGradePrice(card, g, baseUSD, 5);
     const sell = yr5 * (1 - BUY_SELL_FRICTION);
     const profit = sell - today;
     const roi = today > 0 ? (profit / today) * 100 : 0;
-    return { label: `Buy PSA ${g}`, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi };
+    const label = isOwnedSlab ? `Keep PSA ${g}` : `Buy PSA ${g}`;
+    const slabMarketGBP = isOwnedSlab ? usdToGbp(baseUSD) : null;
+    const slabGainGBP = isOwnedSlab ? (slabMarketGBP - slabAcq.costGBP) : null;
+    return { label, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi, isOwnedSlab, slabMarketGBP, slabGainGBP };
   });
 
   // Label the raw/grade strategies to show acquisition cost basis when applicable
@@ -10028,9 +10035,14 @@ function renderHoldStrategy(card) {
           <div class="hold-tile-desc">${s.desc}</div>
         </div>
         <div class="hold-tile-row">
-          <span class="hold-tile-k">Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}</span>
+          <span class="hold-tile-k">${s.isOwnedSlab ? 'Your cost (paid)' : `Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}`}</span>
           <span class="hold-tile-v">${fmtGBP(s.today)}</span>
         </div>
+        ${s.isOwnedSlab && s.slabMarketGBP != null ? `
+        <div class="hold-tile-row hold-tile-sub">
+          <span class="hold-tile-k">· Market now</span>
+          <span class="hold-tile-v">${fmtGBPDirect(s.slabMarketGBP)} <span class="${s.slabGainGBP >= 0 ? 'hold-pos' : 'hold-neg'}" style="font-size:10px">${s.slabGainGBP >= 0 ? '+' : ''}${fmtGBPDirect(Math.abs(s.slabGainGBP))}</span></span>
+        </div>` : ''}
         ${s.slabShipGBP > 0 ? `
         <div class="hold-tile-row hold-tile-sub">
           <span class="hold-tile-k">· Card price</span>
@@ -10573,7 +10585,21 @@ function getAcqCostBasisGBP(cardId) {
     if (!Number.isFinite(p) || p <= 0) return null;
     return p;
   }
+  if (a.source === 'slab') {
+    const info = getAcqSlabInfo(cardId);
+    return info ? info.costGBP : null;
+  }
   return null;
+}
+
+// Returns slab acquisition info or null when source isn't 'slab' / data is incomplete.
+function getAcqSlabInfo(cardId) {
+  const a = getAcq(cardId);
+  if (!a || a.source !== 'slab') return null;
+  const grade = parseInt(a.slabGrade, 10);
+  const costGBP = parseFloat(a.slabPriceGBP);
+  if (![7, 8, 9, 10].includes(grade) || !Number.isFinite(costGBP) || costGBP <= 0) return null;
+  return { grade, costGBP, date: a.slabDate || null, where: a.slabWhere || null };
 }
 
 function fmtPct(v, signed) {
@@ -10618,10 +10644,12 @@ function renderAcquisition() {
   // Show the right fields
   const packFields = document.getElementById('acqFieldsPack');
   const singleFields = document.getElementById('acqFieldsSingle');
+  const slabFields = document.getElementById('acqFieldsSlab');
   const empty = document.getElementById('acqEmpty');
   const roi = document.getElementById('acqRoi');
   packFields.style.display = acq.source === 'pack' ? 'grid' : 'none';
   singleFields.style.display = acq.source === 'single' ? 'grid' : 'none';
+  if (slabFields) slabFields.style.display = acq.source === 'slab' ? 'grid' : 'none';
   empty.style.display = acq.source ? 'none' : 'block';
 
   // Populate fields without clobbering user-active focus
@@ -10637,14 +10665,151 @@ function renderAcquisition() {
   setIfNotFocused('acqSinglePrice', acq.singlePriceGBP);
   setIfNotFocused('acqSingleDate', acq.singleDate);
   setIfNotFocused('acqSingleSrc', acq.singleWhere);
+  setIfNotFocused('acqSlabGrade', acq.slabGrade);
+  setIfNotFocused('acqSlabPrice', acq.slabPriceGBP);
+  setIfNotFocused('acqSlabDate', acq.slabDate);
+  setIfNotFocused('acqSlabWhere', acq.slabWhere);
 
   // Compute ROI readout
   const costGBP = getAcqCostBasisGBP(card.i);
   if (!acq.source || !Number.isFinite(costGBP) || costGBP <= 0) {
     roi.style.display = 'none';
+    const flipEl = document.getElementById('acqSlabFlip');
+    if (flipEl) flipEl.style.display = 'none';
+    // Reset dynamic labels to defaults
+    const mLbl = document.getElementById('acqMarketLbl'); if (mLbl) mLbl.textContent = 'Market now (raw)';
+    const rLbl = document.getElementById('acqRoiNowLbl'); if (rLbl) rLbl.textContent = 'Realised ROI';
+    const xLbl = document.getElementById('acqRoiMaxLbl'); if (xLbl) xLbl.textContent = 'Max ROI · PSA 10 in 5 years';
+    const pLbl = document.getElementById('acqProfitLbl'); if (pLbl) pLbl.textContent = 'Profit if PSA 10';
     return;
   }
   roi.style.display = 'block';
+
+  // ---- Slab acquisition ROI ----
+  if (acq.source === 'slab') {
+    const slabInfo = getAcqSlabInfo(card.i);
+    const flipEl = document.getElementById('acqSlabFlip');
+    const ladderEl = document.getElementById('acqLadder');
+    if (!slabInfo) { roi.style.display = 'none'; if (flipEl) flipEl.style.display = 'none'; return; }
+    const { grade, costGBP: slabCost } = slabInfo;
+    const gradeLbl = PSA_GRADE_LABELS?.[grade] || '';
+    const psa10USD_s = getPsa10Anchor(card)?.usd || (card.p10 || 0) || (livePrice?.pcPsa10 > 0 ? livePrice.pcPsa10 : 0);
+    const fx_s = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+    const slabMarketUSD = psa10USD_s > 0 ? estimateGradePrice(card, grade, psa10USD_s) : 0;
+    const slabMarketGBP = usdToGbp(slabMarketUSD);
+    const FRICTION = 0.10;
+    const delta = slabMarketGBP - slabCost;
+    const realisedNet = slabMarketGBP * (1 - FRICTION);
+    const realisedROI = slabCost > 0 ? ((realisedNet - slabCost) / slabCost) * 100 : null;
+    const yr5USD_s = psa10USD_s > 0 ? projectGradePrice(card, grade, slabMarketUSD, 5) : 0;
+    const yr5GBP_s = usdToGbp(yr5USD_s);
+    const yr5Net_s = yr5GBP_s * (1 - FRICTION);
+    const yr5ROI_s = slabCost > 0 ? ((yr5Net_s - slabCost) / slabCost) * 100 : null;
+    const yr5Profit_s = yr5Net_s - slabCost;
+    // Update labels
+    const mLbl = document.getElementById('acqMarketLbl'); if (mLbl) mLbl.textContent = `Market now (PSA ${grade})`;
+    const rLbl = document.getElementById('acqRoiNowLbl'); if (rLbl) rLbl.textContent = 'ROI if sold today';
+    const xLbl = document.getElementById('acqRoiMaxLbl'); if (xLbl) xLbl.textContent = `5yr hold · PSA ${grade} — ${new Date().getFullYear() + 5}`;
+    const pLbl = document.getElementById('acqProfitLbl'); if (pLbl) pLbl.textContent = `5yr profit (PSA ${grade})`;
+    // Populate cells
+    document.getElementById('acqCost').textContent = fmtGBPDirect(slabCost);
+    const bits = [slabInfo.date, slabInfo.where].filter(Boolean);
+    document.getElementById('acqCostSub').textContent = bits.length ? bits.join(' · ') : `PSA ${grade} ${gradeLbl}`;
+    document.getElementById('acqMarket').textContent = slabMarketGBP > 0 ? fmtGBPDirect(slabMarketGBP) : '—';
+    const deltaEl = document.getElementById('acqMarketDelta');
+    if (slabMarketGBP > 0) {
+      deltaEl.textContent = (delta >= 0 ? '+' : '') + fmtGBPDirect(Math.abs(delta)) + ' vs cost';
+      deltaEl.className = 'acq-roi-sub acq-roi-delta ' + (delta >= 0 ? 'acq-pos' : 'acq-neg');
+    } else { deltaEl.textContent = ''; }
+    const roiEl = document.getElementById('acqRoiNow');
+    if (Number.isFinite(realisedROI)) {
+      roiEl.textContent = fmtPct(realisedROI, true);
+      roiEl.className = 'acq-roi-val acq-roi-roi ' + (realisedROI >= 0 ? 'acq-pos' : 'acq-neg');
+    } else { roiEl.textContent = '—'; roiEl.className = 'acq-roi-val acq-roi-roi'; }
+    document.getElementById('acqRoiNowSub').textContent = `net of ${(FRICTION*100).toFixed(0)}% sell fees`;
+    const maxEl = document.getElementById('acqRoiMax');
+    if (Number.isFinite(yr5ROI_s)) {
+      maxEl.textContent = fmtPct(yr5ROI_s, true);
+      maxEl.className = 'acq-roi-val acq-roi-val-max ' + (yr5ROI_s >= 0 ? 'acq-pos' : 'acq-neg');
+    } else { maxEl.textContent = '—'; maxEl.className = 'acq-roi-val acq-roi-val-max'; }
+    document.getElementById('acqRoiMaxSub').textContent = yr5GBP_s > 0 ? `projected ${fmtGBPDirect(yr5GBP_s)} by ${new Date().getFullYear() + 5}` : '';
+    const profEl = document.getElementById('acqProfitMax');
+    profEl.textContent = Number.isFinite(yr5Profit_s) ? (yr5Profit_s >= 0 ? '+' : '') + fmtGBPDirect(Math.abs(yr5Profit_s)) : '—';
+    profEl.className = 'acq-roi-val ' + (yr5Profit_s >= 0 ? 'acq-pos' : 'acq-neg');
+    document.getElementById('acqProfitMaxSub').textContent = `after ${(FRICTION*100).toFixed(0)}% sell fees`;
+    // Storage
+    const storageDiv = document.getElementById('acqStorage'); if (storageDiv) storageDiv.style.display = 'none';
+    // Ladder: hide (replaced by flip analysis)
+    if (ladderEl) ladderEl.style.display = 'none';
+    // Flip analysis
+    if (flipEl && psa10USD_s > 0) {
+      flipEl.style.display = 'block';
+      const sellProceeds = slabMarketGBP * (1 - FRICTION);
+      const flipOptions = [
+        { g: grade, label: `Keep PSA ${grade}`, isCurrent: true },
+        ...([10, 9, 8, 7].filter(g => g !== grade)).map(g => ({ g, label: `Sell → Buy PSA ${g}`, isCurrent: false })),
+        { g: 0, label: 'Sell → Go raw', isCurrent: false },
+      ];
+      const flipRows = flipOptions.map(opt => {
+        if (opt.isCurrent) {
+          return { label: opt.label, totalOut: slabCost, yr5: yr5GBP_s, roi: yr5ROI_s, profit: yr5Profit_s, netChg: null, isCurrent: true };
+        }
+        if (opt.g === 0) {
+          // Sell slab, buy raw
+          const rawUSD_f = getCurrentPrice(card);
+          const rawGBP_f = usdToGbp(rawUSD_f || 0) + UK_RAW_SHIPPING_GBP;
+          const netChg = rawGBP_f - sellProceeds; // how much extra you pay (or get back)
+          const totalOut = slabCost + netChg;
+          const rawYr5 = rawUSD_f > 0 ? usdToGbp(projectGradePrice(card, 9, rawUSD_f, 5) / GRADE_GROWTH_PREMIUM[9]) : 0;
+          const rawYr5Net = rawYr5 * (1 - FRICTION);
+          const roi_f = totalOut > 0 ? ((rawYr5Net - totalOut) / totalOut) * 100 : null;
+          return { label: opt.label, totalOut, yr5: rawYr5, roi: roi_f, profit: rawYr5Net - totalOut, netChg, isCurrent: false };
+        }
+        const buyUSD_f = estimateGradePrice(card, opt.g, psa10USD_s);
+        const buyGBP_f = usdToGbp(buyUSD_f) + estimateUkSlabShipping(buyUSD_f * fx_s);
+        const netChg = buyGBP_f - sellProceeds;
+        const totalOut = slabCost + netChg;
+        const yr5_f = usdToGbp(projectGradePrice(card, opt.g, buyUSD_f, 5));
+        const yr5Net_f = yr5_f * (1 - FRICTION);
+        const roi_f = totalOut > 0 ? ((yr5Net_f - totalOut) / totalOut) * 100 : null;
+        return { label: opt.label, totalOut, yr5: yr5_f, roi: roi_f, profit: yr5Net_f - totalOut, netChg, isCurrent: false };
+      });
+      const validRows = flipRows.filter(r => Number.isFinite(r.roi));
+      const bestROI = validRows.length ? Math.max(...validRows.map(r => r.roi)) : null;
+      flipEl.innerHTML = `
+        <div class="acq-flip-head">Hold or flip?</div>
+        <div class="acq-flip-table">
+          <div class="acq-flip-th"><span>Option</span><span>Total outlay</span><span>5yr target</span><span>5yr ROI</span></div>
+          ${flipRows.map(r => {
+            const isBest = Number.isFinite(r.roi) && r.roi === bestROI;
+            const chgTxt = r.netChg !== null ? `<span class="acq-flip-chg ${r.netChg >= 0 ? 'acq-neg' : 'acq-pos'}">${r.netChg >= 0 ? '+' : ''}${fmtGBPDirect(Math.abs(r.netChg))} ${r.netChg >= 0 ? 'extra' : 'back'}</span>` : '';
+            return `<div class="acq-flip-row ${r.isCurrent ? 'acq-flip-current' : ''} ${isBest ? 'acq-flip-best' : ''}">
+              <span class="acq-flip-label">${r.label}${isBest && !r.isCurrent ? ' <span class="acq-flip-best-tag">best</span>' : ''}</span>
+              <span class="acq-flip-num">${Number.isFinite(r.totalOut) ? fmtGBPDirect(r.totalOut) : '—'}${chgTxt}</span>
+              <span class="acq-flip-num">${Number.isFinite(r.yr5) && r.yr5 > 0 ? fmtGBPDirect(r.yr5) : '—'}</span>
+              <span class="acq-flip-num ${Number.isFinite(r.roi) ? (r.roi >= 0 ? 'acq-pos' : 'acq-neg') : ''}">${Number.isFinite(r.roi) ? fmtPct(r.roi, true) : '—'}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      `;
+    } else if (flipEl) { flipEl.style.display = 'none'; }
+    // Meta
+    const meta = document.getElementById('acqMeta');
+    const acqDate = acq.ts ? new Date(acq.ts) : null;
+    meta.innerHTML = [
+      acqDate ? `Logged ${acqDate.toLocaleDateString('en-GB')}` : '',
+      portfolio.some(p => p.id === card.i) ? '<span class="acq-pill">In collection</span>' : '<span class="acq-pill acq-pill-muted">Not in collection</span>',
+    ].filter(Boolean).join(' · ');
+    return;
+  }
+
+  // ---- Non-slab ROI (pack / single) ----
+  // Reset dynamic labels
+  const mLbl_n = document.getElementById('acqMarketLbl'); if (mLbl_n) mLbl_n.textContent = 'Market now (raw)';
+  const rLbl_n = document.getElementById('acqRoiNowLbl'); if (rLbl_n) rLbl_n.textContent = 'Realised ROI';
+  const xLbl_n = document.getElementById('acqRoiMaxLbl'); if (xLbl_n) xLbl_n.textContent = 'Max ROI · PSA 10 in 5 years';
+  const pLbl_n = document.getElementById('acqProfitLbl'); if (pLbl_n) pLbl_n.textContent = 'Profit if PSA 10';
+  const flipEl_n = document.getElementById('acqSlabFlip'); if (flipEl_n) flipEl_n.style.display = 'none';
 
   const rawUSD = getCurrentPrice(card);
   const marketGBP = usdToGbp(rawUSD || 0);
@@ -10843,6 +11008,20 @@ function setupAcquisition() {
   wire('acqSinglePrice', 'singlePriceGBP', v => v === '' ? '' : parseFloat(v));
   wire('acqSingleDate', 'singleDate');
   wire('acqSingleSrc', 'singleWhere');
+  wire('acqSlabGrade', 'slabGrade', v => v === '' ? '' : parseInt(v, 10));
+  wire('acqSlabPrice', 'slabPriceGBP', v => v === '' ? '' : parseFloat(v));
+  wire('acqSlabDate', 'slabDate');
+  wire('acqSlabWhere', 'slabWhere');
+  // Slab grade/price changes affect the Hold Strategy tile labels & cost basis.
+  ['acqSlabGrade', 'acqSlabPrice'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      if (selectedCard && typeof renderHoldStrategy === 'function') {
+        try { renderHoldStrategy(selectedCard); } catch {}
+      }
+    });
+  });
 
   // Storage materials checkboxes
   const wireCheck = (id, key) => {

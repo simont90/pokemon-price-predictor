@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619cf">
+  <link rel="stylesheet" href="style.css?v=20260619cg">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1115,6 +1115,11 @@
               <span class="acq-src-label">Bought as single</span>
               <span class="acq-src-hint">Cost basis = price paid</span>
             </button>
+            <button class="acq-src-btn" data-src="slab" role="radio" aria-checked="false" type="button">
+              <span class="acq-src-ico">🏆</span>
+              <span class="acq-src-label">Bought as slab</span>
+              <span class="acq-src-hint">Already graded — PSA price paid</span>
+            </button>
             <button class="acq-src-btn acq-src-clear" data-src="clear" type="button" title="Clear acquisition info" style="display:none">✕ Clear</button>
           </div>
 
@@ -1151,6 +1156,32 @@
             </div>
           </div>
 
+          <!-- Slab inputs -->
+          <div class="acq-fields acq-fields-slab" id="acqFieldsSlab" style="display:none">
+            <div class="acq-field acq-field-small">
+              <label for="acqSlabGrade">PSA grade</label>
+              <select id="acqSlabGrade" class="acq-input acq-select">
+                <option value="">Select grade</option>
+                <option value="10">PSA 10 — Gem Mint</option>
+                <option value="9">PSA 9 — Mint</option>
+                <option value="8">PSA 8 — NM-MT</option>
+                <option value="7">PSA 7 — Near Mint</option>
+              </select>
+            </div>
+            <div class="acq-field acq-field-small">
+              <label for="acqSlabPrice">Price paid (£)</label>
+              <input id="acqSlabPrice" type="number" step="0.01" min="0" class="acq-input" placeholder="0.00" inputmode="decimal">
+            </div>
+            <div class="acq-field acq-field-small">
+              <label for="acqSlabDate">Date acquired (optional)</label>
+              <input id="acqSlabDate" type="date" class="acq-input">
+            </div>
+            <div class="acq-field">
+              <label for="acqSlabWhere">Where (optional)</label>
+              <input id="acqSlabWhere" type="text" class="acq-input" placeholder="eBay UK / Cardmarket / dealer" autocomplete="off">
+            </div>
+          </div>
+
           <button class="acq-save-btn" id="acqSaveBtn" type="button" style="display:none">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
             Save &amp; Sync
@@ -1178,28 +1209,29 @@
                 <span class="acq-roi-sub" id="acqCostSub"></span>
               </div>
               <div class="acq-roi-cell">
-                <span class="acq-roi-lbl">Market now (raw)</span>
+                <span class="acq-roi-lbl" id="acqMarketLbl">Market now (raw)</span>
                 <span class="acq-roi-val" id="acqMarket">—</span>
                 <span class="acq-roi-sub acq-roi-delta" id="acqMarketDelta"></span>
               </div>
               <div class="acq-roi-cell">
-                <span class="acq-roi-lbl">Realised ROI</span>
+                <span class="acq-roi-lbl" id="acqRoiNowLbl">Realised ROI</span>
                 <span class="acq-roi-val acq-roi-roi" id="acqRoiNow">—</span>
                 <span class="acq-roi-sub" id="acqRoiNowSub">if flipped raw today</span>
               </div>
             </div>
             <div class="acq-roi-row acq-roi-row-max">
               <div class="acq-roi-cell acq-roi-cell-wide">
-                <span class="acq-roi-lbl acq-roi-lbl-max">Max ROI · PSA 10 in 5 years</span>
+                <span class="acq-roi-lbl acq-roi-lbl-max" id="acqRoiMaxLbl">Max ROI · PSA 10 in 5 years</span>
                 <span class="acq-roi-val acq-roi-val-max" id="acqRoiMax">—</span>
                 <span class="acq-roi-sub" id="acqRoiMaxSub"></span>
               </div>
               <div class="acq-roi-cell">
-                <span class="acq-roi-lbl">Profit if PSA 10</span>
+                <span class="acq-roi-lbl" id="acqProfitLbl">Profit if PSA 10</span>
                 <span class="acq-roi-val" id="acqProfitMax">—</span>
                 <span class="acq-roi-sub" id="acqProfitMaxSub">after £40 grading</span>
               </div>
             </div>
+            <div class="acq-slab-flip" id="acqSlabFlip" style="display:none"></div>
             <div class="acq-ladder" id="acqLadder"></div>
             <div class="acq-meta" id="acqMeta"></div>
           </div>
@@ -2076,6 +2108,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619cf"></script>
+  <script src="app.js?v=20260619cg"></script>
 </body>
 </html>

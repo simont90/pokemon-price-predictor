@@ -4974,6 +4974,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   color: var(--text); font-family: var(--mono); font-size: 13px;
 }
 .acq-input:focus { outline: none; border-color: var(--green); background: var(--surface); }
+.acq-select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 .acq-help { font-size: 10.5px; color: var(--text-faint); margin-top: 2px; }
 
 .acq-save-btn {
@@ -5140,6 +5141,45 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   text-transform: uppercase;
 }
 .acq-pill-muted { background: var(--surface-2, rgba(255,255,255,0.04)); color: var(--text-muted); }
+
+/* Slab flip analysis */
+.acq-slab-flip { margin-top: 12px; }
+.acq-flip-head {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 6px;
+}
+.acq-flip-table { display: flex; flex-direction: column; gap: 4px; }
+.acq-flip-th {
+  display: grid; grid-template-columns: 1fr 100px 90px 80px;
+  gap: 8px; padding: 4px 10px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.acq-flip-row {
+  display: grid; grid-template-columns: 1fr 100px 90px 80px;
+  gap: 8px; align-items: center;
+  padding: 7px 10px; border-radius: 7px;
+  background: var(--surface-2, rgba(255,255,255,0.02));
+  border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 12px;
+}
+.acq-flip-current { border-color: rgba(255,255,255,0.08); }
+.acq-flip-best { background: var(--green-dim); border-color: var(--green-border, rgba(61,214,140,0.2)); }
+.acq-flip-label { font-size: 11.5px; color: var(--text-muted); font-family: var(--font-sans, inherit); }
+.acq-flip-num { text-align: right; }
+.acq-flip-chg { display: block; font-size: 10px; opacity: 0.75; margin-top: 1px; }
+.acq-flip-best-tag {
+  display: inline-block; padding: 1px 5px; border-radius: 3px;
+  background: var(--green-dim); color: var(--green);
+  font-size: 9px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  font-family: inherit; vertical-align: middle; margin-left: 4px;
+}
+@media (max-width: 600px) {
+  .acq-flip-th { grid-template-columns: 1fr 80px 70px; }
+  .acq-flip-th span:nth-child(2) { display: none; }
+  .acq-flip-row { grid-template-columns: 1fr 80px 70px; }
+  .acq-flip-row > span:nth-child(2) { display: none; }
+}
 
 /* Portfolio list acquisition badge + cost/ROI line */
 .portfolio-acq-badge {
