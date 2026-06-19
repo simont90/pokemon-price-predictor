@@ -57,6 +57,7 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 .app { max-width: 1160px; margin: 0 auto; padding: 0 20px calc(env(safe-area-inset-bottom, 0px) + 96px); }
@@ -5734,6 +5735,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   align-items: center;
   gap: 0;
   padding: 5px;
+  max-width: calc(100vw - 16px);
   background: rgba(255,255,255,0.10);
   backdrop-filter: blur(40px) saturate(180%) brightness(2.2);
   -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(2.2);
@@ -5809,6 +5811,8 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   white-space: nowrap;
   min-height: 60px;
   min-width: 84px;
+  flex: 1;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -5844,9 +5848,9 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .page-nav.shrunk .page-nav-btn > span:not(.page-nav-sub) { display: none; }
 
-@media (max-width: 400px) {
-  .page-nav-btn { padding: 10px 14px; min-width: 68px; font-size: 10px; }
-  .nav-pill { width: 68px; }
+@media (max-width: 480px) {
+  .page-nav-btn { padding: 10px 10px; min-width: 58px; font-size: 10px; }
+  .nav-pill { width: 58px; }
 }
 
 .page { width: 100%; }
@@ -6818,6 +6822,12 @@ section.card .card-collapse-btn { padding: 10px; }
 .home-refresh-btn:active { opacity: 0.7; }
 .home-refresh-btn.spinning svg { animation: spin360 0.6s linear; }
 @keyframes spin360 { to { transform: rotate(360deg); } }
+
+@media (max-width: 500px) {
+  .home-budget-bar { gap: 7px; padding: 8px 12px; }
+  .home-budget-label { display: none; }
+  .home-budget-input { width: 60px; }
+}
 .home-section-wrap { /* sections float directly on page background */ }
 .home-section-hd {
   display: flex;
@@ -7028,6 +7038,8 @@ section.card .card-collapse-btn { padding: 10px; }
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  will-change: scroll-position;
+  transform: translateZ(0);
 }
 .home-scroll-row::-webkit-scrollbar { display: none; }
 
