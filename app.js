@@ -11851,6 +11851,13 @@ const AI_HIST_STORAGE  = 'pkm-ai-chat-history-v1';
 const AI_HISTORY_MAX   = 20;
 
 const AI_PROVIDERS = {
+  claude: {
+    label: 'Claude Sonnet (via Worker)',
+    model: 'claude-sonnet-4-6',
+    keyHelp: 'No key needed — uses the Worker\'s built-in Anthropic key.',
+    keyUrl: null,
+    noKey: true,
+  },
   perplexity: {
     label: 'Perplexity Sonar',
     endpoint: 'https://api.perplexity.ai/chat/completions',
@@ -11876,7 +11883,7 @@ function aiSaveHistory() {
   catch {}
 }
 function aiGetProvider() {
-  return localStorage.getItem(AI_PROV_STORAGE) || 'perplexity';
+  return localStorage.getItem(AI_PROV_STORAGE) || 'claude';
 }
 function aiSetProvider(p) {
   if (AI_PROVIDERS[p]) localStorage.setItem(AI_PROV_STORAGE, p);
@@ -12004,22 +12011,24 @@ PRINCIPLES:
 async function aiStreamChat({ provider, key, messages, onToken, onDone, onError }) {
   const cfg = AI_PROVIDERS[provider];
   if (!cfg) { onError('Unknown provider'); return; }
-  const body = {
-    model: cfg.model,
-    messages,
-    stream: true,
-    temperature: 0.4,
-  };
+
+  const endpoint = cfg.noKey
+    ? (getMktWorkerUrl() + '/ai/chat')
+    : cfg.endpoint;
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (cfg.noKey) {
+    const jwt = authGetToken();
+    if (jwt) headers['Authorization'] = 'Bearer ' + jwt;
+  } else {
+    headers['Authorization'] = 'Bearer ' + key;
+  }
+
+  const body = { model: cfg.model, messages, stream: true, temperature: 0.4 };
+
   let res;
   try {
-    res = await fetch(cfg.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + key,
-      },
-      body: JSON.stringify(body),
-    });
+    res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
   } catch (e) {
     onError('Network error: ' + (e.message || e));
     return;
@@ -12134,8 +12143,9 @@ function aiOpenPanel() {
   panel.style.display = 'flex';
   setTimeout(() => panel.classList.add('open'), 10);
   aiRenderHistory();
-  // First-time? Force settings open
-  if (!aiGetKey()) aiToggleSettings(true);
+  // First-time? Force settings open (only for key-required providers)
+  const _openCfg = AI_PROVIDERS[aiGetProvider()];
+  if (!_openCfg?.noKey && !aiGetKey()) aiToggleSettings(true);
   const input = document.getElementById('aiChatInput');
   if (input) setTimeout(() => input.focus(), 200);
 }
@@ -12149,8 +12159,9 @@ function aiClosePanel() {
 async function aiSubmit(userText) {
   const text = (userText || '').trim();
   if (!text) return;
+  const cfg = AI_PROVIDERS[aiGetProvider()];
   const key = aiGetKey();
-  if (!key) {
+  if (!cfg?.noKey && !key) {
     aiToggleSettings(true);
     const k = document.getElementById('aiChatKey');
     if (k) k.focus();
@@ -12231,12 +12242,15 @@ function setupAiChat() {
   // Initialise provider + key form
   function refreshProviderUI() {
     const p = aiGetProvider();
+    const cfg = AI_PROVIDERS[p] || {};
     if (provSel) provSel.value = p;
     if (keyInput) keyInput.value = aiGetKey();
+    const keyRow = document.getElementById('aiChatKeyRow');
+    if (keyRow) keyRow.style.display = cfg.noKey ? 'none' : '';
     if (helpLink) {
-      const cfg = AI_PROVIDERS[p];
-      helpLink.textContent = cfg.keyHelp;
-      helpLink.href = cfg.keyUrl;
+      helpLink.textContent = cfg.keyHelp || '';
+      if (cfg.keyUrl) { helpLink.href = cfg.keyUrl; helpLink.style.display = ''; }
+      else { helpLink.href = '#'; helpLink.style.display = 'none'; }
     }
   }
   provSel && provSel.addEventListener('change', () => {

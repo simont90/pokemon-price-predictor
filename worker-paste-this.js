@@ -483,6 +483,81 @@ Valid score values: 4, 6, 8, or 10 only.`;
   });
 }
 
+// ---- AI chat proxy (Anthropic → OpenAI-compatible SSE) ----
+async function handleAiChat(request, env) {
+  const ch = corsHeaders(request);
+  if (!env.ANTHROPIC_API_KEY) return _jsonResp(503, { error: 'ANTHROPIC_API_KEY not configured.' }, ch);
+
+  let body;
+  try { body = await request.json(); } catch { return _jsonResp(400, { error: 'Invalid JSON.' }, ch); }
+
+  const msgs = Array.isArray(body.messages) ? body.messages : [];
+  const systemMsg = msgs.find(m => m.role === 'system');
+  const chatMsgs = msgs.filter(m => m.role !== 'system');
+  if (!chatMsgs.length) return _jsonResp(400, { error: 'No messages.' }, ch);
+
+  const upResp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1500,
+      stream: true,
+      ...(systemMsg ? { system: systemMsg.content } : {}),
+      messages: chatMsgs,
+    }),
+  });
+
+  if (!upResp.ok) {
+    const err = await upResp.text().catch(() => '');
+    return _jsonResp(upResp.status, { error: `Anthropic error: ${err.slice(0, 200)}` }, ch);
+  }
+
+  // Transform Anthropic SSE → OpenAI-compatible SSE
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  (async () => {
+    const reader = upResp.body.getReader();
+    let buf = '';
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line.startsWith('data:')) continue;
+          const data = line.slice(5).trim();
+          try {
+            const j = JSON.parse(data);
+            if (j.type === 'content_block_delta' && j.delta?.type === 'text_delta' && j.delta.text) {
+              const chunk = JSON.stringify({ choices: [{ delta: { content: j.delta.text } }] });
+              await writer.write(encoder.encode(`data: ${chunk}\n\n`));
+            } else if (j.type === 'message_stop') {
+              await writer.write(encoder.encode('data: [DONE]\n\n'));
+            }
+          } catch {}
+        }
+      }
+    } finally {
+      await writer.close().catch(() => {});
+    }
+  })();
+
+  return new Response(readable, {
+    headers: { ...ch, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' },
+  });
+}
+
 // ---- Main handler ----
 async function handle(request, env) {
   const url = new URL(request.url);
@@ -496,6 +571,7 @@ async function handle(request, env) {
   if (url.pathname === '/auth/login' && request.method === 'POST') return handleAuthLogin(request, env);
   if (url.pathname === '/user/sync') return handleUserSync(request, env);
   if (url.pathname === '/auth/account' && request.method === 'DELETE') return handleDeleteAccount(request, env);
+  if (url.pathname === '/ai/chat' && request.method === 'POST') return handleAiChat(request, env);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 
   const q = url.searchParams.get('q') || '';

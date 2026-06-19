@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260619ch">
+  <link rel="stylesheet" href="style.css?v=20260619ci">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1855,11 +1855,12 @@
       <label class="ai-chat-field">
         <span>Provider</span>
         <select id="aiChatProvider">
+          <option value="claude">Claude Sonnet (via Worker)</option>
           <option value="perplexity">Perplexity Sonar</option>
           <option value="openai">OpenAI (GPT-4o mini)</option>
         </select>
       </label>
-      <label class="ai-chat-field">
+      <label class="ai-chat-field" id="aiChatKeyRow">
         <span>API key</span>
         <input id="aiChatKey" type="password" placeholder="Paste your API key…" autocomplete="off" spellcheck="false">
       </label>
@@ -1867,7 +1868,7 @@
         <button class="ai-chat-save" id="aiChatSaveKey">Save</button>
         <a class="ai-chat-help" id="aiChatKeyHelp" href="https://www.perplexity.ai/account/api" target="_blank" rel="noopener">Get a key at perplexity.ai/account/api</a>
       </div>
-      <p class="ai-chat-privacy">Your key never leaves your browser. Requests go straight from your device to the provider.</p>
+      <p class="ai-chat-privacy">Claude uses your Worker's Anthropic key — no setup needed. For other providers, your key never leaves your browser.</p>
     </div>
 
     <div class="ai-chat-messages" id="aiChatMessages"></div>
@@ -2108,6 +2109,6 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260619ch"></script>
+  <script src="app.js?v=20260619ci"></script>
 </body>
 </html>
