@@ -7797,11 +7797,23 @@ function renderMarketplaceCpChip(card, section) {
 function renderMarketplaceScan(card, pullCost, desirability) {
   const section = $('marketplaceSection');
   if (!section || !card) return;
-  // Need PSA 10 anchor (same data dependency as PSA range section).
-  const pcPsa10 = (typeof livePrice !== 'undefined' && livePrice && livePrice.pcPsa10 > 0) ? livePrice.pcPsa10 : 0;
-  const psa10Price = card.p10 > 0 ? card.p10 : pcPsa10;
+  // Use getPsa10Anchor() so estimated anchors (raw × rarity multiplier) also unlock the scan.
+  const anchor = getPsa10Anchor(card);
+  const psa10Price = anchor.usd;
   if (!psa10Price || psa10Price <= 0) { section.style.display = 'none'; return; }
   section.style.display = 'block';
+  // Show/hide estimated-anchor notice
+  let estNote = section.querySelector('.mkt-estimated-note');
+  if (anchor.source === 'estimated') {
+    if (!estNote) {
+      estNote = document.createElement('div');
+      estNote.className = 'mkt-estimated-note';
+      section.insertBefore(estNote, section.firstChild);
+    }
+    estNote.textContent = `PSA 10 anchor estimated from raw × ${anchor.multiplier}× (no tracked price) — prices are approximate.`;
+  } else if (estNote) {
+    estNote.remove();
+  }
 
   // Quick-switch chip: if this card has a linked JP/EN counterpart, surface a
   // one-click chip at the top of the section that swaps the whole page to that
@@ -9054,13 +9066,9 @@ async function fetchLiveDeals(card, opts) {
   const topStatus = $('mktLiveStatus');
   if (!workerUrl || !card) { if (wrap) wrap.style.display = 'none'; return; }
 
-  const pcPsa10 = (typeof livePrice !== 'undefined' && livePrice && livePrice.pcPsa10 > 0) ? livePrice.pcPsa10 : 0;
-  const psa10PriceRaw = card.p10 > 0 ? card.p10 : pcPsa10;
   const rawPriceUSD = getCurrentPrice(card);
-  // Fallback PSA 10 anchor when the card has no explicit p10 — use raw ×5 as a
-  // rough modern-holo proxy. Keeps the live-scan visible on cards the price
-  // model can't anchor exactly.
-  const psa10Price = psa10PriceRaw > 0 ? psa10PriceRaw : (rawPriceUSD > 0 ? rawPriceUSD * 5 : 0);
+  // Use getPsa10Anchor() for rarity-aware estimation when no tracked/live price exists.
+  const psa10Price = getPsa10Anchor(card).usd;
   wrap.style.display = 'block';
   setupMktGradeTabs();
   if (topStatus) topStatus.textContent = `Scanning 5 grades · eBay UK + US + Cardmarket…`;

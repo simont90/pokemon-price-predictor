@@ -3868,6 +3868,15 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .mkt-empty {
   font-size: 12px; color: var(--text-faint); text-align: center; padding: 16px 0;
 }
+.mkt-estimated-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(232,182,52,0.07);
+  border: 1px solid rgba(232,182,52,0.18);
+  border-radius: 6px;
+  padding: 5px 10px;
+  margin-bottom: 10px;
+}
 .mkt-deal {
   display: flex; flex-direction: column;
   background: var(--bg-card); border: 1px solid var(--border);
