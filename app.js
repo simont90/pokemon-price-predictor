@@ -10031,7 +10031,7 @@ function renderHoldStrategy(card) {
           <span class="hold-tile-k">Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}</span>
           <span class="hold-tile-v">${fmtGBP(s.today)}</span>
         </div>
-        ${s.slabShipGBP > 0 && !s.overridden ? `
+        ${s.slabShipGBP > 0 ? `
         <div class="hold-tile-row hold-tile-sub">
           <span class="hold-tile-k">· Card price</span>
           <span class="hold-tile-v">${fmtGBP(s.today - s.slabShipGBP / fx)}</span>
@@ -13853,7 +13853,7 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
     if (s.key === 'gamble') {
       s.today = usd + gradingFeeUSD;
     } else {
-      s.today = usd;
+      s.today = usd + (s.slabShipGBP || 0) / fxRateLocal;
     }
     s.profit = s.yr5 - s.today;
     s.roi = s.today > 0 ? (s.profit / s.today) * 100 : 0;
