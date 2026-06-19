@@ -3803,6 +3803,22 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .mkt-refresh-btn.is-spinning .mkt-refresh-ico { animation: mkt-refresh-spin 0.9s linear infinite; }
 @keyframes mkt-refresh-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
+.mkt-uk-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; background: var(--bg); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  cursor: pointer; transition: color .15s ease, border-color .15s ease, background .15s ease;
+  touch-action: manipulation;
+}
+.mkt-uk-toggle:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+.mkt-uk-toggle.is-active {
+  background: rgba(232,182,52,0.10);
+  border-color: rgba(232,182,52,0.45);
+  color: var(--accent);
+}
+
 /* 5yr ROI projection per listing */
 .mkt-deal-roi5 {
   font-family: var(--mono); font-size: 10px; font-weight: 600;

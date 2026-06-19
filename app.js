@@ -8986,7 +8986,8 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
   // cache (worker sends Cache-Control max-age=300) are bypassed when the user
   // explicitly hits Refresh.
   const cacheBust = forceFresh ? `&_t=${Date.now()}` : '';
-  const url = `${workerUrl}/search?q=${encodeURIComponent(query)}&max=${scanCapGBP.toFixed(2)}&grade=${g.workerGrade}&fx=${fxUsdToGbp}&fxEur=${fxEurToGbp}${cacheBust}`;
+  const ukOnlyParam = mktIsUkOnly() ? '&source=uk_only' : '';
+  const url = `${workerUrl}/search?q=${encodeURIComponent(query)}&max=${scanCapGBP.toFixed(2)}&grade=${g.workerGrade}&fx=${fxUsdToGbp}&fxEur=${fxEurToGbp}${ukOnlyParam}${cacheBust}`;
   try {
     const t0 = performance.now();
     const res = await fetch(url);
@@ -9185,6 +9186,18 @@ renderMarketplaceScan = function(card, pullCost, des) {
   else if ($('mktLiveWrap')) $('mktLiveWrap').style.display = 'none';
 };
 
+const MKT_UK_ONLY_KEY = 'mkt-uk-only';
+function mktIsUkOnly() { return localStorage.getItem(MKT_UK_ONLY_KEY) === '1'; }
+function mktSetUkOnly(on) {
+  if (on) localStorage.setItem(MKT_UK_ONLY_KEY, '1');
+  else localStorage.removeItem(MKT_UK_ONLY_KEY);
+  const tog = $('mktUkToggle');
+  if (tog) {
+    tog.classList.toggle('is-active', on);
+    tog.setAttribute('aria-pressed', String(on));
+  }
+}
+
 // Wire the Refresh button. Re-runs fetchLiveDeals for the currently selected
 // card. Adds a spinning state on the icon while the scan is in-flight.
 function setupMktRefreshBtn() {
@@ -9205,6 +9218,18 @@ function setupMktRefreshBtn() {
       btn.disabled = false;
     }
   });
+
+  const tog = $('mktUkToggle');
+  if (tog && !tog.dataset.bound) {
+    tog.dataset.bound = '1';
+    // Restore persisted state.
+    mktSetUkOnly(mktIsUkOnly());
+    tog.addEventListener('click', async () => {
+      mktSetUkOnly(!mktIsUkOnly());
+      const card = mktLastScannedCard || (typeof selectedCard !== 'undefined' ? selectedCard : null);
+      if (card && getMktWorkerUrl()) await fetchLiveDeals(card, { forceFresh: true });
+    });
+  }
 }
 queueMicrotask(setupMktRefreshBtn);
 

@@ -579,6 +579,7 @@ async function handle(request, env) {
   const fxUsdToGbp = parseFloat(url.searchParams.get('fx') || '0.79');
   const fxEurToGbp = parseFloat(url.searchParams.get('fxEur') || '0.86');
   const grade = url.searchParams.get('grade') || 'raw';
+  const ukOnly = url.searchParams.get('source') === 'uk_only';
 
   if (!q || !fairValueGBP) {
     return new Response(JSON.stringify({ error: 'Missing q or max param' }), {
@@ -589,11 +590,12 @@ async function handle(request, env) {
   const maxUSD = fairValueGBP / fxUsdToGbp;
   const maxEUR = fairValueGBP / fxEurToGbp;
 
-  // Fan out to all three sources in parallel; tolerate per-source failures.
+  // Fan out to sources in parallel; tolerate per-source failures.
+  // When ukOnly is set, skip eBay US and Cardmarket to reduce latency.
   const [ukRes, usRes, cmRes] = await Promise.allSettled([
     searchEbay(env, 'EBAY_GB', q, fairValueGBP, 'GBP'),
-    searchEbay(env, 'EBAY_US', q, maxUSD, 'USD'),
-    searchCardmarket(q, maxEUR),
+    ukOnly ? Promise.resolve({ items: [] }) : searchEbay(env, 'EBAY_US', q, maxUSD, 'USD'),
+    ukOnly ? Promise.resolve({ items: [] }) : searchCardmarket(q, maxEUR),
   ]);
 
   const ukItems = ukRes.status === 'fulfilled' ? (ukRes.value.items || []) : [];
@@ -602,10 +604,12 @@ async function handle(request, env) {
   const errors = [];
   if (ukRes.status === 'rejected') errors.push('ebay_uk:' + ukRes.reason?.message);
   else if (ukRes.value.error) errors.push('ebay_uk:' + ukRes.value.error);
-  if (usRes.status === 'rejected') errors.push('ebay_us:' + usRes.reason?.message);
-  else if (usRes.value.error) errors.push('ebay_us:' + usRes.value.error);
-  if (cmRes.status === 'rejected') errors.push('cardmarket:' + cmRes.reason?.message);
-  else if (cmRes.value.error) errors.push('cardmarket:' + cmRes.value.error);
+  if (!ukOnly) {
+    if (usRes.status === 'rejected') errors.push('ebay_us:' + usRes.reason?.message);
+    else if (usRes.value.error) errors.push('ebay_us:' + usRes.value.error);
+    if (cmRes.status === 'rejected') errors.push('cardmarket:' + cmRes.reason?.message);
+    else if (cmRes.value.error) errors.push('cardmarket:' + cmRes.value.error);
+  }
 
   const deals = scoreDeals([...ukItems, ...usItems, ...cmItems], fairValueGBP, fxUsdToGbp, fxEurToGbp);
 
