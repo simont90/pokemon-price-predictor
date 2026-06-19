@@ -12401,6 +12401,14 @@ function aiOpenPanel() {
   const panel    = document.getElementById('aiChatPanel');
   const backdrop = document.getElementById('aiChatBackdrop');
   if (!panel) return;
+
+  // Card on screen → fresh analysis every time
+  const _autoCard = selectedCard;
+  if (_autoCard) {
+    aiChatHistory = [];
+    aiSaveHistory();
+  }
+
   panel.style.display = 'flex';
   if (backdrop) backdrop.style.display = 'block';
   setTimeout(() => {
@@ -12408,11 +12416,16 @@ function aiOpenPanel() {
     if (backdrop) backdrop.classList.add('open');
   }, 10);
   aiRenderHistory();
-  // First-time? Force settings open (only for key-required providers)
   const _openCfg = AI_PROVIDERS[aiGetProvider()];
-  if (!_openCfg?.noKey && !aiGetKey()) aiToggleSettings(true);
+  const _needsKey = !_openCfg?.noKey && !aiGetKey();
+  if (_needsKey) aiToggleSettings(true);
   const input = document.getElementById('aiChatInput');
   if (input) setTimeout(() => input.focus(), 200);
+
+  // Auto-submit card analysis if provider is ready
+  if (_autoCard && !_needsKey) {
+    setTimeout(() => aiSubmit(`Analyse ${_autoCard.n} (${_autoCard.s}) in full. What's the signal, should I buy it, hold it, or grade it? Give me the 5-year outlook and any risks.`), 300);
+  }
 }
 function aiClosePanel() {
   const panel    = document.getElementById('aiChatPanel');
@@ -13753,7 +13766,7 @@ function setupPageNav() {
   }
 
   // --- Wire the tab buttons + hash routing --------------------------
-  const buttons = Array.from(document.querySelectorAll('.page-nav-btn'));
+  const buttons = Array.from(document.querySelectorAll('.page-nav-btn[data-page]'));
   const pages = {
     home: document.getElementById('pageHome'),
     predict: document.getElementById('pagePredict'),
