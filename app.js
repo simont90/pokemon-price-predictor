@@ -8890,7 +8890,7 @@ async function mktAIGrade(btn) {
         const listingUrl = mainA?.href || '';
         const priceEl  = dealEl?.querySelector('.mkt-deal-price');
         const priceGBP = priceEl ? parseFloat(priceEl.textContent.replace('£', '')) || 0 : 0;
-        const breakdown = { centering: data.centering, corners: data.corners, edges: data.edges, surface: data.surface };
+        const breakdown = { centering: data.centering, corners: data.corners, edges: data.edges, surface: data.surface, verdict: data.verdict || '' };
 
         // Store every AI-graded deal at listing level (not card level)
         const gradeDeals = JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]');
@@ -13171,6 +13171,7 @@ function _renderHomeAiGrades() {
         ? `<img class="home-card-art" src="${esc(d.listingImg)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
         : `<div class="home-card-art"></div>`;
       const price = d.priceGBP ? `£${d.priceGBP.toFixed(2)}` : '';
+      const verdict = d.breakdown?.verdict || '';
       return `<div class="home-card-tile" data-id="${esc(d.listingUrl)}" data-deal-url="${esc(d.listingUrl)}">
         ${img}
         <span class="home-card-signal ${labelCls}">${label}</span>
@@ -13178,6 +13179,7 @@ function _renderHomeAiGrades() {
         <div class="home-card-info">
           <div class="home-card-name">${esc(d.cardName || '')}</div>
           <div class="home-card-price">${price}</div>
+          ${verdict ? `<div class="home-ai-verdict">${esc(verdict)}</div>` : ''}
           <div class="home-cand-actions">
             <button class="home-cand-grade-btn home-ai-card-btn" data-card-id="${esc(d.cardId || '')}">Card ↗</button>
             <a class="home-cand-ebay-btn" href="${esc(d.listingUrl)}" target="_blank" rel="noopener">eBay ↗</a>
@@ -13346,7 +13348,7 @@ async function _gradeHomeCandidate(btn) {
     if (grade >= 9) btn.classList.add('home-cand-grade-good');
 
     if (grade != null) {
-      const breakdown = { centering: data.centering, corners: data.corners, edges: data.edges, surface: data.surface };
+      const breakdown = { centering: data.centering, corners: data.corners, edges: data.edges, surface: data.surface, verdict: data.verdict || '' };
       const gradeDeals = JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]');
       const idx = gradeDeals.findIndex(d => d.listingUrl === listingUrl);
       const rec = { cardId, cardName, listingUrl, listingImg, priceGBP, aiGrade: grade, breakdown, ts: Date.now() };

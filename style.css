@@ -6903,6 +6903,13 @@ section.card .card-collapse-btn { padding: 10px; }
 .home-section-refresh:hover { border-color: var(--accent); color: var(--accent); }
 .home-section-refresh:active { transform: rotate(180deg); }
 /* Grade candidate tile action row */
+.home-ai-verdict {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  margin: 3px 0 2px;
+  font-style: italic;
+}
 .home-cand-actions {
   display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap;
 }
