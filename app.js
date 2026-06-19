@@ -10031,14 +10031,14 @@ function renderHoldStrategy(card) {
           <span class="hold-tile-k">Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}</span>
           <span class="hold-tile-v">${fmtGBP(s.today)}</span>
         </div>
-        ${s.slabShipGBP > 0 ? `
+        ${s.slabShipGBP > 0 && !s.overridden ? `
         <div class="hold-tile-row hold-tile-sub">
           <span class="hold-tile-k">· Card price</span>
           <span class="hold-tile-v">${fmtGBP(s.today - s.slabShipGBP / fx)}</span>
         </div>
         <div class="hold-tile-row hold-tile-sub">
           <span class="hold-tile-k">· Est. UK shipping</span>
-          <span class="hold-tile-v">~£${s.slabShipGBP.toFixed(0)}</span>
+          <span class="hold-tile-v">+£${Math.abs(s.slabShipGBP).toFixed(0)}</span>
         </div>` : ''}
         <div class="hold-tile-row">
           <span class="hold-tile-k">5yr target</span>
