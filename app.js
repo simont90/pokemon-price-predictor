@@ -14797,18 +14797,55 @@ function _syncNudgeDone() {
 }
 
 // ---- Account auth helpers ----
-function authGetToken()  { try { return localStorage.getItem(AUTH_TOKEN_KEY) || ''; } catch { return ''; } }
-function authGetUser()   { try { return JSON.parse(localStorage.getItem(AUTH_USER_KEY) || 'null'); } catch { return null; } }
+// Safari ITP can evict localStorage for *.github.io after inactivity.
+// Cookies survive that eviction, so we write both and read from cookies as fallback.
+const AUTH_COOKIE_T = 'pkm_at';
+const AUTH_COOKIE_U = 'pkm_au';
+function _authSetCookie(name, val, days) {
+  const exp = new Date(Date.now() + days * 86400000).toUTCString();
+  const sec = location.protocol === 'https:' ? ';Secure' : '';
+  document.cookie = `${name}=${encodeURIComponent(val)};expires=${exp};path=/;SameSite=Lax${sec}`;
+}
+function _authGetCookie(name) {
+  const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _authDelCookie(name) {
+  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+}
+function authGetToken() {
+  try {
+    const ls = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (ls) return ls;
+    // Fallback: localStorage was cleared (e.g. Safari ITP) but cookie survived.
+    const ck = _authGetCookie(AUTH_COOKIE_T);
+    if (ck) localStorage.setItem(AUTH_TOKEN_KEY, ck); // restore
+    return ck || '';
+  } catch { return _authGetCookie(AUTH_COOKIE_T) || ''; }
+}
+function authGetUser() {
+  try {
+    const ls = localStorage.getItem(AUTH_USER_KEY);
+    if (ls) return JSON.parse(ls);
+    const ck = _authGetCookie(AUTH_COOKIE_U);
+    if (ck) localStorage.setItem(AUTH_USER_KEY, ck); // restore
+    return ck ? JSON.parse(ck) : null;
+  } catch { return null; }
+}
 function authSetSession(token, username, expiresAt) {
   try {
     localStorage.setItem(AUTH_TOKEN_KEY, token);
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify({ username, expiresAt }));
+    _authSetCookie(AUTH_COOKIE_T, token, 120);
+    _authSetCookie(AUTH_COOKIE_U, JSON.stringify({ username, expiresAt }), 120);
   } catch {}
 }
 function authClearSession() {
   try {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     localStorage.removeItem(AUTH_USER_KEY);
+    _authDelCookie(AUTH_COOKIE_T);
+    _authDelCookie(AUTH_COOKIE_U);
   } catch {}
 }
 function authIsActive() {
