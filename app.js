@@ -2208,6 +2208,13 @@ function recalcWithLivePrice(card) {
   // Re-render grading ROI with PriceCharting PSA 10 data
   if (livePrice.pcPsa10 > 0) {
     renderGradingROI(null);
+    // If the marketplace section was hidden (no anchor when card was first selected),
+    // now that we have a live PSA 10 price from PriceCharting, re-trigger the scan.
+    const _mktSec = $('marketplaceSection');
+    if (_mktSec && _mktSec.style.display === 'none') {
+      const { pullCost: _pc } = calcPullCost();
+      renderMarketplaceScan(card, _pc, calcDesirability());
+    }
   }
 
   // Refresh EN ↔ JP recommendation with live price data
@@ -13159,11 +13166,36 @@ function _renderHomeAiGrades() {
     if (hash === (hashKey === 10 ? _homeAiG10Hash : _homeAiG9Hash) && list.querySelector('.home-card-tile')) return;
     if (hashKey === 10) _homeAiG10Hash = hash; else _homeAiG9Hash = hash;
     const c = $(countId); if (c) c.textContent = deals.length;
-    list.innerHTML = deals.map(d =>
-      _homeTile(d.listingUrl, d.listingImg, d.cardName,
-        d.priceGBP ? `£${d.priceGBP.toFixed(2)}` : '',
-        labelCls, label, '', '', { dealUrl: d.listingUrl })
-    ).join('');
+    list.innerHTML = deals.map(d => {
+      const img = d.listingImg
+        ? `<img class="home-card-art" src="${esc(d.listingImg)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+        : `<div class="home-card-art"></div>`;
+      const price = d.priceGBP ? `£${d.priceGBP.toFixed(2)}` : '';
+      return `<div class="home-card-tile" data-id="${esc(d.listingUrl)}" data-deal-url="${esc(d.listingUrl)}">
+        ${img}
+        <span class="home-card-signal ${labelCls}">${label}</span>
+        <button class="home-card-remove" aria-label="Remove">✕</button>
+        <div class="home-card-info">
+          <div class="home-card-name">${esc(d.cardName || '')}</div>
+          <div class="home-card-price">${price}</div>
+          <div class="home-cand-actions">
+            <button class="home-cand-grade-btn home-ai-card-btn" data-card-id="${esc(d.cardId || '')}">Card ↗</button>
+            <a class="home-cand-ebay-btn" href="${esc(d.listingUrl)}" target="_blank" rel="noopener">eBay ↗</a>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+    // Card button → navigate to Predict + select card
+    list.querySelectorAll('.home-ai-card-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const id = btn.dataset.cardId;
+        if (id && typeof selectCard === 'function') {
+          showPage('predict');
+          selectCard(id);
+        }
+      });
+    });
     if (deals.length) _setupTileEvents(list, url => {
       const store = JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]');
       localStorage.setItem('pkm-ai-grade-deals-v1', JSON.stringify(store.filter(d => d.listingUrl !== url)));
@@ -13697,7 +13729,26 @@ function setupPageNav() {
   requestAnimationFrame(() => requestAnimationFrame(_initPill));
 
   // Specular light follows pointer / touch along the bar
+  const hoverBubble = document.getElementById('navHoverBubble');
+  function _showHoverBubble(btn) {
+    if (!hoverBubble || !nav || !btn) return;
+    const navRect = nav.getBoundingClientRect();
+    const btnRect = btn.getBoundingClientRect();
+    hoverBubble.style.left  = (btnRect.left - navRect.left) + 'px';
+    hoverBubble.style.width = btnRect.width + 'px';
+    hoverBubble.style.opacity = '1';
+    hoverBubble.style.transform = 'scale(1)';
+  }
+  function _hideHoverBubble() {
+    if (!hoverBubble) return;
+    hoverBubble.style.opacity = '0';
+    hoverBubble.style.transform = 'scale(0.88)';
+  }
   if (nav) {
+    buttons.forEach(b => {
+      b.addEventListener('mouseenter', () => _showHoverBubble(b));
+      b.addEventListener('mouseleave', _hideHoverBubble);
+    });
     nav.addEventListener('pointermove', e => {
       const x = e.clientX - nav.getBoundingClientRect().left;
       nav.style.setProperty('--nav-mx', x + 'px');
@@ -13705,6 +13756,7 @@ function setupPageNav() {
     });
     nav.addEventListener('pointerleave', () => {
       nav.style.setProperty('--nav-glow', '0');
+      _hideHoverBubble();
     });
     nav.addEventListener('touchmove', e => {
       const x = e.touches[0].clientX - nav.getBoundingClientRect().left;

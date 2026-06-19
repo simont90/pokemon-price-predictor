@@ -5798,6 +5798,34 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   will-change: left, width;
 }
 
+/* Hover bubble — glass highlight that expands over whichever tab the cursor is on */
+.nav-hover-bubble {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: 84px;
+  border-radius: calc(var(--radius-pill) - 5px);
+  background: rgba(255,255,255,0.10);
+  backdrop-filter: blur(20px) brightness(1.6);
+  -webkit-backdrop-filter: blur(20px) brightness(1.6);
+  border: 1px solid rgba(255,255,255,0.20);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.35),
+    inset 0 -1px 0 rgba(0,0,0,0.10),
+    0 4px 16px rgba(0,0,0,0.18);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transform: scale(0.88);
+  transition:
+    left 0.18s cubic-bezier(0.34, 1.4, 0.64, 1),
+    width 0.18s cubic-bezier(0.34, 1.4, 0.64, 1),
+    opacity 0.15s ease,
+    transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1);
+  will-change: left, width, opacity, transform;
+}
+
 .page-nav-btn {
   position: relative;
   z-index: 1;
