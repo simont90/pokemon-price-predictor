@@ -12133,7 +12133,7 @@ function aiSystemPrompt(ctx) {
     ? `ACTIVE CARD: The user has [[card:${ctx.selected_card.id}|${ctx.selected_card.name}]] loaded on screen. When asked to analyse it, use signal (${ctx.selected_card.signal || 'n/a'}), signal_reasons, desirability (${ctx.selected_card.desirability}), best_strategy, and forecast fields to give a complete verdict: buy/hold/sell, whether to grade, 5-year trajectory, and risks. Cite the actual numbers — don't be vague.`
     : '';
 
-  return `You are "Ask the Predictor", an expert Pokemon TCG market analyst built into the user's collection-tracking app.
+  return `You are "PokeKnow", an expert Pokemon TCG market analyst built into the user's collection-tracking app.
 
 ROLE: Give crisp, data-driven advice on buying, selling, grading and timing the Pokemon TCG market. Be opinionated but honest about uncertainty. Optimise for actionable signal, not generic advice.
 
@@ -12357,7 +12357,7 @@ function aiRenderHistory() {
     const budgetHint = budgetGBP < 99000 ? ` under £${budgetGBP}` : '';
     list.innerHTML = `
       <div class="ai-welcome">
-        <div class="ai-welcome-title">Ask the Predictor</div>
+        <div class="ai-welcome-title">PokeKnow</div>
         <div class="ai-welcome-sub">An AI analyst with live access to your collection, wishlist, watchlist and the market${budgetHint ? ' — budget-aware' : ''}.</div>
         <div class="ai-welcome-suggest">Try one of these to get started:</div>
         <div class="ai-quick-grid">
