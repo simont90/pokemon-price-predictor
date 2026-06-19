@@ -4279,22 +4279,23 @@ function toggleSidePanel(id) {
   });
 }
 
-function toggleCardInWishlist() {
-  if (!selectedCard) return;
-  const idx = wishlist.findIndex(w => w.id === selectedCard.i);
+function toggleCardInWishlist(id) {
+  const card = id ? (cardData && cardData.cards.find(c => c.i === id)) : selectedCard;
+  if (!card) return;
+  const idx = wishlist.findIndex(w => w.id === card.i);
   if (idx >= 0) {
     wishlist.splice(idx, 1);
   } else {
-    const currentUSD = getCurrentPrice(selectedCard);
+    const currentUSD = getCurrentPrice(card);
     const currentGBP = usdToGbp(currentUSD);
     // Default target: 15% below current price
     const targetGBP = +(currentGBP * 0.85).toFixed(2);
     wishlist.push({
-      id: selectedCard.i,
-      name: selectedCard.n,
-      set: selectedCard.s,
-      lang: selectedCard.lang || 'EN',
-      img: getCardImg(selectedCard),
+      id: card.i,
+      name: card.n,
+      set: card.s,
+      lang: card.lang || 'EN',
+      img: getCardImg(card),
       addedDate: new Date().toISOString(),
       addedPriceGBP: currentGBP,
       targetGBP: targetGBP,
@@ -7290,30 +7291,31 @@ function saveDismissed() { localStorage.setItem(WATCHLIST_ALERT_DISMISS_KEY, JSO
 
 function isWatched(cardId) { return watchlist.some(w => w.id === cardId); }
 
-function toggleCardInWatchlist() {
-  if (!selectedCard) return;
-  const id = selectedCard.i;
-  const idx = watchlist.findIndex(w => w.id === id);
+function toggleCardInWatchlist(id) {
+  const card = id ? (cardData && cardData.cards.find(c => c.i === id)) : selectedCard;
+  if (!card) return;
+  const cardId = card.i;
+  const idx = watchlist.findIndex(w => w.id === cardId);
   if (idx >= 0) {
     watchlist.splice(idx, 1);
-    delete dismissedAlerts[id];
+    delete dismissedAlerts[cardId];
     saveDismissed();
   } else {
     const pull = (function () {
       try { return calcPullCost().pullCost; } catch { return 7.65; }
     })();
-    const des = autoFillDesirability(selectedCard, pull).total;
-    const sig = computeSignal(selectedCard, pull, des);
+    const des = autoFillDesirability(card, pull).total;
+    const sig = computeSignal(card, pull, des);
     watchlist.push({
-      id,
-      name: selectedCard.n,
-      set: selectedCard.s,
-      lang: selectedCard.lang || 'EN',
-      img: getCardImg(selectedCard),
+      id: cardId,
+      name: card.n,
+      set: card.s,
+      lang: card.lang || 'EN',
+      img: getCardImg(card),
       addedAt: new Date().toISOString(),
       addedSignal: sig?.signal || 'HOLD',
       addedScore: sig?.score || 0,
-      addedPriceUSD: getCurrentPrice(selectedCard),
+      addedPriceUSD: getCurrentPrice(card),
       lastNotifiedSignal: sig?.signal || 'HOLD',
       lastNotifiedAt: new Date().toISOString(),
     });
@@ -12004,7 +12006,18 @@ PRINCIPLES:
 - For sell/hold/grade questions, balance: gem rate, grading cost (~£25), opportunity cost.
 - Keep replies tight: 3-6 short paragraphs or a focused table. No filler.
 - Use **bold** sparingly for emphasis. Bullet lists are fine. Never invent prices not in context.
-- If asked something not about Pokemon TCG or the user's data, gently redirect.`;
+- If asked something not about Pokemon TCG or the user's data, gently redirect.
+
+CARD CITATIONS — you MUST follow this exactly:
+- Whenever you reference a specific card that appears in the context JSON above (portfolio, wishlist, watchlist, selected_card, or value_picks), wrap the mention as [[card:ID|Display Name]] — e.g. [[card:sv8pt5-161|Charizard ex]].
+- Only use this format for cards with a real "id" field present in the context. Never invent IDs. For cards not in context, use plain text.
+- The Display Name should be the card's common name as you'd naturally write it in a sentence.
+
+CHART SENTINELS — optional, use when discussing price performance or projections:
+- When discussing a card's historical price performance, you may emit [[chart:price:ID]] on its own line to render an inline price chart for that card.
+- When discussing projected/future performance, you may emit [[chart:forecast:ID]] on its own line to render an inline forecast chart.
+- Only emit chart sentinels for card IDs present in context. Each sentinel must be on its own line, alone.
+- Use charts sparingly — only when the visual adds clear value (e.g. "here's how it's trended" or "here's the 5-year projection").`;
 }
 
 // ---- LLM client (streaming) ----
@@ -12092,6 +12105,96 @@ function aiMdRender(text) {
   return s;
 }
 
+// ---- Sentinel post-processing ----
+let _aiChartCounter = 0;
+
+function aiProcessSentinels(html) {
+  // Replace [[card:ID|Name]] with interactive chip
+  html = html.replace(/\[\[card:([^\]|]+)\|([^\]]+)\]\]/g, (_, id, name) => {
+    if (!cardData) return name;
+    const card = cardData.cards.find(c => c.i === id);
+    if (!card) return name;
+    const wlActive = wishlist.some(w => w.id === id) ? ' is-active' : '';
+    const wtActive = watchlist.some(w => w.id === id) ? ' is-active' : '';
+    return `<span class="ai-card-chip" data-card-id="${id}">` +
+      `<button class="ai-card-chip-name" onclick="aiGoToCard('${id}')">${name}</button>` +
+      `<button class="ai-card-chip-btn${wlActive}" data-list="wishlist" onclick="aiToggleListFromChat('${id}','wishlist',this)" title="Wishlist">&#9825;</button>` +
+      `<button class="ai-card-chip-btn${wtActive}" data-list="watchlist" onclick="aiToggleListFromChat('${id}','watchlist',this)" title="Watchlist">&#128065;</button>` +
+      `</span>`;
+  });
+
+  // Replace [[chart:price:ID]] / [[chart:forecast:ID]] — strip surrounding <p> if present
+  html = html.replace(/(?:<p>)?\[\[chart:(price|forecast):([^\]]+)\]\](?:<\/p>)?/g, (_, type, id) => {
+    const n = ++_aiChartCounter;
+    return `<div class="ai-chart-mount" data-chart-type="${type}" data-card-id="${id}" id="ai-chart-${n}">` +
+      `<canvas></canvas><div class="ai-chart-loading">Loading chart…</div>` +
+      `</div>`;
+  });
+
+  return html;
+}
+
+function aiGoToCard(id) {
+  selectCard(id);
+  document.querySelector('.page-nav-btn[data-page="predict"]')?.click();
+  aiClosePanel();
+}
+
+function aiToggleListFromChat(id, listName, btnEl) {
+  if (listName === 'wishlist') {
+    toggleCardInWishlist(id);
+    btnEl.classList.toggle('is-active', wishlist.some(w => w.id === id));
+  } else if (listName === 'watchlist') {
+    toggleCardInWatchlist(id);
+    btnEl.classList.toggle('is-active', watchlist.some(w => w.id === id));
+  }
+}
+
+async function aiHydrateCharts(containerEl) {
+  const mounts = containerEl.querySelectorAll('.ai-chart-mount:not([data-hydrated])');
+  for (const mount of mounts) {
+    mount.dataset.hydrated = '1';
+    const type = mount.dataset.chartType;
+    const cardId = mount.dataset.cardId;
+    const canvas = mount.querySelector('canvas');
+    const loading = mount.querySelector('.ai-chart-loading');
+
+    if (!cardData) { if (loading) loading.textContent = 'Card data unavailable'; continue; }
+    const card = cardData.cards.find(c => c.i === cardId);
+    if (!card) { mount.innerHTML = '<div style="padding:12px;color:var(--text-faint);font-size:12px">Card not found</div>'; continue; }
+
+    if (type === 'price') {
+      try {
+        const apiUrl = `https://mycollectrics.com/api/card/${cardId}?include=ebay`;
+        const proxyUrl = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(apiUrl)}`;
+        const r = await fetch(proxyUrl);
+        if (!r.ok) throw new Error('API ' + r.status);
+        const d = await r.json();
+        const cleaned = (d.history || [])
+          .filter(h => h && h.date && h['raw-price'])
+          .map(h => ({ date: h.date, raw: h['raw-price'] || 0, psa9: h['psa-9-price'] || 0, psa10: h['psa-10-price'] || 0, vol: h['sales-volume'] || 0 }))
+          .filter(h => h.raw > 0)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        if (cleaned.length < 2) throw new Error('insufficient data');
+        if (loading) loading.style.display = 'none';
+        drawPriceChart(canvas, cleaned);
+      } catch (e) {
+        if (loading) loading.textContent = 'Chart unavailable';
+      }
+    } else if (type === 'forecast') {
+      try {
+        const pullCost = 7.65;
+        const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pullCost).total : 5;
+        const fc = forecast(card, pullCost, des);
+        if (loading) loading.style.display = 'none';
+        drawForecastChart(canvas, fc);
+      } catch (e) {
+        if (loading) loading.textContent = 'Chart unavailable';
+      }
+    }
+  }
+}
+
 // ---- UI ----
 function aiRenderHistory() {
   const list = document.getElementById('aiChatMessages');
@@ -12116,9 +12219,10 @@ function aiRenderHistory() {
       const safe = String(m.content || '').replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]);
       return `<div class="ai-msg ai-msg-user"><div class="ai-msg-content">${safe.replace(/\n/g, '<br>')}</div></div>`;
     }
-    return `<div class="ai-msg ai-msg-bot"><div class="ai-msg-content">${aiMdRender(m.content)}</div></div>`;
+    return `<div class="ai-msg ai-msg-bot"><div class="ai-msg-content">${aiProcessSentinels(aiMdRender(m.content))}</div></div>`;
   }).join('');
   list.scrollTop = list.scrollHeight;
+  aiHydrateCharts(list);
 }
 
 function aiAppendStreamMessage() {
@@ -12183,19 +12287,23 @@ async function aiSubmit(userText) {
 
   const target = aiAppendStreamMessage();
   let full = '';
+  const _escStream = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
   await aiStreamChat({
     provider: aiGetProvider(),
     key,
     messages,
     onToken: (tok) => {
       full += tok;
-      target.innerHTML = aiMdRender(full);
+      // Plain-text during streaming — sentinels may be split across chunks, so
+      // defer full markdown+sentinel processing until the message is complete.
+      target.innerHTML = String(full).replace(/[&<>]/g, ch => _escStream[ch]).replace(/\n/g, '<br>') + '<span class="ai-cursor"></span>';
       target.parentElement.parentElement.scrollTop = target.parentElement.parentElement.scrollHeight;
     },
     onDone: (whole) => {
       aiChatHistory.push({ role: 'assistant', content: whole });
       aiSaveHistory();
-      target.innerHTML = aiMdRender(whole);
+      target.innerHTML = aiProcessSentinels(aiMdRender(whole));
+      aiHydrateCharts(target);
     },
     onError: (err) => {
       target.innerHTML = `<p style="color:var(--red)">${aiMdRender('**Error:** ' + err)}</p>`;
