@@ -12151,6 +12151,9 @@ function aiToggleListFromChat(id, listName, btnEl) {
 }
 
 async function aiHydrateCharts(containerEl) {
+  // Wait one animation frame so the browser has laid out the new elements
+  // before drawPriceChart / drawForecastChart call getBoundingClientRect().
+  await new Promise(r => requestAnimationFrame(r));
   const mounts = containerEl.querySelectorAll('.ai-chart-mount:not([data-hydrated])');
   for (const mount of mounts) {
     mount.dataset.hydrated = '1';
