@@ -3907,6 +3907,50 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .mkt-deal.mkt-deal-alerted .mkt-deal-open,
 .mkt-deal.mkt-deal-alerted .mkt-deal-reassign,
 .mkt-deal.mkt-deal-alerted .mkt-deal-dismiss { color: rgba(255,255,255,0.85); border-color: rgba(255,255,255,0.25); }
+
+/* ─── Language flag styles ──────────────────────────────────── */
+.mkt-deal.mkt-deal-wrong-lang {
+  border-color: rgba(239,68,68,0.7);
+  box-shadow: 0 0 0 1px rgba(239,68,68,0.4), 0 2px 12px rgba(239,68,68,0.15);
+}
+.mkt-deal.mkt-deal-jp-flag {
+  border-color: rgba(232,182,52,0.45);
+}
+.mkt-lang-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-bottom: 1px solid;
+  flex-wrap: wrap;
+}
+.mkt-lang-banner strong { font-weight: 700; }
+.mkt-lang-wrong {
+  background: rgba(239,68,68,0.12);
+  color: #fca5a5;
+  border-color: rgba(239,68,68,0.25);
+}
+.mkt-lang-jp {
+  background: rgba(232,182,52,0.08);
+  color: var(--accent);
+  border-color: rgba(232,182,52,0.2);
+}
+.mkt-lang-cp-btn {
+  background: none;
+  border: 1px solid rgba(232,182,52,0.5);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+.mkt-lang-cp-btn:hover { background: rgba(232,182,52,0.12); }
+
 .mkt-deal-alert-badge {
   display: inline-block; margin-left: 6px; padding: 1px 6px;
   background: rgba(255,255,255,0.25); color: #fff;

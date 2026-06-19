@@ -8747,6 +8747,20 @@ function mktScoreDeal(deal, card, gradeKey, fairValueGBP, fxUsdToGbp) {
 // Build the HTML for a single deal card. Shared by every grade panel.
 // `meta` carries the origin-card context (fromCardId, fromGrade) plus an
 // optional `claimed` flag for listings that were reassigned IN to this card.
+// Detect non-English card language from a listing title.
+// Returns 'Japanese', 'Korean', 'Chinese', or null.
+// Japanese hiragana/katakana are unique; CJK alone is ambiguous (shared with JP kanji).
+function mktDetectListingLang(title) {
+  if (!title) return null;
+  // Korean: hangul block or keyword
+  if (/\bkorean\b/i.test(title) || /[가-힯]/.test(title)) return 'Korean';
+  // Chinese: keyword (avoid false-positive from CJK characters alone since JP kanji overlaps)
+  if (/\b(chinese|china|simplified|traditional chinese)\b/i.test(title)) return 'Chinese';
+  // Japanese: explicit keyword or hiragana/katakana characters (unique to Japanese)
+  if (/\bjapanese\b/i.test(title) || /[぀-ヿ]/.test(title)) return 'Japanese';
+  return null;
+}
+
 function mktRenderDealCard(d, meta) {
   meta = meta || {};
   const sigCls = d.signal === 'STRONG VALUE' ? 'mkt-strong'
@@ -8774,6 +8788,29 @@ function mktRenderDealCard(d, meta) {
   const isAlertedDeal = _mktAlertTriggered && (d.signal === 'STRONG VALUE' || d.signal === 'VALUE');
   const alertedBadge = isAlertedDeal ? `<span class="mkt-deal-alert-badge">Alert match</span>` : '';
 
+  // Language detection — flag non-English listings
+  const _scanCard = (typeof selectedCard !== 'undefined' && selectedCard) ? selectedCard : null;
+  const _scanIsJP = _scanCard && _scanCard.lang === 'JP';
+  const _listingLang = mktDetectListingLang(d.title);
+  // Japanese is only unexpected when scanning an EN card
+  const _langFlag = (!_listingLang || (_listingLang === 'Japanese' && _scanIsJP)) ? null : _listingLang;
+  const _isWrongLang = _langFlag === 'Korean' || _langFlag === 'Chinese';
+  const _isJpOnEnScan = _langFlag === 'Japanese';
+
+  let langBannerHtml = '';
+  if (_isWrongLang) {
+    const flag = _langFlag === 'Korean' ? '🇰🇷' : '🇨🇳';
+    langBannerHtml = `<div class="mkt-lang-banner mkt-lang-wrong">${flag} Appears to be a <strong>${_langFlag}</strong> card — likely wrong listing.</div>`;
+  } else if (_isJpOnEnScan) {
+    // Find JP counterpart for a "Scan JP version" shortcut
+    const _cp = (typeof findCounterparts === 'function' && _scanCard) ? findCounterparts(_scanCard) : null;
+    const _cpId = _cp?.primary?.i || '';
+    const cpBtn = _cpId
+      ? `<button type="button" class="mkt-lang-cp-btn" onclick="showPage('predict');selectCard('${esc(_cpId)}')" title="Switch scan to JP counterpart">Scan JP version ↗</button>`
+      : '';
+    langBannerHtml = `<div class="mkt-lang-banner mkt-lang-jp">🇯🇵 Appears to be a <strong>Japanese</strong> listing.${cpBtn ? ' ' + cpBtn : ''}</div>`;
+  }
+
   const anyGradeRe = /\b(psa|cgc|bgs|ace|sgc)\s*-?\s*\d{1,2}\b|gem mint|gem[- ]mt/i;
   const isAlreadyGraded = anyGradeRe.test(d.title || '');
 
@@ -8795,7 +8832,8 @@ function mktRenderDealCard(d, meta) {
     : '';
 
   return `
-    <div class="mkt-deal ${meta.claimed ? 'is-claimed' : ''}${isAlertedDeal ? ' mkt-deal-alerted' : ''}">
+    <div class="mkt-deal ${meta.claimed ? 'is-claimed' : ''}${isAlertedDeal ? ' mkt-deal-alerted' : ''}${_isWrongLang ? ' mkt-deal-wrong-lang' : ''}${_isJpOnEnScan ? ' mkt-deal-jp-flag' : ''}">
+      ${langBannerHtml}
       <a class="mkt-deal-main" href="${esc(d.url)}" target="_blank" rel="noopener">
         ${img}
         <div class="mkt-deal-body">
