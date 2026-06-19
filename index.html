@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260620b">
+  <link rel="stylesheet" href="style.css?v=20260620c">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1827,8 +1827,9 @@
   </div>
 
   <!-- Ask the Predictor panel (button lives in bottom nav) -->
+  <div class="ai-chat-backdrop" id="aiChatBackdrop" style="display:none" aria-hidden="true"></div>
 
-  <aside class="ai-chat-panel" id="aiChatPanel" style="display:none" role="dialog" aria-modal="false" aria-labelledby="aiChatTitle">
+  <aside class="ai-chat-panel" id="aiChatPanel" style="display:none" role="dialog" aria-modal="true" aria-labelledby="aiChatTitle">
     <div class="ai-chat-handle" id="aiChatHandle" aria-hidden="true"></div>
     <header class="ai-chat-header">
       <div class="ai-chat-title-block">
@@ -2107,7 +2108,7 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260620b"></script>
+  <script src="app.js?v=20260620c"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -12003,7 +12003,11 @@ function aiSetKey(k) {
 // and the market so the LLM has fresh data on every turn. We keep
 // it short — under ~3k tokens — so each call stays cheap.
 function aiBuildContext() {
-  const ctx = { now: new Date().toISOString(), fx_usd_per_gbp: (typeof fxRate === 'number' ? fxRate : null) };
+  const ctx = {
+    now: new Date().toISOString(),
+    fx_usd_per_gbp: (typeof fxRate === 'number' ? fxRate : null),
+    max_budget_gbp: getMaxBudgetGBP() < 99000 ? getMaxBudgetGBP() : null, // null = no limit set
+  };
 
   // Portfolio summary + top 10 cards by current value
   try {
@@ -12053,34 +12057,66 @@ function aiBuildContext() {
     }
   } catch (e) { console.warn('ctx watchlist', e); }
 
-  // Selected card snapshot
+  // Selected card — full analysis snapshot so the AI can give card-specific advice
   try {
     if (selectedCard) {
       const c = selectedCard;
+      const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
       const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(c.i) : null;
       const usd = cached ? (cached.pcUngraded || cached.market || cached.mid || c.p) : c.p;
       const anchor = (typeof getPsa10Anchor === 'function') ? getPsa10Anchor(c) : { usd: 0, source: 'none' };
+
+      let pull = 7.65;
+      if (setsData?.[c.sc]) {
+        const r = setsData[c.sc].rarities?.[c.rc];
+        if (r?.pullRate > 0) pull = Math.round(1 / r.pullRate) * r.count / 100;
+      }
+      const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(c, pull) : { total: 5 };
+      const sig = (typeof computeSignal === 'function') ? computeSignal(c, pull, des.total) : null;
+      const hc  = (typeof computeHoldCore === 'function') ? computeHoldCore(c) : null;
+      const fc  = (typeof forecast === 'function') ? forecast(c, pull, des.total) : null;
+
       ctx.selected_card = {
         id: c.i, name: c.n, set: c.s, number: c.cn, rarity: c.rc, lang: c.lang || 'EN',
         raw_gbp: +usdToGbp(usd).toFixed(2),
         psa10_gbp: anchor.usd ? +usdToGbp(anchor.usd).toFixed(2) : null,
         psa10_source: anchor.source,
+        signal: sig?.signal || null,
+        signal_score: sig?.score != null ? +sig.score.toFixed(1) : null,
+        signal_reasons: sig?.reasons || [],
+        desirability: +des.total.toFixed(1),
+        in_portfolio: portfolio.some(p => p.id === c.i),
+        in_wishlist:  wishlist.some(w => w.id === c.i),
+        in_watchlist: watchlist.some(w => w.id === c.i),
+        best_strategy: hc?.ok && hc.bestLongTermPick ? {
+          key: hc.bestLongTermPick.key,
+          buy_price_gbp: +(hc.bestLongTermPick.today * fx).toFixed(2),
+          roi_5yr_pct: +hc.bestLongTermPick.roi.toFixed(1),
+          risk: hc.bestLongTermPick.risk,
+          profit_gbp: +(hc.bestLongTermPick.profit * fx).toFixed(2),
+        } : null,
+        forecast_5yr_expected_gbp: fc ? +(fc.scenarios.expected[4].priceUSD * fx).toFixed(2) : null,
+        forecast_5yr_optimistic_gbp: fc ? +(fc.scenarios.optimistic[4].priceUSD * fx).toFixed(2) : null,
+        pull_cost_gbp: +(pull * fx).toFixed(2),
       };
     }
   } catch (e) { console.warn('ctx selected', e); }
 
-  // Top value picks — pre-ranked so the bot can answer
-  // "what's underrated" without us building a separate page
+  // Top value picks — pre-ranked, budget-filtered so the AI never suggests cards over the user's limit
   try {
     if (typeof scanValuePicks === 'function') {
-      const top = scanValuePicks('all').slice(0, 8).map(p => ({
-        id: p.card.i, name: p.card.n, set: p.card.s,
-        raw_gbp: +usdToGbp(p.marketPrice).toFixed(2),
-        target_gbp: +usdToGbp(p.targetPrice).toFixed(2),
-        upside_pct: +p.upside,
-        reasons: p.reasons,
-        signal: p.signal,
-      }));
+      const budget = ctx.max_budget_gbp || Infinity;
+      const top = scanValuePicks('all')
+        .filter(p => usdToGbp(p.marketPrice) <= budget)
+        .slice(0, 8)
+        .map(p => ({
+          id: p.card.i, name: p.card.n, set: p.card.s,
+          raw_gbp: +usdToGbp(p.marketPrice).toFixed(2),
+          target_gbp: +usdToGbp(p.targetPrice).toFixed(2),
+          upside_pct: +p.upside,
+          reasons: p.reasons,
+          signal: p.signal,
+        }));
       if (top.length) ctx.value_picks = top;
     }
   } catch (e) { console.warn('ctx value_picks', e); }
@@ -12089,9 +12125,20 @@ function aiBuildContext() {
 }
 
 function aiSystemPrompt(ctx) {
+  const budgetLine = ctx.max_budget_gbp
+    ? `BUDGET CONSTRAINT: The user has set a maximum of £${ctx.max_budget_gbp} per card. Never suggest buying or grading anything whose cost exceeds this — not even as an aside. value_picks is pre-filtered to this budget. If budget is the binding constraint, say so and suggest alternatives within it.`
+    : `BUDGET: No per-card limit set.`;
+
+  const cardLine = ctx.selected_card
+    ? `ACTIVE CARD: The user has [[card:${ctx.selected_card.id}|${ctx.selected_card.name}]] loaded on screen. When asked to analyse it, use signal (${ctx.selected_card.signal || 'n/a'}), signal_reasons, desirability (${ctx.selected_card.desirability}), best_strategy, and forecast fields to give a complete verdict: buy/hold/sell, whether to grade, 5-year trajectory, and risks. Cite the actual numbers — don't be vague.`
+    : '';
+
   return `You are "Ask the Predictor", an expert Pokemon TCG market analyst built into the user's collection-tracking app.
 
 ROLE: Give crisp, data-driven advice on buying, selling, grading and timing the Pokemon TCG market. Be opinionated but honest about uncertainty. Optimise for actionable signal, not generic advice.
+
+${budgetLine}
+${cardLine}
 
 USER CONTEXT (always reflects their latest local state — do not ask for it):
 \`\`\`json
@@ -12102,7 +12149,7 @@ PRINCIPLES:
 - Prices are in GBP. The user is UK-based. Mention import VAT/fees when discussing US/JP purchases.
 - "Underrated" means strong fundamentals (rarity, character demand, set age) at a depressed current price.
 - "Graded upside" = PSA 10 / raw multiplier. Anything >2.5x is interesting; >4x is exceptional.
-- When suggesting picks, prefer cards from value_picks above where relevant — they're pre-screened.
+- When suggesting picks, only recommend cards within budget from value_picks — never over-budget picks unprompted.
 - For sell/hold/grade questions, balance: gem rate, grading cost (~£25), opportunity cost.
 - Keep replies tight: 3-6 short paragraphs or a focused table. No filler.
 - Use **bold** sparingly for emphasis. Bullet lists are fine. Never invent prices not in context.
@@ -12303,16 +12350,22 @@ function aiRenderHistory() {
   const list = document.getElementById('aiChatMessages');
   if (!list) return;
   if (aiChatHistory.length === 0) {
+    const cardBtn = selectedCard
+      ? `<button class="ai-quick ai-quick-card" data-prompt="Analyse ${esc(selectedCard.n)} (${esc(selectedCard.s)}) in full. What's the signal, should I buy it, hold it, or grade it? Give me the 5-year outlook and any risks.">Analyse ${esc(selectedCard.n)}</button>`
+      : '';
+    const budgetGBP = getMaxBudgetGBP();
+    const budgetHint = budgetGBP < 99000 ? ` under £${budgetGBP}` : '';
     list.innerHTML = `
       <div class="ai-welcome">
         <div class="ai-welcome-title">Ask the Predictor</div>
-        <div class="ai-welcome-sub">An AI analyst with live access to your collection, wishlist, watchlist and the market.</div>
+        <div class="ai-welcome-sub">An AI analyst with live access to your collection, wishlist, watchlist and the market${budgetHint ? ' — budget-aware' : ''}.</div>
         <div class="ai-welcome-suggest">Try one of these to get started:</div>
         <div class="ai-quick-grid">
-          <button class="ai-quick" data-prompt="What are the most underrated cards I should look at right now — both raw and graded — with high growth potential?">What's underrated right now?</button>
+          ${cardBtn}
+          <button class="ai-quick" data-prompt="What are the most underrated cards I should look at right now — both raw and graded — with high growth potential${budgetHint}?">What's underrated right now?</button>
           <button class="ai-quick" data-prompt="Analyse my portfolio. Which cards should I consider selling, holding or grading?">Analyse my portfolio</button>
           <button class="ai-quick" data-prompt="Which wishlist cards are closest to a good buying window? Should I lower or raise any of my targets?">Wishlist buy timing</button>
-          <button class="ai-quick" data-prompt="What's the smartest £100 spend in the modern era this week?">Best £100 spend this week</button>
+          <button class="ai-quick" data-prompt="What's the smartest spend${budgetHint || ' this week'} in the modern era?">Best spend${budgetHint || ' this week'}</button>
         </div>
       </div>`;
     return;
@@ -12345,10 +12398,15 @@ function aiToggleSettings(show) {
 }
 
 function aiOpenPanel() {
-  const panel = document.getElementById('aiChatPanel');
+  const panel    = document.getElementById('aiChatPanel');
+  const backdrop = document.getElementById('aiChatBackdrop');
   if (!panel) return;
   panel.style.display = 'flex';
-  setTimeout(() => panel.classList.add('open'), 10);
+  if (backdrop) backdrop.style.display = 'block';
+  setTimeout(() => {
+    panel.classList.add('open');
+    if (backdrop) backdrop.classList.add('open');
+  }, 10);
   aiRenderHistory();
   // First-time? Force settings open (only for key-required providers)
   const _openCfg = AI_PROVIDERS[aiGetProvider()];
@@ -12357,10 +12415,15 @@ function aiOpenPanel() {
   if (input) setTimeout(() => input.focus(), 200);
 }
 function aiClosePanel() {
-  const panel = document.getElementById('aiChatPanel');
+  const panel    = document.getElementById('aiChatPanel');
+  const backdrop = document.getElementById('aiChatBackdrop');
   if (!panel) return;
   panel.classList.remove('open');
-  setTimeout(() => { panel.style.display = 'none'; }, 200);
+  if (backdrop) backdrop.classList.remove('open');
+  setTimeout(() => {
+    panel.style.display = 'none';
+    if (backdrop) backdrop.style.display = 'none';
+  }, 200);
 }
 
 async function aiSubmit(userText) {
@@ -12440,6 +12503,7 @@ function setupAiChat() {
   btn.addEventListener('click', aiOpenPanel);
   close && close.addEventListener('click', aiClosePanel);
   document.getElementById('aiChatMinimise')?.addEventListener('click', aiClosePanel);
+  document.getElementById('aiChatBackdrop')?.addEventListener('click', aiClosePanel);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.getElementById('aiChatPanel').classList.contains('open')) aiClosePanel();
   });
