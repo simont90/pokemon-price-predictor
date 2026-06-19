@@ -263,11 +263,13 @@ async function _resolveLegacyTCGCImage(card) {
 // ---- Live Pricing Cache (localStorage with TTL) ----
 const PRICE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 const PRICE_CACHE_KEY = 'pkm-live-prices-v4'; // v4: PriceCharting primary for ALL cards
+let _priceCache = null; // in-memory mirror; avoids JSON.parse on every getCachedPrice call
 
 function getPriceCache() {
-  try {
-    return JSON.parse(localStorage.getItem(PRICE_CACHE_KEY) || '{}');
-  } catch { return {}; }
+  if (_priceCache) return _priceCache;
+  try { _priceCache = JSON.parse(localStorage.getItem(PRICE_CACHE_KEY) || '{}') || {}; }
+  catch { _priceCache = {}; }
+  return _priceCache;
 }
 
 function setCachedPrice(cardId, data) {
@@ -622,6 +624,8 @@ function autoFillDesirability(card, pullCost) {
 }
 
 // ---- Search ----
+let _cardMap = null; // Map<id, card> — O(1) lookup replacing O(n) .find() calls
+
 function buildSearchIndex(cards) {
   searchIndex = cards.map(c => ({
     ...c,
@@ -629,6 +633,7 @@ function buildSearchIndex(cards) {
       .replace(/\s+/g, ' ')
       .toLowerCase(),
   }));
+  _cardMap = new Map(cards.map(c => [c.i, c]));
 }
 
 // ================================================================
@@ -813,7 +818,7 @@ function findCounterparts(card) {
   // Manual override wins over auto-detection
   const overrideId = getCPOverride(card.i);
   if (overrideId && cardData) {
-    const other = cardData.cards.find(c => c.i === overrideId);
+    const other = getCardById(overrideId);
     if (other) {
       return {
         counterparts: [other],
@@ -1388,7 +1393,7 @@ function doSearch(query) {
     let _pt;
     el.addEventListener('mouseenter', () => {
       _pt = setTimeout(() => {
-        const c = cardData?.cards.find(x => x.i === el.dataset.id);
+        const c = getCardById(el.dataset.id);
         if (c && !getCachedPrice(c.i)) {
           fetchFreshPriceData(c).then(d => { if (d) setCachedPrice(c.i, d); }).catch(() => {});
         }
@@ -1399,7 +1404,10 @@ function doSearch(query) {
   results.classList.add('open');
 }
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// O(1) card lookup via pre-built Map. Replaces all getCardById(id) calls.
+function getCardById(id) { return _cardMap ? (_cardMap.get(id) ?? null) : null; }
 
 // In iOS standalone PWA mode, window.open() creates an in-app SFSafariViewController
 // which gets intercepted by Universal Links (eBay, etc.) and leaves a blank white page.
@@ -2237,7 +2245,7 @@ function recalcWithLivePrice(card) {
 // ================================================================
 function selectCard(id) {
   if (!cardData) return;
-  const card = cardData.cards.find(c => c.i === id);
+  const card = getCardById(id);
   if (!card) return;
   selectedCard = card;
   _holdWinnerKey = null;  // reset until renderHoldStrategy runs for this card
@@ -3703,6 +3711,23 @@ function setupPortfolio() {
     });
   }
 
+  // Delegated listeners — wired once so renderPortfolio() can skip re-attaching.
+  const list = $('portfolioList');
+  if (list) {
+    list.addEventListener('click', e => {
+      if (e.target.closest('.pi-toggle')) return;
+      const removeBtn = e.target.closest('.portfolio-item-remove');
+      if (removeBtn) {
+        e.stopPropagation();
+        portfolio = portfolio.filter(p => p.id !== removeBtn.dataset.id);
+        savePortfolio(); renderPortfolio(); updatePortfolioButton();
+        return;
+      }
+      const item = e.target.closest('.portfolio-item');
+      if (item) selectCard(item.dataset.id);
+    });
+  }
+
   renderPortfolio();
 }
 
@@ -4014,7 +4039,7 @@ function renderRoiChart() {
     const cost = getAcqCostBasisGBP(p.id);
     if (!cost) continue;
     const acq = getAcq(p.id);
-    const card = cardData?.cards.find(c => c.i === p.id);
+    const card = getCardById(p.id);
     if (!card) continue;
 
     // Model value: derive pull cost from card rarity, use autoFill desirability
@@ -4165,7 +4190,7 @@ function renderPortfolio() {
   let totalCostGBP = 0;
   let hasAnyAcq = false;
   const items = portfolio.map(p => {
-    const currentCard = cardData ? cardData.cards.find(c => c.i === p.id) : null;
+    const currentCard = getCardById(p.id);
     const cached = getCachedPrice(p.id);           // fresh (<1 h)
     const stale = !cached ? getLastKnownPrice(p.id) : null; // stale fallback
     const priceData = cached || stale;
@@ -4247,23 +4272,7 @@ function renderPortfolio() {
     totalEl.textContent = `Total: £${totalGBP.toFixed(2)}`;
   }
 
-  list.querySelectorAll('.portfolio-item').forEach(el => {
-    el.addEventListener('click', (e) => {
-      if (e.target.closest('.portfolio-item-remove')) return;
-      if (e.target.closest('.pi-toggle')) return;
-      selectCard(el.dataset.id);
-    });
-  });
   piWireToggles(list);
-  list.querySelectorAll('.portfolio-item-remove').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      portfolio = portfolio.filter(p => p.id !== btn.dataset.id);
-      savePortfolio();
-      renderPortfolio();
-      updatePortfolioButton();
-    });
-  });
 }
 
 // =============================================================
@@ -4275,6 +4284,38 @@ function setupWishlist() {
   $('wishlistToggle').addEventListener('click', () => toggleSidePanel('wishlistPanel'));
   $('wishlistClose').addEventListener('click', () => { $('wishlistPanel').style.display = 'none'; });
   $('addWishlistBtn').addEventListener('click', toggleCardInWishlist);
+
+  // Delegated listeners — wired once so renderWishlist() can skip re-attaching.
+  const list = $('wishlistList');
+  if (list) {
+    list.addEventListener('click', e => {
+      if (e.target.closest('.wishlist-target-input') || e.target.closest('.pi-toggle')) return;
+      const removeBtn = e.target.closest('.wishlist-remove');
+      if (removeBtn) {
+        e.stopPropagation();
+        wishlist = wishlist.filter(w => w.id !== removeBtn.dataset.id);
+        saveWishlist(); renderWishlist(); updateWishlistButton();
+        return;
+      }
+      const item = e.target.closest('.wishlist-item');
+      if (item) selectCard(item.dataset.id);
+    });
+    list.addEventListener('click', e => {
+      const input = e.target.closest('.wishlist-target-input');
+      if (input) e.stopPropagation();
+    });
+    list.addEventListener('change', e => {
+      const input = e.target.closest('.wishlist-target-input');
+      if (!input) return;
+      const w = wishlist.find(x => x.id === input.dataset.id);
+      if (w) {
+        w.targetGBP = +parseFloat(input.value || '0').toFixed(2);
+        saveWishlist(); // no full re-render — just persist the new target
+        _homeWishHash = ''; // force home wishlist to recompute alert state on next nav
+      }
+    });
+  }
+
   renderWishlist();
 }
 
@@ -4288,7 +4329,7 @@ function toggleSidePanel(id) {
 }
 
 function toggleCardInWishlist(id) {
-  const card = id ? (cardData && cardData.cards.find(c => c.i === id)) : selectedCard;
+  const card = id ? (getCardById(id)) : selectedCard;
   if (!card) return;
   const idx = wishlist.findIndex(w => w.id === card.i);
   if (idx >= 0) {
@@ -4346,7 +4387,7 @@ function renderWishlist() {
   let totalCurrent = 0;
   let alertCount = 0;
   const items = wishlist.map(w => {
-    const currentCard = cardData ? cardData.cards.find(c => c.i === w.id) : null;
+    const currentCard = getCardById(w.id);
     const cached = getCachedPrice(w.id);
     const currentUSD = cached
       ? (cached.pcUngraded || cached.market || cached.mid || (currentCard ? currentCard.p : 0))
@@ -4402,27 +4443,6 @@ function renderWishlist() {
     });
   });
   piWireToggles(list);
-  list.querySelectorAll('.wishlist-remove').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      wishlist = wishlist.filter(w => w.id !== btn.dataset.id);
-      saveWishlist();
-      renderWishlist();
-      updateWishlistButton();
-    });
-  });
-  list.querySelectorAll('.wishlist-target-input').forEach(input => {
-    input.addEventListener('click', e => e.stopPropagation());
-    input.addEventListener('change', e => {
-      const id = e.target.dataset.id;
-      const w = wishlist.find(x => x.id === id);
-      if (w) {
-        w.targetGBP = +parseFloat(e.target.value || '0').toFixed(2);
-        saveWishlist();
-        renderWishlist();
-      }
-    });
-  });
 }
 
 // =============================================================
@@ -5697,7 +5717,7 @@ function renderCPOverrideCurrent() {
   const overrideId = getCPOverride(_cpovCard.i);
   const auto = findCounterparts(_cpovCard);
   if (overrideId && cardData) {
-    const o = cardData.cards.find(c => c.i === overrideId);
+    const o = getCardById(overrideId);
     if (o) {
       cur.innerHTML = `<strong>Manual override active:</strong> ${esc(o.n)} · ${esc(o.s || '')}${o.cn ? ' #' + esc(o.cn) : ''} <span class="lang-${o.lang === 'JP' ? 'jp' : 'en'}">${o.lang === 'JP' ? 'JP' : 'EN'}</span>`;
       $('cpovClearBtn').disabled = false;
@@ -6065,7 +6085,7 @@ function addManualCardFromTCGC(r, isJPHint) {
   // tcgc-{lang}-{tcgcId} keeps it stable across reloads.
   const id = `tcgc-${langGuess.toLowerCase()}-${r.tcgcId}`;
   // If already added, just select it.
-  if (cardData.cards.find(c => c.i === id)) {
+  if (getCardById(id)) {
     closeManualAdd();
     selectCard(id);
     return;
@@ -6280,7 +6300,7 @@ async function saveCustomCard() {
   // the same card later still maps to the same entry.
   const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g,'');
   const id = `usr-${lang.toLowerCase()}-${slug(set)}-${slug(name)}-${slug(cn)}`;
-  if (cardData.cards.find(c => c.i === id)) {
+  if (getCardById(id)) {
     status.className = 'ql-status error';
     status.textContent = 'A card with these details already exists. Open it from search instead.';
     return;
@@ -7238,7 +7258,7 @@ async function pollWatchlistDeals() {
   // Rotate through watchlist cards to spread load — 3 per poll cycle
   const slice = watchlist.slice(0, 3);
   for (const w of slice) {
-    const card = cardData.cards.find(c => c.i === w.id);
+    const card = getCardById(w.id);
     if (!card) continue;
     const pull = (function () {
       try {
@@ -7301,7 +7321,7 @@ function saveDismissed() { localStorage.setItem(WATCHLIST_ALERT_DISMISS_KEY, JSO
 function isWatched(cardId) { return watchlist.some(w => w.id === cardId); }
 
 function toggleCardInWatchlist(id) {
-  const card = id ? (cardData && cardData.cards.find(c => c.i === id)) : selectedCard;
+  const card = id ? (getCardById(id)) : selectedCard;
   if (!card) return;
   const cardId = card.i;
   const idx = watchlist.findIndex(w => w.id === cardId);
@@ -7351,7 +7371,7 @@ function computeActiveAlerts() {
   if (!cardData) return [];
   const out = [];
   for (const w of watchlist) {
-    const card = cardData.cards.find(c => c.i === w.id);
+    const card = getCardById(w.id);
     if (!card) continue;
     const pull = (function () {
       try {
@@ -10452,7 +10472,7 @@ function psSetButtonsDisabled(disabled) {
 // Refresh a single card by id — returns {ok, error, data}
 async function psRefreshOne(id) {
   if (!cardData) return { ok: false, error: 'Catalog not loaded' };
-  const card = cardData.cards.find(c => c.i === id);
+  const card = getCardById(id);
   if (!card) return { ok: false, error: `Card not in catalog: ${id}` };
   try {
     const data = await fetchFreshPriceData(card);
@@ -10491,7 +10511,7 @@ async function psBatchRefresh(ids, label) {
     while (cursor < ids.length && !_psState.cancel) {
       const myIdx = cursor++;
       const id = ids[myIdx];
-      const card = cardData?.cards.find(c => c.i === id);
+      const card = getCardById(id);
       const labelText = card ? `${card.n}${card.cn ? ' #' + card.cn : ''} (${card.s || id})` : id;
       psUpdateProgress(_psState.done, _psState.total, `→ ${labelText}`);
       const result = await psRefreshOne(id);
@@ -11990,7 +12010,7 @@ function aiBuildContext() {
     if (Array.isArray(portfolio) && portfolio.length) {
       let totalGBP = 0, totalCost = 0, hasCost = 0;
       const items = portfolio.map(p => {
-        const card = cardData && cardData.cards.find(c => c.i === p.id);
+        const card = getCardById(p.id);
         const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(p.id) : null;
         const usd = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
         const gbp = usdToGbp(usd);
@@ -12014,7 +12034,7 @@ function aiBuildContext() {
   try {
     if (Array.isArray(wishlist) && wishlist.length) {
       ctx.wishlist = wishlist.slice(0, 10).map(w => {
-        const card = cardData && cardData.cards.find(c => c.i === w.id);
+        const card = getCardById(w.id);
         const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(w.id) : null;
         const usd = cached ? (cached.pcUngraded || cached.market || cached.mid || (card ? card.p : 0)) : (card ? card.p : 0);
         return {
@@ -12192,7 +12212,7 @@ function aiProcessSentinels(html) {
   // Replace [[card:ID|Name]] with interactive chip
   html = html.replace(/\[\[card:([^\]|]+)\|([^\]]+)\]\]/g, (_, id, name) => {
     if (!cardData) return name;
-    const card = cardData.cards.find(c => c.i === id);
+    const card = getCardById(id);
     if (!card) return name;
     const wlActive = wishlist.some(w => w.id === id) ? ' is-active' : '';
     const wtActive = watchlist.some(w => w.id === id) ? ' is-active' : '';
@@ -12243,7 +12263,7 @@ async function aiHydrateCharts(containerEl) {
     const loading = mount.querySelector('.ai-chart-loading');
 
     if (!cardData) { if (loading) loading.textContent = 'Card data unavailable'; continue; }
-    const card = cardData.cards.find(c => c.i === cardId);
+    const card = getCardById(cardId);
     if (!card) { mount.innerHTML = '<div style="padding:12px;color:var(--text-faint);font-size:12px">Card not found</div>'; continue; }
 
     if (type === 'price') {
@@ -12631,9 +12651,8 @@ function buildAllHomeRecos(limit = 15) {
   const seenIds  = new Set();
   // Pre-parse per-card stores once — avoids ~50k localStorage reads inside the loop.
   let allOverrides = {};
-  let priceCache = {};
   try { allOverrides = JSON.parse(localStorage.getItem(HOLD_OVERRIDE_KEY) || '{}') || {}; } catch {}
-  try { priceCache = JSON.parse(localStorage.getItem(PRICE_CACHE_KEY) || '{}') || {}; } catch {}
+  const priceCache = getPriceCache(); // in-memory singleton — no JSON.parse overhead
 
   for (const c of cardData.cards) {
     if (dismissed.has(c.i)) continue;
@@ -12802,7 +12821,7 @@ function _recoListClick(e) {
   if (wishBtn) {
     e.stopPropagation();
     const id = wishBtn.dataset.id;
-    const card = cardData && cardData.cards.find(c => c.i === id);
+    const card = getCardById(id);
     if (card && !wishlist.some(w => w.id === id)) {
       const currentUSD = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
       const currentGBP = usdToGbp(currentUSD);
@@ -12826,7 +12845,7 @@ function _recoListClick(e) {
   if (watchBtn) {
     e.stopPropagation();
     const id = watchBtn.dataset.id;
-    const card = cardData && cardData.cards.find(c => c.i === id);
+    const card = getCardById(id);
     if (card && !watchlist.some(w => w.id === id)) {
       const pull = 7.65;
       const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pull).total : 50;
@@ -12878,7 +12897,13 @@ function _renderHomeReco(forceRebuild) {
   if (!_recoCached) {
     list.innerHTML = '<div class="home-empty">Scanning…</div>';
     _STRAT_SECTIONS.forEach(s => { const el = $(s.listId); if (el) el.innerHTML = '<div class="home-empty">Scanning…</div>'; });
-    requestAnimationFrame(() => {
+    // Run scan during browser idle time so the page appears immediately.
+    // Safari doesn't support requestIdleCallback; fall back to a 1ms timeout
+    // which still yields to the paint task before the scan begins.
+    const _ric = typeof requestIdleCallback === 'function'
+      ? f => requestIdleCallback(f, { timeout: 3000 })
+      : f => setTimeout(f, 1);
+    _ric(() => {
       const all = buildAllHomeRecos();
       _recoCached = { ...all, ts: Date.now() };
       _renderHomeRecoResults(all.general, list, $('homeRecoCount'));
@@ -12971,7 +12996,7 @@ function renderHvaGrid(query) {
 }
 function _buildCollectionItems() {
   return portfolio.map(p => {
-    const card = cardData?.cards.find(c => c.i === p.id);
+    const card = getCardById(p.id);
     const cached = getCachedPrice(p.id);
     const priceUSD = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
     const priceGBP = usdToGbp(priceUSD);
@@ -12992,7 +13017,7 @@ function _buildWishlistItems() {
   const maxBudget = getMaxBudgetGBP();
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
   return wishlist.flatMap(w => {
-    const card = cardData?.cards.find(c => c.i === w.id);
+    const card = getCardById(w.id);
     if (!card) return [];
     const hc = computeHoldCore(card);
     const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
@@ -13015,7 +13040,7 @@ function _buildWatchlistItems() {
   const alerts = (typeof computeActiveAlerts === 'function') ? computeActiveAlerts() : [];
   const alertMap = Object.fromEntries(alerts.map(a => [a.id, a]));
   return watchlist.flatMap(w => {
-    const card = cardData?.cards.find(c => c.i === w.id);
+    const card = getCardById(w.id);
     if (!card) return [];
     const hc = computeHoldCore(card);
     const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
@@ -13186,6 +13211,8 @@ function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass
 }
 
 function _setupTileEvents(scrollEl, deleteFn) {
+  if (!scrollEl || scrollEl._tileWired) return;
+  scrollEl._tileWired = true;
   scrollEl.addEventListener('click', e => {
     const removeBtn = e.target.closest('.home-card-remove');
     if (removeBtn) {
@@ -13487,7 +13514,7 @@ function _renderHomeCollection() {
   _homeCollHash = hash;
   let totalGBP = 0;
   const tiles = portfolio.map(p => {
-    const card = cardData?.cards.find(c => c.i === p.id);
+    const card = getCardById(p.id);
     const cached = getCachedPrice(p.id);
     const priceUSD = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
     const priceGBP = usdToGbp(priceUSD);
@@ -13547,7 +13574,7 @@ function _renderHomeWishlist() {
   _homeWishHash = hash;
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
   const tiles = wishlist.flatMap(w => {
-    const card = cardData?.cards.find(c => c.i === w.id);
+    const card = getCardById(w.id);
     if (!card) return [];
     const hc = computeHoldCore(card);
     const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
@@ -13603,7 +13630,7 @@ function _renderHomeWatchlist() {
   const alerts = (typeof computeActiveAlerts === 'function') ? computeActiveAlerts() : [];
   const alertMap = Object.fromEntries(alerts.map(a => [a.id, a]));
   const tiles = watchlist.flatMap(w => {
-    const card = cardData?.cards.find(c => c.i === w.id);
+    const card = getCardById(w.id);
     if (!card) return [];
     const hc = computeHoldCore(card);
     const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
