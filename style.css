@@ -5800,6 +5800,11 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .page-nav-btn.active { color: var(--accent); }
 .page-nav-btn.active svg { opacity: 1; color: var(--accent); }
 
+.page-nav-ask { color: var(--accent); }
+.page-nav-ask svg { opacity: 0.85; color: var(--accent); }
+.page-nav-ask:hover { color: var(--accent); filter: brightness(1.12); }
+.page-nav-ask:active { color: var(--accent); }
+
 @media (max-width: 400px) {
   .page-nav-btn { padding: 10px 14px; min-width: 68px; font-size: 10px; }
   .nav-pill { width: 68px; }
