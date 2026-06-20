@@ -584,10 +584,11 @@ function _extractPricesFromNextData(obj, depth) {
 async function handleTcgPrice(request, url) {
   const ch = corsHeaders(request);
   const productId = (url.searchParams.get('productId') || '').trim();
+  const debug = url.searchParams.get('debug') === '1';
   if (!productId || !/^\d+$/.test(productId)) return _jsonResp(400, { error: 'productId required (digits only)' }, ch);
 
   const pageUrl = `https://www.tcgplayer.com/product/${productId}`;
-  let html;
+  let html, httpStatus;
   try {
     const r = await fetch(pageUrl, {
       headers: {
@@ -598,10 +599,18 @@ async function handleTcgPrice(request, url) {
       },
       cf: { cacheEverything: true, cacheTtl: 900 },
     });
+    httpStatus = r.status;
     if (!r.ok) return _jsonResp(r.status, { error: `TCGPlayer returned HTTP ${r.status}` }, ch);
     html = await r.text();
   } catch (e) {
     return _jsonResp(502, { error: `Fetch failed: ${e.message}` }, ch);
+  }
+
+  if (debug) {
+    const hasNextData = /<script id="__NEXT_DATA__"/.test(html);
+    const hasLdJson = /<script type="application\/ld\+json">/.test(html);
+    const snippet = html.slice(0, 800).replace(/\s+/g, ' ');
+    return _jsonResp(200, { debug: true, httpStatus, htmlLen: html.length, hasNextData, hasLdJson, snippet }, ch);
   }
 
   // Strategy 1: __NEXT_DATA__ embedded JSON (Next.js SSR)
@@ -640,7 +649,7 @@ async function handleTcgPrice(request, url) {
     if (market > 0) return _jsonResp(200, { market, low: 0, mid: 0, high: 0, directLow: 0, source: 'tcgplayer-textparse' }, ch);
   }
 
-  return _jsonResp(404, { error: 'No price data found on TCGPlayer page' }, ch);
+  return _jsonResp(404, { error: 'No price data found on TCGPlayer page', htmlLen: html.length }, ch);
 }
 
 // ---- Main handler ----
