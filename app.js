@@ -9968,6 +9968,23 @@ function renderHoldStrategy(card) {
   // model says it'll be worth."
   if (typeof applyHoldOverrides === 'function') applyHoldOverrides(card, strategies, fx, gradingFeeUSD);
 
+  // When an acquisition cost is recorded but no manual override is set, surface
+  // the live/current market price as "Market now" on the raw tile so the user
+  // can see how much the card has grown since purchase — same display as the
+  // manual-override path, but driven by the live price feed automatically.
+  if (usingAcqCost && rawUSD > 0 && acqCostUSD != null) {
+    const _rawStrat = strategies.find(s => s.key === 'raw');
+    if (_rawStrat && _rawStrat.marketNowGBP == null) {
+      const _mktGBP  = rawUSD * fx;
+      const _paidGBP = acqCostUSD * fx;
+      if (_mktGBP > 0 && Math.abs(_mktGBP - _paidGBP) > 0.01) {
+        _rawStrat.marketNowGBP    = _mktGBP;
+        _rawStrat.currentGrowthGBP = _mktGBP - _paidGBP;
+        _rawStrat.currentGrowthPct = _paidGBP > 0 ? (_mktGBP - _paidGBP) / _paidGBP * 100 : 0;
+      }
+    }
+  }
+
   // Refresh the override editor panel so the placeholders show current fair
   // values and the inputs reflect any persisted overrides for this card.
   if (typeof renderHoldOverridePanel === 'function') renderHoldOverridePanel(card);
@@ -10148,7 +10165,7 @@ function renderHoldStrategy(card) {
       scanLine = `<div class="hold-rec-line hold-rec-scan">${action}</div>`;
     }
     const _rawStrat = strategies.find(s => s.key === 'raw');
-    const _mktNow = _rawStrat?.marketOverrideGBP ?? null;
+    const _mktNow = _rawStrat?.marketNowGBP ?? null;
     const _growthNote = (_mktNow && acqCostGBP)
       ? ` · market now ${fmtGBPDirect(_mktNow)} (${(_rawStrat.currentGrowthPct >= 0 ? '+' : '') + _rawStrat.currentGrowthPct.toFixed(0)}% already gained)`
       : '';
@@ -10189,13 +10206,13 @@ function renderHoldStrategy(card) {
           <div class="hold-tile-desc">${s.desc}</div>
         </div>
         <div class="hold-tile-row">
-          <span class="hold-tile-k">${(s.isOwnedSlab || s.marketOverrideGBP != null) ? 'Your cost (paid)' : `Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}`}</span>
+          <span class="hold-tile-k">${(s.isOwnedSlab || s.marketNowGBP != null) ? 'Your cost (paid)' : `Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}`}</span>
           <span class="hold-tile-v">${fmtGBP(s.today)}</span>
         </div>
-        ${s.marketOverrideGBP != null ? `
+        ${s.marketNowGBP != null ? `
         <div class="hold-tile-row hold-tile-sub">
           <span class="hold-tile-k">· Market now</span>
-          <span class="hold-tile-v">${fmtGBPDirect(s.marketOverrideGBP)} <span class="${s.currentGrowthGBP >= 0 ? 'hold-pos' : 'hold-neg'}" style="font-size:10px">${s.currentGrowthPct >= 0 ? '+' : ''}${s.currentGrowthPct.toFixed(0)}% already</span></span>
+          <span class="hold-tile-v">${fmtGBPDirect(s.marketNowGBP)} <span class="${s.currentGrowthGBP >= 0 ? 'hold-pos' : 'hold-neg'}" style="font-size:10px">${s.currentGrowthPct >= 0 ? '+' : ''}${s.currentGrowthPct.toFixed(0)}% already</span></span>
         </div>` : ''}
         ${s.isOwnedSlab && s.slabMarketGBP != null ? `
         <div class="hold-tile-row hold-tile-sub">
@@ -14517,7 +14534,8 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
     if (isRawBased && hasAcqCost) {
       // Override = current market. Preserve acquisition-cost denominator for profit/ROI.
       // profit/roi/today were already computed from acq cost — don't touch them.
-      s.marketOverrideGBP = gbp;
+      s.marketOverrideGBP = gbp; // kept for the "Override" badge
+      s.marketNowGBP      = gbp; // canonical field used for "Market now" sub-row
       s.currentGrowthGBP  = gbp - acqCostGBP;
       s.currentGrowthPct  = acqCostGBP > 0 ? (gbp - acqCostGBP) / acqCostGBP * 100 : 0;
       s.overridden = true;
