@@ -11639,9 +11639,7 @@ const PSA10_FROM_RAW = {
 //   'none'      — could not determine an anchor
 function getPsa10Anchor(card) {
   if (!card) return { usd: 0, source: 'none' };
-  // Tracked anchor wins
-  if (card.p10 && card.p10 > 0) return { usd: card.p10, source: 'tracked' };
-  // Live PriceCharting PSA 10 from currently-selected card
+  // Live PriceCharting PSA 10 takes priority for the currently-selected card
   if (typeof livePrice !== 'undefined' && livePrice
       && selectedCard && card.i === selectedCard.i
       && livePrice.pcPsa10 > 0) {
@@ -11650,6 +11648,8 @@ function getPsa10Anchor(card) {
   // Live cache for non-selected card
   const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(card.i) : null;
   if (cached && cached.pcPsa10 > 0) return { usd: cached.pcPsa10, source: 'live' };
+  // Fall back to static database value
+  if (card.p10 && card.p10 > 0) return { usd: card.p10, source: 'tracked' };
   // Estimate from raw × rarity multiplier
   // User-entered JP PSA 10 override (from EN↔JP scenario panel)
   const jpManual = (typeof getJpPsa10Override === 'function') ? getJpPsa10Override(card.i) : null;
