@@ -13213,7 +13213,7 @@ function _recoListClick(e) {
   }
   // Tile click → open card
   const tile = e.target.closest('.home-card-tile');
-  if (tile && !e.target.closest('.reco-btn')) _homeItemClick(tile.dataset.id);
+  if (tile && !e.target.closest('.reco-btn') && !e.target.closest('.home-pip-trigger')) _homeItemClick(tile.dataset.id);
 }
 
 const _STRAT_SECTIONS = [
@@ -13535,8 +13535,7 @@ function _homeItemClick(id) {
 let _homePipId = null;
 
 function openHomePip(id, imgUrl) {
-  const pip      = document.getElementById('homePip');
-  const backdrop = document.getElementById('homePipBackdrop');
+  const pip = document.getElementById('homePip');
   if (!pip) return;
   _homePipId = id;
 
@@ -13549,14 +13548,14 @@ function openHomePip(id, imgUrl) {
   document.getElementById('homePipName').textContent = card ? card.n : '';
   document.getElementById('homePipSet').textContent  = card ? (card.s || '') : '';
 
-  // Live market price (PC/TCG midpoint if both available, else best single source)
+  // Live market price (PC/TCG midpoint if both available)
   const priceData = (typeof getCachedPrice === 'function') ? (getCachedPrice(id) || getLastKnownPrice(id)) : null;
   const _mid = (priceData && priceData.pcUngraded > 0 && priceData.tcgMarket > 0)
     ? (priceData.pcUngraded + priceData.tcgMarket) / 2 : 0;
   const priceUSD = _mid || (priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || (card ? card.p : 0)) : (card ? card.p : 0));
   document.getElementById('homePipPrice').textContent = priceUSD > 0 ? fmtGBP(priceUSD) : '—';
 
-  // 5yr expected growth from forecast model
+  // 5yr expected growth
   const potentialEl = document.getElementById('homePipPotential');
   if (potentialEl) {
     if (card) {
@@ -13571,7 +13570,7 @@ function openHomePip(id, imgUrl) {
     }
   }
 
-  // Max buy — grade-aware helper (called on open and on grade change)
+  // Max buy — grade-aware
   function _pipUpdateMaxBuy() {
     const grade = document.getElementById('homePipGrade')?.value || 'raw';
     let maxUSD = priceUSD;
@@ -13588,34 +13587,45 @@ function openHomePip(id, imgUrl) {
   const gradeSelect = document.getElementById('homePipGrade');
   if (gradeSelect) gradeSelect.onchange = _pipUpdateMaxBuy;
 
+  // Pill (collapsed state) mirrors name + price
+  const pillName = document.getElementById('homePipPillName');
+  const pillPrice = document.getElementById('homePipPillPrice');
+  if (pillName) pillName.textContent = card ? card.n : '';
+  if (pillPrice) pillPrice.textContent = priceUSD > 0 ? fmtGBP(priceUSD) : '—';
+
   document.getElementById('homePipView').onclick = () => { closeHomePip(); _homeItemClick(id); };
 
+  pip.classList.remove('pip-collapsed');
   pip.style.display = '';
-  if (backdrop) backdrop.style.display = '';
-  requestAnimationFrame(() => {
-    pip.classList.add('pip-visible');
-    if (backdrop) backdrop.classList.add('pip-visible');
-  });
+  requestAnimationFrame(() => pip.classList.add('pip-visible'));
 }
 
 function closeHomePip() {
-  const pip      = document.getElementById('homePip');
-  const backdrop = document.getElementById('homePipBackdrop');
+  const pip = document.getElementById('homePip');
   if (!pip) return;
-  pip.classList.remove('pip-visible');
-  if (backdrop) backdrop.classList.remove('pip-visible');
-  setTimeout(() => {
-    pip.style.display = 'none';
-    if (backdrop) backdrop.style.display = 'none';
-    _homePipId = null;
-  }, 220);
+  pip.classList.remove('pip-visible', 'pip-collapsed');
+  setTimeout(() => { pip.style.display = 'none'; _homePipId = null; }, 280);
+}
+
+function collapseHomePip() {
+  const pip = document.getElementById('homePip');
+  if (!pip) return;
+  pip.classList.add('pip-collapsed');
+}
+
+function expandHomePip() {
+  const pip = document.getElementById('homePip');
+  if (!pip) return;
+  pip.classList.remove('pip-collapsed');
 }
 
 function _setupHomePip() {
   document.getElementById('homePipClose')?.addEventListener('click', closeHomePip);
-  document.getElementById('homePipBackdrop')?.addEventListener('click', closeHomePip);
+  document.getElementById('homePipCollapse')?.addEventListener('click', collapseHomePip);
+  document.getElementById('homePipExpand')?.addEventListener('click', expandHomePip);
+  document.getElementById('homePipCloseFromPill')?.addEventListener('click', closeHomePip);
+  document.getElementById('homePipBg')?.addEventListener('click', closeHomePip);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && _homePipId) closeHomePip(); });
-  // Delegated pip-trigger clicks across the whole page
   document.addEventListener('click', e => {
     const btn = e.target.closest('.home-pip-trigger');
     if (!btn) return;
@@ -13667,7 +13677,7 @@ function _setupTileEvents(scrollEl, deleteFn) {
       return;
     }
     const tile = e.target.closest('.home-card-tile');
-    if (!tile) return;
+    if (!tile || e.target.closest('.home-pip-trigger')) return;
     if (tile.dataset.dealUrl) {
       window.open(tile.dataset.dealUrl, '_blank', 'noopener');
     } else {
@@ -13854,7 +13864,7 @@ function _setupGradeCandEvents(list) {
     if (e.target.closest('.home-cand-ebay-btn')) return;
     // Main tile → card page
     const tile = e.target.closest('.home-card-tile');
-    if (tile && tile.dataset.id) _homeItemClick(tile.dataset.id);
+    if (tile && tile.dataset.id && !e.target.closest('.home-pip-trigger')) _homeItemClick(tile.dataset.id);
   });
 }
 

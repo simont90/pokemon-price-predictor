@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260620u">
+  <link rel="stylesheet" href="style.css?v=20260620v">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2127,46 +2127,56 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <!-- Homepage PiP card preview -->
+  <!-- Homepage PiP card preview (fullscreen bottom-sheet) -->
   <div id="homePip" class="home-pip" style="display:none" role="dialog" aria-modal="true" aria-label="Card preview">
-    <div class="home-pip-inner">
-      <img id="homePipImg" class="home-pip-img" src="" alt="" onerror="this.style.display='none'">
-      <div class="home-pip-body">
-        <div id="homePipName" class="home-pip-name"></div>
-        <div id="homePipSet" class="home-pip-set"></div>
-        <div class="pip-stats">
-          <div class="pip-stat">
-            <div class="pip-stat-label">Live market</div>
-            <div id="homePipPrice" class="pip-stat-val pip-accent"></div>
+    <div class="home-pip-bg" id="homePipBg"></div>
+    <div class="home-pip-sheet" id="homePipSheet">
+      <div class="home-pip-handle"></div>
+      <div class="home-pip-layout">
+        <img id="homePipImg" class="home-pip-img" src="" alt="" onerror="this.style.display='none'">
+        <div class="home-pip-body">
+          <div id="homePipName" class="home-pip-name"></div>
+          <div id="homePipSet" class="home-pip-set"></div>
+          <div class="pip-stats">
+            <div class="pip-stat">
+              <div class="pip-stat-label">Live market</div>
+              <div id="homePipPrice" class="pip-stat-val pip-accent"></div>
+            </div>
+            <div class="pip-stat">
+              <div class="pip-stat-label">5yr potential</div>
+              <div id="homePipPotential" class="pip-stat-val pip-upside"></div>
+            </div>
           </div>
-          <div class="pip-stat">
-            <div class="pip-stat-label">5yr potential</div>
-            <div id="homePipPotential" class="pip-stat-val pip-upside"></div>
+          <div class="pip-maxbuy">
+            <div class="pip-maxbuy-header">
+              <span class="pip-stat-label">Max buy</span>
+              <select id="homePipGrade" class="pip-grade-select">
+                <option value="raw">Raw</option>
+                <option value="7">PSA 7</option>
+                <option value="8">PSA 8</option>
+                <option value="9">PSA 9</option>
+                <option value="10">PSA 10</option>
+              </select>
+            </div>
+            <div id="homePipMaxBuy" class="pip-stat-val pip-accent"></div>
           </div>
-        </div>
-        <div class="pip-maxbuy">
-          <div class="pip-maxbuy-header">
-            <span class="pip-stat-label">Max buy</span>
-            <select id="homePipGrade" class="pip-grade-select">
-              <option value="raw">Raw</option>
-              <option value="7">PSA 7</option>
-              <option value="8">PSA 8</option>
-              <option value="9">PSA 9</option>
-              <option value="10">PSA 10</option>
-            </select>
-          </div>
-          <div id="homePipMaxBuy" class="pip-stat-val pip-accent"></div>
         </div>
       </div>
       <div class="home-pip-btns">
         <button id="homePipView" class="home-pip-view-btn">View full card ↗</button>
-        <button id="homePipClose" class="home-pip-close-btn">Close</button>
+        <button id="homePipCollapse" class="home-pip-collapse-btn" title="Minimise">⊟</button>
+        <button id="homePipClose" class="home-pip-close-btn" title="Close">✕</button>
       </div>
     </div>
+    <div class="home-pip-pill" id="homePipPill">
+      <span id="homePipPillName" class="pip-pill-name"></span>
+      <span id="homePipPillPrice" class="pip-pill-price"></span>
+      <button class="pip-pill-btn" id="homePipExpand" title="Expand">↑</button>
+      <button class="pip-pill-btn" id="homePipCloseFromPill" title="Close">✕</button>
+    </div>
   </div>
-  <div id="homePipBackdrop" class="home-pip-backdrop" style="display:none"></div>
 
-  <script src="app.js?v=20260620u"></script>
+  <script src="app.js?v=20260620v"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

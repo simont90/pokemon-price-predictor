@@ -7390,83 +7390,101 @@ section.card .card-collapse-btn { padding: 10px; }
 .home-pip-trigger:hover { background: rgba(232,182,52,0.25); color: var(--accent); }
 .home-pip-trigger:active { transform: scale(0.9); }
 
-/* ── PiP backdrop ── */
-.home-pip-backdrop {
+/* ── PiP fullscreen overlay ── */
+.home-pip {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.45);
-  backdrop-filter: blur(3px);
-  z-index: 1199;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  pointer-events: none;
   opacity: 0;
   transition: opacity 0.22s ease;
 }
-.home-pip-backdrop.pip-visible { opacity: 1; }
-
-/* ── PiP panel ── */
-.home-pip {
-  position: fixed;
-  bottom: 24px;
-  right: 20px;
-  width: 240px;
-  z-index: 1200;
-  border-radius: 18px;
-  overflow: hidden;
-  background: var(--bg-raised, #1a1c28);
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 16px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(232,182,52,0.12);
-  transform: translateY(24px) scale(0.96);
-  opacity: 0;
-  transition: transform 0.24s cubic-bezier(0.34,1.56,0.64,1), opacity 0.22s ease;
-}
 .home-pip.pip-visible {
-  transform: translateY(0) scale(1);
   opacity: 1;
+  pointer-events: auto;
 }
-@media (max-width: 480px) {
-  .home-pip {
-    left: 50%;
-    right: auto;
-    bottom: 16px;
-    transform: translateX(-50%) translateY(24px) scale(0.96);
-    width: min(300px, 88vw);
-  }
-  .home-pip.pip-visible {
-    transform: translateX(-50%) translateY(0) scale(1);
-  }
+/* Dark backdrop — clicking it closes */
+.home-pip-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.62);
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+}
+/* Bottom sheet */
+.home-pip-sheet {
+  position: relative;
+  z-index: 1;
+  background: var(--bg-raised, #1c1e2e);
+  border-radius: 22px 22px 0 0;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  box-shadow: 0 -12px 60px rgba(0,0,0,0.6);
+  transform: translateY(100%);
+  transition: transform 0.32s cubic-bezier(0.34,1.15,0.64,1);
+}
+.home-pip.pip-visible .home-pip-sheet { transform: translateY(0); }
+/* When collapsed: sheet slides back out */
+.home-pip.pip-collapsed .home-pip-sheet {
+  transform: translateY(110%);
+  pointer-events: none;
+}
+/* Drag handle */
+.home-pip-handle {
+  width: 40px; height: 4px;
+  background: rgba(255,255,255,0.18);
+  border-radius: 2px;
+  margin: 14px auto 10px;
+}
+/* Side-by-side layout: card art left, info right */
+.home-pip-layout {
+  display: flex;
+  gap: 14px;
+  padding: 0 16px 14px;
+  align-items: flex-start;
 }
 .home-pip-img {
-  width: 100%;
+  width: 110px;
+  flex-shrink: 0;
+  border-radius: 10px;
   aspect-ratio: 63 / 88;
   object-fit: cover;
-  display: block;
   background: #0d0e18;
+  display: block;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
 }
 .home-pip-body {
-  padding: 10px 12px 0;
-  border-top: 1px solid rgba(255,255,255,0.07);
+  flex: 1;
+  min-width: 0;
+  padding-top: 2px;
 }
 .home-pip-name {
-  font-size: 12.5px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text, #e8eaf0);
+  margin-bottom: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 1px;
 }
 .home-pip-set {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-muted, #666880);
+  margin-bottom: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 8px;
 }
-/* Stat grid — live market + 5yr potential side by side */
+/* Stat grid — live market + 5yr potential */
 .pip-stats {
   display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .pip-stat { flex: 1; min-width: 0; }
 .pip-stat-label {
@@ -7475,11 +7493,11 @@ section.card .card-collapse-btn { padding: 10px; }
   color: var(--text-muted, #666880);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 .pip-stat-val {
   font-family: var(--mono, monospace);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text, #e8eaf0);
   white-space: nowrap;
@@ -7487,11 +7505,11 @@ section.card .card-collapse-btn { padding: 10px; }
   text-overflow: ellipsis;
 }
 .pip-accent { color: var(--accent, #e8b634); }
-.pip-upside { color: #4caf6e; font-size: 11.5px; }
-/* Max buy section */
+.pip-upside { color: #4caf6e; font-size: 12.5px; }
+/* Max buy row */
 .pip-maxbuy {
-  border-top: 1px solid rgba(255,255,255,0.06);
-  padding: 7px 0 10px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  padding-top: 10px;
 }
 .pip-maxbuy-header {
   display: flex;
@@ -7500,46 +7518,125 @@ section.card .card-collapse-btn { padding: 10px; }
   margin-bottom: 3px;
 }
 .pip-grade-select {
-  font-size: 10px;
+  font-size: 11px;
   font-family: inherit;
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 6px;
+  border-radius: 7px;
   color: var(--text, #e8eaf0);
-  padding: 2px 5px;
+  padding: 3px 7px;
   cursor: pointer;
   outline: none;
 }
 .pip-grade-select:focus { border-color: var(--accent, #e8b634); }
+/* Action buttons */
 .home-pip-btns {
   display: flex;
-  gap: 6px;
-  padding: 6px 10px 10px;
+  gap: 8px;
+  padding: 12px 16px 20px;
+  border-top: 1px solid rgba(255,255,255,0.07);
 }
 .home-pip-view-btn {
   flex: 1;
-  padding: 8px 10px;
-  border-radius: 10px;
+  padding: 13px 16px;
+  border-radius: 13px;
   border: none;
   background: var(--accent, #e8b634);
   color: #1a1200;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   transition: opacity 0.15s;
 }
 .home-pip-view-btn:hover { opacity: 0.88; }
+.home-pip-collapse-btn,
 .home-pip-close-btn {
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.15);
+  width: 46px; height: 46px;
+  border-radius: 13px;
+  border: 1px solid rgba(255,255,255,0.13);
   background: rgba(255,255,255,0.07);
   color: var(--text-muted, #888);
-  font-size: 12px;
+  font-size: 16px;
   cursor: pointer;
-  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
 }
-.home-pip-close-btn:hover { background: rgba(255,255,255,0.12); color: var(--text, #e8eaf0); }
+.home-pip-collapse-btn:hover,
+.home-pip-close-btn:hover { background: rgba(255,255,255,0.13); color: var(--text, #e8eaf0); }
+/* Desktop: centered card instead of bottom sheet */
+@media (min-width: 660px) {
+  .home-pip { justify-content: center; align-items: center; }
+  .home-pip-sheet {
+    border-radius: 20px;
+    max-width: 480px;
+    width: 92%;
+    transform: scale(0.92) translateY(16px);
+    transition: transform 0.28s cubic-bezier(0.34,1.2,0.64,1), opacity 0.22s ease;
+    opacity: 0;
+    margin: 0 auto;
+  }
+  .home-pip.pip-visible .home-pip-sheet { transform: scale(1) translateY(0); opacity: 1; }
+  .home-pip.pip-collapsed .home-pip-sheet { transform: scale(0.92) translateY(16px); opacity: 0; }
+  .home-pip-handle { display: none; }
+  .home-pip-btns { padding-bottom: 16px; }
+}
+/* ── Collapsed pill ── */
+.home-pip-pill {
+  position: absolute;
+  bottom: 20px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-raised, #1c1e2e);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-left: 3px solid var(--accent, #e8b634);
+  border-radius: 40px;
+  padding: 9px 10px 9px 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.home-pip.pip-collapsed .home-pip-pill {
+  opacity: 1;
+  transform: translateY(0);
+}
+.pip-pill-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text, #e8eaf0);
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pip-pill-price {
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent, #e8b634);
+}
+.pip-pill-btn {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.08);
+  color: var(--text-muted, #888);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.pip-pill-btn:hover { background: rgba(255,255,255,0.16); color: var(--text, #e8eaf0); }
 
 /* Recommendation tile — extends home-card-tile with 3-button action strip */
 .reco-tile .home-card-remove { display: none; }
