@@ -2008,6 +2008,7 @@ async function fetchFreshPriceData(card) {
   if (priceData.tcgMarket <= 0) {
     const _savedTcgUrl = getTcgOverride(card.i);
     const _productId   = extractTcgProductId(_savedTcgUrl);
+    console.log('[2b] cardId:', card.i, '| tcgUrl:', _savedTcgUrl, '| productId:', _productId);
     if (_productId) {
       try {
         const _tcgData = await fetchTCGPlayerPriceByProductId(_productId, card);
