@@ -13545,11 +13545,44 @@ function openHomePip(id, imgUrl) {
   document.getElementById('homePipName').textContent = card ? card.n : '';
   document.getElementById('homePipSet').textContent  = card ? (card.s || '') : '';
 
+  // Live market price (PC/TCG midpoint if both available, else best single source)
   const priceData = (typeof getCachedPrice === 'function') ? (getCachedPrice(id) || getLastKnownPrice(id)) : null;
   const _mid = (priceData && priceData.pcUngraded > 0 && priceData.tcgMarket > 0)
     ? (priceData.pcUngraded + priceData.tcgMarket) / 2 : 0;
   const priceUSD = _mid || (priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || (card ? card.p : 0)) : (card ? card.p : 0));
   document.getElementById('homePipPrice').textContent = priceUSD > 0 ? fmtGBP(priceUSD) : '—';
+
+  // 5yr expected growth from forecast model
+  const potentialEl = document.getElementById('homePipPotential');
+  if (potentialEl) {
+    if (card) {
+      try {
+        const fc = forecast(card, 0, 5);
+        const yr5USD = fc.scenarios.expected[4].priceUSD;
+        const pct = fc.currentPriceUSD > 0 ? Math.round((yr5USD / fc.currentPriceUSD - 1) * 100) : 0;
+        potentialEl.textContent = `${fmtGBP(yr5USD)} · +${pct}%`;
+      } catch { potentialEl.textContent = '—'; }
+    } else {
+      potentialEl.textContent = '—';
+    }
+  }
+
+  // Max buy — grade-aware helper (called on open and on grade change)
+  function _pipUpdateMaxBuy() {
+    const grade = document.getElementById('homePipGrade')?.value || 'raw';
+    let maxUSD = priceUSD;
+    if (grade !== 'raw' && card) {
+      const anchor = getPsa10Anchor(card);
+      const psa10USD = anchor && anchor.usd > 0 ? anchor.usd : (card.p10 || 0);
+      const gradeNum = parseInt(grade, 10);
+      if (psa10USD > 0) maxUSD = psa10USD * (PSA_RATIOS[gradeNum] || 1);
+    }
+    const el = document.getElementById('homePipMaxBuy');
+    if (el) el.textContent = maxUSD > 0 ? fmtGBP(maxUSD) : '—';
+  }
+  _pipUpdateMaxBuy();
+  const gradeSelect = document.getElementById('homePipGrade');
+  if (gradeSelect) gradeSelect.onchange = _pipUpdateMaxBuy;
 
   document.getElementById('homePipView').onclick = () => { closeHomePip(); _homeItemClick(id); };
 

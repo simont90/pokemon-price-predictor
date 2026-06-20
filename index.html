@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260620s">
+  <link rel="stylesheet" href="style.css?v=20260620t">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2134,7 +2134,29 @@
       <div class="home-pip-body">
         <div id="homePipName" class="home-pip-name"></div>
         <div id="homePipSet" class="home-pip-set"></div>
-        <div id="homePipPrice" class="home-pip-price"></div>
+        <div class="pip-stats">
+          <div class="pip-stat">
+            <div class="pip-stat-label">Live market</div>
+            <div id="homePipPrice" class="pip-stat-val pip-accent"></div>
+          </div>
+          <div class="pip-stat">
+            <div class="pip-stat-label">5yr potential</div>
+            <div id="homePipPotential" class="pip-stat-val pip-upside"></div>
+          </div>
+        </div>
+        <div class="pip-maxbuy">
+          <div class="pip-maxbuy-header">
+            <span class="pip-stat-label">Max buy</span>
+            <select id="homePipGrade" class="pip-grade-select">
+              <option value="raw">Raw</option>
+              <option value="7">PSA 7</option>
+              <option value="8">PSA 8</option>
+              <option value="9">PSA 9</option>
+              <option value="10">PSA 10</option>
+            </select>
+          </div>
+          <div id="homePipMaxBuy" class="pip-stat-val pip-accent"></div>
+        </div>
       </div>
       <div class="home-pip-btns">
         <button id="homePipView" class="home-pip-view-btn">View full card ↗</button>
@@ -2144,7 +2166,7 @@
   </div>
   <div id="homePipBackdrop" class="home-pip-backdrop" style="display:none"></div>
 
-  <script src="app.js?v=20260620s"></script>
+  <script src="app.js?v=20260620t"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
