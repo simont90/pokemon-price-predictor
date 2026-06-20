@@ -13097,9 +13097,11 @@ function _recoTileHtml(r) {
     : `<span class="reco-upside">${esc(r.card.s || '')}</span>`;
   const watchTitle = r.onWatchlist ? 'On watchlist' : 'Add to watchlist';
   const watchCls   = r.onWatchlist ? 'reco-watch reco-watch-active' : 'reco-watch';
+  const pipBtn1 = `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgSrc || '')}" aria-label="Quick view" title="Quick view">⤢</button>`;
   return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
     ${img}
     <span class="home-card-signal ${r.signalCls}">${r.signal}</span>
+    ${pipBtn1}
     <div class="reco-actions">
       <button class="reco-btn reco-dismiss" data-id="${esc(id)}" title="Not interested">✕</button>
       <button class="reco-btn reco-wish" data-id="${esc(id)}" title="Add to wishlist">♡</button>
@@ -13129,9 +13131,11 @@ function _recoStrategyTileHtml(r) {
   const watchTitle = r.onWatchlist ? 'On watchlist' : 'Add to watchlist';
   const watchCls   = r.onWatchlist ? 'reco-watch reco-watch-active' : 'reco-watch';
   const displayPrice = r.strategyToday || r.marketGBP;
+  const pipBtn2 = `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgSrc || '')}" aria-label="Quick view" title="Quick view">⤢</button>`;
   return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
     ${img}
     <span class="home-card-signal ${r.signalCls}">${r.signal}</span>
+    ${pipBtn2}
     <div class="reco-actions">
       <button class="reco-btn reco-dismiss" data-id="${esc(id)}" title="Not interested">✕</button>
       <button class="reco-btn reco-wish" data-id="${esc(id)}" title="Add to wishlist">♡</button>
