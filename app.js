@@ -1531,14 +1531,17 @@ async function fetchTCGPlayerPriceByProductId(productId, card) {
   if (productId) {
     try {
       const workerUrl = getMktWorkerUrl();
+      console.log('[TCG] calling worker:', `${workerUrl}/tcg-price?productId=${productId}`);
       const r = await fetch(`${workerUrl}/tcg-price?productId=${encodeURIComponent(productId)}`);
+      console.log('[TCG] worker status:', r.status, r.ok);
       if (r.ok) {
         const d = await r.json();
+        console.log('[TCG] worker data:', JSON.stringify(d));
         if (d && (d.market > 0 || d.low > 0)) {
           return { market: d.market || 0, low: d.low || 0, mid: d.mid || 0, high: d.high || 0, directLow: d.directLow || 0, tcgUpdated: '' };
         }
       }
-    } catch (_) {}
+    } catch (e) { console.warn('[TCG] worker fetch error:', e); }
   }
 
   // Fallback: pokemontcg.io (EN cards only, requires set metadata)
