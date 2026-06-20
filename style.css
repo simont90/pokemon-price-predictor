@@ -7437,11 +7437,15 @@ section.card .card-collapse-btn { padding: 10px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s;
+  opacity: 0;
+  transition: background 0.15s, color 0.15s, opacity 0.18s;
   -webkit-tap-highlight-color: transparent;
 }
+.home-card-tile:hover .home-card-remove { opacity: 1; }
 .home-card-remove:hover,
 .home-card-remove:active { background: rgba(220,50,50,0.8); color: #fff; border-color: transparent; }
+/* Touch: remove button appears briefly after a tap via JS focus trick — normally hidden */
+@media (hover: none) { .home-card-remove { opacity: 0 !important; } }
 
 /* ── PiP trigger button (expand icon on tile image) ── */
 .home-pip-trigger {
@@ -7472,12 +7476,10 @@ section.card .card-collapse-btn { padding: 10px; }
   opacity: 1;
   transform: scale(1);
 }
-/* Always visible on touch devices */
-@media (hover: none) {
-  .home-pip-trigger { opacity: 0.75; transform: scale(1); }
-}
 .home-pip-trigger:hover { background: rgba(232,182,52,0.25); color: var(--accent); }
 .home-pip-trigger:active { transform: scale(0.9); }
+/* Touch: PiP trigger hidden — the full tile tap reveals options via tap-actions */
+@media (hover: none) { .home-pip-trigger { opacity: 0; pointer-events: none; } }
 
 /* ── PiP fullscreen overlay ── */
 .home-pip {
@@ -7766,7 +7768,17 @@ section.card .card-collapse-btn { padding: 10px; }
   left: 5px;
   display: flex;
   gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s;
 }
+/* Reveal on desktop hover */
+.reco-tile:hover .reco-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Touch: completely hidden — actions accessible via View All list rows */
+@media (hover: none) { .reco-actions { display: none; } }
 .reco-btn {
   width: 24px;
   height: 24px;
