@@ -9050,7 +9050,13 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     if (isStale()) return 0;
     const took = Math.round(performance.now() - t0);
     const rawDeals = data.deals || [];
-    let deals = rawDeals.filter(d => !mktIsJunk(d, card, required, g.workerGrade, fairValueGBP));
+    // Client-side safety filter: if UK-only is active, strip any eBay US / Cardmarket
+    // items that may have slipped through (e.g. stale CDN cache served a non-uk_only
+    // response for the same URL).
+    const _ukOnlyNow = mktIsUkOnly();
+    let deals = rawDeals
+      .filter(d => _ukOnlyNow ? !((d.source || '').includes('US') || (d.source || '') === 'Cardmarket') : true)
+      .filter(d => !mktIsJunk(d, card, required, g.workerGrade, fairValueGBP));
     // Auto-save raw deals with PSA 9-10 text estimate as grade candidates
     if (g.workerGrade === 'raw') {
       const newCands = deals
@@ -9118,7 +9124,10 @@ async function fetchGradeDeals(card, g, workerUrl, required, fxUsdToGbp, fxEurTo
     // Count how many of the visible deals are above market (for status hint).
     const overCount = deals.filter(d => (d.overPct || 0) > 0).length;
     const overStr = overCount > 0 ? ` · ${overCount} above market` : '';
-    if (status) status.innerHTML = `${totalShown} clean · £${fairValueGBP.toFixed(0)} fair value${overStr} · UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0} · ${took}ms${filterStr}${errStr}${dismissedPill ? ' · ' + dismissedPill : ''}`;
+    const srcStr = _ukOnlyNow
+      ? `UK ${c.ebay_uk || 0}`
+      : `UK ${c.ebay_uk || 0} · US ${c.ebay_us || 0} · CM ${c.cardmarket || 0}`;
+    if (status) status.innerHTML = `${totalShown} clean · £${fairValueGBP.toFixed(0)} fair value${overStr} · ${srcStr} · ${took}ms${filterStr}${errStr}${dismissedPill ? ' · ' + dismissedPill : ''}`;
     if (list) {
       if (totalShown === 0) {
         list.innerHTML = `<div class="mkt-empty">No clean ${g.label} listings on the wire right now (fair value £${fairValueGBP.toFixed(0)}${filteredCount > 0 ? `, ${filteredCount} junk filtered` : ''}). Try the deep-link buttons below.</div>`;
@@ -9170,7 +9179,9 @@ async function fetchLiveDeals(card, opts) {
   const psa10Price = getPsa10Anchor(card).usd;
   wrap.style.display = 'block';
   setupMktGradeTabs();
-  if (topStatus) topStatus.textContent = `Scanning 5 grades · eBay UK + US + Cardmarket…`;
+  if (topStatus) topStatus.textContent = mktIsUkOnly()
+    ? `Scanning 5 grades · eBay UK only…`
+    : `Scanning 5 grades · eBay UK + US + Cardmarket…`;
 
   // Check for a triggered watchlist alert on this card and surface a banner.
   const _cardAlerts = typeof computeActiveAlerts === 'function' ? computeActiveAlerts() : [];
@@ -9233,10 +9244,10 @@ async function fetchLiveDeals(card, opts) {
 let mktLastScannedCard = null;
 const _originalRenderMarketplaceScan = renderMarketplaceScan;
 renderMarketplaceScan = function(card, pullCost, des) {
-  _originalRenderMarketplaceScan(card, pullCost, des);
   mktLastScannedCard = card || null;
-  if (getMktWorkerUrl()) fetchLiveDeals(card);
-  else if ($('mktLiveWrap')) $('mktLiveWrap').style.display = 'none';
+  _originalRenderMarketplaceScan(card, pullCost, des);
+  // Note: _originalRenderMarketplaceScan already calls fetchLiveDeals internally;
+  // do NOT call it again here or every card navigation triggers two parallel scans.
 };
 
 const MKT_UK_ONLY_KEY = 'mkt-uk-only';
