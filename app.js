@@ -6766,40 +6766,62 @@ function setupEditCard() {
   // Auto-enrich TCGPlayer URL
   $('linkEnrichTcg')?.addEventListener('click', async () => {
     if (!selectedCard) return;
+    const card = selectedCard;
     const btn = $('linkEnrichTcg');
     const status = $('linkEnrichStatus');
     const manualWrap = $('linkTcgManualWrap');
     btn.disabled = true;
     status.style.display = 'block';
-    status.textContent = 'Looking up TCGPlayer…';
+    status.textContent = 'Collecting TCGPlayer data…';
+
+    // Always bust the price cache so fetchLivePrice re-fetches fresh from pokemontcg.io
+    const _enrichCache = getPriceCache();
+    delete _enrichCache[card.i];
+    try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_enrichCache)); } catch {}
+    // Also clear the in-memory pokemontcg.io link cache so we always get a fresh URL
+    pokemonTcgIoCache.delete(card.i);
+
     try {
-      const result = await fetchPokemonTcgIoLinks(selectedCard.i);
+      const result = await fetchPokemonTcgIoLinks(card.i);
       if (result && result.tcgplayerUrl) {
-        setTcgOverride(selectedCard.i, result.tcgplayerUrl);
-        // Also save the card image if the API returned one and the card has no usable image yet
+        setTcgOverride(card.i, result.tcgplayerUrl);
+        // Save card image if the API returned one and the card has no usable image yet
         if (result.imageUrl) {
-          const currentImg = selectedCard.img || '';
+          const currentImg = card.img || '';
           const hasGoodImg = currentImg && /\.(webp|jpg|jpeg|png|gif|avif)(\?|#|$)/i.test(currentImg);
           if (!hasGoodImg) {
-            selectedCard.img = result.imageUrl;
-            if (typeof setCardOverride === 'function') setCardOverride(selectedCard.i, { img: result.imageUrl });
+            card.img = result.imageUrl;
+            if (typeof setCardOverride === 'function') setCardOverride(card.i, { img: result.imageUrl });
             try {
               const el = document.getElementById('cardImage');
               if (el) el.src = result.imageUrl;
             } catch {}
           }
         }
-        status.textContent = 'Found — TCGPlayer link saved.';
-        if (livePrice) renderLivePriceData(livePrice);
+        status.textContent = 'TCGPlayer link found — fetching live prices…';
       } else {
-        status.textContent = 'Not found automatically — add URL manually:';
-        if (manualWrap) manualWrap.style.display = 'flex';
+        status.textContent = 'No TCGPlayer listing found for this card.';
       }
     } catch {
-      status.textContent = 'Lookup failed — add URL manually:';
-      if (manualWrap) manualWrap.style.display = 'flex';
+      status.textContent = 'Lookup failed — trying price fetch anyway…';
     } finally {
       btn.disabled = false;
+    }
+
+    // Force a fresh live price fetch regardless of URL result — this hits
+    // pokemontcg.io for TCGPlayer + Cardmarket prices and updates the panel.
+    if (selectedCard && selectedCard.i === card.i) {
+      fetchLivePrice(card).then(() => {
+        if (selectedCard && selectedCard.i === card.i) {
+          const hasTcg = livePrice && livePrice.tcgMarket > 0;
+          const s = $('linkEnrichStatus');
+          if (s && s.style.display !== 'none') {
+            s.textContent = hasTcg
+              ? 'TCGPlayer prices loaded.'
+              : 'No TCGPlayer prices available for this card — use manual entry below.';
+          }
+        }
+      }).catch(() => {});
     }
   });
 
