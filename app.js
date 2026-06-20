@@ -10142,8 +10142,13 @@ function renderHoldStrategy(card) {
       }
       scanLine = `<div class="hold-rec-line hold-rec-scan">${action}</div>`;
     }
+    const _rawStrat = strategies.find(s => s.key === 'raw');
+    const _mktNow = _rawStrat?.marketOverrideGBP ?? null;
+    const _growthNote = (_mktNow && acqCostGBP)
+      ? ` · market now ${fmtGBPDirect(_mktNow)} (${(_rawStrat.currentGrowthPct >= 0 ? '+' : '') + _rawStrat.currentGrowthPct.toFixed(0)}% already gained)`
+      : '';
     const acqLine = usingAcqCost
-      ? `<div class="hold-rec-line hold-rec-acq">ROI based on your actual cost (${fmtGBPDirect(acqCostGBP)}), not market price.</div>`
+      ? `<div class="hold-rec-line hold-rec-acq">ROI based on your actual cost (${fmtGBPDirect(acqCostGBP)})${_growthNote}.</div>`
       : '';
 
     recEl.innerHTML = `
@@ -10173,15 +10178,20 @@ function renderHoldStrategy(card) {
     return `
       <div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${verdict.c} ${s.overridden ? 'hold-tile-overridden' : ''}">
         ${isOverBudget ? '<div class="hold-over-budget-tag">Above budget</div>' : (isWinner ? '<div class="hold-winner-tag">\u2605 Best long-term pick</div>' : '')}
-        ${s.overridden ? `<div class="hold-tile-override-tag" title="Using your manual market price">Market £${(+s.overrideGBP).toFixed(2)}</div>` : ''}
+        ${s.overridden ? `<div class="hold-tile-override-tag" title="${s.marketOverrideGBP != null ? 'Current market price — ROI uses your acquisition cost' : 'Using your manual market price'}">${s.marketOverrideGBP != null ? 'Mkt' : 'Override'} £${(+s.overrideGBP).toFixed(2)}</div>` : ''}
         <div class="hold-tile-head">
           <div class="hold-tile-title">${s.label}</div>
           <div class="hold-tile-desc">${s.desc}</div>
         </div>
         <div class="hold-tile-row">
-          <span class="hold-tile-k">${s.isOwnedSlab ? 'Your cost (paid)' : `Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}`}</span>
+          <span class="hold-tile-k">${(s.isOwnedSlab || s.marketOverrideGBP != null) ? 'Your cost (paid)' : `Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}`}</span>
           <span class="hold-tile-v">${fmtGBP(s.today)}</span>
         </div>
+        ${s.marketOverrideGBP != null ? `
+        <div class="hold-tile-row hold-tile-sub">
+          <span class="hold-tile-k">· Market now</span>
+          <span class="hold-tile-v">${fmtGBPDirect(s.marketOverrideGBP)} <span class="${s.currentGrowthGBP >= 0 ? 'hold-pos' : 'hold-neg'}" style="font-size:10px">${s.currentGrowthPct >= 0 ? '+' : ''}${s.currentGrowthPct.toFixed(0)}% already</span></span>
+        </div>` : ''}
         ${s.isOwnedSlab && s.slabMarketGBP != null ? `
         <div class="hold-tile-row hold-tile-sub">
           <span class="hold-tile-k">· Market now</span>
@@ -14471,17 +14481,25 @@ function setHoldOverrideNA(cardId, gradeKey, isNA) {
 }
 
 // Apply user-entered market prices to a strategies array (mutates in place).
-// We override the "today" buy price only — 5yr target stays from the model.
-// That way ROI honestly reflects "I paid £X today, model says it'll be worth
-// £Y in 5yr". Recompute profit/ROI for affected rows.
+// Two modes depending on whether an acquisition cost is also recorded:
+//
+//   No acq cost: override replaces "today" and recomputes profit/ROI from market price.
+//     → "I'm thinking of buying at £X, is it worth it?"
+//
+//   Has acq cost: override is "current market" only — profit/ROI stay on acq cost basis.
+//     → "I bought at £10, it's now worth £15, project from there."
+//     Surfaces gain-so-far (£10→£15) as a sub-row without changing the ROI denominator.
 function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
   if (!card || !card.i || !Array.isArray(strategies)) return;
   const overrides = getHoldOverridesForCard(card.i);
   if (!overrides || !Object.keys(overrides).length) return;
   const naFlags = overrides._na || {};
   const fxRateLocal = (typeof fx === 'number' && fx > 0) ? fx : 0.79;
-  // Map strategy key → which override key feeds it.
-  // The "gamble" (Buy Raw + Grade) row buys raw upfront, so it uses the raw override.
+  // When the user has an acquisition cost, the raw-card override means "current market"
+  // rather than "what I'm about to pay" — keep acquisition cost as the ROI denominator.
+  const acqCostGBP = getAcqCostBasisGBP(card.i);
+  const hasAcqCost = acqCostGBP != null && acqCostGBP > 0;
+  // The "gamble" (Buy Raw + Grade) row buys raw upfront, so it shares the raw override.
   const sourceKey = { raw: 'raw', gamble: 'raw', psa7: 'psa7', psa8: 'psa8', psa9: 'psa9', psa10: 'psa10' };
   strategies.forEach(s => {
     const ok = sourceKey[s.key];
@@ -14490,6 +14508,18 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
     const gbp = overrides[ok];
     if (gbp == null || !isFinite(gbp) || gbp <= 0) return;
     const usd = gbp / fxRateLocal;
+    const isRawBased = (s.key === 'raw' || s.key === 'gamble');
+    if (isRawBased && hasAcqCost) {
+      // Override = current market. Preserve acquisition-cost denominator for profit/ROI.
+      // profit/roi/today were already computed from acq cost — don't touch them.
+      s.marketOverrideGBP = gbp;
+      s.currentGrowthGBP  = gbp - acqCostGBP;
+      s.currentGrowthPct  = acqCostGBP > 0 ? (gbp - acqCostGBP) / acqCostGBP * 100 : 0;
+      s.overridden = true;
+      s.overrideGBP = gbp;
+      return;
+    }
+    // No acq cost recorded: override replaces the buy-in price and recomputes ROI.
     if (s.key === 'gamble') {
       s.today = usd + gradingFeeUSD;
     } else {
