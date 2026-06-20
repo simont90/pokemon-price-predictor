@@ -549,7 +549,8 @@ function getCharacterMultiplier(cardName) {
 function getCurrentPrice(card) {
   // If we have live price data for the selected card, use it
   if (livePrice && selectedCard && card.i === selectedCard.i) {
-    // PriceCharting is always primary
+    // When both PC and TCGPlayer are available, market holds the midpoint — prefer it.
+    if (livePrice.priceIsComposite && livePrice.market > 0) return livePrice.market;
     if (livePrice.pcUngraded > 0) return livePrice.pcUngraded;
     if (livePrice.market > 0) return livePrice.market;
     if (livePrice.mid > 0) return livePrice.mid;
@@ -1893,14 +1894,18 @@ async function fetchFreshPriceData(card) {
         priceData.cmSuggested = enData.cmSuggested;
         priceData.cmUpdated = enData.cmUpdated;
         priceData.cmUrl = enData.cmUrl;
-        // Store TCGPlayer values for display but NOT as primary price
+        // Store TCGPlayer values for display
         priceData.tcgMarket = enData.market;
         priceData.tcgLow = enData.low;
         priceData.tcgMid = enData.mid;
         priceData.tcgHigh = enData.high;
         priceData.directLow = enData.directLow;
-        // If PriceCharting failed, fall back to TCGPlayer as primary
-        if (priceData.pcUngraded <= 0 && enData.market > 0) {
+        if (priceData.pcUngraded > 0 && enData.market > 0) {
+          // Both sources available — use midpoint as the primary market price.
+          priceData.market = (priceData.pcUngraded + enData.market) / 2;
+          priceData.priceIsComposite = true;
+        } else if (priceData.pcUngraded <= 0 && enData.market > 0) {
+          // PriceCharting failed — fall back to TCGPlayer alone
           priceData.source = 'pokemontcg.io';
           priceData.market = enData.market;
           priceData.low = enData.low;
@@ -1999,12 +2004,16 @@ function renderLivePrice(data) {
   const hasCM = data.cmTrend > 0 || data.cmAvg7 > 0;
   const hasPC = data.pcUngraded > 0;
 
-  // Primary live price — PriceCharting is always primary when available
-  const primaryPrice = (data.pcUngraded > 0)
-    ? data.pcUngraded
-    : (data.market || data.mid || data.cmTrend || data.cmAvg7 || 0);
+  // Primary live price — midpoint when both PC and TCGPlayer are available
+  const primaryPrice = (data.priceIsComposite && data.market > 0)
+    ? data.market
+    : (data.pcUngraded > 0)
+      ? data.pcUngraded
+      : (data.market || data.mid || data.cmTrend || data.cmAvg7 || 0);
   $('liveMainPrice').textContent = primaryPrice > 0 ? fmtGBP(primaryPrice) : '—';
-  $('liveMainUSD').textContent = primaryPrice > 0 ? fmtUSD(primaryPrice) : '';
+  $('liveMainUSD').textContent = primaryPrice > 0
+    ? fmtUSD(primaryPrice) + (data.priceIsComposite ? ' · PC & TCG avg' : '')
+    : '';
 
   // Comparison to static price
   if (selectedCard && selectedCard.p > 0 && primaryPrice > 0) {
@@ -2205,10 +2214,12 @@ function renderLivePrice(data) {
 // Recalculate model with live price
 function recalcWithLivePrice(card) {
   if (!card || !livePrice) return;
-  // Pick best live price — PriceCharting is always primary
-  const lp = (livePrice.pcUngraded > 0)
-    ? livePrice.pcUngraded
-    : (livePrice.market || livePrice.mid || livePrice.cmTrend || 0);
+  // Pick best live price — midpoint when both PC and TCGPlayer are available
+  const lp = (livePrice.priceIsComposite && livePrice.market > 0)
+    ? livePrice.market
+    : (livePrice.pcUngraded > 0)
+      ? livePrice.pcUngraded
+      : (livePrice.market || livePrice.mid || livePrice.cmTrend || 0);
   if (lp <= 0) return;
 
   // Update displayed market prices to live
