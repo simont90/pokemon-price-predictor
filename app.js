@@ -264,6 +264,10 @@ async function _resolveLegacyTCGCImage(card) {
 const PRICE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 const PRICE_CACHE_KEY = 'pkm-live-prices-v4'; // v4: PriceCharting primary for ALL cards
 let _priceCache = null; // in-memory mirror; avoids JSON.parse on every getCachedPrice call
+// Computation caches — per-card, invalidated when that card's price data changes
+const _sigCache = new Map(); // card.i → { v: computeSignal result, ts }
+const _hcCache  = new Map(); // card.i → { v: computeHoldCore result, ts }
+const _COMP_TTL = 120_000;   // 2-minute TTL (signals don't shift faster than this)
 
 function getPriceCache() {
   if (_priceCache) return _priceCache;
@@ -282,6 +286,9 @@ function setCachedPrice(cardId, data) {
     sorted.slice(0, keys.length - 500).forEach(k => delete cache[k]);
   }
   try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache)); } catch {}
+  // Price changed — signal may shift, so invalidate cached computation for this card
+  _sigCache.delete(cardId);
+  _hcCache.delete(cardId);
 }
 
 function getCachedPrice(cardId) {
@@ -1408,6 +1415,21 @@ function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replac
 
 // O(1) card lookup via pre-built Map. Replaces all getCardById(id) calls.
 function getCardById(id) { return _cardMap ? (_cardMap.get(id) ?? null) : null; }
+
+function _getCachedSignal(card, pull, des) {
+  const k = card.i, now = Date.now(), c = _sigCache.get(k);
+  if (c && now - c.ts < _COMP_TTL) return c.v;
+  const v = computeSignal(card, pull, des);
+  _sigCache.set(k, { v, ts: now });
+  return v;
+}
+function _getHoldCoreCached(card) {
+  const k = card.i, now = Date.now(), c = _hcCache.get(k);
+  if (c && now - c.ts < _COMP_TTL) return c.v;
+  const v = computeHoldCore(card);
+  _hcCache.set(k, { v, ts: now });
+  return v;
+}
 
 // In iOS standalone PWA mode, window.open() creates an in-app SFSafariViewController
 // which gets intercepted by Universal Links (eBay, etc.) and leaves a blank white page.
@@ -3861,10 +3883,10 @@ function initLayoutResizer() {
     e.preventDefault();
     colDragStartX = e.clientX;
     colDragStartPct = getColPct();
+    const mainW = main.getBoundingClientRect().width; // cache once per drag
     colResizer.classList.add('is-dragging');
     document.body.classList.add('layout-resizing');
     const onMove = (e) => {
-      const mainW = main.getBoundingClientRect().width;
       const dx = e.clientX - colDragStartX;
       applyColSplit(colDragStartPct + dx / mainW);
     };
@@ -3884,10 +3906,10 @@ function initLayoutResizer() {
     e.preventDefault();
     colDragStartX = e.touches[0].clientX;
     colDragStartPct = getColPct();
+    const mainW = main.getBoundingClientRect().width; // cache once per drag
     colResizer.classList.add('is-dragging');
     document.body.classList.add('layout-resizing');
     const onMove = (e) => {
-      const mainW = main.getBoundingClientRect().width;
       const dx = e.touches[0].clientX - colDragStartX;
       applyColSplit(colDragStartPct + dx / mainW);
     };
@@ -4225,7 +4247,7 @@ function renderPortfolio() {
         }
       }
       const des = autoFillDesirability(currentCard, pullCost);
-      signal = computeSignal(currentCard, pullCost, des.total);
+      signal = _getCachedSignal(currentCard, pullCost, des.total);
     }
 
     const addedGBP = p.addedPriceGBP || 0;
@@ -4446,13 +4468,6 @@ function renderWishlist() {
   list.innerHTML = items.join('');
   totalEl.textContent = `${wishlist.length} cards · £${totalCurrent.toFixed(2)}` + (alertCount > 0 ? ` · ${alertCount} BUY` : '');
 
-  list.querySelectorAll('.wishlist-item').forEach(el => {
-    el.addEventListener('click', (e) => {
-      if (e.target.closest('.wishlist-remove') || e.target.closest('.wishlist-target-input')) return;
-      if (e.target.closest('.pi-toggle')) return;
-      selectCard(el.dataset.id);
-    });
-  });
   piWireToggles(list);
 }
 
@@ -7310,13 +7325,18 @@ async function pollWatchlistDeals() {
 }
 
 let _dealPollTimer = null;
+let _dealPollInFlight = false;
+function _pollGuarded() {
+  if (_dealPollInFlight) return;
+  _dealPollInFlight = true;
+  Promise.resolve(pollWatchlistDeals()).finally(() => { _dealPollInFlight = false; });
+}
 function startDealPolling() {
   if (_dealPollTimer) return; // already running
-  _dealPollTimer = setInterval(pollWatchlistDeals, 5 * 60 * 1000); // every 5 min
-  // First check after 30s (give the app time to settle)
-  setTimeout(pollWatchlistDeals, 30000);
+  _dealPollTimer = setInterval(_pollGuarded, 5 * 60 * 1000); // every 5 min
+  setTimeout(_pollGuarded, 30000);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') pollWatchlistDeals();
+    if (document.visibilityState === 'visible') _pollGuarded();
   });
 }
 let watchlist = [];
@@ -13386,8 +13406,7 @@ function _renderHomeAiGrades() {
       });
     });
     if (deals.length) _setupTileEvents(list, url => {
-      const store = JSON.parse(localStorage.getItem('pkm-ai-grade-deals-v1') || '[]');
-      localStorage.setItem('pkm-ai-grade-deals-v1', JSON.stringify(store.filter(d => d.listingUrl !== url)));
+      localStorage.setItem('pkm-ai-grade-deals-v1', JSON.stringify(allDeals.filter(d => d.listingUrl !== url)));
       _renderHomeAiGrades();
     });
   };
@@ -13614,7 +13633,7 @@ function _renderHomeCollection() {
         const r = setsData[card.sc].rarities?.[card.rc];
         if (r?.pullRate > 0) pull = Math.round(1 / r.pullRate) * r.count / 100;
       }
-      const sig = computeSignal(card, pull, autoFillDesirability(card, pull).total);
+      const sig = _getCachedSignal(card, pull, autoFillDesirability(card, pull).total);
       if (sig) signal = sig.signal;
     }
     const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
@@ -13635,7 +13654,7 @@ function _renderHomeCollection() {
 // Returns { pick, displayGBP, stratLabel } or null.
 function _bestInBudgetPick(card, maxBudget, fx) {
   if (!card || typeof computeHoldCore !== 'function') return null;
-  const hc = computeHoldCore(card);
+  const hc = _getHoldCoreCached(card);
   if (!hc.ok) return null;
   const candidates = (hc.strategies || []).filter(
     s => s.key !== 'gamble' && s.risk === 'low' && s.roi > 0 && s.today * fx <= maxBudget
@@ -13664,7 +13683,7 @@ function _renderHomeWishlist() {
   const tiles = wishlist.flatMap(w => {
     const card = getCardById(w.id);
     if (!card) return [];
-    const hc = computeHoldCore(card);
+    const hc = _getHoldCoreCached(card);
     const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
     const filtered = hc.ok && !budgetPick; // has data but no qualifying strategy
     let displayGBP, stratLabel = '';
@@ -13720,7 +13739,7 @@ function _renderHomeWatchlist() {
   const tiles = watchlist.flatMap(w => {
     const card = getCardById(w.id);
     if (!card) return [];
-    const hc = computeHoldCore(card);
+    const hc = _getHoldCoreCached(card);
     const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
     const filtered = hc.ok && !budgetPick; // has data but no qualifying strategy
     let displayGBP, stratLabel = '';
@@ -13955,18 +13974,20 @@ function setupPageNav() {
       b.addEventListener('mouseenter', () => _showHoverBubble(b));
       b.addEventListener('mouseleave', _hideHoverBubble);
     });
+    let _navRect = null;
+    window.addEventListener('resize', () => { _navRect = null; }, { passive: true });
     nav.addEventListener('pointermove', e => {
-      const x = e.clientX - nav.getBoundingClientRect().left;
-      nav.style.setProperty('--nav-mx', x + 'px');
+      if (!_navRect) _navRect = nav.getBoundingClientRect();
+      nav.style.setProperty('--nav-mx', (e.clientX - _navRect.left) + 'px');
       nav.style.setProperty('--nav-glow', '1');
-    });
+    }, { passive: true });
     nav.addEventListener('pointerleave', () => {
       nav.style.setProperty('--nav-glow', '0');
       _hideHoverBubble();
     });
     nav.addEventListener('touchmove', e => {
-      const x = e.touches[0].clientX - nav.getBoundingClientRect().left;
-      nav.style.setProperty('--nav-mx', x + 'px');
+      if (!_navRect) _navRect = nav.getBoundingClientRect();
+      nav.style.setProperty('--nav-mx', (e.touches[0].clientX - _navRect.left) + 'px');
       nav.style.setProperty('--nav-glow', '1');
     }, { passive: true });
     nav.addEventListener('touchend', () => {
