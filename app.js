@@ -494,6 +494,9 @@ async function init() {
       `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${userSuffix})`;
   }
   updateAll();
+  // Kick off background price prefetch 2.5 s after init so cached prices are
+  // ready before the user opens the collection panel.
+  setTimeout(() => { try { _homeAutoRefresh(); } catch {} }, 2500);
 }
 
 // ---- Currency ----
@@ -2280,6 +2283,8 @@ function recalcWithLivePrice(card) {
   if (typeof renderHoldStrategy === 'function') {
     try { renderHoldStrategy(card); } catch {}
   }
+  // Redraw portfolio growth chart so the current card's live price is reflected
+  try { drawPortfolioGrowthChart(); } catch {}
 }
 
 // ================================================================
@@ -4326,6 +4331,172 @@ function renderPortfolio() {
   }
 
   piWireToggles(list);
+  requestAnimationFrame(() => drawPortfolioGrowthChart());
+}
+
+function drawPortfolioGrowthChart() {
+  const section = document.getElementById('portfolioGrowthSection');
+  const canvas  = document.getElementById('portfolioGrowthCanvas');
+  if (!section || !canvas) return;
+
+  if (portfolio.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  // Aggregate data across all cards
+  let costBasisGBP  = 0;
+  let hasCostBasis  = false;
+  let currentGBP    = 0;
+  const con = [0,0,0,0,0], exp = [0,0,0,0,0], opt = [0,0,0,0,0];
+
+  for (const p of portfolio) {
+    const card = getCardById(p.id);
+    if (!card) continue;
+
+    const priceData = getCachedPrice(p.id) || getLastKnownPrice(p.id);
+    const mid = (priceData && priceData.pcUngraded > 0 && priceData.tcgMarket > 0)
+      ? (priceData.pcUngraded + priceData.tcgMarket) / 2 : 0;
+    const priceUSD = mid || (priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || card.p) : card.p);
+    currentGBP += usdToGbp(priceUSD);
+
+    // Pull cost for forecast model
+    let pullCost = 7.65;
+    try {
+      if (setsData && setsData[card.sc]) {
+        const set = setsData[card.sc];
+        const rar = set.rarities?.[card.rc];
+        if (rar && rar.pullRate > 0) pullCost = (Math.round(1 / rar.pullRate) * rar.count) / 100;
+      }
+    } catch {}
+
+    const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pullCost).total : 50;
+    const fc  = forecast(card, pullCost, des);
+    for (let i = 0; i < 5; i++) {
+      con[i] += usdToGbp(fc.scenarios.conservative[i].priceUSD);
+      exp[i] += usdToGbp(fc.scenarios.expected[i].priceUSD);
+      opt[i] += usdToGbp(fc.scenarios.optimistic[i].priceUSD);
+    }
+
+    const acqCost = (typeof getAcqCostBasisGBP === 'function') ? getAcqCostBasisGBP(p.id) : null;
+    if (acqCost && acqCost > 0) { costBasisGBP += acqCost; hasCostBasis = true; }
+  }
+
+  // Canvas setup
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth || 340;
+  const H = 185;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  const allVals = [currentGBP, ...opt, ...(hasCostBasis ? [costBasisGBP] : [])];
+  const maxP = Math.max(...allVals) * 1.18;
+  const rawMin = Math.min(hasCostBasis ? costBasisGBP : currentGBP, ...con);
+  const minP = rawMin * 0.88;
+
+  const pad = { l: 62, r: 22, t: 22, b: 34 };
+  const cw  = W - pad.l - pad.r;
+  const ch  = H - pad.t - pad.b;
+  const xAt = yr => pad.l + (yr / 5) * cw;
+  const yAt = v  => pad.t + ch - ((v - minP) / (maxP - minP)) * ch;
+
+  // Grid lines + Y labels
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const gv = minP + (maxP - minP) * (i / 4);
+    const gy = yAt(gv);
+    ctx.strokeStyle = '#25283a';
+    ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
+    ctx.fillStyle = '#555768';
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.textAlign = 'right';
+    const lbl = gv >= 1000 ? `£${(gv / 1000).toFixed(1)}k` : `£${Math.round(gv)}`;
+    ctx.fillText(lbl, pad.l - 5, gy + 4);
+  }
+
+  // X labels
+  ctx.font = '10px Space Grotesk, sans-serif';
+  ctx.fillStyle = '#555768';
+  ctx.textAlign = 'center';
+  for (let yr = 0; yr <= 5; yr++) {
+    ctx.fillText(yr === 0 ? 'Now' : `${yr}yr`, xAt(yr), H - 7);
+  }
+
+  // Cost-basis reference line
+  if (hasCostBasis && costBasisGBP > 0) {
+    const cy = yAt(costBasisGBP);
+    ctx.strokeStyle = 'rgba(90,200,90,0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(xAt(0), cy); ctx.lineTo(W - pad.r, cy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(90,200,90,0.65)';
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.textAlign = 'left';
+    const costLbl = costBasisGBP >= 1000 ? `cost £${(costBasisGBP/1000).toFixed(1)}k` : `cost £${Math.round(costBasisGBP)}`;
+    ctx.fillText(costLbl, xAt(0) + 6, cy - 4);
+  }
+
+  // Con–opt band fill
+  ctx.fillStyle = 'rgba(232,182,52,0.07)';
+  ctx.beginPath();
+  ctx.moveTo(xAt(0), yAt(currentGBP));
+  for (let i = 0; i < 5; i++) ctx.lineTo(xAt(i + 1), yAt(opt[i]));
+  for (let i = 4; i >= 0; i--) ctx.lineTo(xAt(i + 1), yAt(con[i]));
+  ctx.lineTo(xAt(0), yAt(currentGBP));
+  ctx.fill();
+
+  // Conservative dashed line
+  ctx.strokeStyle = 'rgba(138,138,138,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(xAt(0), yAt(currentGBP));
+  con.forEach((v, i) => ctx.lineTo(xAt(i + 1), yAt(v)));
+  ctx.stroke();
+
+  // Optimistic dashed line
+  ctx.strokeStyle = 'rgba(232,182,52,0.3)';
+  ctx.beginPath(); ctx.moveTo(xAt(0), yAt(currentGBP));
+  opt.forEach((v, i) => ctx.lineTo(xAt(i + 1), yAt(v)));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Expected line
+  ctx.strokeStyle = '#e8b634';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(xAt(0), yAt(currentGBP));
+  exp.forEach((v, i) => ctx.lineTo(xAt(i + 1), yAt(v)));
+  ctx.stroke();
+
+  // Current-value dot
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(xAt(0), yAt(currentGBP), 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#e8b634';
+  ctx.beginPath(); ctx.arc(xAt(0), yAt(currentGBP), 3, 0, Math.PI * 2); ctx.fill();
+
+  // Yr-5 expected dot + label
+  const yr5 = exp[4];
+  ctx.fillStyle = '#e8b634';
+  ctx.beginPath(); ctx.arc(xAt(5), yAt(yr5), 5, 0, Math.PI * 2); ctx.fill();
+  ctx.font = 'bold 12px JetBrains Mono, monospace';
+  ctx.textAlign = 'right';
+  const yr5lbl = yr5 >= 1000 ? `£${(yr5/1000).toFixed(1)}k` : `£${Math.round(yr5)}`;
+  ctx.fillText(yr5lbl, xAt(5) - 8, yAt(yr5) - 10);
+
+  // ROI annotation (top-left)
+  const roiPct = ((yr5 - currentGBP) / currentGBP * 100).toFixed(0);
+  ctx.fillStyle = 'rgba(232,182,52,0.75)';
+  ctx.font = '11px Space Grotesk, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`+${roiPct}% expected over 5 yrs`, pad.l + 4, pad.t + 13);
+
+  // Current value label near the Now dot
+  ctx.fillStyle = '#aaa';
+  ctx.font = '10px JetBrains Mono, monospace';
+  ctx.textAlign = 'left';
+  const nowLbl = currentGBP >= 1000 ? `£${(currentGBP/1000).toFixed(1)}k` : `£${Math.round(currentGBP)}`;
+  ctx.fillText(nowLbl, xAt(0) + 8, yAt(currentGBP) + 4);
 }
 
 // =============================================================
@@ -10404,7 +10575,7 @@ function renderHoldStrategy(card) {
 // refreshes run with a small concurrency limit so we don't hammer
 // PriceCharting / pokemontcg.io.
 
-const PRICE_SYNC_CONCURRENCY = 3;
+const PRICE_SYNC_CONCURRENCY = 5;
 const PRICE_SYNC_LAST_KEY = 'pkm-price-sync-last-v1';
 let _psState = { running: false, cancel: false, done: 0, total: 0 };
 
