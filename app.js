@@ -318,6 +318,19 @@ function setTcgOverride(cardId, url) {
   } catch {}
 }
 
+// ---- Manual TCGPlayer market price overrides (per-card, stored in USD) ----
+const TCG_PRICE_OVERRIDE_KEY = 'pkm-tcg-price-overrides-v1';
+function getTcgPriceOverride(cardId) {
+  try { return parseFloat(JSON.parse(localStorage.getItem(TCG_PRICE_OVERRIDE_KEY) || '{}')[cardId]) || 0; } catch { return 0; }
+}
+function setTcgPriceOverride(cardId, usd) {
+  try {
+    const map = JSON.parse(localStorage.getItem(TCG_PRICE_OVERRIDE_KEY) || '{}');
+    if (usd > 0) map[cardId] = usd; else delete map[cardId];
+    localStorage.setItem(TCG_PRICE_OVERRIDE_KEY, JSON.stringify(map));
+  } catch {}
+}
+
 // ---- Manual JP PSA 10 price overrides (for EN↔JP scenario comparison) ----
 const JP_PSA10_OVERRIDE_KEY = 'pkm-jp-psa10-overrides-v1';
 function getJpPsa10Override(cardId) {
@@ -1923,8 +1936,8 @@ async function fetchFreshPriceData(card) {
       if (priceData.pcUngraded <= 0) throw e;
     }
   } else if (priceData.pcUngraded <= 0) {
-    // JP card with no PriceCharting data — throw to show fallback
-    throw new Error('No pricing data available');
+    // JP card with no PriceCharting data — throw unless a manual price covers it
+    if (getTcgPriceOverride(card.i) <= 0) throw new Error('No pricing data available');
   }
 
   // 3. Collectrics — additional grading data source for all cards
@@ -1933,6 +1946,19 @@ async function fetchFreshPriceData(card) {
     if (cr) Object.assign(priceData, cr);
   } catch (e) {
     // Silent — Collectrics is supplementary
+  }
+
+  // 4. Manual TCGPlayer market price override — fills gap when API has no TCGPlayer data
+  const _manualTcgUSD = getTcgPriceOverride(card.i);
+  if (_manualTcgUSD > 0 && priceData.tcgMarket <= 0) {
+    priceData.tcgMarket = _manualTcgUSD;
+    priceData.tcgPriceIsManual = true;
+    if (priceData.pcUngraded > 0) {
+      priceData.market = (priceData.pcUngraded + _manualTcgUSD) / 2;
+      priceData.priceIsComposite = true;
+    } else if (priceData.market <= 0) {
+      priceData.market = _manualTcgUSD;
+    }
   }
 
   return priceData;
@@ -2049,11 +2075,13 @@ function renderLivePrice(data) {
     const tmd = data.tcgMid || data.mid || 0;
     const th = data.tcgHigh || data.high || 0;
     $('tcgMarket').textContent = tm > 0 ? fmtGBP(tm) : '—';
-    $('tcgLow').textContent = tl > 0 ? fmtGBP(tl) : '—';
-    $('tcgMid').textContent = tmd > 0 ? fmtGBP(tmd) : '—';
-    $('tcgHigh').textContent = th > 0 ? fmtGBP(th) : '—';
+    $('tcgLow').textContent = (!data.tcgPriceIsManual && tl > 0) ? fmtGBP(tl) : '—';
+    $('tcgMid').textContent = (!data.tcgPriceIsManual && tmd > 0) ? fmtGBP(tmd) : '—';
+    $('tcgHigh').textContent = (!data.tcgPriceIsManual && th > 0) ? fmtGBP(th) : '—';
     const updatedEl = $('tcgUpdated');
-    if (data.tcgUpdated) {
+    if (data.tcgPriceIsManual) {
+      updatedEl.textContent = 'manual override';
+    } else if (data.tcgUpdated) {
       const d = new Date(data.tcgUpdated);
       updatedEl.textContent = `Updated ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
     } else {
@@ -2384,6 +2412,12 @@ function selectCard(id) {
   if (enrichStatus) { enrichStatus.style.display = 'none'; enrichStatus.textContent = ''; }
   if (manualWrap) manualWrap.style.display = 'none';
   if (manualInput) manualInput.value = '';
+  // Pre-fill manual TCGPlayer price input with any existing override
+  const _tcgPriceInput = $('linkTcgPriceInput');
+  if (_tcgPriceInput) {
+    const _existingPrice = card ? getTcgPriceOverride(card.i) : 0;
+    _tcgPriceInput.value = _existingPrice > 0 ? _existingPrice : '';
+  }
 
   // Static prices (will be overwritten by live)
   $('marketRawUSD').textContent = fmtUSD(card.p);
@@ -6784,6 +6818,39 @@ function setupEditCard() {
     if (wrap) wrap.style.display = 'none';
     if (input) input.value = '';
     if (livePrice) renderLivePriceData(livePrice);
+  });
+
+  // Manual TCGPlayer market price — save
+  $('linkTcgPriceSave')?.addEventListener('click', () => {
+    if (!selectedCard) return;
+    const input = $('linkTcgPriceInput');
+    const status = $('linkTcgPriceStatus');
+    const usd = parseFloat(input?.value);
+    if (!usd || usd <= 0) {
+      if (status) { status.style.display = 'block'; status.textContent = 'Enter a price in USD greater than 0.'; }
+      return;
+    }
+    setTcgPriceOverride(selectedCard.i, usd);
+    // Bust price cache so re-fetch picks up the manual price
+    const _cache = getPriceCache();
+    delete _cache[selectedCard.i];
+    try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_cache)); } catch {}
+    if (status) { status.style.display = 'block'; status.textContent = `Saved $${usd.toFixed(2)} — refreshing…`; }
+    fetchLivePrice(selectedCard);
+  });
+
+  // Manual TCGPlayer market price — clear
+  $('linkTcgPriceClear')?.addEventListener('click', () => {
+    if (!selectedCard) return;
+    setTcgPriceOverride(selectedCard.i, 0);
+    const input = $('linkTcgPriceInput');
+    const status = $('linkTcgPriceStatus');
+    if (input) input.value = '';
+    if (status) { status.style.display = 'block'; status.textContent = 'Cleared — refreshing…'; }
+    const _cache = getPriceCache();
+    delete _cache[selectedCard.i];
+    try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_cache)); } catch {}
+    fetchLivePrice(selectedCard);
   });
 }
 
@@ -15206,6 +15273,7 @@ const SYNC_KEYS = [
   'pkm-acquisitions-v1',            // How each card was obtained (pack / single + cost)
   'pkm-hold-overrides',             // Per-card grade-specific market price overrides
   'pkm-tcg-overrides-v1',          // TCGPlayer URL overrides (auto-enriched or manual)
+  'pkm-tcg-price-overrides-v1',   // TCGPlayer market price overrides (manual USD entry)
   'pkm-jp-psa10-overrides-v1',     // Manually entered JP PSA 10 prices for EN↔JP comparison
   'pkm-reco-dismissed-v1',         // Cards dismissed from Recommendations
   'pkm-budget-max-gbp',           // Max per card budget slider

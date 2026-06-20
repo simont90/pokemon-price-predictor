@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260620z">
+  <link rel="stylesheet" href="style.css?v=20260620aa">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -919,6 +919,15 @@
                     <div id="linkTcgManualWrap" class="link-tcg-manual-wrap">
                       <input id="linkTcgManualInput" class="link-tcg-manual-input" type="url" placeholder="https://www.tcgplayer.com/product/…">
                       <button id="linkTcgManualSave" class="link-tcg-manual-save" type="button">Save</button>
+                    </div>
+                    <div class="link-tcg-price-row">
+                      <span class="link-tcg-price-label">TCGPlayer market price</span>
+                      <div class="link-tcg-manual-wrap" style="display:flex; margin-top:0">
+                        <input id="linkTcgPriceInput" class="link-tcg-manual-input" type="number" step="0.01" min="0" placeholder="USD e.g. 12.50">
+                        <button id="linkTcgPriceSave" class="link-tcg-manual-save" type="button">Save</button>
+                        <button id="linkTcgPriceClear" class="link-tcg-manual-save link-tcg-price-clear" type="button">✕</button>
+                      </div>
+                      <span id="linkTcgPriceStatus" class="enrich-tcg-status" style="display:none"></span>
                     </div>
                   </div>
                 </div>
@@ -2176,7 +2185,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260620z"></script>
+  <script src="app.js?v=20260620aa"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

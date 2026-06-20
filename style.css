@@ -3213,6 +3213,26 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   -webkit-tap-highlight-color: transparent;
 }
 .link-tcg-manual-save:hover { background: rgba(232,182,52,0.18); }
+.link-tcg-price-row {
+  margin-top: 8px;
+  width: 100%;
+}
+.link-tcg-price-label {
+  font-size: 10px;
+  color: var(--text-faint);
+  display: block;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.link-tcg-price-clear {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  background: transparent;
+  border-color: rgba(255,255,255,0.12);
+  color: var(--text-muted);
+}
+.link-tcg-price-clear:hover { background: rgba(220,50,50,0.18); color: #ff5c5c; border-color: rgba(220,50,50,0.4); }
 
 /* Portfolio "Refresh prices" quick button */
 .portfolio-refresh-btn {
