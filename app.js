@@ -1960,6 +1960,7 @@ async function fetchFreshPriceData(card) {
   }
 
   // 2. For EN cards, also fetch TCGPlayer/Cardmarket as secondary data
+  console.log('[fetchFresh] card.i:', card.i, '| lang:', JSON.stringify(card.lang), '| pcUngraded:', priceData.pcUngraded);
   if (card.lang !== 'JP') {
     try {
       const enData = await fetchLivePriceEN(card.i);
