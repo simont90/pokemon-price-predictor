@@ -3063,7 +3063,9 @@ function updateDealCheck(modelPriceUSD) {
       saveBtn.style.display = 'block';
       saveBtn.onclick = () => {
         const gradeKey = $('dealGrade') ? $('dealGrade').value : 'raw';
-        setHoldOverride(selectedCard.i, gradeKey, ebayGBP);
+        const savedShip = parseFloat($('dealShipping')?.value) || 0;
+        const allInGBP = ebayGBP + savedShip; // total cost including shipping
+        setHoldOverride(selectedCard.i, gradeKey, allInGBP);
         try { renderHoldOverridePanel(selectedCard); } catch {}
         try { renderHoldStrategy(selectedCard); } catch {}
         saveBtn.textContent = 'Saved';
@@ -14729,11 +14731,14 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
       return;
     }
     // No acq cost recorded: override replaces the buy-in price and recomputes ROI.
+    // The override is treated as an all-in price (listing + shipping already included),
+    // so slabShipGBP is intentionally NOT added here.
     if (s.key === 'gamble') {
       s.today = usd + gradingFeeUSD;
     } else {
-      s.today = usd + (s.slabShipGBP || 0) / fxRateLocal;
+      s.today = usd;
     }
+    s.slabShipGBP = 0; // suppress the "Est. UK shipping" sub-row — already in the override
     s.profit = s.yr5 - s.today;
     s.roi = s.today > 0 ? (s.profit / s.today) * 100 : 0;
     s.overridden = true;
