@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260620q">
+  <link rel="stylesheet" href="style.css?v=20260620s">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2127,7 +2127,24 @@
 
   <script src="data/cards-db.js"></script>
   <script src="data/sets-db.js"></script>
-  <script src="app.js?v=20260620q"></script>
+  <!-- Homepage PiP card preview -->
+  <div id="homePip" class="home-pip" style="display:none" role="dialog" aria-modal="true" aria-label="Card preview">
+    <div class="home-pip-inner">
+      <img id="homePipImg" class="home-pip-img" src="" alt="" onerror="this.style.display='none'">
+      <div class="home-pip-body">
+        <div id="homePipName" class="home-pip-name"></div>
+        <div id="homePipSet" class="home-pip-set"></div>
+        <div id="homePipPrice" class="home-pip-price"></div>
+      </div>
+      <div class="home-pip-btns">
+        <button id="homePipView" class="home-pip-view-btn">View full card ↗</button>
+        <button id="homePipClose" class="home-pip-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+  <div id="homePipBackdrop" class="home-pip-backdrop" style="display:none"></div>
+
+  <script src="app.js?v=20260620s"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

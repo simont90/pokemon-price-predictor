@@ -494,6 +494,7 @@ async function init() {
       `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${userSuffix})`;
   }
   updateAll();
+  _setupHomePip();
   // Kick off background price prefetch 2.5 s after init so cached prices are
   // ready before the user opens the collection panel.
   setTimeout(() => { try { _homeAutoRefresh(); } catch {} }, 2500);
@@ -13527,6 +13528,65 @@ function _homeItemClick(id) {
   setTimeout(() => selectCard(id), 80);
 }
 
+let _homePipId = null;
+
+function openHomePip(id, imgUrl) {
+  const pip      = document.getElementById('homePip');
+  const backdrop = document.getElementById('homePipBackdrop');
+  if (!pip) return;
+  _homePipId = id;
+
+  const card = (typeof getCardById === 'function') ? getCardById(id) : null;
+
+  const imgEl = document.getElementById('homePipImg');
+  if (imgUrl) { imgEl.src = imgUrl; imgEl.style.display = ''; }
+  else imgEl.style.display = 'none';
+
+  document.getElementById('homePipName').textContent = card ? card.n : '';
+  document.getElementById('homePipSet').textContent  = card ? (card.s || '') : '';
+
+  const priceData = (typeof getCachedPrice === 'function') ? (getCachedPrice(id) || getLastKnownPrice(id)) : null;
+  const _mid = (priceData && priceData.pcUngraded > 0 && priceData.tcgMarket > 0)
+    ? (priceData.pcUngraded + priceData.tcgMarket) / 2 : 0;
+  const priceUSD = _mid || (priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || (card ? card.p : 0)) : (card ? card.p : 0));
+  document.getElementById('homePipPrice').textContent = priceUSD > 0 ? fmtGBP(priceUSD) : '—';
+
+  document.getElementById('homePipView').onclick = () => { closeHomePip(); _homeItemClick(id); };
+
+  pip.style.display = '';
+  if (backdrop) backdrop.style.display = '';
+  requestAnimationFrame(() => {
+    pip.classList.add('pip-visible');
+    if (backdrop) backdrop.classList.add('pip-visible');
+  });
+}
+
+function closeHomePip() {
+  const pip      = document.getElementById('homePip');
+  const backdrop = document.getElementById('homePipBackdrop');
+  if (!pip) return;
+  pip.classList.remove('pip-visible');
+  if (backdrop) backdrop.classList.remove('pip-visible');
+  setTimeout(() => {
+    pip.style.display = 'none';
+    if (backdrop) backdrop.style.display = 'none';
+    _homePipId = null;
+  }, 220);
+}
+
+function _setupHomePip() {
+  document.getElementById('homePipClose')?.addEventListener('click', closeHomePip);
+  document.getElementById('homePipBackdrop')?.addEventListener('click', closeHomePip);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && _homePipId) closeHomePip(); });
+  // Delegated pip-trigger clicks across the whole page
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.home-pip-trigger');
+    if (!btn) return;
+    e.stopPropagation();
+    openHomePip(btn.dataset.pipId, btn.dataset.pipImg);
+  });
+}
+
 function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass, subText, opts = {}) {
   const img = imgUrl
     ? `<img class="home-card-art" src="${imgUrl}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
@@ -13538,8 +13598,12 @@ function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass
   const tileClass = ['home-card-tile', extraClass, opts.urgentBuy ? 'urgent-buy' : ''].filter(Boolean).join(' ');
   const hiddenAttr = opts.hidden ? ' style="display:none"' : '';
   const dealUrlAttr = opts.dealUrl ? ` data-deal-url="${esc(opts.dealUrl)}"` : '';
+  // PiP button only for real card IDs (not listing URLs)
+  const pipBtn = (!opts.dealUrl && id && !id.startsWith('http'))
+    ? `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgUrl || '')}" aria-label="Quick view" title="Quick view">⤢</button>`
+    : '';
   return `<div class="${tileClass}" data-id="${esc(id)}"${hiddenAttr}${dealUrlAttr}>
-    ${img}${signal}
+    ${img}${signal}${pipBtn}
     <button class="home-card-remove" aria-label="Remove">✕</button>
     <div class="home-card-info">
       <div class="home-card-name">${esc(name)}</div>

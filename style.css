@@ -7354,6 +7354,150 @@ section.card .card-collapse-btn { padding: 10px; }
 .home-card-remove:hover,
 .home-card-remove:active { background: rgba(220,50,50,0.8); color: #fff; border-color: transparent; }
 
+/* ── PiP trigger button (expand icon on tile image) ── */
+.home-pip-trigger {
+  position: absolute;
+  bottom: 46px; /* above the info strip */
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(10,11,18,0.72);
+  backdrop-filter: blur(6px);
+  color: rgba(255,255,255,0.8);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.18s, transform 0.18s, background 0.15s;
+  z-index: 4;
+  padding: 0;
+}
+.home-card-tile:hover .home-pip-trigger,
+.home-card-tile:focus-within .home-pip-trigger {
+  opacity: 1;
+  transform: scale(1);
+}
+/* Always visible on touch devices */
+@media (hover: none) {
+  .home-pip-trigger { opacity: 0.75; transform: scale(1); }
+}
+.home-pip-trigger:hover { background: rgba(232,182,52,0.25); color: var(--accent); }
+.home-pip-trigger:active { transform: scale(0.9); }
+
+/* ── PiP backdrop ── */
+.home-pip-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(3px);
+  z-index: 1199;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+.home-pip-backdrop.pip-visible { opacity: 1; }
+
+/* ── PiP panel ── */
+.home-pip {
+  position: fixed;
+  bottom: 24px;
+  right: 20px;
+  width: 240px;
+  z-index: 1200;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--bg-raised, #1a1c28);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 16px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(232,182,52,0.12);
+  transform: translateY(24px) scale(0.96);
+  opacity: 0;
+  transition: transform 0.24s cubic-bezier(0.34,1.56,0.64,1), opacity 0.22s ease;
+}
+.home-pip.pip-visible {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+@media (max-width: 480px) {
+  .home-pip {
+    left: 50%;
+    right: auto;
+    bottom: 16px;
+    transform: translateX(-50%) translateY(24px) scale(0.96);
+    width: min(300px, 88vw);
+  }
+  .home-pip.pip-visible {
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+.home-pip-img {
+  width: 100%;
+  aspect-ratio: 63 / 88;
+  object-fit: cover;
+  display: block;
+  background: #0d0e18;
+}
+.home-pip-body {
+  padding: 10px 12px 6px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+}
+.home-pip-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text, #e8eaf0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+.home-pip-set {
+  font-size: 10.5px;
+  color: var(--text-muted, #666880);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+.home-pip-price {
+  font-family: var(--mono, monospace);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent, #e8b634);
+}
+.home-pip-btns {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px 10px;
+}
+.home-pip-view-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent, #e8b634);
+  color: #1a1200;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.home-pip-view-btn:hover { opacity: 0.88; }
+.home-pip-close-btn {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.07);
+  color: var(--text-muted, #888);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.home-pip-close-btn:hover { background: rgba(255,255,255,0.12); color: var(--text, #e8eaf0); }
+
 /* Recommendation tile — extends home-card-tile with 3-button action strip */
 .reco-tile .home-card-remove { display: none; }
 .reco-actions {
