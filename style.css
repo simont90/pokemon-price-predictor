@@ -7339,7 +7339,7 @@ section.card .card-collapse-btn { padding: 10px; }
 [data-theme="light"] .home-scroll-thumb.dragging { background: rgba(232,182,52,0.75); }
 .home-card-tile {
   flex-shrink: 0;
-  width: 150px;
+  width: 165px;
   border-radius: 16px;
   overflow: hidden;
   position: relative;
@@ -7839,8 +7839,10 @@ section.card .card-collapse-btn { padding: 10px; }
 }
 .reco-upside.pos { color: var(--green); }
 
-@media (min-width: 600px) { .home-card-tile { width: 168px; } }
-@media (min-width: 860px) { .home-card-tile { width: 184px; } }
+@media (min-width: 600px)  { .home-card-tile { width: 200px; } }
+@media (min-width: 860px)  { .home-card-tile { width: 240px; } .home-scroll-row { gap: 16px; } }
+@media (min-width: 1200px) { .home-card-tile { width: 280px; } .home-scroll-row { gap: 20px; } }
+@media (min-width: 1600px) { .home-card-tile { width: 320px; } .home-scroll-row { gap: 24px; } }
 
 /* ─── Theme picker (header segmented control) ─────────────── */
 .theme-picker {
