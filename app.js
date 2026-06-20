@@ -1520,30 +1520,62 @@ function extractTcgProductId(url) {
   return m ? m[1] : null;
 }
 
-// Fetch TCGPlayer prices by product ID via pokemontcg.io product-search.
-// Works for any card where the user has a TCGPlayer URL — EN or JP.
-async function fetchTCGPlayerPriceByProductId(productId) {
-  if (!productId) return null;
-  const url = `https://api.pokemontcg.io/v2/cards?q=tcgplayer.productId:${productId}&pageSize=1`;
-  const r = await fetch(url);
-  if (!r.ok) return null;
-  const json = await r.json();
-  const d = json.data && json.data[0];
-  if (!d) return null;
-  const tcg = d.tcgplayer?.prices || {};
-  const tcgTypes = ['holofoil', 'reverseHolofoil', 'normal', '1stEditionHolofoil', 'unlimitedHolofoil', '1stEditionNormal', 'unlimited'];
-  let tcgPrices = null;
-  for (const t of tcgTypes) { if (tcg[t]) { tcgPrices = tcg[t]; break; } }
-  if (!tcgPrices) { const k = Object.keys(tcg)[0]; if (k) tcgPrices = tcg[k]; }
-  if (!tcgPrices || !tcgPrices.market) return null;
-  return {
-    market:     tcgPrices.market    || 0,
-    low:        tcgPrices.low       || 0,
-    mid:        tcgPrices.mid       || 0,
-    high:       tcgPrices.high      || 0,
-    directLow:  tcgPrices.directLow || 0,
-    tcgUpdated: d.tcgplayer?.updatedAt || '',
+// Fetch TCGPlayer prices via pokemontcg.io using multiple query strategies.
+// `card` is used for set.id + number queries (most reliable approach).
+// The TCGPlayer product ID embedded in the saved URL is used as a last-ditch
+// fallback in case pokemontcg.io ever indexes that field.
+const TCG_PRICE_TYPES = ['holofoil','reverseHolofoil','normal','1stEditionHolofoil','unlimitedHolofoil','1stEditionNormal','unlimited'];
+
+async function fetchTCGPlayerPriceByProductId(productId, card) {
+  const _pickPrices = (d) => {
+    if (!d) return null;
+    const tcg = d.tcgplayer?.prices || {};
+    let p = null;
+    for (const t of TCG_PRICE_TYPES) { if (tcg[t]) { p = tcg[t]; break; } }
+    if (!p) { const k = Object.keys(tcg)[0]; if (k) p = tcg[k]; }
+    if (!p?.market) return null;
+    return {
+      market:     p.market    || 0,
+      low:        p.low       || 0,
+      mid:        p.mid       || 0,
+      high:       p.high      || 0,
+      directLow:  p.directLow || 0,
+      tcgUpdated: d.tcgplayer?.updatedAt || '',
+    };
   };
+
+  const _query = async (q) => {
+    const r = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=8`);
+    if (!r.ok) return null;
+    const json = await r.json();
+    const cards = json.data || [];
+    // Prefer exact card-number match when card context is available
+    const match = (card && card.cn)
+      ? (cards.find(c => String(c.number) === String(card.cn)) || cards[0])
+      : cards[0];
+    return _pickPrices(match);
+  };
+
+  // Strategy 1: set.id + number — uses known card metadata, most reliable for EN
+  if (card && card.sc && card.cn) {
+    const r1 = await _query(`set.id:${card.sc} number:${card.cn}`).catch(() => null);
+    if (r1) return r1;
+  }
+
+  // Strategy 2: card name + set.id — catches variants where the number differs
+  if (card && card.n && card.sc) {
+    const safeName = card.n.replace(/[":]/g, '').slice(0, 40);
+    const r2 = await _query(`name:"${safeName}" set.id:${card.sc}`).catch(() => null);
+    if (r2) return r2;
+  }
+
+  // Strategy 3: productId field (pokemontcg.io may or may not index this)
+  if (productId) {
+    const r3 = await _query(`tcgplayer.productId:${productId}`).catch(() => null);
+    if (r3) return r3;
+  }
+
+  return null;
 }
 
 // ================================================================
@@ -1979,7 +2011,7 @@ async function fetchFreshPriceData(card) {
     const _productId   = extractTcgProductId(_savedTcgUrl);
     if (_productId) {
       try {
-        const _tcgData = await fetchTCGPlayerPriceByProductId(_productId);
+        const _tcgData = await fetchTCGPlayerPriceByProductId(_productId, card);
         if (_tcgData && _tcgData.market > 0) {
           priceData.tcgMarket   = _tcgData.market;
           priceData.tcgLow      = _tcgData.low;
