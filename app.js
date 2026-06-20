@@ -12978,7 +12978,7 @@ function _gemScore(card, marketUSD) {
 
 // Single-pass reco builder. Returns all five curated lists at once so the
 // expensive card-loop + computeHoldCore work is only done once per rebuild.
-function buildAllHomeRecos(limit = 15) {
+function buildAllHomeRecos() {
   if (!cardData || !cardData.cards) return { general: [], raw: [], psa8: [], psa9: [], psa10: [] };
   const dismissed = _getRecoDismissed();
   const ownedIds  = new Set(portfolio.map(p => p.id));
@@ -13076,11 +13076,11 @@ function buildAllHomeRecos(limit = 15) {
   );
 
   return {
-    general: general.slice(0, limit),
-    raw:     byStrat.raw.slice(0, limit),
-    psa8:    byStrat.psa8.slice(0, limit),
-    psa9:    byStrat.psa9.slice(0, limit),
-    psa10:   byStrat.psa10.slice(0, limit),
+    general: general,
+    raw:     byStrat.raw,
+    psa8:    byStrat.psa8,
+    psa9:    byStrat.psa9,
+    psa10:   byStrat.psa10,
   };
 }
 
@@ -13150,6 +13150,17 @@ function _recoStrategyTileHtml(r) {
 }
 
 function _recoListClick(e) {
+  // View all button
+  const viewAllBtn = e.target.closest('.reco-view-all-btn');
+  if (viewAllBtn) {
+    const section = viewAllBtn.dataset.recoSection;
+    if (_recoCached && _recoCached[section]) {
+      const titles = { general: 'All Recommendations', raw: 'Buy Raw', psa8: 'Buy PSA 8', psa9: 'Buy PSA 9', psa10: 'Buy PSA 10' };
+      const renderer = section === 'general' ? _recoTileHtml : _recoStrategyTileHtml;
+      _openRecoViewAll(titles[section] || 'Recommendations', _recoCached[section], renderer);
+    }
+    return;
+  }
   // Dismiss
   const dismissBtn = e.target.closest('.reco-dismiss');
   if (dismissBtn) {
@@ -13251,12 +13262,18 @@ function _renderHomeReco(forceRebuild) {
       const all = buildAllHomeRecos();
       _recoCached = { ...all, ts: Date.now() };
       _renderHomeRecoResults(all.general, list, $('homeRecoCount'));
-      _STRAT_SECTIONS.forEach(s => _renderHomeRecoStratResults(all[s.key], $(s.listId), $(s.countId)));
+      _STRAT_SECTIONS.forEach(s => _renderHomeRecoStratResults(all[s.key], $(s.listId), $(s.countId), s.key));
     });
   } else {
     _renderHomeRecoResults(_recoCached.general, list, $('homeRecoCount'));
-    _STRAT_SECTIONS.forEach(s => _renderHomeRecoStratResults(_recoCached[s.key], $(s.listId), $(s.countId)));
+    _STRAT_SECTIONS.forEach(s => _renderHomeRecoStratResults(_recoCached[s.key], $(s.listId), $(s.countId), s.key));
   }
+}
+
+const RECO_HOME_LIMIT = 5;
+
+function _recoViewAllTile(section, total) {
+  return `<div class="reco-view-all-tile"><button class="reco-view-all-btn" data-reco-section="${section}">View all ${total} ↗</button></div>`;
 }
 
 function _renderHomeRecoResults(results, list, countEl) {
@@ -13266,17 +13283,21 @@ function _renderHomeRecoResults(results, list, countEl) {
     list.innerHTML = '<div class="home-empty">No new recommendations right now — all BUY signals are already in your collection or wishlist.</div>';
     return;
   }
-  list.innerHTML = results.map(_recoTileHtml).join('');
+  const shown = results.slice(0, RECO_HOME_LIMIT);
+  const extra = results.length > RECO_HOME_LIMIT ? _recoViewAllTile('general', results.length) : '';
+  list.innerHTML = shown.map(_recoTileHtml).join('') + extra;
 }
 
-function _renderHomeRecoStratResults(results, list, countEl) {
+function _renderHomeRecoStratResults(results, list, countEl, sectionKey) {
   if (!list) return;
   if (countEl) countEl.textContent = results.length;
   if (!results.length) {
     list.innerHTML = '<div class="home-empty">No cards match this strategy right now — check back after prices refresh.</div>';
     return;
   }
-  list.innerHTML = results.map(_recoStrategyTileHtml).join('');
+  const shown = results.slice(0, RECO_HOME_LIMIT);
+  const extra = results.length > RECO_HOME_LIMIT ? _recoViewAllTile(sectionKey || 'raw', results.length) : '';
+  list.innerHTML = shown.map(_recoStrategyTileHtml).join('') + extra;
 }
 
 // ── Home "View All" modal ─────────────────────────────────────
@@ -13301,14 +13322,53 @@ function openHomeViewAll(title, items) {
 function closeHomeViewAll() {
   const modal   = $('hvaModal');
   const overlay = $('hvaOverlay');
+  const search  = $('hvaSearch');
   if (modal)   { modal.style.display   = 'none'; modal.setAttribute('aria-hidden',   'true'); }
   if (overlay) { overlay.style.display = 'none'; overlay.setAttribute('aria-hidden', 'true'); }
   document.body.style.overflow = '';
+  if (search) search.oninput = null;
 }
+
+function _openRecoViewAll(title, results, tileRenderer) {
+  const modal   = $('hvaModal');
+  const overlay = $('hvaOverlay');
+  const grid    = $('hvaGrid');
+  const titleEl = $('hvaTitle');
+  const countEl = $('hvaCount');
+  const search  = $('hvaSearch');
+  if (!modal || !grid) return;
+  if (titleEl) titleEl.textContent = title;
+  if (search) search.value = '';
+
+  function _renderRecoViewAll(q) {
+    const lq = (q || '').trim().toLowerCase();
+    const filtered = lq
+      ? results.filter(r => r.card.n.toLowerCase().includes(lq) || (r.card.s || '').toLowerCase().includes(lq))
+      : results;
+    if (countEl) countEl.textContent = `${filtered.length} card${filtered.length !== 1 ? 's' : ''}`;
+    grid.innerHTML = filtered.length
+      ? filtered.map(tileRenderer).join('')
+      : `<div class="hva-empty">${lq ? 'No cards match that search.' : 'Nothing here yet.'}</div>`;
+    // Wire reco action buttons (dismiss, watchlist, wishlist, pip)
+    _bindRecoHandler(grid);
+  }
+
+  _renderRecoViewAll('');
+  if (search) search.oninput = () => _renderRecoViewAll(search.value);
+  if (modal)   { modal.style.display = 'flex'; modal.setAttribute('aria-hidden', 'false'); }
+  if (overlay) { overlay.style.display = 'block'; overlay.setAttribute('aria-hidden', 'false'); }
+  document.body.style.overflow = 'hidden';
+  // Add reco-mode class so CSS can adjust the grid column width for reco tiles
+  modal.classList.add('hva-reco-mode');
+  setTimeout(() => search?.focus(), 60);
+}
+
 function renderHvaGrid(query) {
   const grid    = $('hvaGrid');
   const countEl = $('hvaCount');
+  const modal   = $('hvaModal');
   if (!grid) return;
+  if (modal) modal.classList.remove('hva-reco-mode');
   const q = (query || '').trim().toLowerCase();
   const filtered = q ? _hvaItems.filter(it => it.name.toLowerCase().includes(q) || (it.sub || '').toLowerCase().includes(q)) : _hvaItems;
   if (countEl) countEl.textContent = `${filtered.length} card${filtered.length !== 1 ? 's' : ''}`;
@@ -13322,8 +13382,9 @@ function renderHvaGrid(query) {
       : `<div class="hva-tile-img"></div>`;
     const signal = it.sigClass && it.signal
       ? `<span class="hva-tile-signal ${esc(it.sigClass)}">${esc(it.signal)}</span>` : '';
+    const pipBtn = it.id ? `<button class="home-pip-trigger" data-pip-id="${esc(it.id)}" data-pip-img="${esc(it.img || '')}" aria-label="Quick view" title="Quick view">⤢</button>` : '';
     return `<div class="hva-tile" data-id="${esc(it.id)}">
-      ${img}${signal}
+      ${img}${signal}${pipBtn}
       <div class="hva-tile-info">
         <div class="hva-tile-name">${esc(it.name)}</div>
         <div class="hva-tile-price">${it.price || '—'}</div>
@@ -13332,7 +13393,8 @@ function renderHvaGrid(query) {
     </div>`;
   }).join('');
   grid.querySelectorAll('.hva-tile').forEach(tile => {
-    tile.addEventListener('click', () => {
+    tile.addEventListener('click', e => {
+      if (e.target.closest('.home-pip-trigger')) return;
       closeHomeViewAll();
       _homeItemClick(tile.dataset.id);
     });
