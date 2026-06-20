@@ -1513,6 +1513,39 @@ async function fetchLivePriceEN(cardId) {
   return result;
 }
 
+// Extract TCGPlayer product ID from a saved URL
+// e.g. https://www.tcgplayer.com/product/123456/pokemon-... → "123456"
+function extractTcgProductId(url) {
+  const m = url && String(url).match(/\/product\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+// Fetch TCGPlayer prices by product ID via pokemontcg.io product-search.
+// Works for any card where the user has a TCGPlayer URL — EN or JP.
+async function fetchTCGPlayerPriceByProductId(productId) {
+  if (!productId) return null;
+  const url = `https://api.pokemontcg.io/v2/cards?q=tcgplayer.productId:${productId}&pageSize=1`;
+  const r = await fetch(url);
+  if (!r.ok) return null;
+  const json = await r.json();
+  const d = json.data && json.data[0];
+  if (!d) return null;
+  const tcg = d.tcgplayer?.prices || {};
+  const tcgTypes = ['holofoil', 'reverseHolofoil', 'normal', '1stEditionHolofoil', 'unlimitedHolofoil', '1stEditionNormal', 'unlimited'];
+  let tcgPrices = null;
+  for (const t of tcgTypes) { if (tcg[t]) { tcgPrices = tcg[t]; break; } }
+  if (!tcgPrices) { const k = Object.keys(tcg)[0]; if (k) tcgPrices = tcg[k]; }
+  if (!tcgPrices || !tcgPrices.market) return null;
+  return {
+    market:     tcgPrices.market    || 0,
+    low:        tcgPrices.low       || 0,
+    mid:        tcgPrices.mid       || 0,
+    high:       tcgPrices.high      || 0,
+    directLow:  tcgPrices.directLow || 0,
+    tcgUpdated: d.tcgplayer?.updatedAt || '',
+  };
+}
+
 // ================================================================
 // PriceCharting search — primary live-pricing source
 // ================================================================
@@ -1935,9 +1968,35 @@ async function fetchFreshPriceData(card) {
       // If PriceCharting also failed, this is a total failure
       if (priceData.pcUngraded <= 0) throw e;
     }
-  } else if (priceData.pcUngraded <= 0) {
-    // JP card with no PriceCharting data — throw unless a manual price covers it
-    if (getTcgPriceOverride(card.i) <= 0) throw new Error('No pricing data available');
+  }
+
+  // 2b. URL-based TCGPlayer lookup — runs for ALL cards when tcgMarket is still empty
+  //     and the user has saved a TCGPlayer product URL. Queries pokemontcg.io by
+  //     product ID, which works for EN cards the card-ID lookup missed, and for JP
+  //     cards that are sold on TCGPlayer under a separate listing.
+  if (priceData.tcgMarket <= 0) {
+    const _savedTcgUrl = getTcgOverride(card.i);
+    const _productId   = extractTcgProductId(_savedTcgUrl);
+    if (_productId) {
+      try {
+        const _tcgData = await fetchTCGPlayerPriceByProductId(_productId);
+        if (_tcgData && _tcgData.market > 0) {
+          priceData.tcgMarket   = _tcgData.market;
+          priceData.tcgLow      = _tcgData.low;
+          priceData.tcgMid      = _tcgData.mid;
+          priceData.tcgHigh     = _tcgData.high;
+          priceData.directLow   = _tcgData.directLow;
+          if (_tcgData.tcgUpdated) priceData.tcgUpdated = _tcgData.tcgUpdated;
+          if (!priceData.tcgUrl) priceData.tcgUrl = _savedTcgUrl;
+          if (priceData.pcUngraded > 0) {
+            priceData.market = (priceData.pcUngraded + _tcgData.market) / 2;
+            priceData.priceIsComposite = true;
+          } else if (priceData.market <= 0) {
+            priceData.market = _tcgData.market;
+          }
+        }
+      } catch { /* silent — URL-based lookup is best-effort */ }
+    }
   }
 
   // 3. Collectrics — additional grading data source for all cards
@@ -1948,7 +2007,7 @@ async function fetchFreshPriceData(card) {
     // Silent — Collectrics is supplementary
   }
 
-  // 4. Manual TCGPlayer market price override — fills gap when API has no TCGPlayer data
+  // 4. Manual TCGPlayer market price override — fills gap when no live data at all
   const _manualTcgUSD = getTcgPriceOverride(card.i);
   if (_manualTcgUSD > 0 && priceData.tcgMarket <= 0) {
     priceData.tcgMarket = _manualTcgUSD;
@@ -1959,6 +2018,11 @@ async function fetchFreshPriceData(card) {
     } else if (priceData.market <= 0) {
       priceData.market = _manualTcgUSD;
     }
+  }
+
+  // 5. JP card with no data from any source — give up
+  if (card.lang === 'JP' && priceData.pcUngraded <= 0 && priceData.tcgMarket <= 0) {
+    throw new Error('No pricing data available');
   }
 
   return priceData;
@@ -6827,6 +6891,7 @@ function setupEditCard() {
 
   $('linkTcgManualSave')?.addEventListener('click', () => {
     if (!selectedCard) return;
+    const card = selectedCard;
     const input = $('linkTcgManualInput');
     const status = $('linkEnrichStatus');
     const url = (input?.value || '').trim();
@@ -6834,12 +6899,30 @@ function setupEditCard() {
       if (status) { status.style.display = 'block'; status.textContent = 'Paste a valid https:// URL.'; }
       return;
     }
-    setTcgOverride(selectedCard.i, url);
-    if (status) { status.style.display = 'block'; status.textContent = 'Saved.'; }
+    setTcgOverride(card.i, url);
     const wrap = $('linkTcgManualWrap');
     if (wrap) wrap.style.display = 'none';
     if (input) input.value = '';
-    if (livePrice) renderLivePriceData(livePrice);
+
+    // If the URL contains a TCGPlayer product ID, bust the price cache and re-fetch
+    // so the product-ID lookup fires immediately and populates live prices.
+    const productId = extractTcgProductId(url);
+    if (productId) {
+      if (status) { status.style.display = 'block'; status.textContent = 'URL saved — fetching live prices…'; }
+      const _cache = getPriceCache();
+      delete _cache[card.i];
+      try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_cache)); } catch {}
+      fetchLivePrice(card).then(() => {
+        if (selectedCard && selectedCard.i === card.i && status) {
+          const hasTcg = livePrice && livePrice.tcgMarket > 0;
+          status.textContent = hasTcg
+            ? 'TCGPlayer prices loaded.'
+            : 'URL saved — no live prices found for this product ID.';
+        }
+      }).catch(() => {});
+    } else {
+      if (status) { status.style.display = 'block'; status.textContent = 'URL saved (no product ID found — prices unchanged).'; }
+    }
   });
 
   // Manual TCGPlayer market price — save
