@@ -549,8 +549,8 @@ function getCharacterMultiplier(cardName) {
 function getCurrentPrice(card) {
   // If we have live price data for the selected card, use it
   if (livePrice && selectedCard && card.i === selectedCard.i) {
-    // When both PC and TCGPlayer are available, market holds the midpoint — prefer it.
-    if (livePrice.priceIsComposite && livePrice.market > 0) return livePrice.market;
+    // Midpoint when both PC and TCGPlayer have prices (computed inline so stale cache still benefits)
+    if (livePrice.pcUngraded > 0 && livePrice.tcgMarket > 0) return (livePrice.pcUngraded + livePrice.tcgMarket) / 2;
     if (livePrice.pcUngraded > 0) return livePrice.pcUngraded;
     if (livePrice.market > 0) return livePrice.market;
     if (livePrice.mid > 0) return livePrice.mid;
@@ -2004,15 +2004,19 @@ function renderLivePrice(data) {
   const hasCM = data.cmTrend > 0 || data.cmAvg7 > 0;
   const hasPC = data.pcUngraded > 0;
 
-  // Primary live price — midpoint when both PC and TCGPlayer are available
-  const primaryPrice = (data.priceIsComposite && data.market > 0)
-    ? data.market
+  // Primary live price — midpoint when both PC and TCGPlayer have prices
+  const _pcTcgMid = (data.pcUngraded > 0 && data.tcgMarket > 0)
+    ? (data.pcUngraded + data.tcgMarket) / 2
+    : 0;
+  const isComposite = _pcTcgMid > 0;
+  const primaryPrice = isComposite
+    ? _pcTcgMid
     : (data.pcUngraded > 0)
       ? data.pcUngraded
       : (data.market || data.mid || data.cmTrend || data.cmAvg7 || 0);
   $('liveMainPrice').textContent = primaryPrice > 0 ? fmtGBP(primaryPrice) : '—';
   $('liveMainUSD').textContent = primaryPrice > 0
-    ? fmtUSD(primaryPrice) + (data.priceIsComposite ? ' · PC & TCG avg' : '')
+    ? fmtUSD(primaryPrice) + (isComposite ? ' · PC & TCG avg' : '')
     : '';
 
   // Comparison to static price
@@ -2214,9 +2218,9 @@ function renderLivePrice(data) {
 // Recalculate model with live price
 function recalcWithLivePrice(card) {
   if (!card || !livePrice) return;
-  // Pick best live price — midpoint when both PC and TCGPlayer are available
-  const lp = (livePrice.priceIsComposite && livePrice.market > 0)
-    ? livePrice.market
+  // Pick best live price — midpoint when both PC and TCGPlayer have prices
+  const lp = (livePrice.pcUngraded > 0 && livePrice.tcgMarket > 0)
+    ? (livePrice.pcUngraded + livePrice.tcgMarket) / 2
     : (livePrice.pcUngraded > 0)
       ? livePrice.pcUngraded
       : (livePrice.market || livePrice.mid || livePrice.cmTrend || 0);
