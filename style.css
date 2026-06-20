@@ -6487,6 +6487,10 @@ section.card.is-collapsed { padding-bottom: 18px; }
   color: var(--text-muted);
   font-family: var(--mono, monospace);
 }
+.ho-fv-live {
+  color: var(--accent);
+  opacity: 0.85;
+}
 .ho-actions {
   display: flex;
   justify-content: flex-end;

@@ -2260,6 +2260,11 @@ function recalcWithLivePrice(card) {
   // Re-render Acquisition + Grader sections so ROI uses the live raw + PSA 10 prices
   if (typeof renderAcquisition === 'function') renderAcquisition();
   if (typeof renderCardGrader === 'function') renderCardGrader();
+  // Re-render Hold Strategy so it uses the live raw price instead of the
+  // static / cached price it had at initial card-select time.
+  if (typeof renderHoldStrategy === 'function') {
+    try { renderHoldStrategy(card); } catch {}
+  }
 }
 
 // ================================================================
@@ -14562,9 +14567,12 @@ function renderHoldOverridePanel(card) {
   ];
   const naFlags = overrides._na || {};
   const activeCount = rows.filter(r => overrides[r.key] != null || naFlags[r.key]).length;
+  // Check if the raw price is currently from the live feed (PriceCharting).
+  const _lp = (typeof livePrice !== 'undefined') ? livePrice : null;
+  const _hasLiveRaw = _lp && selectedCard && card.i === selectedCard.i && _lp.pcUngraded > 0;
   const summaryNote = activeCount > 0
     ? `<span class="ho-active">${activeCount} active override${activeCount === 1 ? '' : 's'}</span>`
-    : `<span class="ho-hint">Override fair value with actual eBay prices</span>`;
+    : `<span class="ho-hint">${_hasLiveRaw ? 'Using live price · override to correct eBay' : 'Override fair value with actual eBay prices'}</span>`;
   host.innerHTML = `
     <details class="ho-details"${activeCount > 0 ? ' open' : ''}>
       <summary class="ho-summary">
@@ -14580,8 +14588,10 @@ function renderHoldOverridePanel(card) {
             const isNA = isPSA && !!naFlags[r.key];
             const fv = fvGBP(r.key);
             const val = overrides[r.key] != null ? overrides[r.key] : '';
-            const placeholder = fv != null ? `Fair value £${fv.toFixed(2)}` : 'Enter GBP';
-            const fvNote = fv != null && !isNA ? `<span class="ho-fv">Fair £${fv.toFixed(2)}</span>` : '';
+            const isLiveRaw = !isPSA && _hasLiveRaw;
+            const priceLabel = isLiveRaw ? 'Live' : 'Fair';
+            const placeholder = fv != null ? `${priceLabel} £${fv.toFixed(2)}` : 'Enter GBP';
+            const fvNote = fv != null && !isNA ? `<span class="ho-fv${isLiveRaw ? ' ho-fv-live' : ''}">${priceLabel} £${fv.toFixed(2)}</span>` : '';
             return `
               <div class="ho-row ${isNA ? 'ho-row-na' : ''}">
                 <div class="ho-row-head">
