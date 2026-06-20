@@ -7109,65 +7109,154 @@ section.card .card-collapse-btn { padding: 10px; }
   transition: background 0.15s;
 }
 .hva-close:hover { background: var(--glass-bg); }
+/* ── View-All list (replaces card-grid) ── */
 .hva-grid {
   overflow-y: auto;
-  padding: 16px 20px 20px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
 }
-.hva-tile {
-  display: flex; flex-direction: column;
-  border-radius: 14px; overflow: hidden;
+.hva-empty {
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 14px;
+  padding: 48px 0;
+}
+/* Compact list row */
+.hva-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.055);
   cursor: pointer;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-  transition: transform 0.18s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.15s;
+  transition: background 0.1s;
   position: relative;
   -webkit-tap-highlight-color: transparent;
 }
-.hva-tile:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-.hva-tile:active { transform: scale(0.95); }
-.hva-tile-img {
-  width: 100%; aspect-ratio: 63/88;
-  object-fit: cover; display: block;
-  background: linear-gradient(135deg,rgba(30,33,50,0.9),rgba(10,11,20,0.9));
+.hva-row:last-child { border-bottom: none; }
+.hva-row:hover  { background: rgba(255,255,255,0.038); }
+.hva-row:active { background: rgba(255,255,255,0.07); }
+.hva-row-rank {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-muted);
+  width: 18px;
+  text-align: right;
+  flex-shrink: 0;
 }
-.hva-tile-info {
-  padding: 8px 10px 10px;
-  display: flex; flex-direction: column; gap: 3px;
+.hva-row-img {
+  width: 40px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+  background: #0d0e18;
+  display: block;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
 }
-.hva-tile-name {
-  font-size: 12px; font-weight: 600; color: var(--text);
-  line-height: 1.3;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+.hva-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
-.hva-tile-price {
-  font-size: 13px; font-weight: 700; font-family: var(--mono); color: var(--accent);
+.hva-row-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.hva-tile-sub { font-size: 10px; color: var(--text-muted); line-height: 1.3; }
-.hva-tile-signal {
-  position: absolute; top: 7px; right: 7px;
-  font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
-  padding: 2px 6px; border-radius: 4px; text-transform: uppercase;
-  backdrop-filter: blur(6px);
+.hva-row-set {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.hva-tile-signal.sig-strong-buy { background: rgba(72,199,116,0.85); color: #000; }
-.hva-tile-signal.sig-buy        { background: rgba(72,199,116,0.55); color: #fff; }
-.hva-tile-signal.sig-sell       { background: rgba(255,77,109,0.75); color: #fff; }
-.hva-tile-signal.sig-hold       { background: rgba(255,255,255,0.15); color: var(--text-muted); }
-.hva-tile-signal.alert-buy      { background: rgba(72,199,116,0.85); color: #000; }
-.hva-tile-signal.alert-watch    { background: rgba(232,182,52,0.8); color: #000; }
-.hva-tile-signal.alert-far      { background: rgba(255,255,255,0.12); color: var(--text-muted); }
-.hva-empty {
-  grid-column: 1/-1; text-align: center;
-  color: var(--text-faint); font-size: 14px; padding: 40px 0;
+.hva-row-sig {
+  display: inline-flex;
+  align-items: center;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  align-self: flex-start;
+  margin-top: 3px;
 }
+.hva-row-sig.sig-strong-buy { background: rgba(72,199,116,0.85); color: #000; }
+.hva-row-sig.sig-buy        { background: rgba(72,199,116,0.55); color: #fff; }
+.hva-row-sig.sig-sell       { background: rgba(255,77,109,0.75); color: #fff; }
+.hva-row-sig.sig-hold       { background: rgba(255,255,255,0.15); color: var(--text-muted); }
+.hva-row-sig.alert-buy      { background: rgba(72,199,116,0.85); color: #000; }
+.hva-row-sig.alert-watch    { background: rgba(232,182,52,0.8); color: #000; }
+.hva-row-sig.alert-far      { background: rgba(255,255,255,0.12); color: var(--text-muted); }
+.hva-row-right {
+  text-align: right;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+.hva-row-price {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.hva-row-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* PiP trigger inline — override absolute positioning */
+.hva-row .home-pip-trigger {
+  position: static;
+  bottom: auto;
+  right: auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  opacity: 0.5;
+  transform: none;
+  flex-shrink: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+.hva-row:hover .home-pip-trigger { opacity: 1; }
+/* Compact reco action buttons */
+.hva-row-acts {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.hva-row-act {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+.hva-row-act:hover { background: rgba(255,255,255,0.12); color: var(--text); }
 @media (max-width: 500px) {
-  .hva-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
   .hva-header { gap: 8px; }
   .hva-search { min-width: 100px; }
+  .hva-row { padding: 9px 14px; gap: 10px; }
+  .hva-row-acts { display: none; } /* hide on very small screens — use PiP instead */
 }
 
 /* ─── Horizontal card tile scroll row ─────────────────────── */
@@ -7669,20 +7758,6 @@ section.card .card-collapse-btn { padding: 10px; }
 }
 .reco-view-all-btn:hover { background: rgba(232,182,52,0.12); border-color: rgba(232,182,52,0.6); }
 
-/* Reco view-all modal — wider columns to fit reco-tile content */
-.hva-reco-mode .hva-grid {
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-}
-/* In HVA reco mode tiles fill the grid naturally */
-.hva-reco-mode .hva-grid .home-card-tile {
-  width: auto;
-  flex-shrink: 1;
-  scroll-snap-align: none;
-}
-/* PiP trigger always visible inside HVA tiles (no hover-only) */
-.hva-tile .home-pip-trigger { opacity: 0.7; transform: scale(1); }
-.hva-tile:hover .home-pip-trigger { opacity: 1; background: rgba(232,182,52,0.2); color: var(--accent); }
-
 /* Recommendation tile — extends home-card-tile with 3-button action strip */
 .reco-tile .home-card-remove { display: none; }
 .reco-actions {
@@ -7865,13 +7940,12 @@ section.card .card-collapse-btn { padding: 10px; }
   box-shadow: 0 12px 48px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.98);
 }
 
-[data-theme="light"] .hva-tile {
-  background: rgba(255,255,255,0.52);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-color: rgba(255,255,255,0.72);
-  box-shadow: 0 4px 20px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.95);
+[data-theme="light"] .hva-row {
+  border-bottom-color: rgba(0,0,0,0.06);
 }
+[data-theme="light"] .hva-row:hover { background: rgba(0,0,0,0.03); }
+[data-theme="light"] .hva-row-name  { color: #1c1c1e; }
+[data-theme="light"] .hva-row-set   { color: #6e6e73; }
 
 [data-theme="light"] .hva-header,
 [data-theme="light"] .compare-modal-header {

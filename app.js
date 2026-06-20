@@ -13076,11 +13076,11 @@ function buildAllHomeRecos() {
   );
 
   return {
-    general: general,
-    raw:     byStrat.raw,
-    psa8:    byStrat.psa8,
-    psa9:    byStrat.psa9,
-    psa10:   byStrat.psa10,
+    general: general.slice(0, 100),
+    raw:     byStrat.raw.slice(0, 100),
+    psa8:    byStrat.psa8.slice(0, 100),
+    psa9:    byStrat.psa9.slice(0, 100),
+    psa10:   byStrat.psa10.slice(0, 100),
   };
 }
 
@@ -13156,8 +13156,7 @@ function _recoListClick(e) {
     const section = viewAllBtn.dataset.recoSection;
     if (_recoCached && _recoCached[section]) {
       const titles = { general: 'All Recommendations', raw: 'Buy Raw', psa8: 'Buy PSA 8', psa9: 'Buy PSA 9', psa10: 'Buy PSA 10' };
-      const renderer = section === 'general' ? _recoTileHtml : _recoStrategyTileHtml;
-      _openRecoViewAll(titles[section] || 'Recommendations', _recoCached[section], renderer);
+      _openRecoViewAll(titles[section] || 'Recommendations', _recoCached[section]);
     }
     return;
   }
@@ -13166,7 +13165,7 @@ function _recoListClick(e) {
   if (dismissBtn) {
     e.stopPropagation();
     const id = dismissBtn.dataset.id;
-    const tile = dismissBtn.closest('.home-card-tile');
+    const tile = dismissBtn.closest('.home-card-tile') || dismissBtn.closest('.hva-row');
     if (tile) { tile.style.transition = 'transform 0.2s,opacity 0.2s'; tile.style.transform = 'scale(0.8)'; tile.style.opacity = '0'; }
     setTimeout(() => { _dismissReco(id); _renderHomeReco(true); }, 200);
     return;
@@ -13329,7 +13328,39 @@ function closeHomeViewAll() {
   if (search) search.oninput = null;
 }
 
-function _openRecoViewAll(title, results, tileRenderer) {
+// Compact list row for reco view-all (ranked, with inline action buttons)
+function _recoViewRow(r, i) {
+  const id     = r.card.i;
+  const imgSrc = (typeof getCardImg === 'function') ? getCardImg(r.card) : '';
+  const img    = imgSrc
+    ? `<img class="hva-row-img" src="${esc(imgSrc)}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">`
+    : `<div class="hva-row-img"></div>`;
+  const price  = r.strategyToday || r.marketGBP;
+  const sub    = r.strategyRoi > 0
+    ? `+${Math.round(r.strategyRoi)}% ROI`
+    : (r.upsidePct > 1 ? `+${Math.round(r.upsidePct)}% upside` : '');
+  return `<div class="hva-row" data-id="${esc(id)}">
+    <div class="hva-row-rank">${i + 1}</div>
+    ${img}
+    <div class="hva-row-body">
+      <div class="hva-row-name">${esc(r.card.n)}</div>
+      <div class="hva-row-set">${esc(r.card.s || '')}</div>
+      <span class="hva-row-sig ${r.signalCls || 'sig-buy'}">${esc(r.signal || '')}</span>
+    </div>
+    <div class="hva-row-right">
+      <div class="hva-row-price">${price > 0 ? fmtGBPDirect(price) : '—'}</div>
+      ${sub ? `<div class="hva-row-sub">${esc(sub)}</div>` : ''}
+    </div>
+    <button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgSrc || '')}" aria-label="Quick view">⤢</button>
+    <div class="hva-row-acts">
+      <button class="hva-row-act reco-dismiss" data-id="${esc(id)}" title="Not interested">✕</button>
+      <button class="hva-row-act reco-wish"    data-id="${esc(id)}" title="Add to wishlist">♡</button>
+      <button class="hva-row-act reco-watch"   data-id="${esc(id)}" title="Watch">◎</button>
+    </div>
+  </div>`;
+}
+
+function _openRecoViewAll(title, results) {
   const modal   = $('hvaModal');
   const overlay = $('hvaOverlay');
   const grid    = $('hvaGrid');
@@ -13340,37 +13371,41 @@ function _openRecoViewAll(title, results, tileRenderer) {
   if (titleEl) titleEl.textContent = title;
   if (search) search.value = '';
 
-  function _renderRecoViewAll(q) {
+  function _render(q) {
     const lq = (q || '').trim().toLowerCase();
-    const filtered = lq
+    const items = lq
       ? results.filter(r => r.card.n.toLowerCase().includes(lq) || (r.card.s || '').toLowerCase().includes(lq))
       : results;
-    if (countEl) countEl.textContent = `${filtered.length} card${filtered.length !== 1 ? 's' : ''}`;
-    grid.innerHTML = filtered.length
-      ? filtered.map(tileRenderer).join('')
+    if (countEl) countEl.textContent = `${items.length} card${items.length !== 1 ? 's' : ''}`;
+    grid.innerHTML = items.length
+      ? items.map(_recoViewRow).join('')
       : `<div class="hva-empty">${lq ? 'No cards match that search.' : 'Nothing here yet.'}</div>`;
-    // Wire reco action buttons (dismiss, watchlist, wishlist, pip)
     _bindRecoHandler(grid);
+    grid.querySelectorAll('.hva-row').forEach(row => {
+      row.addEventListener('click', e => {
+        if (e.target.closest('.home-pip-trigger') || e.target.closest('.hva-row-acts')) return;
+        closeHomeViewAll();
+        _homeItemClick(row.dataset.id);
+      });
+    });
   }
-
-  _renderRecoViewAll('');
-  if (search) search.oninput = () => _renderRecoViewAll(search.value);
+  _render('');
+  if (search) search.oninput = () => _render(search.value);
   if (modal)   { modal.style.display = 'flex'; modal.setAttribute('aria-hidden', 'false'); }
   if (overlay) { overlay.style.display = 'block'; overlay.setAttribute('aria-hidden', 'false'); }
   document.body.style.overflow = 'hidden';
-  // Add reco-mode class so CSS can adjust the grid column width for reco tiles
-  modal.classList.add('hva-reco-mode');
   setTimeout(() => search?.focus(), 60);
 }
 
+// Compact list row for collection / wishlist / watchlist view-all
 function renderHvaGrid(query) {
   const grid    = $('hvaGrid');
   const countEl = $('hvaCount');
-  const modal   = $('hvaModal');
   if (!grid) return;
-  if (modal) modal.classList.remove('hva-reco-mode');
   const q = (query || '').trim().toLowerCase();
-  const filtered = q ? _hvaItems.filter(it => it.name.toLowerCase().includes(q) || (it.sub || '').toLowerCase().includes(q)) : _hvaItems;
+  const filtered = q
+    ? _hvaItems.filter(it => it.name.toLowerCase().includes(q) || (it.sub || '').toLowerCase().includes(q))
+    : _hvaItems;
   if (countEl) countEl.textContent = `${filtered.length} card${filtered.length !== 1 ? 's' : ''}`;
   if (!filtered.length) {
     grid.innerHTML = `<div class="hva-empty">${q ? 'No cards match that search.' : 'Nothing here yet.'}</div>`;
@@ -13378,25 +13413,31 @@ function renderHvaGrid(query) {
   }
   grid.innerHTML = filtered.map(it => {
     const img = it.img
-      ? `<img class="hva-tile-img" src="${esc(it.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
-      : `<div class="hva-tile-img"></div>`;
-    const signal = it.sigClass && it.signal
-      ? `<span class="hva-tile-signal ${esc(it.sigClass)}">${esc(it.signal)}</span>` : '';
-    const pipBtn = it.id ? `<button class="home-pip-trigger" data-pip-id="${esc(it.id)}" data-pip-img="${esc(it.img || '')}" aria-label="Quick view" title="Quick view">⤢</button>` : '';
-    return `<div class="hva-tile" data-id="${esc(it.id)}">
-      ${img}${signal}${pipBtn}
-      <div class="hva-tile-info">
-        <div class="hva-tile-name">${esc(it.name)}</div>
-        <div class="hva-tile-price">${it.price || '—'}</div>
-        ${it.sub ? `<div class="hva-tile-sub">${esc(it.sub)}</div>` : ''}
+      ? `<img class="hva-row-img" src="${esc(it.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+      : `<div class="hva-row-img"></div>`;
+    const sig = it.sigClass && it.signal
+      ? `<span class="hva-row-sig ${esc(it.sigClass)}">${esc(it.signal)}</span>` : '';
+    const pip = it.id
+      ? `<button class="home-pip-trigger" data-pip-id="${esc(it.id)}" data-pip-img="${esc(it.img || '')}" aria-label="Quick view">⤢</button>`
+      : '';
+    return `<div class="hva-row" data-id="${esc(it.id)}">
+      ${img}
+      <div class="hva-row-body">
+        <div class="hva-row-name">${esc(it.name)}</div>
+        <div class="hva-row-set">${esc(it.sub || '')}</div>
+        ${sig}
       </div>
+      <div class="hva-row-right">
+        <div class="hva-row-price">${it.price || '—'}</div>
+      </div>
+      ${pip}
     </div>`;
   }).join('');
-  grid.querySelectorAll('.hva-tile').forEach(tile => {
-    tile.addEventListener('click', e => {
+  grid.querySelectorAll('.hva-row').forEach(row => {
+    row.addEventListener('click', e => {
       if (e.target.closest('.home-pip-trigger')) return;
       closeHomeViewAll();
-      _homeItemClick(tile.dataset.id);
+      _homeItemClick(row.dataset.id);
     });
   });
 }
