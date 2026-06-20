@@ -558,6 +558,91 @@ async function handleAiChat(request, env) {
   });
 }
 
+// ---- TCGPlayer page price reader ----
+// Fetches a TCGPlayer product page server-side (bypassing CORS) and extracts
+// price data from embedded Next.js __NEXT_DATA__ JSON or JSON-LD structured data.
+function _extractPricesFromNextData(obj, depth) {
+  if (!obj || typeof obj !== 'object' || depth > 12) return null;
+  const marketKeys = ['marketPrice', 'market_price', 'marketValue', 'normalMarketPrice'];
+  const lowKeys    = ['lowPrice', 'low_price', 'lowestPrice', 'minPrice', 'listedMedianPrice'];
+  const midKeys    = ['midPrice', 'mid_price', 'medianPrice'];
+  const highKeys   = ['highPrice', 'high_price', 'maxPrice'];
+  const res = {};
+  for (const k of marketKeys) if (typeof obj[k] === 'number' && obj[k] > 0) { res.market = obj[k]; break; }
+  for (const k of lowKeys)    if (typeof obj[k] === 'number' && obj[k] > 0) { res.low    = obj[k]; break; }
+  for (const k of midKeys)    if (typeof obj[k] === 'number' && obj[k] > 0) { res.mid    = obj[k]; break; }
+  for (const k of highKeys)   if (typeof obj[k] === 'number' && obj[k] > 0) { res.high   = obj[k]; break; }
+  if (res.market > 0 || res.low > 0) return res;
+  if (Array.isArray(obj)) {
+    for (const item of obj) { const r = _extractPricesFromNextData(item, depth + 1); if (r) return r; }
+  } else {
+    for (const val of Object.values(obj)) { const r = _extractPricesFromNextData(val, depth + 1); if (r) return r; }
+  }
+  return null;
+}
+
+async function handleTcgPrice(request, url) {
+  const ch = corsHeaders(request);
+  const productId = (url.searchParams.get('productId') || '').trim();
+  if (!productId || !/^\d+$/.test(productId)) return _jsonResp(400, { error: 'productId required (digits only)' }, ch);
+
+  const pageUrl = `https://www.tcgplayer.com/product/${productId}`;
+  let html;
+  try {
+    const r = await fetch(pageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+      },
+      cf: { cacheEverything: true, cacheTtl: 900 },
+    });
+    if (!r.ok) return _jsonResp(r.status, { error: `TCGPlayer returned HTTP ${r.status}` }, ch);
+    html = await r.text();
+  } catch (e) {
+    return _jsonResp(502, { error: `Fetch failed: ${e.message}` }, ch);
+  }
+
+  // Strategy 1: __NEXT_DATA__ embedded JSON (Next.js SSR)
+  const ndMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(\{[\s\S]{1,600000}?)\s*<\/script>/);
+  if (ndMatch) {
+    try {
+      const prices = _extractPricesFromNextData(JSON.parse(ndMatch[1]), 0);
+      if (prices && (prices.market > 0 || prices.low > 0)) {
+        return _jsonResp(200, { market: prices.market || 0, low: prices.low || 0, mid: prices.mid || 0, high: prices.high || 0, directLow: 0, source: 'tcgplayer-nextdata' }, ch);
+      }
+    } catch (_) {}
+  }
+
+  // Strategy 2: JSON-LD structured data (AggregateOffer / Offer)
+  const ldRe = /<script type="application\/ld\+json">([\s\S]{1,20000}?)<\/script>/g;
+  let m;
+  while ((m = ldRe.exec(html)) !== null) {
+    try {
+      const d = JSON.parse(m[1]);
+      const candidates = [d, ...(d['@graph'] || [])];
+      for (const node of candidates) {
+        const offerList = node.offers ? (Array.isArray(node.offers) ? node.offers : [node.offers]) : [];
+        for (const o of offerList) {
+          const low  = parseFloat(o.lowPrice  || o.price || 0);
+          const high = parseFloat(o.highPrice || 0);
+          if (low > 0) return _jsonResp(200, { market: 0, low, mid: 0, high, directLow: 0, source: 'tcgplayer-ldjson' }, ch);
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Strategy 3: plain text price patterns (fallback for layout changes)
+  const mktMatch = html.match(/[Mm]arket\s+[Pp]rice[^$]*\$\s*([\d,]+\.?\d{0,2})/);
+  if (mktMatch) {
+    const market = parseFloat(mktMatch[1].replace(/,/g, ''));
+    if (market > 0) return _jsonResp(200, { market, low: 0, mid: 0, high: 0, directLow: 0, source: 'tcgplayer-textparse' }, ch);
+  }
+
+  return _jsonResp(404, { error: 'No price data found on TCGPlayer page' }, ch);
+}
+
 // ---- Main handler ----
 async function handle(request, env) {
   const url = new URL(request.url);
@@ -572,6 +657,7 @@ async function handle(request, env) {
   if (url.pathname === '/user/sync') return handleUserSync(request, env);
   if (url.pathname === '/auth/account' && request.method === 'DELETE') return handleDeleteAccount(request, env);
   if (url.pathname === '/ai/chat' && request.method === 'POST') return handleAiChat(request, env);
+  if (url.pathname === '/tcg-price') return handleTcgPrice(request, url);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 
   const q = url.searchParams.get('q') || '';

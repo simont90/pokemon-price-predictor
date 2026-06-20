@@ -3196,7 +3196,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   font-style: italic;
 }
 .link-tcg-manual-wrap {
-  display: none; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 6px;
   margin-top: 4px; width: 100%;
 }
 .link-tcg-manual-input {

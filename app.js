@@ -1527,6 +1527,21 @@ function extractTcgProductId(url) {
 const TCG_PRICE_TYPES = ['holofoil','reverseHolofoil','normal','1stEditionHolofoil','unlimitedHolofoil','1stEditionNormal','unlimited'];
 
 async function fetchTCGPlayerPriceByProductId(productId, card) {
+  // Primary: worker reads the TCGPlayer product page directly (bypasses CORS + API lock)
+  if (productId) {
+    try {
+      const workerUrl = getMktWorkerUrl();
+      const r = await fetch(`${workerUrl}/tcg-price?productId=${encodeURIComponent(productId)}`);
+      if (r.ok) {
+        const d = await r.json();
+        if (d && (d.market > 0 || d.low > 0)) {
+          return { market: d.market || 0, low: d.low || 0, mid: d.mid || 0, high: d.high || 0, directLow: d.directLow || 0, tcgUpdated: '' };
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Fallback: pokemontcg.io (EN cards only, requires set metadata)
   const _pickPrices = (d) => {
     if (!d) return null;
     const tcg = d.tcgplayer?.prices || {};
@@ -1534,14 +1549,7 @@ async function fetchTCGPlayerPriceByProductId(productId, card) {
     for (const t of TCG_PRICE_TYPES) { if (tcg[t]) { p = tcg[t]; break; } }
     if (!p) { const k = Object.keys(tcg)[0]; if (k) p = tcg[k]; }
     if (!p?.market) return null;
-    return {
-      market:     p.market    || 0,
-      low:        p.low       || 0,
-      mid:        p.mid       || 0,
-      high:       p.high      || 0,
-      directLow:  p.directLow || 0,
-      tcgUpdated: d.tcgplayer?.updatedAt || '',
-    };
+    return { market: p.market || 0, low: p.low || 0, mid: p.mid || 0, high: p.high || 0, directLow: p.directLow || 0, tcgUpdated: d.tcgplayer?.updatedAt || '' };
   };
 
   const _query = async (q) => {
@@ -1549,30 +1557,18 @@ async function fetchTCGPlayerPriceByProductId(productId, card) {
     if (!r.ok) return null;
     const json = await r.json();
     const cards = json.data || [];
-    // Prefer exact card-number match when card context is available
-    const match = (card && card.cn)
-      ? (cards.find(c => String(c.number) === String(card.cn)) || cards[0])
-      : cards[0];
+    const match = (card && card.cn) ? (cards.find(c => String(c.number) === String(card.cn)) || cards[0]) : cards[0];
     return _pickPrices(match);
   };
 
-  // Strategy 1: set.id + number — uses known card metadata, most reliable for EN
   if (card && card.sc && card.cn) {
     const r1 = await _query(`set.id:${card.sc} number:${card.cn}`).catch(() => null);
     if (r1) return r1;
   }
-
-  // Strategy 2: card name + set.id — catches variants where the number differs
   if (card && card.n && card.sc) {
     const safeName = card.n.replace(/[":]/g, '').slice(0, 40);
     const r2 = await _query(`name:"${safeName}" set.id:${card.sc}`).catch(() => null);
     if (r2) return r2;
-  }
-
-  // Strategy 3: productId field (pokemontcg.io may or may not index this)
-  if (productId) {
-    const r3 = await _query(`tcgplayer.productId:${productId}`).catch(() => null);
-    if (r3) return r3;
   }
 
   return null;
@@ -2506,7 +2502,6 @@ function selectCard(id) {
   const manualWrap = $('linkTcgManualWrap');
   const manualInput = $('linkTcgManualInput');
   if (enrichStatus) { enrichStatus.style.display = 'none'; enrichStatus.textContent = ''; }
-  if (manualWrap) manualWrap.style.display = 'none';
   if (manualInput) manualInput.value = '';
   // Pre-fill manual TCGPlayer price input with any existing override
   const _tcgPriceInput = $('linkTcgPriceInput');
@@ -6932,8 +6927,6 @@ function setupEditCard() {
       return;
     }
     setTcgOverride(card.i, url);
-    const wrap = $('linkTcgManualWrap');
-    if (wrap) wrap.style.display = 'none';
     if (input) input.value = '';
 
     // If the URL contains a TCGPlayer product ID, bust the price cache and re-fetch
