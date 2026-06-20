@@ -3738,6 +3738,15 @@ function togglePortfolio() {
 
 function toggleCardInPortfolio() {
   if (!selectedCard) return;
+  const btn = $('addPortfolioBtn');
+  // Guard: a second tap within 700ms would toggle the card right back off.
+  // Users tap again thinking the first tap didn't register because
+  // updatePortfolioButton() used to run after the slow renderPortfolio() call.
+  if (btn) {
+    if (btn._toggling) return;
+    btn._toggling = true;
+    setTimeout(() => { if (btn) btn._toggling = false; }, 700);
+  }
   const idx = portfolio.findIndex(p => p.id === selectedCard.i);
   if (idx >= 0) {
     portfolio.splice(idx, 1);
@@ -3752,9 +3761,11 @@ function toggleCardInPortfolio() {
       addedPriceGBP: usdToGbp(getCurrentPrice(selectedCard)),
     });
   }
-  savePortfolio();
-  renderPortfolio();
-  updatePortfolioButton();
+  try { savePortfolio(); } catch (e) { console.warn('[portfolio] save failed', e); }
+  updatePortfolioButton(); // immediate visual feedback — runs before the slow render
+  requestAnimationFrame(() => {
+    try { renderPortfolio(); } catch (e) { console.warn('[portfolio] render failed', e); }
+  });
 }
 
 function updatePortfolioButton() {
@@ -3766,7 +3777,7 @@ function updatePortfolioButton() {
 }
 
 function savePortfolio() {
-  localStorage.setItem('pkm-portfolio', JSON.stringify(portfolio));
+  try { localStorage.setItem('pkm-portfolio', JSON.stringify(portfolio)); } catch (e) { console.warn('[portfolio] localStorage write failed', e); }
   _recoCached = null;
 }
 
