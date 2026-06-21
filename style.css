@@ -9057,3 +9057,186 @@ section.card .card-collapse-btn { padding: 10px; }
   .home-tab-bar { margin: 0 12px 8px; }
 }
 
+/* ============================================================
+   Touch-first v2 — 44px minimum tap targets everywhere
+   ============================================================ */
+
+/* ── Budget / control bar — 40px height for all controls ─── */
+@media (max-width: 600px) {
+  .home-budget-bar {
+    padding: 8px 14px;
+    gap: 8px;
+    min-height: 60px;
+    align-items: center;
+  }
+  .currency-select {
+    font-size: 14px;
+    min-height: 40px;
+    padding: 0 2px;
+  }
+  .home-budget-slider {
+    /* Browsers render the thumb at full touch size; extend tap lane */
+    height: 20px;
+    margin: 0;
+  }
+  .home-budget-input {
+    height: 40px;
+    font-size: 14px;
+    padding: 0 8px;
+    width: 84px;
+    border-radius: 10px;
+  }
+  .home-budget-go {
+    height: 40px;
+    min-width: 52px;
+    padding: 0 14px;
+    font-size: 14px;
+    font-weight: 700;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+  .home-refresh-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border-radius: 10px;
+    padding: 0;
+    flex-shrink: 0;
+  }
+}
+
+/* ── Section headers — 44px tap targets ─────────────────── */
+@media (max-width: 600px) {
+  .home-section-hd {
+    padding: 2px 16px;
+    min-height: 44px;
+    margin-bottom: 6px;
+  }
+  .home-section-title {
+    font-size: 14px;
+    gap: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .home-count-badge {
+    font-size: 11px;
+    padding: 3px 9px;
+  }
+  .home-view-all {
+    min-height: 44px !important;
+    padding: 0 10px;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .home-section-refresh {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+}
+
+/* ── Carousel prev/next arrows — was 26px, now 38px ──────── */
+@media (max-width: 600px) {
+  .home-scroll-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    font-size: 18px;
+  }
+  .home-scroll-arrows { gap: 6px; }
+  /* Slightly less outer padding so more tile is visible */
+  .home-scroll-row {
+    padding-left: 14px;
+    padding-right: 14px;
+    gap: 10px;
+  }
+}
+
+/* ── Group header — 44px row with proper tap targets ──────── */
+@media (max-width: 600px) {
+  .home-group-hd {
+    min-height: 48px;
+    padding: 4px 16px;
+    gap: 10px;
+  }
+  .home-group-hd .home-section-title { font-size: 16px; }
+  .home-group-hd .home-section-refresh,
+  .home-group-hd button[id*="Refresh"] {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+}
+
+/* ── Card tiles — wider, larger text ─────────────────────── */
+@media (max-width: 600px) {
+  .home-card-tile { width: 175px; }
+  .home-card-name  { font-size: 13px; }
+  .home-card-price { font-size: 15px; }
+  .home-card-sub   { font-size: 11px; margin-top: 3px; }
+  .home-card-info  { padding: 8px 10px 12px; }
+  .home-card-signal { font-size: 9px; padding: 4px 7px; }
+}
+
+/* ── Tab font — slightly bigger for readability ───────────── */
+@media (max-width: 600px) {
+  .ptab { font-size: 14px; }
+}
+
+/* ── Links & tools accordion — 48px touch area ───────────── */
+@media (max-width: 600px) {
+  .card-links-toggle {
+    min-height: 48px;
+    font-size: 14px;
+    padding: 0 14px;
+    border-radius: 12px;
+    gap: 8px;
+  }
+}
+
+/* ── Grade candidate action buttons ─────────────────────── */
+@media (max-width: 600px) {
+  .home-cand-actions { gap: 8px; margin-top: 8px; }
+  .home-cand-grade-btn {
+    font-size: 12px;
+    padding: 8px 14px;
+    min-height: 38px;
+    border-radius: 8px;
+  }
+  .home-cand-ebay-btn {
+    font-size: 12px;
+    padding: 8px 14px;
+    min-height: 38px;
+    border-radius: 8px;
+  }
+}
+
+/* ── Signal badge (STRONG BUY etc.) — full-width on mobile ── */
+@media (max-width: 600px) {
+  .signal-badge-wrap { width: 100%; }
+  .signal-badge {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 10px 16px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+}
+
+/* ── Search clear button — 44px tap area ────────────────── */
+@media (max-width: 600px) {
+  .search-clear {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+}
+
