@@ -13515,6 +13515,29 @@ function _gemScore(card, marketUSD) {
   return Math.min(3.0, bonus);
 }
 
+// Conviction tier: five-level classification layered on top of the BUY/STRONG BUY filter.
+// Returns one of: 'must-buy' | 'buy' | 'worth-holding' | 'buy-if-pc' | 'skip'
+function _convictionTier(signal, score, upsidePct, gemScore) {
+  if (signal === 'STRONG BUY' && upsidePct >= 20 && (gemScore >= 1.5 || score >= 4))
+    return 'must-buy';
+  if (signal === 'STRONG BUY' || (signal === 'BUY' && upsidePct >= 12))
+    return 'buy';
+  if (signal === 'BUY' && upsidePct >= 4)
+    return 'worth-holding';
+  if (signal === 'BUY')
+    return 'buy-if-pc'; // BUY signal but minimal model upside — only worth it at a discount
+  return 'skip';
+}
+
+const _TIER_RANK  = { 'must-buy': 4, 'buy': 3, 'worth-holding': 2, 'buy-if-pc': 1, 'skip': 0 };
+const _TIER_LABEL = {
+  'must-buy':     'Must buy',
+  'buy':          'Buy',
+  'worth-holding':'Worth holding',
+  'buy-if-pc':    'Buy if cheap',
+  'skip':         'Skip',
+};
+
 // Single-pass reco builder. Returns all five curated lists at once so the
 // expensive card-loop + computeHoldCore work is only done once per rebuild.
 function buildAllHomeRecos() {
@@ -13567,6 +13590,8 @@ function buildAllHomeRecos() {
     const gemScore  = _gemScore(c, marketUSD);
     const onWatchlist = watchIds.has(c.i);
 
+    const convictionTier = _convictionTier(sig.signal, sig.score, upsidePct, gemScore);
+
     const base = {
       card: c,
       marketUSD,
@@ -13579,6 +13604,7 @@ function buildAllHomeRecos() {
       gemScore,
       onWatchlist,
       reasons: sig.reasons || [],
+      convictionTier,
     };
     general.push(base);
 
@@ -13604,13 +13630,13 @@ function buildAllHomeRecos() {
     }
   }
 
-  // General: STRONG BUY first, then score + gem weighting
+  // General: conviction tier first, then score + gem weighting within tier
   general.sort((a, b) => {
-    const sA = a.signal === 'STRONG BUY' ? 1 : 0;
-    const sB = b.signal === 'STRONG BUY' ? 1 : 0;
+    const tDiff = (_TIER_RANK[b.convictionTier] || 0) - (_TIER_RANK[a.convictionTier] || 0);
+    if (tDiff !== 0) return tDiff;
     const cA = a.score + a.gemScore * 1.5;
     const cB = b.score + b.gemScore * 1.5;
-    return sB - sA || cB - cA || b.upsidePct - a.upsidePct;
+    return cB - cA || b.upsidePct - a.upsidePct;
   });
 
   // Strategy sections: sorted by strategy ROI descending (highest expected return first)
@@ -13636,14 +13662,16 @@ function _recoTileHtml(r) {
   const manual = r.manualPrice ? `<span class="reco-manual-tag">manual</span>` : '';
   const gem = r.gemScore >= 2.0 ? `<span class="reco-gem-tag">overlooked</span>` : '';
   const upside = r.upsidePct > 5
-    ? `<span class="reco-upside pos">+${r.upsidePct.toFixed(0)}% model upside</span>`
+    ? `<span class="reco-upside pos">+${r.upsidePct.toFixed(0)}% upside</span>`
     : `<span class="reco-upside">${esc(r.card.s || '')}</span>`;
   const watchTitle = r.onWatchlist ? 'On watchlist' : 'Add to watchlist';
   const watchCls   = r.onWatchlist ? 'reco-watch reco-watch-active' : 'reco-watch';
+  const tier = r.convictionTier || 'buy';
+  const tierLabel = _TIER_LABEL[tier] || 'Buy';
   const pipBtn1 = `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgSrc || '')}" aria-label="Quick view" title="Quick view">⤢</button>`;
   return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
     ${img}
-    <span class="home-card-signal ${r.signalCls}">${r.signal}</span>
+    <span class="home-card-signal reco-tier reco-tier-${esc(tier)}">${esc(tierLabel)}</span>
     ${pipBtn1}
     <div class="reco-actions">
       <button class="reco-btn reco-dismiss" data-id="${esc(id)}" title="Not interested">✕</button>
@@ -13675,10 +13703,12 @@ function _recoStrategyTileHtml(r) {
   const watchTitle = r.onWatchlist ? 'On watchlist' : 'Add to watchlist';
   const watchCls   = r.onWatchlist ? 'reco-watch reco-watch-active' : 'reco-watch';
   const displayPrice = r.strategyToday || r.marketGBP;
+  const tier = r.convictionTier || 'buy';
+  const tierLabel = _TIER_LABEL[tier] || 'Buy';
   const pipBtn2 = `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgSrc || '')}" aria-label="Quick view" title="Quick view">⤢</button>`;
   return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
     ${img}
-    <span class="home-card-signal ${r.signalCls}">${r.signal}</span>
+    <span class="home-card-signal reco-tier reco-tier-${esc(tier)}">${esc(tierLabel)}</span>
     ${pipBtn2}
     <div class="reco-actions">
       <button class="reco-btn reco-dismiss" data-id="${esc(id)}" title="Not interested">✕</button>
@@ -13886,13 +13916,15 @@ function _recoViewRow(r, i) {
   const sub    = r.strategyRoi > 0
     ? `+${Math.round(r.strategyRoi)}% ROI`
     : (r.upsidePct > 1 ? `+${Math.round(r.upsidePct)}% upside` : '');
+  const tier      = r.convictionTier || 'buy';
+  const tierLabel = _TIER_LABEL[tier] || 'Buy';
   return `<div class="hva-row" data-id="${esc(id)}">
     <div class="hva-row-rank">${i + 1}</div>
     ${img}
     <div class="hva-row-body">
       <div class="hva-row-name">${esc(r.card.n)}</div>
       <div class="hva-row-set">${esc(r.card.s || '')}</div>
-      <span class="hva-row-sig ${r.signalCls || 'sig-buy'}">${esc(r.signal || '')}</span>
+      <span class="hva-row-sig reco-tier reco-tier-${esc(tier)}">${esc(tierLabel)}</span>
     </div>
     <div class="hva-row-right">
       <div class="hva-row-price">${price > 0 ? fmtGBPDirect(price) : '—'}</div>

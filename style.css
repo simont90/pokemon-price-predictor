@@ -7248,6 +7248,13 @@ section.card .card-collapse-btn { padding: 10px; }
 .hva-row-sig.alert-buy      { background: rgba(72,199,116,0.85); color: #000; }
 .hva-row-sig.alert-watch    { background: rgba(232,182,52,0.8); color: #000; }
 .hva-row-sig.alert-far      { background: rgba(255,255,255,0.12); color: var(--text-muted); }
+/* Conviction tiers in View All rows */
+.hva-row-sig.reco-tier { text-transform: none; }
+.hva-row-sig.reco-tier-must-buy     { background: linear-gradient(110deg,#e8b634,#f5d67a); color: #1a1200; }
+.hva-row-sig.reco-tier-buy          { background: rgba(61,214,140,0.85); color: #072215; }
+.hva-row-sig.reco-tier-worth-holding{ background: rgba(80,160,240,0.80); color: #fff; }
+.hva-row-sig.reco-tier-buy-if-pc    { background: rgba(232,140,52,0.80); color: #fff; }
+.hva-row-sig.reco-tier-skip         { background: rgba(255,255,255,0.12); color: var(--text-muted); }
 .hva-row-right {
   text-align: right;
   flex-shrink: 0;
@@ -7479,6 +7486,13 @@ section.card .card-collapse-btn { padding: 10px; }
 .home-card-signal.alert-buy      { background: var(--accent); color: #1a1200; }
 .home-card-signal.alert-watch    { background: rgba(232,182,52,0.6); color: #1a1200; }
 .home-card-signal.alert-far      { background: rgba(255,255,255,0.12); color: var(--text-muted); }
+/* Conviction tier badges — five-level reco classification */
+.reco-tier { text-transform: none; letter-spacing: 0.01em; font-size: 9px; }
+.reco-tier-must-buy     { background: linear-gradient(110deg,#e8b634,#f5d67a); color: #1a1200; }
+.reco-tier-buy          { background: rgba(61,214,140,0.88); color: #072215; }
+.reco-tier-worth-holding{ background: rgba(80,160,240,0.82); color: #fff; }
+.reco-tier-buy-if-pc    { background: rgba(232,140,52,0.82); color: #fff; }
+.reco-tier-skip         { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.55); }
 .home-card-remove {
   position: absolute;
   top: 5px;
