@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260621o">
+  <link rel="stylesheet" href="style.css?v=20260621p">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -707,131 +707,173 @@
           <div class="home-scroll-row" id="homeCollList"><div class="home-empty">No cards in collection yet.</div></div>
         </section>
 
-        <!-- AI Graded: PSA 10 -->
-        <section class="home-section-wrap" id="homeAiG10Wrap" style="display:none">
-          <div class="home-section-hd">
-            <div class="home-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-              AI Graded · PSA 10
-            </div>
-            <span class="home-count-badge" id="homeAiG10Count">0</span>
-          </div>
-          <div class="home-scroll-row" id="homeAiG10List"></div>
-        </section>
-
-        <!-- AI Graded: PSA 9 -->
-        <section class="home-section-wrap" id="homeAiG9Wrap" style="display:none">
-          <div class="home-section-hd">
-            <div class="home-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-              AI Graded · PSA 9
-            </div>
-            <span class="home-count-badge" id="homeAiG9Count">0</span>
-          </div>
-          <div class="home-scroll-row" id="homeAiG9List"></div>
-        </section>
-
-        <!-- Grade Candidates -->
-        <section class="home-section-wrap" id="homeGradeCandWrap" style="display:none">
-          <div class="home-section-hd">
-            <div class="home-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-              Grade Candidates
-            </div>
-            <span class="home-count-badge" id="homeGradeCandCount">0</span>
-            <button class="home-section-refresh" id="homeGradeCandRefresh" title="Remove stale and already-graded entries">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+        <!-- GROUP: Watchlist & Wishlist -->
+        <div class="home-tab-group" id="hTabWW">
+          <div class="predict-tab-bar home-tab-bar" role="tablist" aria-label="Watchlist and Wishlist">
+            <button class="ptab ptab-active" data-htab="watchlist" type="button" role="tab" aria-selected="true">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              Watchlist
+            </button>
+            <button class="ptab" data-htab="wishlist" type="button" role="tab" aria-selected="false">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              Wishlist
             </button>
           </div>
-          <div class="home-scroll-row" id="homeGradeCandList"></div>
-        </section>
-
-        <!-- Wishlist -->
-        <section class="home-section-wrap">
-          <div class="home-section-hd">
-            <div class="home-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
-              Wishlist
-            </div>
-            <span class="home-count-badge" id="homeWishCount">0</span>
-            <button class="home-view-all" id="homeOpenWishlist">View all</button>
+          <div class="home-htab-panel" data-htab-panel="watchlist">
+            <section class="home-section-wrap">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                  Watchlist
+                </div>
+                <span class="home-count-badge" id="homeWatchCount">0</span>
+                <button class="home-view-all" id="homeOpenWatchlist">View all</button>
+              </div>
+              <div class="home-scroll-row" id="homeWatchList"><div class="home-empty">No cards being watched yet.</div></div>
+            </section>
           </div>
-          <div class="home-scroll-row" id="homeWishList"><div class="home-empty">No wishlisted cards yet.</div></div>
-        </section>
-
-        <!-- Watchlist -->
-        <section class="home-section-wrap">
-          <div class="home-section-hd">
-            <div class="home-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              Watchlist
-            </div>
-            <span class="home-count-badge" id="homeWatchCount">0</span>
-            <button class="home-view-all" id="homeOpenWatchlist">View all</button>
+          <div class="home-htab-panel" data-htab-panel="wishlist" style="display:none">
+            <section class="home-section-wrap">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                  Wishlist
+                </div>
+                <span class="home-count-badge" id="homeWishCount">0</span>
+                <button class="home-view-all" id="homeOpenWishlist">View all</button>
+              </div>
+              <div class="home-scroll-row" id="homeWishList"><div class="home-empty">No wishlisted cards yet.</div></div>
+            </section>
           </div>
-          <div class="home-scroll-row" id="homeWatchList"><div class="home-empty">No cards being watched yet.</div></div>
-        </section>
+        </div>
 
-        <!-- Recommendations -->
-        <section class="home-section-wrap" id="homeRecoWrap">
-          <div class="home-section-hd">
+        <!-- GROUP: Recommendations -->
+        <div class="home-tab-group" id="hTabReco">
+          <div class="home-group-hd">
             <div class="home-section-title">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
               Recommendations
             </div>
-            <span class="home-count-badge" id="homeRecoCount">0</span>
             <button class="home-view-all" id="homeRecoRefresh">Refresh</button>
           </div>
-          <div class="home-scroll-row" id="homeRecoList"><div class="home-empty">Scanning…</div></div>
-        </section>
-
-        <!-- Buy Raw Recommended -->
-        <section class="home-section-wrap">
-          <div class="home-section-hd">
-            <div class="home-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/></svg>
-              Buy Raw
-            </div>
-            <span class="home-count-badge" id="homeRecoBuyRawCount">0</span>
+          <div class="predict-tab-bar home-tab-bar" role="tablist" aria-label="Recommendation type">
+            <button class="ptab ptab-active" data-htab="cards" type="button" role="tab" aria-selected="true">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              Recommended
+            </button>
+            <button class="ptab" data-htab="grading" type="button" role="tab" aria-selected="false">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+              Grading
+            </button>
           </div>
-          <div class="home-scroll-row" id="homeRecoBuyRawList"><div class="home-empty">Scanning…</div></div>
-        </section>
-
-        <!-- Buy PSA 8 Recommended -->
-        <section class="home-section-wrap">
-          <div class="home-section-hd">
-            <div class="home-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              Buy PSA 8
-            </div>
-            <span class="home-count-badge" id="homeRecoPsa8Count">0</span>
+          <div class="home-htab-panel" data-htab-panel="cards">
+            <section class="home-section-wrap" id="homeRecoWrap">
+              <div class="home-section-hd">
+                <span class="home-count-badge" id="homeRecoCount">0</span>
+              </div>
+              <div class="home-scroll-row" id="homeRecoList"><div class="home-empty">Scanning…</div></div>
+            </section>
           </div>
-          <div class="home-scroll-row" id="homeRecoPsa8List"><div class="home-empty">Scanning…</div></div>
-        </section>
-
-        <!-- Buy PSA 9 Recommended -->
-        <section class="home-section-wrap">
-          <div class="home-section-hd">
-            <div class="home-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-              Buy PSA 9
-            </div>
-            <span class="home-count-badge" id="homeRecoPsa9Count">0</span>
+          <div class="home-htab-panel" data-htab-panel="grading" style="display:none">
+            <section class="home-section-wrap" id="homeAiG10Wrap" style="display:none">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  AI Graded · PSA 10
+                </div>
+                <span class="home-count-badge" id="homeAiG10Count">0</span>
+              </div>
+              <div class="home-scroll-row" id="homeAiG10List"></div>
+            </section>
+            <section class="home-section-wrap" id="homeAiG9Wrap" style="display:none">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+                  AI Graded · PSA 9
+                </div>
+                <span class="home-count-badge" id="homeAiG9Count">0</span>
+              </div>
+              <div class="home-scroll-row" id="homeAiG9List"></div>
+            </section>
+            <section class="home-section-wrap" id="homeGradeCandWrap" style="display:none">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                  Grade Candidates
+                </div>
+                <span class="home-count-badge" id="homeGradeCandCount">0</span>
+                <button class="home-section-refresh" id="homeGradeCandRefresh" title="Remove stale and already-graded entries">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+                </button>
+              </div>
+              <div class="home-scroll-row" id="homeGradeCandList"></div>
+            </section>
           </div>
-          <div class="home-scroll-row" id="homeRecoPsa9List"><div class="home-empty">Scanning…</div></div>
-        </section>
+        </div>
 
-        <!-- Buy PSA 10 Recommended -->
-        <section class="home-section-wrap">
-          <div class="home-section-hd">
+        <!-- GROUP: Buy -->
+        <div class="home-tab-group" id="hTabBuy">
+          <div class="home-group-hd">
             <div class="home-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
-              Buy PSA 10
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+              Buy
             </div>
-            <span class="home-count-badge" id="homeRecoPsa10Count">0</span>
           </div>
-          <div class="home-scroll-row" id="homeRecoPsa10List"><div class="home-empty">Scanning…</div></div>
-        </section>
+          <div class="predict-tab-bar home-tab-bar" role="tablist" aria-label="Buy grade">
+            <button class="ptab ptab-active" data-htab="raw" type="button" role="tab" aria-selected="true">Raw</button>
+            <button class="ptab" data-htab="psa8" type="button" role="tab" aria-selected="false">PSA 8</button>
+            <button class="ptab" data-htab="psa9" type="button" role="tab" aria-selected="false">PSA 9</button>
+            <button class="ptab" data-htab="psa10" type="button" role="tab" aria-selected="false">PSA 10</button>
+          </div>
+          <div class="home-htab-panel" data-htab-panel="raw">
+            <section class="home-section-wrap">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/></svg>
+                  Raw
+                </div>
+                <span class="home-count-badge" id="homeRecoBuyRawCount">0</span>
+              </div>
+              <div class="home-scroll-row" id="homeRecoBuyRawList"><div class="home-empty">Scanning…</div></div>
+            </section>
+          </div>
+          <div class="home-htab-panel" data-htab-panel="psa8" style="display:none">
+            <section class="home-section-wrap">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  PSA 8
+                </div>
+                <span class="home-count-badge" id="homeRecoPsa8Count">0</span>
+              </div>
+              <div class="home-scroll-row" id="homeRecoPsa8List"><div class="home-empty">Scanning…</div></div>
+            </section>
+          </div>
+          <div class="home-htab-panel" data-htab-panel="psa9" style="display:none">
+            <section class="home-section-wrap">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+                  PSA 9
+                </div>
+                <span class="home-count-badge" id="homeRecoPsa9Count">0</span>
+              </div>
+              <div class="home-scroll-row" id="homeRecoPsa9List"><div class="home-empty">Scanning…</div></div>
+            </section>
+          </div>
+          <div class="home-htab-panel" data-htab-panel="psa10" style="display:none">
+            <section class="home-section-wrap">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+                  PSA 10
+                </div>
+                <span class="home-count-badge" id="homeRecoPsa10Count">0</span>
+              </div>
+              <div class="home-scroll-row" id="homeRecoPsa10List"><div class="home-empty">Scanning…</div></div>
+            </section>
+          </div>
+        </div>
 
       </div>
     </div><!-- /#pageHome -->
@@ -2224,7 +2266,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260621o"></script>
+  <script src="app.js?v=20260621p"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

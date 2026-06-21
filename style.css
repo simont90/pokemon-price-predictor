@@ -8902,3 +8902,24 @@ section.card .card-collapse-btn { padding: 10px; }
   .card-name-row h2 { font-size: 16px; }
 }
 
+/* ============================================================
+   Homepage tab groups
+   ============================================================ */
+.home-tab-group {
+  margin-bottom: 4px;
+}
+
+/* Override sticky positioning from .predict-tab-bar for home use */
+.home-tab-bar {
+  position: static !important;
+  margin: 0 16px 4px;
+}
+
+/* Group heading (like home-section-hd but for the group wrapper) */
+.home-group-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px 4px;
+}
+

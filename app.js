@@ -7374,6 +7374,40 @@ function _openSnapshot() {
 _initPredictTabs();
 
 // =============================================================
+// Homepage tab groups (Watchlist/Wishlist · Recommendations · Buy)
+// =============================================================
+
+function _homeTabActivate(groupId, tab) {
+  const group = document.getElementById(groupId);
+  if (!group) return;
+  group.querySelectorAll('.ptab').forEach(btn => {
+    const active = btn.dataset.htab === tab;
+    btn.classList.toggle('ptab-active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  group.querySelectorAll('.home-htab-panel').forEach(panel => {
+    panel.style.display = panel.dataset.htabPanel === tab ? '' : 'none';
+  });
+  try { localStorage.setItem('home-tab-' + groupId, tab); } catch {}
+}
+
+function _initHomeTabs() {
+  ['hTabWW', 'hTabReco', 'hTabBuy'].forEach(groupId => {
+    const group = document.getElementById(groupId);
+    if (!group || group._wired) return;
+    group._wired = true;
+    group.querySelectorAll('.ptab').forEach(btn => {
+      btn.addEventListener('click', () => _homeTabActivate(groupId, btn.dataset.htab));
+    });
+    const saved = (() => { try { return localStorage.getItem('home-tab-' + groupId); } catch { return null; } })();
+    const first = group.querySelector('.ptab')?.dataset?.htab;
+    _homeTabActivate(groupId, saved || first);
+  });
+}
+
+_initHomeTabs();
+
+// =============================================================
 // PSA 1-10 Grade Range · Forecast across grades
 // =============================================================
 //
