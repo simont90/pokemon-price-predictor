@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260621j">
+  <link rel="stylesheet" href="style.css?v=20260621k">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1129,6 +1129,29 @@
           </div>
         </section>
 
+        <!-- Hold Strategy · Raw vs Graded -->
+        <section class="card hold-card" id="holdStrategySection" style="display:none">
+          <div class="hold-header">
+            <div>
+              <h2>Hold Strategy · Raw vs Graded <span class="anchor-badge" id="holdAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span></h2>
+              <p class="card-desc">Which version of this card is the best 5-year hold? We compare buying raw (and holding ungraded), buying raw and gambling on grading, and buying already-graded at PSA 7–10 — then highlight the winning play.</p>
+            </div>
+          </div>
+          <div class="hold-recommendation" id="holdRecommendation"></div>
+          <div class="hold-override" id="holdOverride"></div>
+          <div class="hold-cp-compare" id="holdCounterpartCompare" style="display:none"></div>
+          <div class="hold-grid" id="holdGrid"></div>
+          <div class="hold-outcomes" id="holdOutcomes"></div>
+          <div class="hold-footnote-wrap">
+            <button class="hold-footnote-toggle" id="holdFootnoteToggle" type="button">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              Model assumptions
+              <svg class="hold-fn-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <p class="hold-footnote" id="holdFootnote" style="display:none"></p>
+          </div>
+        </section>
+
         <!-- Acquisition tracker — logs how the user got the card (pack pull vs single purchase)
              and shows realised + max ROI based on actual cost basis. -->
         <section class="card acq-card" id="acqSection" data-collapse-mobile="1" style="display:none">
@@ -1560,29 +1583,6 @@
                the best-value grade surfaces first. -->
           <div class="mkt-grades" id="marketplaceGrades"></div>
           <p class="mkt-footnote" id="marketplaceFootnote"></p>
-        </section>
-
-        <!-- Hold Strategy · Raw vs Graded -->
-        <section class="card hold-card" id="holdStrategySection" style="display:none">
-          <div class="hold-header">
-            <div>
-              <h2>Hold Strategy · Raw vs Graded <span class="anchor-badge" id="holdAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span></h2>
-              <p class="card-desc">Which version of this card is the best 5-year hold? We compare buying raw (and holding ungraded), buying raw and gambling on grading, and buying already-graded at PSA 7–10 — then highlight the winning play.</p>
-            </div>
-          </div>
-          <div class="hold-recommendation" id="holdRecommendation"></div>
-          <div class="hold-override" id="holdOverride"></div>
-          <div class="hold-cp-compare" id="holdCounterpartCompare" style="display:none"></div>
-          <div class="hold-grid" id="holdGrid"></div>
-          <div class="hold-outcomes" id="holdOutcomes"></div>
-          <div class="hold-footnote-wrap">
-            <button class="hold-footnote-toggle" id="holdFootnoteToggle" type="button">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              Model assumptions
-              <svg class="hold-fn-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
-            <p class="hold-footnote" id="holdFootnote" style="display:none"></p>
-          </div>
         </section>
 
         <!-- Rip or Buy -->
@@ -2187,7 +2187,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260621j"></script>
+  <script src="app.js?v=20260621k"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

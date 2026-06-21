@@ -9888,11 +9888,12 @@ function estimateUkSlabShipping(slabValueGBP) {
   return 25;
 }
 const OPPORTUNITY_COST_ANNUAL = 0.06; // pre-tax return you could earn elsewhere while capital is locked
-const BUY_SELL_FRICTION = 0.10;      // 10% combined buy + sell fees (fair tier midpoint)
-// eBay UK final value fee for Trading Cards (inc. managed payments). Used to
-// convert raw-market fair values to eBay-realistic reference prices when
-// evaluating whether a listing is good/fair/expensive.
+// eBay UK final value fee for Trading Cards (inc. managed payments).
 const EBAY_FEE_UK = 0.129;
+// Sell-side friction used by the hold strategy — eBay UK FVF since that's the
+// primary exit venue. Previously 10%; updated to match actual eBay rate so
+// 5yr exit values and ROI projections are realistic for eBay sellers.
+const BUY_SELL_FRICTION = EBAY_FEE_UK;
 const EBAY_FIXED_FEE = 0.30;        // £0.30 per-transaction eBay UK charge
 // Expected premium of eBay listing prices over raw market (PriceCharting / CM).
 // Sellers price up to recover the ~13% fee and earn a small margin — 15% is a
@@ -11522,9 +11523,8 @@ function renderAcquisition() {
   const marketGBP = usdToGbp(rawUSD || 0);
   const psa10USD = (card.p10 || 0) || (livePrice && livePrice.pcPsa10 > 0 ? livePrice.pcPsa10 : 0);
 
-  // Realised ROI: market value now (raw) vs cost basis
-  // Assume 10% buy/sell friction if you flipped it today
-  const FRICTION = 0.10;
+  // Realised ROI: market value now (raw) vs cost basis, net of eBay sell fee
+  const FRICTION = BUY_SELL_FRICTION;
   const realisedNetGBP = marketGBP * (1 - FRICTION);
   const realisedROI = costGBP > 0 ? ((realisedNetGBP - costGBP) / costGBP) * 100 : null;
 
