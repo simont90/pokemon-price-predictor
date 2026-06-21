@@ -2615,6 +2615,15 @@ function selectCard(id) {
     fetchMarketData(card.mi);
   }
 
+  // Show snapshot button and predict tab bar; apply current tab state
+  const _snapBtn = document.getElementById('predictSnapshotBtn');
+  if (_snapBtn) _snapBtn.style.display = '';
+  const _ptb = document.getElementById('predictTabBar');
+  if (_ptb) {
+    _ptb.style.display = '';
+    if (typeof _predictTabActivate === 'function') _predictTabActivate();
+  }
+
   if (window.innerWidth < 820) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -7259,6 +7268,110 @@ function setupPWANav() {
 
 // ---- Boot ----
 init();
+
+// =============================================================
+// PREDICT TAB BAR
+// Market | Strategy | Grade tabs for the right-column sections
+// =============================================================
+
+function _predictTabActivate(tab) {
+  const saved = tab || localStorage.getItem('predict-active-tab') || 'market';
+  if (tab) localStorage.setItem('predict-active-tab', saved);
+  const tabBar = document.getElementById('predictTabBar');
+  if (!tabBar) return;
+  tabBar.querySelectorAll('.ptab').forEach(btn => {
+    const isActive = btn.dataset.ptab === saved;
+    btn.classList.toggle('ptab-active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-tab-group]').forEach(el => {
+    el.classList.toggle('ptab-hidden', el.dataset.tabGroup !== saved);
+  });
+}
+
+function _initPredictTabs() {
+  const tabBar = document.getElementById('predictTabBar');
+  if (!tabBar || tabBar._wired) return;
+  tabBar._wired = true;
+  tabBar.querySelectorAll('.ptab').forEach(btn => {
+    btn.addEventListener('click', () => _predictTabActivate(btn.dataset.ptab));
+  });
+  _predictTabActivate();
+}
+
+// =============================================================
+// SNAPSHOT MODAL
+// Screenshot-ready card summary for sharing
+// =============================================================
+
+function _openSnapshot() {
+  if (!selectedCard) return;
+  const card = selectedCard;
+  const modal = document.getElementById('snapshotModal');
+  const content = document.getElementById('snapshotContent');
+  if (!modal || !content) return;
+
+  const imgUrl = getCardImg(card);
+  const marketPrice = document.getElementById('liveMainPrice')?.textContent.trim() || fmtGBP(card.p);
+  const psa10Price  = document.getElementById('psa10GBP')?.textContent.trim() || (card.p10 > 0 ? fmtGBP(card.p10) : '—');
+  const maxBuy      = document.getElementById('maxPriceGBP')?.textContent.trim() || '—';
+  const signalEl    = document.getElementById('signalBadge');
+  const signalText  = signalEl?.textContent.trim() || '';
+  const signalCls   = signalEl?.className.replace('signal-badge', '').trim() || '';
+
+  let holdLabel = '—', yr5 = '—', roiPct = '';
+  try {
+    const hc = computeHoldCore(card);
+    if (hc && hc.bestLongTermPick) {
+      const p = hc.bestLongTermPick;
+      holdLabel = p.label || '—';
+      const _fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+      if (p.yr5 > 0) yr5 = fmtGBPDirect(p.yr5 * _fx);
+      if (p.roi > 0)  roiPct = `+${p.roi.toFixed(0)}%`;
+    }
+  } catch(e) {}
+
+  const today = new Date().toLocaleDateString('en-GB');
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  content.innerHTML = `
+    <div class="snapshot-card-layout">
+      <div class="snapshot-img-wrap">
+        <img src="${esc(imgUrl)}" alt="" class="snapshot-img" loading="lazy" onerror="this.style.display='none'">
+      </div>
+      <div class="snapshot-details">
+        <div class="snapshot-card-name">${esc(card.n)}</div>
+        <div class="snapshot-card-set">${esc(card.s)}${card.cn ? ' · #' + esc(card.cn) : ''}${card.r ? ' · ' + esc(card.r) : ''}</div>
+        ${signalText ? `<div class="snapshot-signal-badge ${esc(signalCls)}">${esc(signalText)}</div>` : ''}
+        <div class="snapshot-stats-grid">
+          <div class="snapshot-stat"><span class="ss-label">Market</span><span class="ss-val">${esc(marketPrice)}</span></div>
+          <div class="snapshot-stat"><span class="ss-label">PSA 10</span><span class="ss-val">${esc(psa10Price)}</span></div>
+          <div class="snapshot-stat"><span class="ss-label">Max buy</span><span class="ss-val">${esc(maxBuy)}</span></div>
+          <div class="snapshot-stat"><span class="ss-label">5yr target</span><span class="ss-val">${esc(yr5)}${roiPct ? ' <small style="font-size:10px;opacity:0.7">' + esc(roiPct) + '</small>' : ''}</span></div>
+        </div>
+        <div class="snapshot-hold-verdict">${esc(holdLabel)}</div>
+        <div class="snapshot-meta"><span>${esc(today)}</span><span>pokémon price predictor</span></div>
+      </div>
+    </div>
+  `;
+
+  modal.style.display = 'flex';
+}
+
+// Wire snapshot button and modal close
+(function _wireSnapshot() {
+  document.getElementById('predictSnapshotBtn')?.addEventListener('click', _openSnapshot);
+  function _closeSnapshot() {
+    const m = document.getElementById('snapshotModal');
+    if (m) m.style.display = 'none';
+  }
+  document.getElementById('snapshotClose')?.addEventListener('click', _closeSnapshot);
+  document.getElementById('snapshotBackdrop')?.addEventListener('click', _closeSnapshot);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') _closeSnapshot(); });
+})();
+
+// Initialise predict tabs once the DOM is ready
+_initPredictTabs();
 
 // =============================================================
 // PSA 1-10 Grade Range · Forecast across grades

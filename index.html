@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260621n">
+  <link rel="stylesheet" href="style.css?v=20260621o">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -940,6 +940,10 @@
                 <div class="signal-reason" id="signalReason"></div>
                 <div class="signal-hold-desc" id="signalHoldDesc" style="display:none"></div>
                 <button class="btn-jump-hold" id="signalJumpHold" style="display:none">Jump to Hold Strategy ↓</button>
+                <button class="btn-snapshot-trigger" id="predictSnapshotBtn" type="button" style="display:none">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Snapshot
+                </button>
               </div>
               <!-- EN ↔ JP Counterpart Flag -->
               <div class="counterpart-flag" id="counterpartFlag" style="display:none">
@@ -1036,8 +1040,24 @@
           </div>
         </section>
 
+        <!-- Predict section tabs — shown when a card is selected -->
+        <div class="predict-tab-bar" id="predictTabBar" style="display:none" role="tablist" aria-label="Card analysis sections">
+          <button class="ptab ptab-active" data-ptab="market" type="button" role="tab" aria-selected="true">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+            Market
+          </button>
+          <button class="ptab" data-ptab="strategy" type="button" role="tab" aria-selected="false">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+            Strategy
+          </button>
+          <button class="ptab" data-ptab="grade" type="button" role="tab" aria-selected="false">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
+            Grade
+          </button>
+        </div>
+
         <!-- LIVE Pricing Panel (v8) -->
-        <section class="card live-price-card" id="livePricePanel" style="display:none">
+        <section class="card live-price-card" id="livePricePanel" data-tab-group="market" style="display:none">
           <div class="live-price-header">
             <h2>Live Market Price</h2>
             <div class="live-price-badge">
@@ -1130,7 +1150,7 @@
         </section>
 
         <!-- Hold Strategy · Raw vs Graded -->
-        <section class="card hold-card" id="holdStrategySection" style="display:none">
+        <section class="card hold-card" id="holdStrategySection" data-tab-group="strategy" style="display:none">
           <div class="hold-header">
             <div>
               <h2>Hold Strategy · Raw vs Graded <span class="anchor-badge" id="holdAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span></h2>
@@ -1154,7 +1174,7 @@
 
         <!-- Acquisition tracker — logs how the user got the card (pack pull vs single purchase)
              and shows realised + max ROI based on actual cost basis. -->
-        <section class="card acq-card" id="acqSection" data-collapse-mobile="1" style="display:none">
+        <section class="card acq-card" id="acqSection" data-tab-group="strategy" data-collapse-mobile="1" style="display:none">
           <div class="acq-header">
             <h2><span class="acq-icon">💰</span> Acquisition &amp; Max ROI</h2>
             <p class="acq-sub">Tell the model how you got this card so it knows your true cost basis. The lower your basis, the higher your ceiling.</p>
@@ -1293,7 +1313,7 @@
         </section>
 
         <!-- Card Condition Scanner -->
-        <section class="card cg-card" id="cardGraderSection" data-collapse-mobile="1" style="display:none">
+        <section class="card cg-card" id="cardGraderSection" data-tab-group="grade" data-collapse-mobile="1" style="display:none">
           <h2>Card Condition Scanner</h2>
           <p class="card-desc">Rate each PSA criterion. Upload photos or paste an eBay listing URL to fetch images. Expected grade feeds into the Hold Strategy.</p>
 
@@ -1425,7 +1445,7 @@
         </section>
 
         <!-- Price History -->
-        <section class="card pricehist-card" id="priceHistSection" data-collapse-mobile="1" style="display:none">
+        <section class="card pricehist-card" id="priceHistSection" data-tab-group="market" data-collapse-mobile="1" style="display:none">
           <div class="ph-header">
             <h2>Price History</h2>
             <div class="ph-verdict" id="phVerdict"></div>
@@ -1453,7 +1473,7 @@
         </section>
 
         <!-- Market Dynamics -->
-        <section class="card market-card" id="marketSection" data-collapse-mobile="1" style="display:none">
+        <section class="card market-card" id="marketSection" data-tab-group="grade" data-collapse-mobile="1" style="display:none">
           <div class="market-header">
             <h2>Market Dynamics</h2>
             <div class="market-trend-badge" id="marketTrend"></div>
@@ -1484,14 +1504,14 @@
         </section>
 
         <!-- Grading ROI -->
-        <section class="card grade-card" id="gradeSection" data-collapse-mobile="1" style="display:none">
+        <section class="card grade-card" id="gradeSection" data-tab-group="grade" data-collapse-mobile="1" style="display:none">
           <h2>Grading ROI</h2>
           <p class="card-desc">Is it worth grading this card? PSA 10 vs raw value gain</p>
           <div class="grade-content" id="gradeContent"></div>
         </section>
 
         <!-- PSA 1-10 Grade Range — estimated values + 5yr projections per grade -->
-        <section class="card psa-range-card" id="psaRangeSection" data-collapse-mobile="1" style="display:none">
+        <section class="card psa-range-card" id="psaRangeSection" data-tab-group="grade" data-collapse-mobile="1" style="display:none">
           <div class="psa-range-header">
             <div>
               <h2>PSA Grade Range · 5yr Forecast <span class="anchor-badge" id="psaAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span></h2>
@@ -1513,7 +1533,7 @@
         </section>
 
         <!-- Marketplace Scan: eBay UK + eBay US + Cardmarket deep-links per grade with fair-value context -->
-        <section class="card mkt-card" id="marketplaceSection" style="display:none">
+        <section class="card mkt-card" id="marketplaceSection" data-tab-group="market" style="display:none">
           <div class="mkt-header">
             <div>
               <h2>Marketplace Scan · eBay + Cardmarket</h2>
@@ -1586,7 +1606,7 @@
         </section>
 
         <!-- Rip or Buy -->
-        <section class="card rip-card" id="ripSection" data-collapse-mobile="1" style="display:none">
+        <section class="card rip-card" id="ripSection" data-tab-group="strategy" data-collapse-mobile="1" style="display:none">
           <div class="rip-header">
             <h2>Rip or Buy?</h2>
             <div class="rip-verdict-badge" id="ripVerdict"></div>
@@ -1618,7 +1638,7 @@
         </section>
 
         <!-- eBay Deal Check -->
-        <section class="card deal-card">
+        <section class="card deal-card" id="dealCardSection" data-tab-group="market">
           <h2>eBay Deal Check</h2>
           <p class="card-desc">Enter a listing price to see if it's worth it</p>
           <div class="deal-check-inputs">
@@ -1631,7 +1651,7 @@
         </section>
 
         <!-- 5-Year Forecast -->
-        <section class="card forecast-card" id="forecastSection" data-collapse-mobile="1" style="display:none">
+        <section class="card forecast-card" id="forecastSection" data-tab-group="strategy" data-collapse-mobile="1" style="display:none">
           <h2>5-Year Price Forecast</h2>
           <p class="card-desc">Projected appreciation based on rarity, character, and market trends</p>
           <div class="fc-canvas-wrap">
@@ -2191,7 +2211,20 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260621n"></script>
+  <!-- Snapshot modal — screenshot-ready card summary -->
+  <div class="snapshot-modal" id="snapshotModal" style="display:none" role="dialog" aria-modal="true" aria-label="Card snapshot">
+    <div class="snapshot-backdrop" id="snapshotBackdrop"></div>
+    <div class="snapshot-inner">
+      <div class="snapshot-modal-header">
+        <span class="snapshot-brand">Pokémon Price Predictor</span>
+        <button class="snapshot-close" id="snapshotClose" type="button" aria-label="Close">✕</button>
+      </div>
+      <div id="snapshotContent" class="snapshot-content"></div>
+      <p class="snapshot-hint">Take a screenshot on your device to save this</p>
+    </div>
+  </div>
+
+  <script src="app.js?v=20260621o"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

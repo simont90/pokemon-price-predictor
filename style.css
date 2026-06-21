@@ -8647,3 +8647,258 @@ section.card .card-collapse-btn { padding: 10px; }
   color: var(--text-faint); font-size: 12px;
 }
 
+/* ═══════════════════════════════════════════════════════
+   PREDICT TAB BAR
+   ═══════════════════════════════════════════════════════ */
+.predict-tab-bar {
+  display: flex;
+  gap: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px;
+  position: sticky;
+  top: 8px;
+  z-index: 50;
+  box-shadow: 0 2px 14px rgba(0,0,0,0.28);
+}
+
+.ptab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 9px 6px;
+  min-height: 44px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, transform 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.ptab:hover { color: var(--text); }
+.ptab:active { transform: scale(0.94); }
+
+.ptab.ptab-active {
+  background: var(--bg);
+  color: var(--accent);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.ptab svg { opacity: 0.5; transition: opacity 0.18s; }
+.ptab.ptab-active svg { opacity: 1; color: var(--accent); }
+
+/* Section hidden by tab system — !important so it wins over JS inline display: '' */
+.ptab-hidden { display: none !important; }
+
+/* ═══════════════════════════════════════════════════════
+   SNAPSHOT MODAL
+   ═══════════════════════════════════════════════════════ */
+.snapshot-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.snapshot-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.snapshot-inner {
+  position: relative;
+  z-index: 1;
+  background: var(--bg-raised);
+  border-radius: 20px 20px 0 0;
+  padding: 20px 20px calc(28px + env(safe-area-inset-bottom, 0px));
+  max-height: 88vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 520px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.45);
+}
+
+.snapshot-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.snapshot-brand {
+  font-size: 10px;
+  color: var(--text-faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.snapshot-close {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.snapshot-close:hover { background: var(--bg-raised); color: var(--text); }
+
+.snapshot-card-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.snapshot-img-wrap { flex-shrink: 0; width: 110px; }
+
+.snapshot-img {
+  width: 110px;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  display: block;
+}
+
+.snapshot-details { flex: 1; min-width: 0; }
+
+.snapshot-card-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+  margin-bottom: 3px;
+}
+
+.snapshot-card-set {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.snapshot-signal-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  border: 1px solid currentColor;
+}
+
+.snapshot-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.snapshot-stat {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.ss-label {
+  display: block;
+  font-size: 9px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 2px;
+}
+
+.ss-val {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.snapshot-hold-verdict {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.snapshot-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  margin-top: 6px;
+}
+
+.snapshot-hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* Snapshot trigger button — sits below the signal badge */
+.btn-snapshot-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 5px 12px;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-snapshot-trigger:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Mobile: make card action buttons easier to tap */
+@media (max-width: 600px) {
+  .add-portfolio-btn {
+    width: 36px;
+    height: 36px;
+  }
+  .card-name-row h2 { font-size: 16px; }
+}
+
