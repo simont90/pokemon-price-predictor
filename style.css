@@ -2731,6 +2731,19 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .pcov-clear-btn:hover { background: var(--red-dim); }
 .pcov-clear-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pcov-na-btn {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.pcov-na-btn:hover { background: var(--surface-hover); }
 
 .pcov-pick-btn {
   background: var(--accent);

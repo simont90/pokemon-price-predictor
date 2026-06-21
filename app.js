@@ -1800,6 +1800,7 @@ async function searchPCCandidates(card) {
 async function fetchPriceChartingData(card) {
   // 1. Manual override wins
   const override = getPCOverride(card.i);
+  if (override && override.notAvailable) return null; // user explicitly marked as not on PC
   if (override && override.id) {
     // The override carries the full product blob from when the user picked it.
     // We still re-fetch by ID via search so prices stay fresh.
@@ -5893,9 +5894,12 @@ function openPCOverride() {
   // Pre-fill the search box with our auto-built query so the user can tweak it
   $('pcovInput').value = buildPCQuery(pcovCard);
   // Show what's currently active
-  const cur = livePrice && livePrice.pcName
-    ? `Currently using: <strong>${escapeHtml(livePrice.pcName)}</strong> (${escapeHtml(livePrice.pcConsole || '')})`
-    : 'No PriceCharting match yet for this card.';
+  const _pcov = getPCOverride(pcovCard.i);
+  const cur = _pcov && _pcov.notAvailable
+    ? 'Marked as <strong>Not on PriceCharting</strong> — PC lookup is skipped for this card.'
+    : (livePrice && livePrice.pcName
+      ? `Currently using: <strong>${escapeHtml(livePrice.pcName)}</strong> (${escapeHtml(livePrice.pcConsole || '')})`
+      : 'No PriceCharting match yet for this card.');
   $('pcovCurrent').innerHTML = cur;
   $('pcovSub').textContent = `Card: ${pcovCard.n}${pcovCard.cn ? ' #' + pcovCard.cn : ''} · ${setsData?.[pcovCard.sc]?.name || ''} · ${pcovCard.lang || 'EN'}`;
   setTimeout(() => $('pcovInput').focus(), 50);
@@ -5998,6 +6002,20 @@ function applyPCOverride(product) {
   }
 }
 
+function markPCNotAvailable() {
+  if (!pcovCard) return;
+  setPCOverride(pcovCard.i, { notAvailable: true });
+  try {
+    const cache = getPriceCache();
+    delete cache[pcovCard.i];
+    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+  closePCOverride();
+  if (selectedCard && selectedCard.i === pcovCard.i) {
+    fetchLivePrice(selectedCard);
+  }
+}
+
 function clearPCOverride() {
   if (!pcovCard) return;
   setPCOverride(pcovCard.i, null);
@@ -6023,6 +6041,8 @@ function setupPCOverride() {
   if (search) search.addEventListener('click', runPCOverrideSearch);
   const clear = $('pcovClearBtn');
   if (clear) clear.addEventListener('click', clearPCOverride);
+  const na = $('pcovNaBtn');
+  if (na) na.addEventListener('click', markPCNotAvailable);
   const input = $('pcovInput');
   if (input) {
     input.addEventListener('keydown', (e) => {

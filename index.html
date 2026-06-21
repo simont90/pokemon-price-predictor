@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260621d">
+  <link rel="stylesheet" href="style.css?v=20260621e">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -619,6 +619,7 @@
           <input type="text" id="pcovInput" placeholder="Refine search (optional)" autocomplete="off" spellcheck="false">
           <button class="ql-search-btn" id="pcovSearchBtn">Re-search</button>
           <button class="pcov-clear-btn" id="pcovClearBtn">Clear override</button>
+          <button class="pcov-na-btn" id="pcovNaBtn">Not on PriceCharting</button>
         </div>
         <div class="ql-status" id="pcovStatus"></div>
         <div class="ql-results" id="pcovResults"></div>
@@ -2185,7 +2186,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260621d"></script>
+  <script src="app.js?v=20260621e"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
