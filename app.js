@@ -13494,6 +13494,7 @@ function _recoTileHtml(r) {
       <button class="reco-btn reco-dismiss" data-id="${esc(id)}" title="Not interested">✕</button>
       <button class="reco-btn reco-wish" data-id="${esc(id)}" title="Add to wishlist">♡</button>
       <button class="reco-btn ${watchCls}" data-id="${esc(id)}" title="${watchTitle}">◎</button>
+      <a class="reco-btn home-card-newtab" href="?card=${esc(id)}" target="_blank" rel="noopener" title="Open in new tab">↗</a>
     </div>
     <div class="home-card-info">
       <div class="home-card-name">${esc(r.card.n)}</div>
@@ -13528,6 +13529,7 @@ function _recoStrategyTileHtml(r) {
       <button class="reco-btn reco-dismiss" data-id="${esc(id)}" title="Not interested">✕</button>
       <button class="reco-btn reco-wish" data-id="${esc(id)}" title="Add to wishlist">♡</button>
       <button class="reco-btn ${watchCls}" data-id="${esc(id)}" title="${watchTitle}">◎</button>
+      <a class="reco-btn home-card-newtab" href="?card=${esc(id)}" target="_blank" rel="noopener" title="Open in new tab">↗</a>
     </div>
     <div class="home-card-info">
       <div class="home-card-name">${esc(r.card.n)}</div>
@@ -13609,9 +13611,9 @@ function _recoListClick(e) {
     }
     return;
   }
-  // Tile click → open card
+  // Tile click → open card (skip reco action buttons, PiP, and new-tab link)
   const tile = e.target.closest('.home-card-tile');
-  if (tile && !e.target.closest('.reco-btn') && !e.target.closest('.home-pip-trigger')) _homeItemClick(tile.dataset.id);
+  if (tile && !e.target.closest('.reco-btn') && !e.target.closest('.home-pip-trigger') && !e.target.closest('.home-card-newtab')) _homeItemClick(tile.dataset.id);
 }
 
 const _STRAT_SECTIONS = [
@@ -14138,12 +14140,16 @@ function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass
   const tileClass = ['home-card-tile', extraClass, opts.urgentBuy ? 'urgent-buy' : ''].filter(Boolean).join(' ');
   const hiddenAttr = opts.hidden ? ' style="display:none"' : '';
   const dealUrlAttr = opts.dealUrl ? ` data-deal-url="${esc(opts.dealUrl)}"` : '';
-  // PiP button only for real card IDs (not listing URLs)
-  const pipBtn = (!opts.dealUrl && id && !id.startsWith('http'))
+  // PiP + new-tab buttons only for real card IDs (not listing URLs)
+  const isRealCard = !opts.dealUrl && id && !id.startsWith('http');
+  const pipBtn = isRealCard
     ? `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgUrl || '')}" aria-label="Quick view" title="Quick view">⤢</button>`
     : '';
+  const newTabBtn = isRealCard
+    ? `<a class="home-card-newtab" href="?card=${esc(id)}" target="_blank" rel="noopener" title="Open in new tab">↗</a>`
+    : '';
   return `<div class="${tileClass}" data-id="${esc(id)}"${hiddenAttr}${dealUrlAttr}>
-    ${img}${signal}${pipBtn}
+    ${img}${signal}${pipBtn}${newTabBtn}
     <button class="home-card-remove" aria-label="Remove">✕</button>
     <div class="home-card-info">
       <div class="home-card-name">${esc(name)}</div>
@@ -14170,7 +14176,7 @@ function _setupTileEvents(scrollEl, deleteFn) {
       return;
     }
     const tile = e.target.closest('.home-card-tile');
-    if (!tile || e.target.closest('.home-pip-trigger')) return;
+    if (!tile || e.target.closest('.home-pip-trigger') || e.target.closest('.home-card-newtab')) return;
     if (tile.dataset.dealUrl) {
       window.open(tile.dataset.dealUrl, '_blank', 'noopener');
     } else {
@@ -14758,8 +14764,15 @@ function setupPageNav() {
   document.getElementById('navFilterCtx')?.addEventListener('click', openScreener);
 
   // Initial route — default to Home.
+  // ?card=<id> deep-link: opened via "Open in new tab" from a home tile.
+  const _deepCard = new URLSearchParams(location.search).get('card');
   const initial = (location.hash || '#home').replace('#', '');
-  go(['home', 'predict', 'discover', 'tools'].includes(initial) ? initial : 'home');
+  if (_deepCard) {
+    go('predict');
+    setTimeout(() => { try { selectCard(_deepCard); } catch(e) {} }, 300);
+  } else {
+    go(['home', 'predict', 'discover', 'tools'].includes(initial) ? initial : 'home');
+  }
 
   // ── Liquid glass tab bar: specular + sliding pill ──────────────
   const nav = document.getElementById('pageNav');

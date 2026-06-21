@@ -7543,6 +7543,35 @@ section.card .card-collapse-btn { padding: 10px; }
 /* Touch: PiP trigger hidden — the full tile tap reveals options via tap-actions */
 @media (hover: none) { .home-pip-trigger { opacity: 0; pointer-events: none; } }
 
+/* ── Open in new tab (non-reco tiles) ── */
+.home-card-newtab {
+  position: absolute;
+  bottom: 46px;
+  left: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(10,11,18,0.72);
+  backdrop-filter: blur(6px);
+  color: rgba(255,255,255,0.8);
+  font-size: 13px;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.18s, transform 0.18s, background 0.15s;
+  z-index: 4;
+}
+.home-card-tile:hover .home-card-newtab,
+.home-card-tile:focus-within .home-card-newtab { opacity: 1; transform: scale(1); }
+.home-card-newtab:hover { background: rgba(232,182,52,0.2); color: var(--accent); }
+.home-card-newtab:active { transform: scale(0.9); }
+/* On reco tiles the new-tab link sits inside .reco-actions — no absolute positioning needed */
+.reco-tile .home-card-newtab { position: static; transform: none; opacity: 1; width: auto; height: auto; border: none; background: none; backdrop-filter: none; font-size: 14px; padding: 4px 6px; }
+
 /* ── PiP fullscreen overlay ── */
 .home-pip {
   position: fixed;
