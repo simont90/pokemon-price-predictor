@@ -7586,7 +7586,7 @@ section.card .card-collapse-btn { padding: 10px; }
 .home-pip {
   position: fixed;
   inset: 0;
-  z-index: 1200;
+  z-index: 1502; /* above View All modal (1501) — below Quick Lookup (1600) */
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -9237,6 +9237,223 @@ section.card .card-collapse-btn { padding: 10px; }
     align-items: center;
     justify-content: center;
     font-size: 18px;
+  }
+}
+
+/* ============================================================
+   View All modal — mobile bottom sheet + touch row fixes
+   ============================================================ */
+
+/* Drag handle via pseudo-element on the modal */
+@media (max-width: 600px) {
+  .hva-modal::before {
+    content: '';
+    display: block;
+    flex-shrink: 0;
+    width: 40px;
+    height: 4px;
+    background: rgba(255,255,255,0.20);
+    border-radius: 2px;
+    margin: 12px auto 0;
+  }
+}
+
+/* Bottom sheet layout instead of centered modal */
+@media (max-width: 600px) {
+  .hva-modal {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 22px 22px 0 0;
+  }
+  .hva-header {
+    padding: 10px 16px 10px;
+    gap: 10px;
+    flex-wrap: nowrap;
+  }
+  .hva-header-left { gap: 6px; }
+  .hva-title { font-size: 15px; }
+  .hva-count { font-size: 11px; }
+  .hva-search {
+    font-size: 14px;
+    padding: 8px 12px;
+    min-height: 40px;
+  }
+  /* Close button tap area */
+  .hva-close {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 20px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* List rows — taller for thumb tapping */
+@media (max-width: 600px) {
+  .hva-row {
+    padding: 10px 14px;
+    gap: 10px;
+    min-height: 62px;
+  }
+  .hva-row-img {
+    width: 40px;
+    height: 56px;
+    flex-shrink: 0;
+  }
+  .hva-row-name { font-size: 14px; }
+  .hva-row-set  { font-size: 10px; }
+  .hva-row-price { font-size: 13px; }
+
+  /* PiP trigger in rows: always visible on touch */
+  .hva-row .home-pip-trigger {
+    opacity: 0.75;
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    font-size: 15px;
+  }
+
+  /* Reco row action buttons — re-enable on mobile, make them thumb-sized */
+  .hva-row-acts {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .hva-row-act {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    min-height: 34px !important;
+    border-radius: 10px;
+    font-size: 14px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.06);
+  }
+
+  /* On reco rows: hide the separate pip trigger (tap row to open card) */
+  .hva-row:has(.hva-row-acts) .home-pip-trigger {
+    display: none;
+  }
+}
+
+/* ============================================================
+   Mobile UX Polish — sharper text, tighter layout, readability
+   ============================================================ */
+
+/* Font rendering — antialiased on retina/OLED */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Card sub text: allow 2-line wrap so profit/ROI never clips */
+@media (max-width: 600px) {
+  .home-card-sub {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.35;
+    margin-top: 4px;
+  }
+}
+
+/* Price + gem tag: flex row so badge sits neatly beside price */
+@media (max-width: 600px) {
+  .home-card-price {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    line-height: 1.2;
+    margin-bottom: 2px;
+  }
+  .reco-gem-tag {
+    margin-left: 0;
+    flex-shrink: 0;
+    border-radius: 5px;
+    font-size: 8px;
+    padding: 2px 5px;
+  }
+}
+
+/* Empty states: tighter padding — saves ≈24px per empty section */
+@media (max-width: 600px) {
+  .home-empty {
+    padding: 10px 16px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+}
+
+/* Signal badge: sharper, more visible */
+@media (max-width: 600px) {
+  .home-card-signal {
+    font-size: 8px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    letter-spacing: 0.06em;
+  }
+  .sig-strong-buy {
+    background: rgba(232,182,52,0.22);
+    border-color: rgba(232,182,52,0.6);
+    color: var(--accent);
+  }
+  .sig-buy {
+    background: rgba(61,214,140,0.18);
+    border-color: rgba(61,214,140,0.5);
+    color: #3dd68c;
+  }
+}
+
+/* Section / group spacing: tighter vertical rhythm */
+@media (max-width: 600px) {
+  .home-section-hd { margin-bottom: 2px; }
+  .home-tab-group  { margin-bottom: 4px; }
+  .home-group-hd   { padding-bottom: 2px; }
+}
+
+/* Scroll row: more visible bottom-peek gap */
+@media (max-width: 600px) {
+  .home-scroll-row {
+    padding-top: 2px;
+    padding-bottom: 16px;
+  }
+}
+
+/* Active ptab: heavier weight for clarity */
+@media (max-width: 600px) {
+  .ptab.ptab-active { font-weight: 700; }
+}
+
+/* Upside label: slightly larger for arm's-length reading */
+@media (max-width: 600px) {
+  .reco-upside { font-size: 10.5px; letter-spacing: -0.01em; }
+}
+
+/* Empty scroll rows: strip padding so section doesn't balloon */
+@media (max-width: 600px) {
+  .home-scroll-row:has(> .home-empty:only-child) {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+/* Dashboard flex gap: tighter vertical spacing between sections */
+@media (max-width: 600px) {
+  .home-dashboard {
+    gap: 12px;
+    padding-top: 10px;
   }
 }
 
