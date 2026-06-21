@@ -2028,7 +2028,7 @@ async function fetchFreshPriceData(card) {
             priceData.market = _tcgData.market;
           }
         }
-      } catch { /* silent — URL-based lookup is best-effort */ }
+      } catch (e) { console.error('[2b ERR]', e.message || e); }
     }
   }
 
@@ -6939,6 +6939,10 @@ function setupEditCard() {
     const productId = extractTcgProductId(url);
     if (productId) {
       if (status) { status.style.display = 'block'; status.textContent = 'URL saved — fetching live prices…'; }
+      // Direct worker ping — independent of the full price-fetch flow
+      const _pingUrl = getMktWorkerUrl() + `/tcg-price?productId=${productId}`;
+      console.error('[SAVE-PING] calling:', _pingUrl);
+      fetch(_pingUrl).then(r => r.json()).then(d => console.error('[SAVE-PING] ok | market:', d.market, '| source:', d.source, '| allPrices:', JSON.stringify(d.allPrices))).catch(e => console.error('[SAVE-PING] FAILED:', e.message || e));
       const _cache = getPriceCache();
       delete _cache[card.i];
       try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_cache)); } catch {}
