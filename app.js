@@ -3206,10 +3206,16 @@ function updateDealCheck(modelPriceUSD) {
   }
   const marketGBP = usdToGbp(refUSD); // raw market reference
 
-  // eBay-adjusted fair price: sellers must recover the ~13% FVF plus a profit
-  // margin — 15% above market is the expected floor for an eBay listing.
-  const ebayFairCardGBP = marketGBP * (1 + EBAY_LISTING_PREMIUM);
+  // Exact eBay-adjusted fair price: the listing price at which a seller nets
+  // exactly market value after eBay's 12.9% FVF + £0.30 fixed fee.
+  // fair_listing = (market + fixed_fee) / (1 - pct_fee)
+  const ebayFairCardGBP  = marketGBP > 0 ? (marketGBP + EBAY_FIXED_FEE) / (1 - EBAY_FEE_UK) : 0;
   const ebayFairTotalGBP = ebayFairCardGBP + shippingGBP;
+
+  // What eBay actually takes on this specific listing, and what seller nets.
+  const ebayFeesGBP       = ebayGBP * EBAY_FEE_UK + EBAY_FIXED_FEE;
+  const sellerNetsGBP     = ebayGBP - ebayFeesGBP;
+  const sellerVsMarketGBP = sellerNetsGBP - marketGBP; // +ve = seller profits above market
 
   // Absolute difference vs the eBay-adjusted fair value.
   const diff = ebayFairTotalGBP - totalSpendGBP;
@@ -3231,25 +3237,35 @@ function updateDealCheck(modelPriceUSD) {
     }
   }
 
+  // Fee breakdown row — what eBay takes, what seller pockets, fair price for both.
+  let feeBreakdown = '';
+  if (marketGBP > 0) {
+    const absVsMarket = Math.abs(sellerVsMarketGBP);
+    const direction   = sellerVsMarketGBP >= 0 ? 'above' : 'below';
+    const pctVsMkt    = marketGBP > 0 ? (absVsMarket / marketGBP * 100).toFixed(0) : 0;
+    feeBreakdown = `<div class="deal-fee-breakdown">eBay takes ~${fmtGBPDirect(ebayFeesGBP)} · seller nets ~${fmtGBPDirect(sellerNetsGBP)} (${pctVsMkt}% ${direction} market) · fair for both ~${fmtGBPDirect(ebayFairCardGBP)}</div>`;
+  }
+
   let cls, verdict, note;
   if (diff > ebayFairTotalGBP * 0.08) {
     // >8% below eBay fair price — genuinely cheap for eBay
     cls = 'good-deal'; verdict = 'Good eBay Deal';
-    note = `${pct}% below expected eBay price (${fmtGBPDirect(ebayFairCardGBP)}) · market ~${fmtGBPDirect(marketGBP)}`;
+    note = `${pct}% below fair listing (${fmtGBPDirect(ebayFairCardGBP)}) · market ~${fmtGBPDirect(marketGBP)}`;
   } else if (diff < -ebayFairTotalGBP * 0.10) {
     // >10% above eBay fair price — overpriced even for eBay
     cls = 'bad-deal'; verdict = 'Overpriced';
-    note = `${pct}% above expected eBay price (${fmtGBPDirect(ebayFairCardGBP)}) · market ~${fmtGBPDirect(marketGBP)}`;
+    note = `${pct}% above fair listing (${fmtGBPDirect(ebayFairCardGBP)}) · market ~${fmtGBPDirect(marketGBP)}`;
   } else {
     cls = 'ok-deal'; verdict = 'Fair for eBay';
-    note = `Within range of expected eBay price (~${fmtGBPDirect(ebayFairCardGBP)}) · market ~${fmtGBPDirect(marketGBP)}`;
+    note = `Within range of fair listing (~${fmtGBPDirect(ebayFairCardGBP)}) · market ~${fmtGBPDirect(marketGBP)}`;
   }
 
   $('dealResult').className = `deal-result ${cls}`;
   $('dealResult').innerHTML = `<div class="deal-active">
     <div class="deal-verdict">${verdict}</div>
-    <div class="deal-saving">${diff > 0 ? `Save ~£${Math.abs(diff).toFixed(2)} vs eBay norm` : `~£${Math.abs(diff).toFixed(2)} above eBay norm`}</div>
+    <div class="deal-saving">${diff > 0 ? `Save ~£${Math.abs(diff).toFixed(2)} vs fair listing` : `~£${Math.abs(diff).toFixed(2)} above fair listing`}</div>
     <div class="deal-note">${note}</div>
+    ${feeBreakdown}
     ${holdLine}
   </div>`;
 
@@ -9877,6 +9893,7 @@ const BUY_SELL_FRICTION = 0.10;      // 10% combined buy + sell fees (fair tier 
 // convert raw-market fair values to eBay-realistic reference prices when
 // evaluating whether a listing is good/fair/expensive.
 const EBAY_FEE_UK = 0.129;
+const EBAY_FIXED_FEE = 0.30;        // £0.30 per-transaction eBay UK charge
 // Expected premium of eBay listing prices over raw market (PriceCharting / CM).
 // Sellers price up to recover the ~13% fee and earn a small margin — 15% is a
 // conservative midpoint estimate based on observed UK single-card listings.
