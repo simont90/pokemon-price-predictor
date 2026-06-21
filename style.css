@@ -9338,9 +9338,10 @@ section.card .card-collapse-btn { padding: 10px; }
     background: rgba(255,255,255,0.06);
   }
 
-  /* On reco rows: hide the separate pip trigger (tap row to open card) */
+  /* Reco rows: tap the row body → PiP (handled in JS); pip trigger still works as explicit button */
   .hva-row:has(.hva-row-acts) .home-pip-trigger {
-    display: none;
+    display: flex;
+    opacity: 0.6;
   }
 }
 
@@ -9592,6 +9593,53 @@ body {
   .home-dashboard > .home-section-wrap .home-scroll-row {
     padding-left: 14px;
     padding-right: 14px;
+  }
+}
+
+/* ============================================================
+   OLED Black — strip body gradients on mobile for true black
+   ============================================================ */
+@media (max-width: 600px) {
+  body {
+    background: var(--bg);
+  }
+}
+
+/* ============================================================
+   Light mode — restore appropriate section card colours
+   The design-refresh block hardcodes dark values; override here
+   ============================================================ */
+@media (max-width: 600px) {
+  [data-theme="light"] .home-dashboard > .home-section-wrap,
+  [data-theme="light"] .home-tab-group {
+    background: rgba(255,255,255,0.72);
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+  [data-theme="light"] .home-tab-bar {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(0,0,0,0.06);
+  }
+  [data-theme="light"] .home-group-hd {
+    border-bottom-color: rgba(0,0,0,0.06);
+  }
+  [data-theme="light"] .home-group-hd .home-section-title {
+    color: rgba(0,0,0,0.38);
+  }
+  [data-theme="light"] .home-section-hd {
+    border-bottom-color: rgba(0,0,0,0.05);
+  }
+  [data-theme="light"] .home-htab-panel .home-section-title {
+    color: rgba(0,0,0,0.5);
+  }
+  [data-theme="light"] .home-card-info {
+    background: rgba(255,255,255,0.85);
+  }
+  [data-theme="light"] .home-card-name {
+    color: rgba(0,0,0,0.45);
+  }
+  [data-theme="light"] .home-card-sub {
+    color: rgba(0,0,0,0.38);
   }
 }
 

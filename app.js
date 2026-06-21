@@ -13930,9 +13930,9 @@ function _openRecoViewAll(title, results) {
     _bindRecoHandler(grid);
     grid.querySelectorAll('.hva-row').forEach(row => {
       row.addEventListener('click', e => {
-        if (e.target.closest('.home-pip-trigger') || e.target.closest('.hva-row-acts')) return;
-        closeHomeViewAll();
-        _homeItemClick(row.dataset.id);
+        if (e.target.closest('.hva-row-acts') || e.target.closest('.home-pip-trigger')) return;
+        const img = row.querySelector('img.hva-row-img');
+        openHomePip(row.dataset.id, img?.src || '');
       });
     });
   }
@@ -13982,9 +13982,9 @@ function renderHvaGrid(query) {
   }).join('');
   grid.querySelectorAll('.hva-row').forEach(row => {
     row.addEventListener('click', e => {
-      if (e.target.closest('.home-pip-trigger')) return;
-      closeHomeViewAll();
-      _homeItemClick(row.dataset.id);
+      if (e.target.closest('.hva-row-acts') || e.target.closest('.home-pip-trigger')) return;
+      const img = row.querySelector('img.hva-row-img');
+      openHomePip(row.dataset.id, img?.src || '');
     });
   });
 }
@@ -14272,7 +14272,7 @@ function openHomePip(id, imgUrl) {
     }).catch(() => { if (liveDot) liveDot.style.display = 'none'; });
   }
 
-  document.getElementById('homePipView').onclick = () => { closeHomePip(); _homeItemClick(id); };
+  document.getElementById('homePipView').onclick = () => { closeHomePip(); closeHomeViewAll(); _homeItemClick(id); };
 
   pip.classList.remove('pip-collapsed');
   pip.style.display = '';
