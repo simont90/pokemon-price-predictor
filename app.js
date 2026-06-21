@@ -289,6 +289,7 @@ function setCachedPrice(cardId, data) {
   // Price changed — signal may shift, so invalidate cached computation for this card
   _sigCache.delete(cardId);
   _hcCache.delete(cardId);
+  _recoCached = null; // reco HTML uses pcPsa10 / market from this cache
 }
 
 function getCachedPrice(cardId) {
@@ -13145,6 +13146,52 @@ function setupTheme() {
 // ── Home Recommendations ──────────────────────────────────────────────────
 const RECO_DISMISSED_KEY = 'pkm-reco-dismissed-v1';
 let _recoCached = null; // { general: [], raw: [], psa8: [], psa9: [], psa10: [], ts: number }
+let _recoPrefetchTs = 0;
+
+// After the reco cache is built, quietly fetch live prices for the top
+// strategy-section cards so PSA10 tiles show real prices (not stale card.p10).
+// Rate-limited to once per PRICE_CACHE_TTL so it doesn't re-run on every
+// home-tab visit.
+async function _homeRecoPrefetch(all) {
+  const now = Date.now();
+  if (now - _recoPrefetchTs < PRICE_CACHE_TTL) return;
+  _recoPrefetchTs = now;
+
+  const seen = new Set();
+  const toFetch = [];
+  // Prioritise strategy sections (especially psa10) — that's where the wrong
+  // price is most visible. Cap at 5 per section so we don't hammer the API.
+  for (const key of ['psa10', 'psa9', 'psa8', 'raw', 'general']) {
+    for (const r of (all[key] || []).slice(0, 5)) {
+      if (seen.has(r.card.i)) continue;
+      seen.add(r.card.i);
+      const cached = getCachedPrice(r.card.i);
+      // Only fetch if there's no live pcPsa10 in the cache (the stale case)
+      if (!cached || (key !== 'general' && !cached.pcPsa10)) toFetch.push(r.card);
+    }
+  }
+  if (!toFetch.length) return;
+
+  for (const card of toFetch) {
+    try {
+      const priceData = await fetchFreshPriceData(card);
+      // Preserve any previously fetched TCGPlayer prices
+      if (priceData.tcgMarket <= 0) {
+        const existing = getLastKnownPrice(card.i);
+        if (existing && existing.tcgMarket > 0) {
+          priceData.tcgMarket = existing.tcgMarket;
+          priceData.tcgLow    = existing.tcgLow    || 0;
+          priceData.tcgMid    = existing.tcgMid    || 0;
+          priceData.tcgHigh   = existing.tcgHigh   || 0;
+          priceData.tcgUrl    = priceData.tcgUrl   || existing.tcgUrl;
+        }
+      }
+      setCachedPrice(card.i, priceData); // also nulls _recoCached
+    } catch {}
+  }
+  // Rebuild tiles now that live prices are available
+  _renderHomeReco(true);
+}
 
 function _getRecoDismissed() {
   try { return new Set(JSON.parse(localStorage.getItem(RECO_DISMISSED_KEY) || '[]')); }
@@ -13514,6 +13561,8 @@ function _renderHomeReco(forceRebuild) {
       _recoCached = { ...all, ts: Date.now() };
       _renderHomeRecoResults(all.general, list, $('homeRecoCount'));
       _STRAT_SECTIONS.forEach(s => _renderHomeRecoStratResults(all[s.key], $(s.listId), $(s.countId), s.key));
+      // Fetch live prices for top reco cards so PSA10 tiles don't show stale static prices
+      _homeRecoPrefetch(all);
     });
   } else {
     _renderHomeRecoResults(_recoCached.general, list, $('homeRecoCount'));

@@ -7015,18 +7015,19 @@ section.card .card-collapse-btn { padding: 10px; }
   align-items: center;
   gap: 8px;
   padding: 0 20px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .home-section-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--text);
+  letter-spacing: 0.01em;
   flex: 1;
 }
-.home-section-title svg { opacity: 0.7; flex-shrink: 0; }
+.home-section-title svg { opacity: 0.55; flex-shrink: 0; }
 .home-count-badge {
   background: var(--accent);
   color: #1a1200;
@@ -7327,32 +7328,34 @@ section.card .card-collapse-btn { padding: 10px; }
   flex-shrink: 0;
 }
 .home-scroll-btn {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--bg-raised);
-  color: var(--text);
-  font-size: 18px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--text-muted);
+  font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0 0 1px;
-  transition: background 0.15s, opacity 0.15s;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
   flex-shrink: 0;
   line-height: 1;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
-.home-scroll-btn:hover:not(:disabled) { background: var(--glass-bg); }
-.home-scroll-btn:disabled { opacity: 0.2; cursor: default; }
+.home-scroll-btn:hover:not(:disabled) { background: rgba(255,255,255,0.12); color: var(--text); border-color: rgba(255,255,255,0.2); }
+.home-scroll-btn:disabled { opacity: 0.18; cursor: default; }
 
 .home-scroll-bar {
-  height: 4px;
-  margin: 0 20px 12px;
+  height: 3px;
+  margin: -2px 20px 10px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.07);
+  background: rgba(255,255,255,0.08);
   position: relative;
   overflow: hidden;
   transition: opacity 0.3s;
@@ -7361,20 +7364,20 @@ section.card .card-collapse-btn { padding: 10px; }
   position: absolute;
   top: 0; left: 0;
   height: 100%;
-  min-width: 36px;
+  min-width: 40px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.24);
+  background: rgba(255,255,255,0.32);
   cursor: grab;
   touch-action: none;
   transition: background 0.15s;
   will-change: transform;
 }
-.home-scroll-thumb:hover { background: rgba(255,255,255,0.42); }
-.home-scroll-thumb.dragging { cursor: grabbing; background: rgba(232,182,52,0.7); }
+.home-scroll-thumb:hover { background: rgba(255,255,255,0.52); }
+.home-scroll-thumb.dragging { cursor: grabbing; background: rgba(232,182,52,0.8); }
 
 [data-theme="light"] .home-scroll-btn {
-  background: rgba(255,255,255,0.52);
-  border-color: rgba(0,0,0,0.1);
+  background: rgba(255,255,255,0.68);
+  border-color: rgba(0,0,0,0.12);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: #1c1c1e;
@@ -7398,6 +7401,12 @@ section.card .card-collapse-btn { padding: 10px; }
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
+@media (hover: hover) {
+  .home-card-tile:hover {
+    transform: translateY(-3px) scale(1.015);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.52), inset 0 1px 0 rgba(255,255,255,0.13);
+  }
+}
 .home-card-tile:active {
   transform: scale(0.94);
   box-shadow: 0 2px 8px rgba(0,0,0,0.5);
@@ -7415,13 +7424,15 @@ section.card .card-collapse-btn { padding: 10px; }
 }
 .home-card-info {
   padding: 8px 10px 10px;
-  background: rgba(12,13,20,0.95);
-  border-top: 1px solid rgba(255,255,255,0.06);
+  background: rgba(12,13,20,0.88);
+  border-top: 1px solid rgba(255,255,255,0.09);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .home-card-name {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text);
+  color: #f0ede8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7778,10 +7789,9 @@ section.card .card-collapse-btn { padding: 10px; }
 /* ── "View all" tile at end of horizontal reco scroll row ── */
 .reco-view-all-tile {
   flex-shrink: 0;
-  width: 90px;
+  width: 76px;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
 }
 .reco-view-all-btn {
   display: flex;
@@ -7789,8 +7799,7 @@ section.card .card-collapse-btn { padding: 10px; }
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: 80px;
-  height: 100%;
+  width: 100%;
   min-height: 160px;
   border-radius: 14px;
   border: 1px dashed rgba(232,182,52,0.35);
@@ -7799,9 +7808,9 @@ section.card .card-collapse-btn { padding: 10px; }
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
-  writing-mode: vertical-lr;
-  text-orientation: mixed;
-  letter-spacing: 0.04em;
+  text-align: center;
+  letter-spacing: 0.03em;
+  line-height: 1.45;
   transition: background 0.15s, border-color 0.15s;
 }
 .reco-view-all-btn:hover { background: rgba(232,182,52,0.12); border-color: rgba(232,182,52,0.6); }
