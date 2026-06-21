@@ -13583,18 +13583,22 @@ function buildAllHomeRecos() {
     general.push(base);
 
     // Strategy sections — only cards where that specific strategy is the BEST LONG-TERM PICK
-    // (not high-risk, ROI ≥ 80%). Matches exactly what gets the badge on the card's Hold Strategy.
+    // (not high-risk, ROI ≥ 35%). Matches exactly what gets the badge on the card's Hold Strategy.
+    // PSA grade sections require a live or tracked PSA 10 price — 'estimated' anchors (raw × multiplier)
+    // are excluded because the estimate can be wildly wrong (e.g. £78 estimate vs £1,209 live).
     const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(c) : { ok: false };
     if (hc.ok && hc.bestLongTermPick) {
       const wk = hc.bestLongTermPick.key;
       const stratGBP = hc.bestLongTermPick.today * fx;
-      if (byStrat[wk] && stratGBP <= maxBudget) {
+      const anchorOk = !wk.startsWith('psa') || (hc.anchorSource && hc.anchorSource !== 'estimated');
+      if (byStrat[wk] && stratGBP <= maxBudget && anchorOk) {
         byStrat[wk].push({
           ...base,
           strategyRoi:       hc.bestLongTermPick.roi,
           strategyRiskAdj:   hc.bestLongTermPick.riskAdjusted,
           strategyProfitGBP: hc.bestLongTermPick.profit * fx,
           strategyToday:     hc.bestLongTermPick.today * fx,
+          anchorSource:      hc.anchorSource,
         });
       }
     }
