@@ -14047,32 +14047,47 @@ function openHomePip(id, imgUrl) {
   document.getElementById('homePipName').textContent = card ? card.n : '';
   document.getElementById('homePipSet').textContent  = card ? (card.s || '') : '';
 
-  // Live market price (PC/TCG midpoint if both available)
-  const priceData = (typeof getCachedPrice === 'function') ? (getCachedPrice(id) || getLastKnownPrice(id)) : null;
-  const _mid = (priceData && priceData.pcUngraded > 0 && priceData.tcgMarket > 0)
-    ? (priceData.pcUngraded + priceData.tcgMarket) / 2 : 0;
-  const priceUSD = _mid || (priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || (card ? card.p : 0)) : (card ? card.p : 0));
-  document.getElementById('homePipPrice').textContent = priceUSD > 0 ? fmtGBP(priceUSD) : '—';
+  // Pill elements
+  const pillName = document.getElementById('homePipPillName');
+  const pillPrice = document.getElementById('homePipPillPrice');
+  if (pillName) pillName.textContent = card ? card.n : '';
+
+  // Price from cache (shown immediately while live fetch runs)
+  const cachedData = (typeof getCachedPrice === 'function') ? (getCachedPrice(id) || getLastKnownPrice(id)) : null;
+  const _calcMid = d => (d && d.pcUngraded > 0 && d.tcgMarket > 0)
+    ? (d.pcUngraded + d.tcgMarket) / 2
+    : (d ? (d.pcUngraded || d.tcgMarket || d.market || d.mid || 0) : 0);
+  let _pipPriceUSD = _calcMid(cachedData) || (card ? card.p : 0);
+
+  const priceEl  = document.getElementById('homePipPrice');
+  const psa10El  = document.getElementById('homePipPsa10');
+  const liveDot  = document.getElementById('homePipLiveDot');
+
+  function _pipSetPrice(usd, psa10USD) {
+    if (priceEl)  priceEl.textContent  = usd > 0    ? fmtGBP(usd)    : '—';
+    if (psa10El)  psa10El.textContent  = psa10USD > 0 ? fmtGBP(psa10USD) : '—';
+    if (pillPrice) pillPrice.textContent = usd > 0   ? fmtGBP(usd)    : '—';
+  }
+
+  // Show cached price immediately
+  const cachedPsa10 = cachedData?.pcPsa10 || (card?.p10 || 0);
+  _pipSetPrice(_pipPriceUSD, cachedPsa10);
 
   // 5yr expected growth
   const potentialEl = document.getElementById('homePipPotential');
-  if (potentialEl) {
-    if (card) {
-      try {
-        const fc = forecast(card, 0, 5);
-        const yr5USD = fc.scenarios.expected[4].priceUSD;
-        const pct = fc.currentPriceUSD > 0 ? Math.round((yr5USD / fc.currentPriceUSD - 1) * 100) : 0;
-        potentialEl.textContent = `${fmtGBP(yr5USD)} · +${pct}%`;
-      } catch { potentialEl.textContent = '—'; }
-    } else {
-      potentialEl.textContent = '—';
-    }
-  }
+  if (potentialEl && card) {
+    try {
+      const fc = forecast(card, 0, 5);
+      const yr5USD = fc.scenarios.expected[4].priceUSD;
+      const pct = fc.currentPriceUSD > 0 ? Math.round((yr5USD / fc.currentPriceUSD - 1) * 100) : 0;
+      potentialEl.textContent = `${fmtGBP(yr5USD)} · +${pct}%`;
+    } catch { potentialEl.textContent = '—'; }
+  } else if (potentialEl) { potentialEl.textContent = '—'; }
 
-  // Max buy — grade-aware
+  // Max buy — grade-aware, updates when live prices arrive
   function _pipUpdateMaxBuy() {
     const grade = document.getElementById('homePipGrade')?.value || 'raw';
-    let maxUSD = priceUSD;
+    let maxUSD = _pipPriceUSD;
     if (grade !== 'raw' && card) {
       const anchor = getPsa10Anchor(card);
       const psa10USD = anchor && anchor.usd > 0 ? anchor.usd : (card.p10 || 0);
@@ -14086,11 +14101,21 @@ function openHomePip(id, imgUrl) {
   const gradeSelect = document.getElementById('homePipGrade');
   if (gradeSelect) gradeSelect.onchange = _pipUpdateMaxBuy;
 
-  // Pill (collapsed state) mirrors name + price
-  const pillName = document.getElementById('homePipPillName');
-  const pillPrice = document.getElementById('homePipPillPrice');
-  if (pillName) pillName.textContent = card ? card.n : '';
-  if (pillPrice) pillPrice.textContent = priceUSD > 0 ? fmtGBP(priceUSD) : '—';
+  // Auto-fetch live prices — show dot while loading, update on complete
+  if (card && typeof fetchFreshPriceData === 'function') {
+    if (liveDot) liveDot.style.display = '';
+    fetchFreshPriceData(card).then(priceData => {
+      if (_homePipId !== id) return; // PiP was closed or changed card
+      if (priceData) {
+        if (typeof setCachedPrice === 'function') setCachedPrice(id, priceData);
+        const liveUSD = _calcMid(priceData);
+        if (liveUSD > 0) { _pipPriceUSD = liveUSD; }
+        _pipSetPrice(_pipPriceUSD, priceData.pcPsa10 || cachedPsa10);
+        _pipUpdateMaxBuy();
+      }
+      if (liveDot) liveDot.style.display = 'none';
+    }).catch(() => { if (liveDot) liveDot.style.display = 'none'; });
+  }
 
   document.getElementById('homePipView').onclick = () => { closeHomePip(); _homeItemClick(id); };
 

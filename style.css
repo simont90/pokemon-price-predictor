@@ -7688,6 +7688,16 @@ section.card .card-collapse-btn { padding: 10px; }
 }
 .pip-accent { color: var(--accent, #e8b634); }
 .pip-upside { color: #4caf6e; font-size: 12.5px; }
+.pip-live-dot {
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 3px;
+  vertical-align: middle;
+  animation: pip-pulse 1s ease-in-out infinite;
+}
+@keyframes pip-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 /* Max buy row */
 .pip-maxbuy {
   border-top: 1px solid rgba(255,255,255,0.07);

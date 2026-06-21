@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260621m">
+  <link rel="stylesheet" href="style.css?v=20260621n">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2150,11 +2150,15 @@
           <div id="homePipSet" class="home-pip-set"></div>
           <div class="pip-stats">
             <div class="pip-stat">
-              <div class="pip-stat-label">Live market</div>
+              <div class="pip-stat-label">Market <span id="homePipLiveDot" class="pip-live-dot" style="display:none"></span></div>
               <div id="homePipPrice" class="pip-stat-val pip-accent"></div>
             </div>
             <div class="pip-stat">
-              <div class="pip-stat-label">5yr potential</div>
+              <div class="pip-stat-label">PSA 10</div>
+              <div id="homePipPsa10" class="pip-stat-val"></div>
+            </div>
+            <div class="pip-stat">
+              <div class="pip-stat-label">5yr</div>
               <div id="homePipPotential" class="pip-stat-val pip-upside"></div>
             </div>
           </div>
@@ -2187,7 +2191,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260621m"></script>
+  <script src="app.js?v=20260621n"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
