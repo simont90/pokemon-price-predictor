@@ -1994,8 +1994,8 @@ async function fetchFreshPriceData(card) {
       }
     } catch (e) {
       console.warn('TCGPlayer secondary fetch failed:', e);
-      // If PriceCharting also failed, this is a total failure
-      if (priceData.pcUngraded <= 0) throw e;
+      // Only fatal if PriceCharting also failed AND there's no saved URL to try in step 2b
+      if (priceData.pcUngraded <= 0 && !getTcgOverride(card.i)) throw e;
     }
   }
 
