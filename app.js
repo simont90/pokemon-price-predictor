@@ -1531,17 +1531,14 @@ async function fetchTCGPlayerPriceByProductId(productId, card) {
   if (productId) {
     try {
       const workerUrl = getMktWorkerUrl();
-      console.log('[TCG] calling worker:', `${workerUrl}/tcg-price?productId=${productId}`);
       const r = await fetch(`${workerUrl}/tcg-price?productId=${encodeURIComponent(productId)}`);
-      console.log('[TCG] worker status:', r.status, r.ok);
       if (r.ok) {
         const d = await r.json();
-        console.log('[TCG] worker data:', JSON.stringify(d));
         if (d && (d.market > 0 || d.low > 0)) {
           return { market: d.market || 0, low: d.low || 0, mid: d.mid || 0, high: d.high || 0, directLow: d.directLow || 0, tcgUpdated: '' };
         }
       }
-    } catch (e) { console.warn('[TCG] worker fetch error:', e); }
+    } catch { /* silent — worker is best-effort */ }
   }
 
   // Fallback: pokemontcg.io (EN cards only, requires set metadata)
@@ -1939,6 +1936,7 @@ async function fetchFreshPriceData(card) {
   let priceData = {
     source: 'pricecharting',
     market: 0, low: 0, mid: 0, high: 0, directLow: 0,
+    tcgMarket: 0, tcgLow: 0, tcgMid: 0, tcgHigh: 0,
     tcgUpdated: '', tcgUrl: '',
     cmTrend: 0, cmAvg1: 0, cmAvg7: 0, cmAvg30: 0, cmLow: 0, cmSuggested: 0,
     cmUpdated: '', cmUrl: '', cmLang: card.lang || 'EN',
@@ -1960,7 +1958,6 @@ async function fetchFreshPriceData(card) {
   }
 
   // 2. For EN cards, also fetch TCGPlayer/Cardmarket as secondary data
-  console.log('[fetchFresh] card.i:', card.i, '| lang:', JSON.stringify(card.lang), '| pcUngraded:', priceData.pcUngraded);
   if (card.lang !== 'JP') {
     try {
       const enData = await fetchLivePriceEN(card.i);
@@ -2009,7 +2006,6 @@ async function fetchFreshPriceData(card) {
   if (priceData.tcgMarket <= 0) {
     const _savedTcgUrl = getTcgOverride(card.i);
     const _productId   = extractTcgProductId(_savedTcgUrl);
-    console.log('[2b] cardId:', card.i, '| tcgUrl:', _savedTcgUrl, '| productId:', _productId);
     if (_productId) {
       try {
         const _tcgData = await fetchTCGPlayerPriceByProductId(_productId, card);
@@ -2028,7 +2024,7 @@ async function fetchFreshPriceData(card) {
             priceData.market = _tcgData.market;
           }
         }
-      } catch (e) { console.error('[2b ERR]', e.message || e); }
+      } catch { /* silent — URL-based lookup is best-effort */ }
     }
   }
 
@@ -6939,10 +6935,6 @@ function setupEditCard() {
     const productId = extractTcgProductId(url);
     if (productId) {
       if (status) { status.style.display = 'block'; status.textContent = 'URL saved — fetching live prices…'; }
-      // Direct worker ping — independent of the full price-fetch flow
-      const _pingUrl = getMktWorkerUrl() + `/tcg-price?productId=${productId}`;
-      console.error('[SAVE-PING] calling:', _pingUrl);
-      fetch(_pingUrl).then(r => r.json()).then(d => console.error('[SAVE-PING] ok | market:', d.market, '| source:', d.source, '| allPrices:', JSON.stringify(d.allPrices))).catch(e => console.error('[SAVE-PING] FAILED:', e.message || e));
       const _cache = getPriceCache();
       delete _cache[card.i];
       try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_cache)); } catch {}
