@@ -2100,6 +2100,19 @@ async function fetchCollectricsSearchData(card) {
 async function fetchAndCacheFresh(card, originalId) {
   try {
     const priceData = await fetchFreshPriceData(card);
+    // If the fresh fetch lost the TCGPlayer price (worker temporarily unreachable)
+    // but the existing cache entry still has one, preserve it so the row doesn't vanish.
+    if (priceData.tcgMarket <= 0) {
+      const existing = getLastKnownPrice(card.i);
+      if (existing && existing.tcgMarket > 0) {
+        priceData.tcgMarket = existing.tcgMarket;
+        priceData.tcgLow    = existing.tcgLow    || 0;
+        priceData.tcgMid    = existing.tcgMid    || 0;
+        priceData.tcgHigh   = existing.tcgHigh   || 0;
+        priceData.tcgUrl    = priceData.tcgUrl   || existing.tcgUrl;
+        priceData.tcgUpdated = priceData.tcgUpdated || existing.tcgUpdated;
+      }
+    }
     setCachedPrice(card.i, priceData);
     // If still on same card, update
     if (originalId === livePriceFetchId && selectedCard && selectedCard.i === card.i) {
@@ -2503,7 +2516,8 @@ function selectCard(id) {
   const manualWrap = $('linkTcgManualWrap');
   const manualInput = $('linkTcgManualInput');
   if (enrichStatus) { enrichStatus.style.display = 'none'; enrichStatus.textContent = ''; }
-  if (manualInput) manualInput.value = '';
+  // Pre-fill TCGPlayer URL input with the saved URL so the user can see it's stored
+  if (manualInput) manualInput.value = (card ? getTcgOverride(card.i) : null) || '';
   // Pre-fill manual TCGPlayer price input with any existing override
   const _tcgPriceInput = $('linkTcgPriceInput');
   if (_tcgPriceInput) {
@@ -10937,6 +10951,17 @@ async function psRefreshOne(id) {
   if (!card) return { ok: false, error: `Card not in catalog: ${id}` };
   try {
     const data = await fetchFreshPriceData(card);
+    if (data.tcgMarket <= 0) {
+      const existing = getLastKnownPrice(card.i);
+      if (existing && existing.tcgMarket > 0) {
+        data.tcgMarket  = existing.tcgMarket;
+        data.tcgLow     = existing.tcgLow    || 0;
+        data.tcgMid     = existing.tcgMid    || 0;
+        data.tcgHigh    = existing.tcgHigh   || 0;
+        data.tcgUrl     = data.tcgUrl        || existing.tcgUrl;
+        data.tcgUpdated = data.tcgUpdated    || existing.tcgUpdated;
+      }
+    }
     setCachedPrice(card.i, data);
     // If this is the currently selected card, update the live panel immediately
     if (selectedCard && selectedCard.i === card.i) {
