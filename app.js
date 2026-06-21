@@ -14259,6 +14259,10 @@ function openHomePip(id, imgUrl) {
         if (liveUSD > 0) { _pipPriceUSD = liveUSD; }
         _pipSetPrice(_pipPriceUSD, priceData.pcPsa10 || cachedPsa10);
         _pipUpdateMaxBuy();
+        // Refresh home tiles immediately so any stale price/signal is corrected,
+        // and rebuild buy recommendations so over-budget cards are removed at once.
+        try { _renderHomeCollection(); } catch {}
+        try { _renderHomeReco(true); } catch {}
       }
       if (liveDot) liveDot.style.display = 'none';
     }).catch(() => { if (liveDot) liveDot.style.display = 'none'; });
