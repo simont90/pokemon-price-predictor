@@ -5895,12 +5895,18 @@ function openPCOverride() {
   $('pcovInput').value = buildPCQuery(pcovCard);
   // Show what's currently active
   const _pcov = getPCOverride(pcovCard.i);
-  const cur = _pcov && _pcov.notAvailable
+  const _isNA = !!(  _pcov && _pcov.notAvailable);
+  const cur = _isNA
     ? 'Marked as <strong>Not on PriceCharting</strong> — PC lookup is skipped for this card.'
     : (livePrice && livePrice.pcName
       ? `Currently using: <strong>${escapeHtml(livePrice.pcName)}</strong> (${escapeHtml(livePrice.pcConsole || '')})`
       : 'No PriceCharting match yet for this card.');
   $('pcovCurrent').innerHTML = cur;
+  // Show "Search again" only when N/A is set; hide "Not on PriceCharting" when already set
+  const _naBtn = $('pcovNaBtn');
+  const _scanBtn = $('pcovScanBtn');
+  if (_naBtn) _naBtn.style.display = _isNA ? 'none' : '';
+  if (_scanBtn) _scanBtn.style.display = _isNA ? '' : 'none';
   $('pcovSub').textContent = `Card: ${pcovCard.n}${pcovCard.cn ? ' #' + pcovCard.cn : ''} · ${setsData?.[pcovCard.sc]?.name || ''} · ${pcovCard.lang || 'EN'}`;
   setTimeout(() => $('pcovInput').focus(), 50);
   // Auto-run a search
@@ -5979,8 +5985,8 @@ function renderPCOverrideCard(p, idx) {
 
 function applyPCOverride(product) {
   if (!pcovCard || !product) return;
-  // Persist the full product blob so we can re-render even when offline
-  setPCOverride(pcovCard.i, {
+  const cardId = pcovCard.i;
+  setPCOverride(cardId, {
     id: product.id,
     productName: product.productName,
     consoleName: product.consoleName,
@@ -5989,45 +5995,39 @@ function applyPCOverride(product) {
     price3: product.price3,
     imageUri: product.imageUri,
   });
-  // Bust the live-price cache for this card so the override is picked up immediately
   try {
     const cache = getPriceCache();
-    delete cache[pcovCard.i];
+    delete cache[cardId];
     localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
   } catch {}
   closePCOverride();
-  // Re-fetch with the override applied
-  if (selectedCard && selectedCard.i === pcovCard.i) {
-    fetchLivePrice(selectedCard);
-  }
+  if (selectedCard && selectedCard.i === cardId) fetchLivePrice(selectedCard);
 }
 
 function markPCNotAvailable() {
   if (!pcovCard) return;
-  setPCOverride(pcovCard.i, { notAvailable: true });
+  const cardId = pcovCard.i;
+  setPCOverride(cardId, { notAvailable: true });
   try {
     const cache = getPriceCache();
-    delete cache[pcovCard.i];
+    delete cache[cardId];
     localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
   } catch {}
   closePCOverride();
-  if (selectedCard && selectedCard.i === pcovCard.i) {
-    fetchLivePrice(selectedCard);
-  }
+  if (selectedCard && selectedCard.i === cardId) fetchLivePrice(selectedCard);
 }
 
 function clearPCOverride() {
   if (!pcovCard) return;
-  setPCOverride(pcovCard.i, null);
+  const cardId = pcovCard.i;
+  setPCOverride(cardId, null);
   try {
     const cache = getPriceCache();
-    delete cache[pcovCard.i];
+    delete cache[cardId];
     localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
   } catch {}
   closePCOverride();
-  if (selectedCard && selectedCard.i === pcovCard.i) {
-    fetchLivePrice(selectedCard);
-  }
+  if (selectedCard && selectedCard.i === cardId) fetchLivePrice(selectedCard);
 }
 
 function setupPCOverride() {
@@ -6043,6 +6043,15 @@ function setupPCOverride() {
   if (clear) clear.addEventListener('click', clearPCOverride);
   const na = $('pcovNaBtn');
   if (na) na.addEventListener('click', markPCNotAvailable);
+  const scan = $('pcovScanBtn');
+  if (scan) scan.addEventListener('click', () => {
+    if (!pcovCard) return;
+    setPCOverride(pcovCard.i, null);
+    $('pcovNaBtn').style.display = '';
+    $('pcovScanBtn').style.display = 'none';
+    $('pcovCurrent').innerHTML = 'No PriceCharting match yet for this card.';
+    runPCOverrideSearch();
+  });
   const input = $('pcovInput');
   if (input) {
     input.addEventListener('keydown', (e) => {

@@ -2744,6 +2744,19 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   white-space: nowrap;
 }
 .pcov-na-btn:hover { background: var(--surface-hover); }
+.pcov-scan-btn {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.pcov-scan-btn:hover { background: var(--accent-hover); }
 
 .pcov-pick-btn {
   background: var(--accent);
