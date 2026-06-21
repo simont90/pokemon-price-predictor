@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260622e">
+  <link rel="stylesheet" href="style.css?v=20260622f">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2241,6 +2241,8 @@
       </div>
       <div class="home-pip-btns">
         <button id="homePipView" class="home-pip-view-btn">View full card ↗</button>
+        <button id="homePipWish"  class="home-pip-action-btn" title="Add to wishlist">♡</button>
+        <button id="homePipWatch" class="home-pip-action-btn" title="Add to watchlist">◎</button>
         <button id="homePipCollapse" class="home-pip-collapse-btn" title="Minimise">⊟</button>
         <button id="homePipClose" class="home-pip-close-btn" title="Close">✕</button>
       </div>
@@ -2266,7 +2268,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260622c"></script>
+  <script src="app.js?v=20260622d"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

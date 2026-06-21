@@ -7521,7 +7521,9 @@ section.card .card-collapse-btn { padding: 10px; }
 .home-card-remove:hover,
 .home-card-remove:active { background: rgba(220,50,50,0.8); color: #fff; border-color: transparent; }
 /* Touch: remove button appears briefly after a tap via JS focus trick — normally hidden */
-@media (hover: none) { .home-card-remove { opacity: 0 !important; } }
+/* Reco tiles hide the remove button via .reco-tile .home-card-remove { display:none }
+   All other tiles (wishlist, watchlist) keep it visible on touch */
+@media (hover: none) { .home-card-remove { opacity: 1; } }
 
 /* ── PiP trigger button (expand icon on tile image) ── */
 .home-pip-trigger {
@@ -7784,6 +7786,23 @@ section.card .card-collapse-btn { padding: 10px; }
 }
 .home-pip-collapse-btn:hover,
 .home-pip-close-btn:hover { background: rgba(255,255,255,0.13); color: var(--text, #e8eaf0); }
+.home-pip-action-btn {
+  width: 46px; height: 46px;
+  border-radius: 13px;
+  border: 1px solid rgba(255,255,255,0.13);
+  background: rgba(255,255,255,0.07);
+  color: var(--text-muted, #888);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.home-pip-action-btn:hover { background: rgba(255,255,255,0.13); color: var(--text, #e8eaf0); }
+.home-pip-action-btn.pip-action-active { color: var(--accent, #e8b634); border-color: rgba(232,182,52,0.35); background: rgba(232,182,52,0.12); }
+#homePipWatch.pip-action-active { color: rgba(61,214,140,0.9); border-color: rgba(61,214,140,0.3); background: rgba(61,214,140,0.1); }
 /* Desktop: centered card instead of bottom sheet */
 @media (min-width: 660px) {
   .home-pip { justify-content: center; align-items: center; }

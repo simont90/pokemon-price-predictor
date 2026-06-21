@@ -14306,6 +14306,56 @@ function openHomePip(id, imgUrl) {
 
   document.getElementById('homePipView').onclick = () => { closeHomePip(); closeHomeViewAll(); _homeItemClick(id); };
 
+  // Wish / Watch toggle buttons
+  const _pipWishBtn  = document.getElementById('homePipWish');
+  const _pipWatchBtn = document.getElementById('homePipWatch');
+  function _pipSyncWish() {
+    if (!_pipWishBtn) return;
+    const on = wishlist.some(w => w.id === id);
+    _pipWishBtn.textContent = on ? '♥' : '♡';
+    _pipWishBtn.classList.toggle('pip-action-active', on);
+  }
+  function _pipSyncWatch() {
+    if (!_pipWatchBtn) return;
+    const on = watchlist.some(w => w.id === id);
+    _pipWatchBtn.textContent = on ? '◉' : '◎';
+    _pipWatchBtn.classList.toggle('pip-action-active', on);
+  }
+  if (_pipWishBtn && card) {
+    _pipSyncWish();
+    _pipWishBtn.onclick = () => {
+      if (wishlist.some(w => w.id === id)) {
+        wishlist = wishlist.filter(w => w.id !== id);
+        saveWishlist(); renderWishlist(); updateWishlistButton();
+      } else {
+        const priceGBP = usdToGbp(_pipPriceUSD);
+        wishlist.push({ id, name: card.n, set: card.s, lang: card.lang || 'EN', img: getCardImg(card), addedDate: new Date().toISOString(), addedPriceGBP: priceGBP, targetGBP: +(priceGBP * 0.85).toFixed(2) });
+        saveWishlist(); renderWishlist(); updateWishlistButton();
+        _recoCached = null; setTimeout(() => _renderHomeReco(true), 500);
+      }
+      _pipSyncWish();
+      _scheduleHomeRender();
+    };
+  } else if (_pipWishBtn) { _pipWishBtn.onclick = null; }
+  if (_pipWatchBtn && card) {
+    _pipSyncWatch();
+    _pipWatchBtn.onclick = () => {
+      if (watchlist.some(w => w.id === id)) {
+        watchlist = watchlist.filter(w => w.id !== id);
+        saveWatchlist();
+      } else {
+        const pull = 7.65;
+        const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pull) : { total: 50 };
+        const sig = (typeof computeSignal === 'function') ? computeSignal(card, pull, des.total) : null;
+        watchlist.push({ id, name: card.n, set: card.s, lang: card.lang || 'EN', img: getCardImg(card), addedAt: new Date().toISOString(), addedSignal: sig?.signal || 'BUY', addedScore: sig?.score || 0, addedPriceUSD: _pipPriceUSD, lastNotifiedSignal: sig?.signal || 'BUY', lastNotifiedAt: new Date().toISOString() });
+        saveWatchlist();
+        _recoCached = null; setTimeout(() => _renderHomeReco(true), 500);
+      }
+      _pipSyncWatch();
+      _scheduleHomeRender();
+    };
+  } else if (_pipWatchBtn) { _pipWatchBtn.onclick = null; }
+
   pip.classList.remove('pip-collapsed');
   pip.style.display = '';
   requestAnimationFrame(() => pip.classList.add('pip-visible'));
