@@ -7605,7 +7605,9 @@ section.card .card-collapse-btn { padding: 10px; }
   background: rgba(0,0,0,0.62);
   backdrop-filter: blur(4px);
   cursor: pointer;
+  pointer-events: none;
 }
+.home-pip.pip-visible .home-pip-bg { pointer-events: auto; }
 /* Bottom sheet */
 .home-pip-sheet {
   position: relative;
