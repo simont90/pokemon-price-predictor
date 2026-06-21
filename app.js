@@ -3134,20 +3134,47 @@ function updateMaxPrice(modelPriceUSD) {
   if (ppMaxbuy) ppMaxbuy.style.display = inPortfolio ? 'none' : '';
   if (ppDivider) ppDivider.style.display = inPortfolio ? 'none' : '';
 
-  let maxUSD, logic;
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+
+  let maxGBP, logic;
   if (selectedCard) {
     const mkt = getCurrentPrice(selectedCard);
+    const mktGBP = usdToGbp(mkt);
     const isLive = livePrice && (livePrice.market > 0 || livePrice.mid > 0);
     const priceTag = isLive ? 'Live market' : 'Market';
-    maxUSD = Math.min(modelPriceUSD, mkt);
-    if (modelPriceUSD < mkt) logic = `Model says ${fmtGBP(modelPriceUSD)} — card appears overvalued vs ${priceTag.toLowerCase()} (${fmtGBP(mkt)})`;
-    else if (modelPriceUSD > mkt * 1.1) logic = `${priceTag} price (${fmtGBP(mkt)}) — model sees upside to ${fmtGBP(modelPriceUSD)}`;
-    else logic = `${priceTag} (${fmtGBP(mkt)}) and model (${fmtGBP(modelPriceUSD)}) agree — fairly valued`;
+
+    // Hold-strategy max: highest eBay price that still delivers ≥30% 5yr ROI.
+    // bestLongTermPick.yr5 is the net exit value (after sell friction).
+    const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(selectedCard) : { ok: false };
+    let holdMaxGBP = 0, holdLabel = '';
+    if (hc.ok && hc.bestLongTermPick) {
+      const yr5GBP = hc.bestLongTermPick.yr5 * fx;
+      holdMaxGBP = yr5GBP / (1 + MIN_HOLD_ROI);
+      const roi = Math.round(hc.bestLongTermPick.roi);
+      holdLabel = ` (${hc.bestLongTermPick.label}, +${roi}% full-ROI)`;
+    }
+
+    // Standard max: min of model and market — baseline floor.
+    const standardMaxGBP = usdToGbp(Math.min(modelPriceUSD, mkt));
+
+    // If the hold strategy supports paying more than the standard floor, show that.
+    // Cap at model × 1.5 to suppress nonsensical results.
+    const modelCapGBP = usdToGbp(modelPriceUSD) * 1.5;
+    if (holdMaxGBP > standardMaxGBP && holdMaxGBP <= modelCapGBP) {
+      maxGBP = holdMaxGBP;
+      const premiumPct = Math.round(((holdMaxGBP / mktGBP) - 1) * 100);
+      logic = `Hold upside supports up to ${premiumPct > 0 ? premiumPct + '% above' : ''} market${holdLabel} · eBay adds ~${Math.round(EBAY_LISTING_PREMIUM * 100)}% so expect listings near ${fmtGBPDirect(mktGBP * (1 + EBAY_LISTING_PREMIUM))}`;
+    } else {
+      maxGBP = standardMaxGBP;
+      if (modelPriceUSD < mkt) logic = `Model (${fmtGBP(modelPriceUSD)}) < ${priceTag.toLowerCase()} (${fmtGBPDirect(mktGBP)}) — overvalued signal`;
+      else if (modelPriceUSD > mkt * 1.1) logic = `${priceTag} ${fmtGBPDirect(mktGBP)} · model sees upside to ${fmtGBP(modelPriceUSD)}${holdLabel}`;
+      else logic = `${priceTag} ${fmtGBPDirect(mktGBP)} and model agree${holdLabel} · eBay listings typically ~${fmtGBPDirect(mktGBP * (1 + EBAY_LISTING_PREMIUM))}`;
+    }
   } else {
-    maxUSD = modelPriceUSD;
+    maxGBP = usdToGbp(modelPriceUSD);
     logic = 'Based on model only. Select a card for market comparison.';
   }
-  $('maxPriceGBP').textContent = `£${usdToGbp(maxUSD).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  $('maxPriceGBP').textContent = `£${maxGBP.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   $('maxPriceLogic').textContent = logic;
 }
 
@@ -3160,6 +3187,10 @@ function updateDealCheck(modelPriceUSD) {
   }
   const gradeKey = ($('dealGrade') && $('dealGrade').value) || 'raw';
   const shippingGBP = parseFloat($('dealShipping')?.value) || 0;
+  const totalSpendGBP = ebayGBP + shippingGBP;
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+
+  // Raw market reference (PriceCharting / pokemontcg.io) — NOT eBay-adjusted.
   let refUSD;
   if (gradeKey !== 'raw' && selectedCard) {
     const anchor = getPsa10Anchor(selectedCard);
@@ -3173,31 +3204,53 @@ function updateDealCheck(modelPriceUSD) {
   } else {
     refUSD = selectedCard ? Math.min(modelPriceUSD, getCurrentPrice(selectedCard)) : modelPriceUSD;
   }
-  const cardRefGBP = usdToGbp(refUSD);
-  const refGBP = cardRefGBP + shippingGBP;
-  const diff = refGBP - ebayGBP;
-  const pct = ((diff / ebayGBP) * 100).toFixed(0);
-  const refLabel = shippingGBP > 0
-    ? `${fmtGBP(cardRefGBP)} + ${fmtGBP(shippingGBP)} ship = ${fmtGBP(refGBP)}`
-    : fmtGBP(refGBP);
+  const marketGBP = usdToGbp(refUSD); // raw market reference
+
+  // eBay-adjusted fair price: sellers must recover the ~13% FVF plus a profit
+  // margin — 15% above market is the expected floor for an eBay listing.
+  const ebayFairCardGBP = marketGBP * (1 + EBAY_LISTING_PREMIUM);
+  const ebayFairTotalGBP = ebayFairCardGBP + shippingGBP;
+
+  // Absolute difference vs the eBay-adjusted fair value.
+  const diff = ebayFairTotalGBP - totalSpendGBP;
+  const pct  = ebayFairTotalGBP > 0 ? Math.abs((diff / ebayFairTotalGBP) * 100).toFixed(0) : 0;
+
+  // Hold strategy ROI at this specific entry price.
+  let holdLine = '';
+  if (selectedCard && typeof computeHoldCore === 'function') {
+    const hc = computeHoldCore(selectedCard);
+    if (hc.ok && hc.bestLongTermPick) {
+      // bestLongTermPick.yr5 is the 5yr projected net exit price in USD.
+      const yr5GBP = hc.bestLongTermPick.yr5 * fx;
+      const entryROI = totalSpendGBP > 0 ? ((yr5GBP - totalSpendGBP) / totalSpendGBP * 100) : 0;
+      const roiSign = entryROI >= 0 ? '+' : '';
+      const roiCls  = entryROI >= MIN_HOLD_ROI * 100 ? 'deal-roi-good'
+                    : entryROI >= 0                  ? 'deal-roi-ok'
+                    : 'deal-roi-bad';
+      holdLine = `<div class="deal-hold-roi ${roiCls}">${hc.bestLongTermPick.label}: ${roiSign}${entryROI.toFixed(0)}% hold ROI at this entry · 5yr target ${fmtGBPDirect(yr5GBP)}</div>`;
+    }
+  }
 
   let cls, verdict, note;
-  if (diff > refGBP * 0.05) {
-    cls = 'good-deal'; verdict = 'Good Deal';
-    note = `${Math.abs(pct)}% below ${refLabel}`;
-  } else if (diff < -refGBP * 0.05) {
-    cls = 'bad-deal'; verdict = 'Too Expensive';
-    note = `${Math.abs(pct)}% above ${refLabel}`;
+  if (diff > ebayFairTotalGBP * 0.08) {
+    // >8% below eBay fair price — genuinely cheap for eBay
+    cls = 'good-deal'; verdict = 'Good eBay Deal';
+    note = `${pct}% below expected eBay price (${fmtGBPDirect(ebayFairCardGBP)}) · market ~${fmtGBPDirect(marketGBP)}`;
+  } else if (diff < -ebayFairTotalGBP * 0.10) {
+    // >10% above eBay fair price — overpriced even for eBay
+    cls = 'bad-deal'; verdict = 'Overpriced';
+    note = `${pct}% above expected eBay price (${fmtGBPDirect(ebayFairCardGBP)}) · market ~${fmtGBPDirect(marketGBP)}`;
   } else {
-    cls = 'ok-deal'; verdict = 'Fair Price';
-    note = `Within 5% of ${refLabel}`;
+    cls = 'ok-deal'; verdict = 'Fair for eBay';
+    note = `Within range of expected eBay price (~${fmtGBPDirect(ebayFairCardGBP)}) · market ~${fmtGBPDirect(marketGBP)}`;
   }
 
   $('dealResult').className = `deal-result ${cls}`;
   $('dealResult').innerHTML = `<div class="deal-active">
     <div class="deal-verdict">${verdict}</div>
-    <div class="deal-saving">${diff > 0 ? 'Save' : 'Over by'} £${Math.abs(diff).toFixed(2)}</div>
+    <div class="deal-saving">${diff > 0 ? `Save ~£${Math.abs(diff).toFixed(2)} vs eBay norm` : `~£${Math.abs(diff).toFixed(2)} above eBay norm`}</div>
     <div class="deal-note">${note}</div>
+    ${holdLine}
   </div>`;
 
   const saveBtn = $('dealSaveHold');
@@ -9178,15 +9231,23 @@ const MKT_RISK_MED_ROI_FLOOR   = 0;       // 5yr ROI must at least break even fo
 function mktScoreDeal(deal, card, gradeKey, fairValueGBP, fxUsdToGbp) {
   const priceGBP = (typeof deal.priceGBP === 'number') ? deal.priceGBP : 0;
   const fair = fairValueGBP > 0 ? fairValueGBP : 0;
-  // Spread sign convention matches the existing UI: positive = below fair.
-  const spreadPct = (priceGBP > 0 && fair > 0)
-    ? ((fair - priceGBP) / fair) * 100
+
+  // eBay listings inherently include the seller's fee recovery (~13% UK FVF) plus
+  // a typical profit margin — so an eBay price at "market + 15%" is normal, not a
+  // premium. Adjust the reference fair value upward for eBay sources so the signal
+  // labels reflect realistic eBay economics rather than raw PriceCharting values.
+  const isEbay = (deal.source || '').toLowerCase().includes('ebay');
+  const adjustedFair = (isEbay && fair > 0) ? fair * (1 + EBAY_LISTING_PREMIUM) : fair;
+
+  // Spread sign convention: positive = below adjusted fair (good deal).
+  const spreadPct = (priceGBP > 0 && adjustedFair > 0)
+    ? ((adjustedFair - priceGBP) / adjustedFair) * 100
     : 0;
-  const overPct = (priceGBP > 0 && fair > 0 && priceGBP > fair)
-    ? ((priceGBP - fair) / fair) * 100
+  const overPct = (priceGBP > 0 && adjustedFair > 0 && priceGBP > adjustedFair)
+    ? ((priceGBP - adjustedFair) / adjustedFair) * 100
     : 0;
 
-  // Re-derive the existing VALUE / STRONG VALUE / FAIR / PREMIUM signal so
+  // Re-derive the VALUE / STRONG VALUE / FAIR / PREMIUM signal so
   // colour-coding stays consistent now that we're surfacing over-market deals.
   let signal;
   if (spreadPct >= 25)      signal = 'STRONG VALUE';
@@ -9812,6 +9873,17 @@ function estimateUkSlabShipping(slabValueGBP) {
 }
 const OPPORTUNITY_COST_ANNUAL = 0.06; // pre-tax return you could earn elsewhere while capital is locked
 const BUY_SELL_FRICTION = 0.10;      // 10% combined buy + sell fees (fair tier midpoint)
+// eBay UK final value fee for Trading Cards (inc. managed payments). Used to
+// convert raw-market fair values to eBay-realistic reference prices when
+// evaluating whether a listing is good/fair/expensive.
+const EBAY_FEE_UK = 0.129;
+// Expected premium of eBay listing prices over raw market (PriceCharting / CM).
+// Sellers price up to recover the ~13% fee and earn a small margin — 15% is a
+// conservative midpoint estimate based on observed UK single-card listings.
+const EBAY_LISTING_PREMIUM = 0.15;
+// Minimum 5-year hold ROI the user would accept on an eBay purchase. Drives the
+// hold-strategy max buy price: anything above this returns a "don't pay" signal.
+const MIN_HOLD_ROI = 0.30;
 
 // When you grade a raw card and it ISN'T a PSA 10, the result is spread across
 // PSA 7/8/9 (and a small tail at <=6 that effectively trades like raw). These
