@@ -4734,7 +4734,7 @@ let wishlist = JSON.parse(localStorage.getItem('pkm-wishlist') || '[]');
 function setupWishlist() {
   $('wishlistToggle').addEventListener('click', () => toggleSidePanel('wishlistPanel'));
   $('wishlistClose').addEventListener('click', () => { $('wishlistPanel').style.display = 'none'; });
-  $('addWishlistBtn').addEventListener('click', toggleCardInWishlist);
+  $('addWishlistBtn').addEventListener('click', () => toggleCardInWishlist());
 
   // Delegated listeners — wired once so renderWishlist() can skip re-attaching.
   const list = $('wishlistList');
@@ -8105,7 +8105,7 @@ function computeActiveAlerts() {
 }
 
 function setupWatchlist() {
-  $('watchBtn')?.addEventListener('click', toggleCardInWatchlist);
+  $('watchBtn')?.addEventListener('click', () => toggleCardInWatchlist());
   $('alertsToggle')?.addEventListener('click', () => {
     toggleSidePanel('alertsPanel');
     if ($('alertsPanel').style.display === 'block') refreshAlerts();
@@ -14913,6 +14913,7 @@ function setupPageNav() {
 
   function go(page) {
     if (!pages[page]) page = 'home';
+    closeHomePip();
     Object.entries(pages).forEach(([k, el]) => {
       if (!el) return;
       if (k === page) {
