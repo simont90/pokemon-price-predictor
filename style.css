@@ -9457,3 +9457,141 @@ body {
   }
 }
 
+/* ============================================================
+   Design Refresh — WHOOP / Apple Health aesthetic
+   Sections as cards · hero metrics · signal accents
+   ============================================================ */
+
+/* ── Section containers → elevated cards ─────────────────── */
+@media (max-width: 600px) {
+  /* Standalone section (My Collection) */
+  .home-dashboard > .home-section-wrap {
+    background: #111317;
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  /* Tab group sections */
+  .home-tab-group {
+    background: #111317;
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  /* Tab bar inside card: blend with card bg */
+  .home-tab-bar {
+    margin: 8px 12px 4px;
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.08);
+  }
+}
+
+/* ── Group header: WHOOP "MY DAY" style uppercase muted label */
+@media (max-width: 600px) {
+  .home-group-hd {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .home-group-hd .home-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.42);
+  }
+  .home-group-hd .home-section-title svg { opacity: 0.35; }
+}
+
+/* ── Section sub-header: separator inside card ────────────── */
+@media (max-width: 600px) {
+  .home-section-hd {
+    border-bottom: 1px solid rgba(255,255,255,0.065);
+    padding: 8px 16px;
+    min-height: 42px;
+    margin-bottom: 0;
+  }
+  /* Section title inside a tab panel: slightly muted */
+  .home-htab-panel .home-section-title {
+    font-size: 12px;
+    color: rgba(255,255,255,0.6);
+    letter-spacing: 0.02em;
+  }
+}
+
+/* ── Card tiles: price as hero metric, name as muted label ── */
+@media (max-width: 600px) {
+  .home-card-info {
+    padding: 10px 12px 14px;
+    background: rgba(8,9,18,0.88);
+  }
+  .home-card-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+  }
+  .home-card-price {
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+    margin-bottom: 5px;
+  }
+  /* Gem badge: compact beside hero metric */
+  .reco-gem-tag {
+    font-size: 7.5px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    letter-spacing: 0.04em;
+    align-self: center;
+  }
+  .home-card-sub {
+    font-size: 9.5px;
+    line-height: 1.35;
+    color: rgba(255,255,255,0.36);
+  }
+  .reco-upside.pos { color: #3dd68c; }
+}
+
+/* ── HVA rows: signal left accent stripe (WHOOP activity) ─── */
+@media (max-width: 600px) {
+  .hva-row:has(.sig-strong-buy) {
+    border-left: 3px solid rgba(61,214,140,0.75);
+    padding-left: 11px;
+  }
+  .hva-row:has(.sig-buy):not(:has(.sig-strong-buy)) {
+    border-left: 3px solid rgba(61,214,140,0.45);
+    padding-left: 11px;
+  }
+  /* Signal pill: outlined style for better readability */
+  .hva-row-sig {
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    padding: 2px 7px;
+    border-radius: 20px;
+    margin-top: 3px;
+    display: inline-block;
+  }
+  .hva-row-sig.sig-strong-buy {
+    background: rgba(61,214,140,0.10);
+    color: #3dd68c;
+    border: 1px solid rgba(61,214,140,0.35);
+  }
+  .hva-row-sig.sig-buy {
+    background: rgba(61,214,140,0.07);
+    color: rgba(61,214,140,0.8);
+    border: 1px solid rgba(61,214,140,0.25);
+  }
+
+  /* Scroll row inside card: no side padding needed, card provides containment */
+  .home-tab-group .home-scroll-row,
+  .home-dashboard > .home-section-wrap .home-scroll-row {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
