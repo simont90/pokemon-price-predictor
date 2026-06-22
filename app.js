@@ -3140,6 +3140,13 @@ function updateAll() {
   }
 }
 
+// ebayFairListing: the listing price at which a seller nets exactly `marketGBP`
+// after eBay's 12.9% FVF + £0.30 fixed fee. This is the ceiling you should pay
+// on eBay for fair value — the same formula used in Deal Check.
+function _ebayFair(marketGBP) {
+  return (marketGBP + EBAY_FIXED_FEE) / (1 - EBAY_FEE_UK);
+}
+
 function updateMaxPrice(modelPriceUSD) {
   const ppMaxbuy = document.getElementById('ppMaxbuy');
   const ppDivider = document.getElementById('ppDivider');
@@ -3156,49 +3163,44 @@ function updateMaxPrice(modelPriceUSD) {
     const mkt = getCurrentPrice(selectedCard);
     const mktGBP = usdToGbp(mkt);
     const isLive = livePrice && (livePrice.market > 0 || livePrice.mid > 0);
-    const priceTag = isLive ? 'Live market' : 'Market';
+    const priceTag = isLive ? 'live market' : 'market';
 
     if (gradeNum > 0) {
-      // Grade-specific max buy: PSA 10 anchor × grade ratio
+      // PSA grade: derive market value from PSA 10 anchor × grade ratio,
+      // then apply eBay fee buffer so the result is the fair listing price.
       const anchor = getPsa10Anchor(selectedCard);
       const psa10USD = anchor && anchor.usd > 0 ? anchor.usd : 0;
       if (psa10USD > 0) {
-        const gradeUSD = psa10USD * (PSA_RATIOS[gradeNum] || 1);
-        maxGBP = usdToGbp(gradeUSD);
+        const gradeMarketGBP = usdToGbp(psa10USD * (PSA_RATIOS[gradeNum] || 1));
+        maxGBP = _ebayFair(gradeMarketGBP);
         const anchorNote = anchor.source === 'estimated' ? ' est.' : '';
         const ratioPct = Math.round((PSA_RATIOS[gradeNum] || 1) * 100);
-        logic = `PSA ${gradeNum} = PSA 10 (${fmtGBP(psa10USD)}${anchorNote}) × ${ratioPct}% · eBay listings ~${fmtGBPDirect(maxGBP * (1 + EBAY_LISTING_PREMIUM))}`;
+        logic = `PSA ${gradeNum} market ${fmtGBPDirect(gradeMarketGBP)} · PSA 10 ${fmtGBP(psa10USD)}${anchorNote} × ${ratioPct}% · seller nets ${fmtGBPDirect(gradeMarketGBP)} after fees`;
       } else {
         maxGBP = 0;
-        logic = 'No PSA 10 anchor available — open card on Predict page to load live prices';
+        logic = 'No PSA 10 anchor — refresh live prices for this card first';
       }
     } else {
-      // Raw: hold-strategy max vs standard model/market floor
+      // Raw: use min(model, market) as the fair-value reference, then apply
+      // eBay fee buffer. Hold-strategy context shown as a note only — the
+      // Strategy tab has the full per-grade ROI breakdown.
+      const refGBP = usdToGbp(Math.min(modelPriceUSD, mkt));
+      maxGBP = _ebayFair(refGBP);
       const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(selectedCard) : { ok: false };
-      let holdMaxGBP = 0, holdLabel = '';
+      let holdNote = '';
       if (hc.ok && hc.bestLongTermPick) {
-        const yr5GBP = hc.bestLongTermPick.yr5 * fx;
-        holdMaxGBP = yr5GBP / (1 + MIN_HOLD_ROI);
         const roi = Math.round(hc.bestLongTermPick.roi);
-        holdLabel = ` (${hc.bestLongTermPick.label}, +${roi}% full-ROI)`;
+        holdNote = ` · ${hc.bestLongTermPick.label} hold ROI +${roi}%`;
       }
-
-      const standardMaxGBP = usdToGbp(Math.min(modelPriceUSD, mkt));
-      const modelCapGBP = usdToGbp(modelPriceUSD) * 1.5;
-      if (holdMaxGBP > standardMaxGBP && holdMaxGBP <= modelCapGBP) {
-        maxGBP = holdMaxGBP;
-        const premiumPct = Math.round(((holdMaxGBP / mktGBP) - 1) * 100);
-        logic = `Hold upside supports up to ${premiumPct > 0 ? premiumPct + '% above' : ''} market${holdLabel} · eBay adds ~${Math.round(EBAY_LISTING_PREMIUM * 100)}% so expect listings near ${fmtGBPDirect(mktGBP * (1 + EBAY_LISTING_PREMIUM))}`;
+      if (modelPriceUSD < mkt) {
+        logic = `Model (${fmtGBP(modelPriceUSD)}) below ${priceTag} (${fmtGBPDirect(mktGBP)}) — overvalued signal · seller nets ${fmtGBPDirect(refGBP)} after fees${holdNote}`;
       } else {
-        maxGBP = standardMaxGBP;
-        if (modelPriceUSD < mkt) logic = `Model (${fmtGBP(modelPriceUSD)}) < ${priceTag.toLowerCase()} (${fmtGBPDirect(mktGBP)}) — overvalued signal`;
-        else if (modelPriceUSD > mkt * 1.1) logic = `${priceTag} ${fmtGBPDirect(mktGBP)} · model sees upside to ${fmtGBP(modelPriceUSD)}${holdLabel}`;
-        else logic = `${priceTag} ${fmtGBPDirect(mktGBP)} and model agree${holdLabel} · eBay listings typically ~${fmtGBPDirect(mktGBP * (1 + EBAY_LISTING_PREMIUM))}`;
+        logic = `${priceTag.charAt(0).toUpperCase() + priceTag.slice(1)} ${fmtGBPDirect(mktGBP)} · seller nets ${fmtGBPDirect(refGBP)} after fees${holdNote}`;
       }
     }
   } else {
-    maxGBP = gradeNum === 0 ? usdToGbp(modelPriceUSD) : 0;
-    logic = 'Based on model only. Select a card for market comparison.';
+    maxGBP = gradeNum === 0 ? _ebayFair(usdToGbp(modelPriceUSD)) : 0;
+    logic = 'Based on model only — select a card for market comparison.';
   }
   $('maxPriceGBP').textContent = maxGBP > 0
     ? `£${maxGBP.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
