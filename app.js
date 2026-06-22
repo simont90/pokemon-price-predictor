@@ -3148,6 +3148,8 @@ function updateMaxPrice(modelPriceUSD) {
   if (ppDivider) ppDivider.style.display = inPortfolio ? 'none' : '';
 
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const gradeKey = $('maxBuyGrade')?.value || 'raw';
+  const gradeNum = gradeKey !== 'raw' ? parseInt(gradeKey, 10) : 0;
 
   let maxGBP, logic;
   if (selectedCard) {
@@ -3156,38 +3158,51 @@ function updateMaxPrice(modelPriceUSD) {
     const isLive = livePrice && (livePrice.market > 0 || livePrice.mid > 0);
     const priceTag = isLive ? 'Live market' : 'Market';
 
-    // Hold-strategy max: highest eBay price that still delivers ≥30% 5yr ROI.
-    // bestLongTermPick.yr5 is the net exit value (after sell friction).
-    const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(selectedCard) : { ok: false };
-    let holdMaxGBP = 0, holdLabel = '';
-    if (hc.ok && hc.bestLongTermPick) {
-      const yr5GBP = hc.bestLongTermPick.yr5 * fx;
-      holdMaxGBP = yr5GBP / (1 + MIN_HOLD_ROI);
-      const roi = Math.round(hc.bestLongTermPick.roi);
-      holdLabel = ` (${hc.bestLongTermPick.label}, +${roi}% full-ROI)`;
-    }
-
-    // Standard max: min of model and market — baseline floor.
-    const standardMaxGBP = usdToGbp(Math.min(modelPriceUSD, mkt));
-
-    // If the hold strategy supports paying more than the standard floor, show that.
-    // Cap at model × 1.5 to suppress nonsensical results.
-    const modelCapGBP = usdToGbp(modelPriceUSD) * 1.5;
-    if (holdMaxGBP > standardMaxGBP && holdMaxGBP <= modelCapGBP) {
-      maxGBP = holdMaxGBP;
-      const premiumPct = Math.round(((holdMaxGBP / mktGBP) - 1) * 100);
-      logic = `Hold upside supports up to ${premiumPct > 0 ? premiumPct + '% above' : ''} market${holdLabel} · eBay adds ~${Math.round(EBAY_LISTING_PREMIUM * 100)}% so expect listings near ${fmtGBPDirect(mktGBP * (1 + EBAY_LISTING_PREMIUM))}`;
+    if (gradeNum > 0) {
+      // Grade-specific max buy: PSA 10 anchor × grade ratio
+      const anchor = getPsa10Anchor(selectedCard);
+      const psa10USD = anchor && anchor.usd > 0 ? anchor.usd : 0;
+      if (psa10USD > 0) {
+        const gradeUSD = psa10USD * (PSA_RATIOS[gradeNum] || 1);
+        maxGBP = usdToGbp(gradeUSD);
+        const anchorNote = anchor.source === 'estimated' ? ' est.' : '';
+        const ratioPct = Math.round((PSA_RATIOS[gradeNum] || 1) * 100);
+        logic = `PSA ${gradeNum} = PSA 10 (${fmtGBP(psa10USD)}${anchorNote}) × ${ratioPct}% · eBay listings ~${fmtGBPDirect(maxGBP * (1 + EBAY_LISTING_PREMIUM))}`;
+      } else {
+        maxGBP = 0;
+        logic = 'No PSA 10 anchor available — open card on Predict page to load live prices';
+      }
     } else {
-      maxGBP = standardMaxGBP;
-      if (modelPriceUSD < mkt) logic = `Model (${fmtGBP(modelPriceUSD)}) < ${priceTag.toLowerCase()} (${fmtGBPDirect(mktGBP)}) — overvalued signal`;
-      else if (modelPriceUSD > mkt * 1.1) logic = `${priceTag} ${fmtGBPDirect(mktGBP)} · model sees upside to ${fmtGBP(modelPriceUSD)}${holdLabel}`;
-      else logic = `${priceTag} ${fmtGBPDirect(mktGBP)} and model agree${holdLabel} · eBay listings typically ~${fmtGBPDirect(mktGBP * (1 + EBAY_LISTING_PREMIUM))}`;
+      // Raw: hold-strategy max vs standard model/market floor
+      const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(selectedCard) : { ok: false };
+      let holdMaxGBP = 0, holdLabel = '';
+      if (hc.ok && hc.bestLongTermPick) {
+        const yr5GBP = hc.bestLongTermPick.yr5 * fx;
+        holdMaxGBP = yr5GBP / (1 + MIN_HOLD_ROI);
+        const roi = Math.round(hc.bestLongTermPick.roi);
+        holdLabel = ` (${hc.bestLongTermPick.label}, +${roi}% full-ROI)`;
+      }
+
+      const standardMaxGBP = usdToGbp(Math.min(modelPriceUSD, mkt));
+      const modelCapGBP = usdToGbp(modelPriceUSD) * 1.5;
+      if (holdMaxGBP > standardMaxGBP && holdMaxGBP <= modelCapGBP) {
+        maxGBP = holdMaxGBP;
+        const premiumPct = Math.round(((holdMaxGBP / mktGBP) - 1) * 100);
+        logic = `Hold upside supports up to ${premiumPct > 0 ? premiumPct + '% above' : ''} market${holdLabel} · eBay adds ~${Math.round(EBAY_LISTING_PREMIUM * 100)}% so expect listings near ${fmtGBPDirect(mktGBP * (1 + EBAY_LISTING_PREMIUM))}`;
+      } else {
+        maxGBP = standardMaxGBP;
+        if (modelPriceUSD < mkt) logic = `Model (${fmtGBP(modelPriceUSD)}) < ${priceTag.toLowerCase()} (${fmtGBPDirect(mktGBP)}) — overvalued signal`;
+        else if (modelPriceUSD > mkt * 1.1) logic = `${priceTag} ${fmtGBPDirect(mktGBP)} · model sees upside to ${fmtGBP(modelPriceUSD)}${holdLabel}`;
+        else logic = `${priceTag} ${fmtGBPDirect(mktGBP)} and model agree${holdLabel} · eBay listings typically ~${fmtGBPDirect(mktGBP * (1 + EBAY_LISTING_PREMIUM))}`;
+      }
     }
   } else {
-    maxGBP = usdToGbp(modelPriceUSD);
+    maxGBP = gradeNum === 0 ? usdToGbp(modelPriceUSD) : 0;
     logic = 'Based on model only. Select a card for market comparison.';
   }
-  $('maxPriceGBP').textContent = `£${maxGBP.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  $('maxPriceGBP').textContent = maxGBP > 0
+    ? `£${maxGBP.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '—';
   $('maxPriceLogic').textContent = logic;
 }
 
@@ -5188,6 +5203,8 @@ function setupInputs() {
     .forEach(id => $(id)?.addEventListener('input', updateAll));
   const dealGradeEl = $('dealGrade');
   if (dealGradeEl) dealGradeEl.addEventListener('change', updateAll);
+  const maxBuyGradeEl = $('maxBuyGrade');
+  if (maxBuyGradeEl) maxBuyGradeEl.addEventListener('change', updateAll);
 }
 
 // ================================================================
@@ -13669,6 +13686,15 @@ function _recoTileHtml(r) {
   const tier = r.convictionTier || 'buy';
   const tierLabel = _TIER_LABEL[tier] || 'Buy';
   const pipBtn1 = `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgSrc || '')}" aria-label="Quick view" title="Quick view">⤢</button>`;
+  // Grade price ladder for cards with a PSA 10 anchor
+  let gradeLadder1 = '';
+  const p10USD1 = r.card.p10 || 0;
+  if (p10USD1 > 0) {
+    gradeLadder1 = `<div class="reco-grade-ladder">` +
+      `<span class="reco-grade-pip">P9 ${fmtGBP(p10USD1 * PSA_RATIOS[9])}</span>` +
+      `<span class="reco-grade-pip">P10 ${fmtGBP(p10USD1)}</span>` +
+      `</div>`;
+  }
   return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
     ${img}
     <span class="home-card-signal reco-tier reco-tier-${esc(tier)}">${esc(tierLabel)}</span>
@@ -13683,6 +13709,7 @@ function _recoTileHtml(r) {
       <div class="home-card-name">${esc(r.card.n)}</div>
       <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}${gem}</div>
       <div class="home-card-sub">${upside}</div>
+      ${gradeLadder1}
     </div>
   </div>`;
 }
@@ -13706,6 +13733,19 @@ function _recoStrategyTileHtml(r) {
   const tier = r.convictionTier || 'buy';
   const tierLabel = _TIER_LABEL[tier] || 'Buy';
   const pipBtn2 = `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgSrc || '')}" aria-label="Quick view" title="Quick view">⤢</button>`;
+  // Grade price ladder — Raw → PSA 7 → PSA 8 → PSA 9 → PSA 10
+  let gradeLadder = '';
+  const p10USD = r.card.p10 || 0;
+  if (p10USD > 0) {
+    const _fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+    const rawGBP = r.marketGBP;
+    gradeLadder = `<div class="reco-grade-ladder">` +
+      `<span class="reco-grade-pip">Raw ${fmtGBPDirect(rawGBP)}</span>` +
+      `<span class="reco-grade-pip">P8 ${fmtGBP(p10USD * PSA_RATIOS[8])}</span>` +
+      `<span class="reco-grade-pip">P9 ${fmtGBP(p10USD * PSA_RATIOS[9])}</span>` +
+      `<span class="reco-grade-pip">P10 ${fmtGBP(p10USD)}</span>` +
+      `</div>`;
+  }
   return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
     ${img}
     <span class="home-card-signal reco-tier reco-tier-${esc(tier)}">${esc(tierLabel)}</span>
@@ -13720,6 +13760,7 @@ function _recoStrategyTileHtml(r) {
       <div class="home-card-name">${esc(r.card.n)}</div>
       <div class="home-card-price">${fmtGBPDirect(displayPrice)}${manual}${gem}</div>
       <div class="home-card-sub">${roiLine}</div>
+      ${gradeLadder}
     </div>
   </div>`;
 }

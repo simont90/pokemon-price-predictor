@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260622f">
+  <link rel="stylesheet" href="style.css?v=20260622g">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1076,7 +1076,16 @@
           </div>
           <div class="pp-divider" id="ppDivider"></div>
           <div class="pp-maxbuy" id="ppMaxbuy">
-            <div class="pp-maxbuy-label">Max buy price (eBay)</div>
+            <div class="pp-maxbuy-header">
+              <div class="pp-maxbuy-label">Max buy price (eBay)</div>
+              <select id="maxBuyGrade" class="pp-grade-select">
+                <option value="raw">Raw</option>
+                <option value="7">PSA 7</option>
+                <option value="8">PSA 8</option>
+                <option value="9">PSA 9</option>
+                <option value="10">PSA 10</option>
+              </select>
+            </div>
             <div class="max-price" id="maxPriceGBP">—</div>
             <div class="max-price-logic" id="maxPriceLogic">Select a card to calculate</div>
           </div>
@@ -2268,7 +2277,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260622f"></script>
+  <script src="app.js?v=20260622g"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
