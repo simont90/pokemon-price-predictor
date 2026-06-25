@@ -855,10 +855,13 @@ async function loadSnapshot(env, kvKey) {
 }
 
 // Resolves the Bearer token to a KV key — accepts either a JWT (account auth)
-// or a legacy pair code. Returns { kvKey } on success or { error } on failure.
+// or a legacy pair code. Token may come from the Authorization header or the
+// ?token= query param (for Claude.ai integrations that don't support custom headers).
+// Returns { kvKey } on success or { error } on failure.
 async function resolveMcpAuth(request, env) {
-  const token = extractBearer(request);
-  if (!token) return { error: 'Missing Authorization: Bearer header' };
+  const url = new URL(request.url);
+  const token = extractBearer(request) || url.searchParams.get('token') || '';
+  if (!token) return { error: 'Missing auth — pass Authorization: Bearer <token> or ?token= in the URL' };
   if (token.includes('.')) {
     // JWT path (account-based auth)
     if (!env.JWT_SECRET) return { error: 'JWT_SECRET not configured in worker secrets.' };

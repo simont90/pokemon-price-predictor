@@ -16329,9 +16329,16 @@ function authRenderState() {
       const days = Math.round((new Date(user.expiresAt) - Date.now()) / 86400000);
       ex.textContent = `Session expires in ${days} day${days !== 1 ? 's' : ''}`;
     }
+    const jwt = authGetToken();
+    const mcpBase = 'https://pokemon-marketplace.simontariq.workers.dev/mcp';
+    const mcpFull = jwt ? `${mcpBase}?token=${jwt}` : mcpBase;
+    const urlEl = document.getElementById('claudeMcpUrl');
+    if (urlEl) {
+      urlEl.textContent = jwt ? `${mcpBase}?token=${jwt.slice(0, 12)}…` : mcpBase;
+      urlEl.dataset.full = mcpFull;
+    }
     const tok = document.getElementById('claudeToken');
     if (tok) {
-      const jwt = authGetToken();
       tok.textContent = jwt ? jwt.slice(0, 24) + '…' : '—';
       tok.dataset.full = jwt || '';
     }
@@ -16750,7 +16757,7 @@ function syncBindOnce() {
       const type = btn.dataset.copy;
       let text = '';
       if (type === 'url') {
-        text = document.getElementById('claudeMcpUrl')?.textContent || '';
+        text = document.getElementById('claudeMcpUrl')?.dataset.full || '';
       } else {
         text = document.getElementById('claudeToken')?.dataset.full || '';
       }

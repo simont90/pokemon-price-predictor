@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260625a">
+  <link rel="stylesheet" href="style.css?v=20260625b">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -321,20 +321,13 @@
               <summary>Claude AI integration</summary>
               <p style="margin:8px 0 4px;font-size:0.8em;color:var(--text-dim)">Connect the Claude app (iOS / web) to your collection. Add a custom integration in Claude.ai → Settings → Integrations.</p>
               <div class="sync-field" style="margin-top:8px">
-                <label style="font-size:0.75em;color:var(--text-muted)">MCP server URL</label>
+                <label style="font-size:0.75em;color:var(--text-muted)">Integration URL — paste this into Claude.ai</label>
                 <div class="sync-claude-row">
-                  <code class="sync-claude-val" id="claudeMcpUrl">https://pokemon-marketplace.simontariq.workers.dev/mcp</code>
+                  <code class="sync-claude-val" id="claudeMcpUrl">Sign in above to generate</code>
                   <button class="sync-btn sync-btn-ghost sync-claude-copy" data-copy="url" type="button">Copy</button>
                 </div>
               </div>
-              <div class="sync-field" style="margin-top:6px">
-                <label style="font-size:0.75em;color:var(--text-muted)">Bearer token (your session token)</label>
-                <div class="sync-claude-row">
-                  <code class="sync-claude-val sync-claude-token" id="claudeToken">—</code>
-                  <button class="sync-btn sync-btn-ghost sync-claude-copy" data-copy="token" type="button">Copy</button>
-                </div>
-              </div>
-              <p style="margin:6px 0 0;font-size:0.75em;color:var(--text-muted)">In Claude.ai → Integrations → Add custom integration, paste the URL then set Auth to Bearer and paste the token. Token expires in 120 days — come back here to refresh it if Claude loses access.</p>
+              <p style="margin:6px 0 0;font-size:0.75em;color:var(--text-muted)">Claude.ai → Settings → Integrations → Add custom integration → paste the URL above. Leave the OAuth fields blank. Token is embedded in the URL and expires in 120 days — come back here to copy a fresh one if Claude loses access.</p>
             </details>
             <details class="sync-setup" style="margin-top:8px">
               <summary>Danger zone</summary>
@@ -2296,7 +2289,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260625a"></script>
+  <script src="app.js?v=20260625b"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
