@@ -16329,6 +16329,12 @@ function authRenderState() {
       const days = Math.round((new Date(user.expiresAt) - Date.now()) / 86400000);
       ex.textContent = `Session expires in ${days} day${days !== 1 ? 's' : ''}`;
     }
+    const tok = document.getElementById('claudeToken');
+    if (tok) {
+      const jwt = authGetToken();
+      tok.textContent = jwt ? jwt.slice(0, 24) + '…' : '—';
+      tok.dataset.full = jwt || '';
+    }
   }
 }
 
@@ -16737,6 +16743,25 @@ function syncBindOnce() {
     } catch (err) {
       authLogLine('Delete failed: ' + err.message, 'err');
     }
+  });
+
+  document.querySelectorAll('.sync-claude-copy').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const type = btn.dataset.copy;
+      let text = '';
+      if (type === 'url') {
+        text = document.getElementById('claudeMcpUrl')?.textContent || '';
+      } else {
+        text = document.getElementById('claudeToken')?.dataset.full || '';
+      }
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const orig = btn.textContent;
+        btn.textContent = 'Copied';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      } catch { btn.textContent = 'Failed'; }
+    });
   });
 
   // Initialise auth UI state on load.
