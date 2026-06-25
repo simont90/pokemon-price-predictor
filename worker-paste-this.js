@@ -844,15 +844,31 @@ function extractBearer(request) {
   return m ? m[1].trim() : '';
 }
 
-async function loadSnapshot(env, pairCode) {
+async function loadSnapshot(env, kvKey) {
   if (!env.SYNC_KV) return { error: 'SYNC_KV not bound. Bind a KV namespace in the worker settings.' };
-  if (!PAIR_CODE_REGEX.test(pairCode)) return { error: 'Invalid pair code format.' };
-  const raw = await env.SYNC_KV.get(`sync:${pairCode}`);
+  const raw = await env.SYNC_KV.get(kvKey);
   if (!raw) return { snap: null, empty: true };
   let parsed;
   try { parsed = JSON.parse(raw); }
   catch { return { error: 'Stored snapshot is not valid JSON.' }; }
   return { snap: parsed, empty: false };
+}
+
+// Resolves the Bearer token to a KV key — accepts either a JWT (account auth)
+// or a legacy pair code. Returns { kvKey } on success or { error } on failure.
+async function resolveMcpAuth(request, env) {
+  const token = extractBearer(request);
+  if (!token) return { error: 'Missing Authorization: Bearer header' };
+  if (token.includes('.')) {
+    // JWT path (account-based auth)
+    if (!env.JWT_SECRET) return { error: 'JWT_SECRET not configured in worker secrets.' };
+    const claims = await jwtVerify(token, env.JWT_SECRET);
+    if (!claims) return { error: 'Invalid or expired token — sign in to the app again.' };
+    return { kvKey: `user:data:${claims.sub}` };
+  }
+  // Legacy pair code path
+  if (!PAIR_CODE_REGEX.test(token)) return { error: 'Pair code must be 16–64 chars of [A-Za-z0-9_-]' };
+  return { kvKey: `sync:${token}` };
 }
 
 // The browser stores localStorage values as JSON-encoded strings inside the
@@ -873,11 +889,11 @@ function asError(message) {
   return { content: [{ type: 'text', text: message }], isError: true };
 }
 
-async function dispatchTool(name, args, env, pairCode) {
-  const { snap, empty, error } = await loadSnapshot(env, pairCode);
+async function dispatchTool(name, args, env, kvKey) {
+  const { snap, empty, error } = await loadSnapshot(env, kvKey);
   if (error) return asError(error);
   if (empty && name !== 'search_marketplace_deals') {
-    return asError('No data synced for this pair code yet. Open the app on any device and tap Connect & sync first.');
+    return asError('No data synced yet. Open the app on any device and tap sync first.');
   }
 
   switch (name) {
@@ -1003,15 +1019,10 @@ async function handleMcp(request, env, url) {
     return new Response('Method not allowed', { status: 405, headers: cors });
   }
 
-  const pairCode = extractBearer(request);
-  if (!pairCode) {
-    return new Response(JSON.stringify({ error: 'Missing Authorization: Bearer <pair-code> header' }), {
+  const { kvKey, error: authError } = await resolveMcpAuth(request, env);
+  if (authError) {
+    return new Response(JSON.stringify({ error: authError }), {
       status: 401, headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer', ...cors },
-    });
-  }
-  if (!PAIR_CODE_REGEX.test(pairCode)) {
-    return new Response(JSON.stringify({ error: 'Pair code must be 16-64 chars of [A-Za-z0-9_-]' }), {
-      status: 401, headers: { 'Content-Type': 'application/json', ...cors },
     });
   }
 
@@ -1067,7 +1078,7 @@ async function handleMcp(request, env, url) {
           break;
         }
         try {
-          const result = await dispatchTool(tname, targs, env, pairCode);
+          const result = await dispatchTool(tname, targs, env, kvKey);
           responses.push({ jsonrpc: '2.0', id: m.id, result });
         } catch (e) {
           responses.push({ jsonrpc: '2.0', id: m.id, error: { code: -32000, message: e.message || 'Tool execution failed' } });
