@@ -614,6 +614,146 @@ async function handleTcgPrice(request, url) {
   }, ch);
 }
 
+// ---- OAuth 2.1 Authorization Server (for Claude.ai MCP integration) ----
+// Implements Dynamic Client Registration (RFC 7591) + Authorization Code + PKCE.
+
+function _oauthLoginPage(params, error = '') {
+  const qs = new URLSearchParams(params).toString();
+  return `<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Authorise — Pokémon Price Predictor</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:16px}
+.box{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:14px;padding:32px 28px;width:100%;max-width:360px}
+h1{margin:0 0 4px;font-size:1.15rem;color:#e8b634}
+p{margin:0 0 20px;font-size:0.83rem;color:#888;line-height:1.5}
+label{font-size:0.78rem;color:#aaa;display:block;margin-bottom:4px;margin-top:12px}
+input{width:100%;background:#111;border:1px solid #333;border-radius:8px;color:#eee;padding:10px 12px;font-size:0.95rem;outline:none}
+input:focus{border-color:#e8b634}
+button{width:100%;margin-top:20px;background:#e8b634;color:#111;border:none;border-radius:8px;padding:12px;font-size:0.95rem;font-weight:600;cursor:pointer}
+.err{background:rgba(220,50,50,.15);border:1px solid rgba(220,50,50,.4);border-radius:8px;padding:10px 12px;margin-top:14px;font-size:0.83rem;color:#f88}
+</style></head><body>
+<div class="box">
+  <h1>Pokémon Price Predictor</h1>
+  <p>Claude is requesting read access to your collection. Sign in to authorise.</p>
+  <form method="POST" action="/oauth/authorize?${qs}">
+    <label for="u">Username</label>
+    <input id="u" name="username" type="text" autocomplete="username" required autofocus>
+    <label for="p">Password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Authorise Claude</button>
+  </form>
+  ${error ? `<div class="err">${error}</div>` : ''}
+</div></body></html>`;
+}
+
+async function handleOAuthMeta(request, env, url) {
+  const base = `${url.protocol}//${url.host}`;
+  return new Response(JSON.stringify({
+    issuer: base,
+    authorization_endpoint: `${base}/oauth/authorize`,
+    token_endpoint: `${base}/oauth/token`,
+    registration_endpoint: `${base}/oauth/register`,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code'],
+    code_challenge_methods_supported: ['S256'],
+    token_endpoint_auth_methods_supported: ['none'],
+    scopes_supported: ['read'],
+  }), { headers: { 'Content-Type': 'application/json', ...corsHeaders(request) } });
+}
+
+async function handleOAuthRegister(request, env) {
+  const ch = corsHeaders(request);
+  if (!env.SYNC_KV) return _jsonResp(503, { error: 'storage_error' }, ch);
+  let body = {};
+  try { body = await request.json(); } catch {}
+  const clientId = crypto.randomUUID();
+  const client = {
+    client_id: clientId,
+    redirect_uris: body.redirect_uris || [],
+    client_name: body.client_name || '',
+    token_endpoint_auth_method: 'none',
+    grant_types: ['authorization_code'],
+    response_types: ['code'],
+  };
+  await env.SYNC_KV.put(`oauth:client:${clientId}`, JSON.stringify(client), { expirationTtl: 365 * 86400 });
+  return new Response(JSON.stringify(client), { status: 201, headers: { 'Content-Type': 'application/json', ...ch } });
+}
+
+async function handleOAuthAuthorize(request, env, url) {
+  if (!env.SYNC_KV) return new Response('Storage not configured', { status: 503 });
+  const clientId = url.searchParams.get('client_id') || '';
+  const redirectUri = url.searchParams.get('redirect_uri') || '';
+  const state = url.searchParams.get('state') || '';
+  const codeChallenge = url.searchParams.get('code_challenge') || '';
+  const codeChallengeMethod = url.searchParams.get('code_challenge_method') || '';
+  const params = { client_id: clientId, redirect_uri: redirectUri, state, code_challenge: codeChallenge, code_challenge_method: codeChallengeMethod, response_type: 'code' };
+
+  if (clientId) {
+    const clientRaw = await env.SYNC_KV.get(`oauth:client:${clientId}`);
+    if (!clientRaw) return new Response('Unknown client_id', { status: 400 });
+  }
+
+  if (request.method === 'GET') {
+    return new Response(_oauthLoginPage(params), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  }
+
+  // POST — form submission
+  let username = '', password = '';
+  try { const fd = await request.formData(); username = fd.get('username') || ''; password = fd.get('password') || ''; }
+  catch { return new Response('Bad request', { status: 400 }); }
+
+  const uKey = `auth:user:${username.toLowerCase()}`;
+  const userRaw = await env.SYNC_KV.get(uKey);
+  const fail = () => new Response(_oauthLoginPage(params, 'Invalid username or password'), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  if (!userRaw) return fail();
+  const user = JSON.parse(userRaw);
+  const hash = await pwHash(password, hexToU8(user.salt));
+  if (hash !== user.passwordHash) return fail();
+
+  const code = crypto.randomUUID();
+  await env.SYNC_KV.put(`oauth:code:${code}`, JSON.stringify({ sub: username.toLowerCase(), clientId, redirectUri, codeChallenge, codeChallengeMethod }), { expirationTtl: 600 });
+
+  const dest = new URL(redirectUri);
+  dest.searchParams.set('code', code);
+  if (state) dest.searchParams.set('state', state);
+  return Response.redirect(dest.toString(), 302);
+}
+
+async function handleOAuthToken(request, env) {
+  const ch = corsHeaders(request);
+  if (!env.SYNC_KV) return _jsonResp(503, { error: 'storage_error' }, ch);
+  if (!env.JWT_SECRET) return _jsonResp(503, { error: 'server_error' }, ch);
+
+  let grantType, code, codeVerifier;
+  const ct = request.headers.get('Content-Type') || '';
+  if (ct.includes('application/x-www-form-urlencoded') || ct.includes('multipart/form-data')) {
+    const fd = await request.formData().catch(() => new FormData());
+    grantType = fd.get('grant_type'); code = fd.get('code'); codeVerifier = fd.get('code_verifier');
+  } else {
+    const body = await request.json().catch(() => ({}));
+    grantType = body.grant_type; code = body.code; codeVerifier = body.code_verifier;
+  }
+
+  if (grantType !== 'authorization_code') return _jsonResp(400, { error: 'unsupported_grant_type' }, ch);
+  if (!code) return _jsonResp(400, { error: 'invalid_request', error_description: 'missing code' }, ch);
+
+  const codeDataRaw = await env.SYNC_KV.get(`oauth:code:${code}`);
+  if (!codeDataRaw) return _jsonResp(400, { error: 'invalid_grant' }, ch);
+  await env.SYNC_KV.delete(`oauth:code:${code}`);
+  const codeData = JSON.parse(codeDataRaw);
+
+  if (codeData.codeChallenge) {
+    if (!codeVerifier) return _jsonResp(400, { error: 'invalid_grant', error_description: 'code_verifier required' }, ch);
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier));
+    if (_b64u(digest) !== codeData.codeChallenge) return _jsonResp(400, { error: 'invalid_grant' }, ch);
+  }
+
+  const accessToken = await jwtSign({ sub: codeData.sub }, env.JWT_SECRET, 120);
+  return _jsonResp(200, { access_token: accessToken, token_type: 'bearer', expires_in: 120 * 86400 }, ch);
+}
+
 // ---- Main handler ----
 async function handle(request, env) {
   const url = new URL(request.url);
@@ -623,6 +763,10 @@ async function handle(request, env) {
   if (url.pathname === '/mcp') return handleMcp(request, env, url);
   if (url.pathname === '/img-proxy') return handleImgProxy(request, env, url);
   if (url.pathname === '/grade-card' && request.method === 'POST') return handleGradeCard(request, env);
+  if (url.pathname === '/.well-known/oauth-authorization-server') return handleOAuthMeta(request, env, url);
+  if (url.pathname === '/oauth/register') return handleOAuthRegister(request, env);
+  if (url.pathname === '/oauth/authorize') return handleOAuthAuthorize(request, env, url);
+  if (url.pathname === '/oauth/token' && request.method === 'POST') return handleOAuthToken(request, env);
   if (url.pathname === '/auth/register' && request.method === 'POST') return handleAuthRegister(request, env);
   if (url.pathname === '/auth/login' && request.method === 'POST') return handleAuthLogin(request, env);
   if (url.pathname === '/user/sync') return handleUserSync(request, env);
@@ -1024,8 +1168,13 @@ async function handleMcp(request, env, url) {
 
   const { kvKey, error: authError } = await resolveMcpAuth(request, env);
   if (authError) {
+    const base = `${url.protocol}//${url.host}`;
     return new Response(JSON.stringify({ error: authError }), {
-      status: 401, headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer', ...cors },
+      status: 401, headers: {
+        'Content-Type': 'application/json',
+        'WWW-Authenticate': `Bearer realm="${base}", resource_metadata="${base}/.well-known/oauth-authorization-server"`,
+        ...cors,
+      },
     });
   }
 
