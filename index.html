@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260625b">
+  <link rel="stylesheet" href="style.css?v=20260627a">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -950,6 +950,11 @@
                 <span class="meta-rarity" id="cardRarity"></span>
                 <span class="meta-series-tag" id="cardSeries" style="display:none"></span>
               </div>
+              <div class="card-star-rating" id="cardStarRating" style="display:none">
+                <span class="star-icons" id="cardStarIcons"></span>
+                <span class="star-tier" id="cardStarTier"></span>
+                <span class="star-hint" id="cardStarHint"></span>
+              </div>
               <button class="card-links-toggle" id="cardLinksToggle" type="button" aria-expanded="false">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
                 Links &amp; tools
@@ -1221,6 +1226,7 @@
             </div>
           </div>
           <div class="hold-recommendation" id="holdRecommendation"></div>
+          <div class="hold-market-context" id="holdMarketContext" style="display:none"></div>
           <div class="hold-override" id="holdOverride"></div>
           <div class="hold-cp-compare" id="holdCounterpartCompare" style="display:none"></div>
           <div class="hold-grid" id="holdGrid"></div>
@@ -2289,7 +2295,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260625b"></script>
+  <script src="app.js?v=20260627a"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

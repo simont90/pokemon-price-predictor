@@ -13,18 +13,21 @@
 const BASE = 12.50;
 const PULL_MULT = 1.19;
 const DES_MULT = 1.41;
-const WEIGHTS = { char: 0.45, art: 0.45, appeal: 0.10 };
+// Character is ~2× more impactful than art alone per market data — weight accordingly.
+const WEIGHTS = { char: 0.55, art: 0.35, appeal: 0.10 };
 
 // ---- Pokémon Popularity Tiers ----
+// Calibrated against video market analysis: Charizard #1, Umbreon 1.3 avg rank,
+// Mew 1.4, Dragonite high-variance A. Gen 4 in active nostalgia cycle (2025-2027).
 const CHAR_TIERS = {
-  S: { score: 9.5, names: ['charizard','pikachu','mewtwo','umbreon','mew','eevee'] },
-  A: { score: 8.2, names: ['dragonite','gyarados','gengar','lugia','rayquaza','gardevoir','lucario','greninja','sylveon','magikarp','espeon','vaporeon','leafeon','flareon','jolteon','glaceon','meowth','snorlax','blastoise','venusaur'] },
-  B: { score: 6.5, names: ['arcanine','ninetales','alakazam','machamp','lapras','tyranitar','celebi','suicune','entei','raikou','ho-oh','latios','latias','deoxys','dialga','palkia','giratina','darkrai','arceus','reshiram','zekrom','kyurem','xerneas','yveltal','zygarde','lunala','solgaleo','necrozma','zacian','zamazenta','calyrex','miraidon','koraidon','terapagos'] },
+  S: { score: 9.5, names: ['charizard','umbreon','mew','mewtwo','pikachu','eevee'] },
+  A: { score: 8.2, names: ['gengar','dragonite','gyarados','lugia','rayquaza','gardevoir','lucario','greninja','sylveon','espeon','vaporeon','leafeon','flareon','jolteon','glaceon','magikarp','snorlax','blastoise','venusaur','meowth','togekiss','garchomp','infernape','empoleon'] },
+  B: { score: 6.5, names: ['arcanine','ninetales','alakazam','machamp','lapras','tyranitar','celebi','suicune','entei','raikou','ho-oh','latios','latias','deoxys','dialga','palkia','giratina','darkrai','arceus','reshiram','zekrom','kyurem','xerneas','yveltal','zygarde','lunala','solgaleo','necrozma','zacian','zamazenta','calyrex','miraidon','koraidon','terapagos','luxray','roserade','torterra','staraptor','gallade','leafeon'] },
 };
 
 const APPEAL_TIERS = {
-  S: { score: 9.5, names: ['charizard','pikachu','mewtwo','eevee','mew'] },
-  A: { score: 7.5, names: ['gengar','umbreon','snorlax','gyarados','dragonite','gardevoir','lucario','greninja','blastoise','venusaur','magikarp','sylveon','arcanine'] },
+  S: { score: 9.5, names: ['charizard','pikachu','mewtwo','eevee','mew','umbreon'] },
+  A: { score: 7.5, names: ['gengar','snorlax','gyarados','dragonite','gardevoir','lucario','greninja','blastoise','venusaur','magikarp','sylveon','arcanine','togekiss','garchomp','infernape'] },
 };
 
 // ---- Pack Economics: Fallback Pull Rates ----
@@ -615,6 +618,65 @@ const EXPECTED_PRICE_BY_RARITY = {
   'DR': 5, 'RR': 3, 'AS': 8, 'PR': 5,
   'R': 2, 'U': 0.5, 'C': 0.25,
 };
+
+// ---- Investment Star Rating (1–5) ----
+// Derived from the STAR framework (Star power, Title, Art, Rarity) synthesised
+// from market analysis: Seafood=5, Sweets=4, Meat=3, Veg=2, Carbs=1.
+const PREMIUM_RARITIES  = new Set(['SIR','SHR','MHR','SHUR','SAR','HR']);
+const HIGH_ART_RARITIES = new Set(['SIR','IR','SHR','MHR','SHUR','SAR','HR','AR','UR']);
+
+function getInvestmentStars(card, desTot) {
+  if (!card) return { stars: 0, tier: '', hint: '', color: '' };
+  const charScore = getCharacterScore(card.n);
+  const rc = card.rc || '';
+  const des = typeof desTot === 'number' ? desTot : 5;
+  const isS   = charScore >= 9.0;
+  const isA   = charScore >= 7.5 && !isS;
+  const isB   = charScore >= 5.5 && !isS && !isA;
+  const isPremiumRarity  = PREMIUM_RARITIES.has(rc);
+  const isHighArtRarity  = HIGH_ART_RARITIES.has(rc);
+
+  if (isS && isPremiumRarity && des >= 8.0)
+    return { stars: 5, tier: 'Seafood', color: '#e8b634',
+      hint: 'Top character · premium rarity · highest collector demand' };
+  if ((isS || isA) && isHighArtRarity && des >= 6.5)
+    return { stars: 4, tier: 'Sweets', color: '#c084fc',
+      hint: 'High demand · strong art · watch for overpay at peak hype' };
+  if ((isA || isB) && isHighArtRarity && des >= 5.0)
+    return { stars: 3, tier: 'Meat', color: '#60a5fa',
+      hint: 'Solid fundamentals · where most collector money should sit' };
+  if (des >= 3.0 && (isHighArtRarity || rc === 'SR' || rc === 'RR'))
+    return { stars: 2, tier: 'Veg', color: '#4ade80',
+      hint: 'Some appeal · buy with a clear thesis, not momentum' };
+  return { stars: 1, tier: 'Carbs', color: '#94a3b8',
+    hint: 'Negligible growth expected · sub-£20 target zone' };
+}
+
+function renderStarRating(card, des) {
+  const el      = $('cardStarRating');
+  const iconsEl = $('cardStarIcons');
+  const tierEl  = $('cardStarTier');
+  const hintEl  = $('cardStarHint');
+  if (!el || !card) return;
+  const desVal = (des && typeof des === 'object') ? (des.total ?? 5) : (des ?? 5);
+  const { stars, tier, hint, color } = getInvestmentStars(card, desVal);
+  if (!stars) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  iconsEl.innerHTML = `<span style="color:${color}">${'★'.repeat(stars)}</span><span class="star-empty">${'★'.repeat(5 - stars)}</span>`;
+  tierEl.textContent = tier;
+  tierEl.style.color = color;
+  hintEl.textContent = hint;
+}
+
+// ---- Entry Timing Window ----
+function getEntryTiming(setCode) {
+  const m = getSetAgeMonths(setCode);
+  if (m < 2)  return { label: 'Too early',         cls: 'et-early',    detail: 'Launch premium still in effect — wait 4–6 months for hype to fade before buying singles.' };
+  if (m < 6)  return { label: 'Approaching window',cls: 'et-approach',  detail: 'Hype fading. Start watching for the floor to establish — don\'t commit yet.' };
+  if (m < 10) return { label: 'Optimal entry',     cls: 'et-optimal',   detail: '6–8 months post-launch: the lowest-risk buy window. Launch hype is gone, floor is set.' };
+  if (m < 18) return { label: 'Mature set',         cls: 'et-mature',    detail: 'Floor established. Strong long-term hold, less short-term price upside remaining.' };
+  return       { label: 'Aged set',                cls: 'et-aged',      detail: 'Reprint risk now minimal. Long-term appreciation thesis intact — buy and hold.' };
+}
 
 // ---- Auto-fill Desirability ----
 function autoFillDesirability(card, pullCost) {
@@ -2570,6 +2632,7 @@ function selectCard(id) {
 
   $('forecastSection').style.display = 'block';
   renderForecast(card, pullCost, des.total);
+  renderStarRating(card, des);
   updateRipOrBuy(card, pullCost);
   updateSignal(card, pullCost, des.total);
   updatePortfolioButton();
@@ -11055,6 +11118,57 @@ function renderHoldStrategy(card) {
     Risk-adjusted ranking discounts ROI by variance so a coin-flip can't win "best" when
     a steadier graded copy delivers nearly the same return without the wait.
   `;
+
+  // ---- Market context block: entry timing + grading economics + hold timeframe ----
+  const ctxEl = $('holdMarketContext');
+  if (ctxEl) {
+    const timing   = getEntryTiming(card.sc);
+    const rawGBP   = rawUSD * fx;
+    const psa10GBP_ctx = psa10Price * fx;
+    const gradeFeeGBP_ctx = getUkGradingFeeGBP(psa10Price);
+    const spreadGBP    = psa10GBP_ctx - rawGBP;
+    const gradingJustified = spreadGBP > (rawGBP * 0.5 + gradeFeeGBP_ctx);
+    const popSize  = typeof card.popPsa10 === 'number' ? card.popPsa10 : null;
+    const popNote  = popSize != null
+      ? (popSize < 1000 ? `PSA 10 pop ${popSize.toLocaleString()} — genuinely scarce in graded form.`
+       : popSize < 10000 ? `PSA 10 pop ${popSize.toLocaleString()} — moderate supply, graded copies are findable.`
+       : `PSA 10 pop ${popSize.toLocaleString()} — well-supplied in graded form; premium is limited.`)
+      : '';
+
+    // Era-based minimum hold recommendation
+    const setYear = (() => {
+      const s = setsData?.[card.sc];
+      const d = s?.releaseDate || s?.released || '';
+      return d ? parseInt(d.slice(0, 4)) : 2023;
+    })();
+    const minHold = setYear >= 2023 ? '6–12 months (SV era)'
+                  : setYear >= 2019 ? '12–18 months (SW&S era)'
+                  : setYear >= 2016 ? '2+ years (Sun & Moon / XY era)'
+                  : '3+ years (pre-2016 — established collector market)';
+
+    const gradeEconomics = gradingJustified
+      ? `Grading justified — PSA 10 spread (${fmtGBPDirect(spreadGBP)}) covers raw price + ${fmtGBPDirect(gradeFeeGBP_ctx)} fee.`
+      : `Grading marginal — spread (${fmtGBPDirect(spreadGBP)}) vs fee (${fmtGBPDirect(gradeFeeGBP_ctx)}) is tight. Buy graded instead.`;
+
+    ctxEl.innerHTML = `
+      <div class="hold-ctx-row">
+        <span class="hold-ctx-pill ${timing.cls}">${timing.label}</span>
+        <span class="hold-ctx-detail">${timing.detail}</span>
+      </div>
+      <div class="hold-ctx-row">
+        <span class="hold-ctx-pill hold-ctx-hold">Min hold</span>
+        <span class="hold-ctx-detail">${minHold}</span>
+      </div>
+      <div class="hold-ctx-row">
+        <span class="hold-ctx-pill ${gradingJustified ? 'hold-ctx-grade-ok' : 'hold-ctx-grade-no'}">${gradingJustified ? 'Grade ✓' : 'Grade ✗'}</span>
+        <span class="hold-ctx-detail">${gradeEconomics}${popNote ? ' ' + popNote : ''}</span>
+      </div>
+      <div class="hold-ctx-row">
+        <span class="hold-ctx-pill hold-ctx-sell">Sell signal</span>
+        <span class="hold-ctx-detail">Watch eBay active listings — if new listings outpace sold volume for 5+ days, the distribution peak is forming. A 2–3 week price floor with steady sales = confirmed support.</span>
+      </div>`;
+    ctxEl.style.display = 'block';
+  }
 
   // _holdWinnerKey is now set above — updateSignal will read it next time it's called.
   // Re-call updateSignal immediately so the badge reflects this card's Hold Strategy
