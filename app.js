@@ -663,8 +663,7 @@ function renderStarRating(card, des) {
   if (!stars) { el.style.display = 'none'; return; }
   el.style.display = 'flex';
   iconsEl.innerHTML = `<span style="color:${color}">${'★'.repeat(stars)}</span><span class="star-empty">${'★'.repeat(5 - stars)}</span>`;
-  tierEl.textContent = tier;
-  tierEl.style.color = color;
+  if (tierEl) tierEl.textContent = '';
   hintEl.textContent = hint;
 }
 
