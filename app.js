@@ -7268,6 +7268,9 @@ function pwaPushCard(cardId) {
   updatePWANavButtons();
 }
 function pwaBack() {
+  // If AI panel is open, close it first rather than navigating cards.
+  const aiPanel = document.getElementById('aiChatPanel');
+  if (aiPanel && aiPanel.classList.contains('open')) { aiClosePanel(true); return; }
   if (pwaHistory.idx <= 0) return;
   pwaHistory.idx--;
   pwaHistory.suppress = true;
@@ -7324,6 +7327,12 @@ function setupPWANav() {
 
   // Also wire native browser back/forward (where available) so they feel consistent
   window.addEventListener('popstate', (e) => {
+    // Back gesture while AI panel is open → close the panel, don't navigate.
+    const aiPanel = document.getElementById('aiChatPanel');
+    if (aiPanel && aiPanel.classList.contains('open')) {
+      aiClosePanel(true); // true = called from popstate, skip history.back()
+      return;
+    }
     if (e.state && e.state.cardId) {
       pwaHistory.suppress = true;
       selectCard(e.state.cardId);
@@ -13290,6 +13299,12 @@ function aiOpenPanel() {
   const backdrop = document.getElementById('aiChatBackdrop');
   if (!panel) return;
 
+  // Push a history entry so the back gesture closes the panel instead of navigating away.
+  // Guard against double-push if somehow called while already open.
+  if (!panel.classList.contains('open')) {
+    try { history.pushState({ aiOpen: true }, '', location.href); } catch(e) {}
+  }
+
   // Card on screen → fresh analysis every time
   const _autoCard = selectedCard;
   if (_autoCard) {
@@ -13315,7 +13330,7 @@ function aiOpenPanel() {
     setTimeout(() => aiSubmit(`Analyse ${_autoCard.n} (${_autoCard.s}) in full. What's the signal, should I buy it, hold it, or grade it? Give me the 5-year outlook and any risks.`), 300);
   }
 }
-function aiClosePanel() {
+function aiClosePanel(_viaPopstate) {
   const panel    = document.getElementById('aiChatPanel');
   const backdrop = document.getElementById('aiChatBackdrop');
   if (!panel) return;
@@ -13325,6 +13340,11 @@ function aiClosePanel() {
     panel.style.display = 'none';
     if (backdrop) backdrop.style.display = 'none';
   }, 200);
+  // If closed by UI (X button, backdrop, Escape) consume the history entry we pushed.
+  // Don't call history.back() when we're already here via popstate — that would double-pop.
+  if (!_viaPopstate) {
+    try { history.back(); } catch(e) {}
+  }
 }
 
 async function aiSubmit(userText) {
