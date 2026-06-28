@@ -13043,6 +13043,44 @@ function aiBuildContext() {
     }
   } catch (e) { console.warn('ctx value_picks', e); }
 
+  // Broader card market — 4/5-star cards with gem rate data, NOT limited to owned cards.
+  // This lets the AI answer "find me 5-star cards under £150 with 50%+ gem rate" without
+  // being restricted to the user's collection.
+  try {
+    if (Array.isArray(searchIndex) && searchIndex.length) {
+      const ownedIds = new Set((Array.isArray(portfolio) ? portfolio : []).map(p => p.id));
+      const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+      const budget = ctx.max_budget_gbp || Infinity;
+
+      const marketCards = [];
+      for (const c of searchIndex) {
+        if (!c.g || c.g < 0.30) continue;            // must have 30%+ gem rate
+        if (c.lang === 'JP') continue;                // EN only for now
+        const pull = (() => { try { if (setsData?.[c.sc]) { const r = setsData[c.sc].rarities?.[c.rc]; if (r?.pullRate > 0) return Math.round(1 / r.pullRate) * r.count / 100; } } catch {} return 7.65; })();
+        const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(c, pull) : { total: 5 };
+        const starObj = (typeof getInvestmentStars === 'function') ? getInvestmentStars(c, des.total) : null;
+        if (!starObj || starObj.stars < 4) continue;  // 4-star and above only
+        const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(c.i) : null;
+        const usd = cached ? (cached.market || cached.mid || c.p) : c.p;
+        const gbp = usdToGbp(usd);
+        if (!gbp || gbp > budget) continue;
+        marketCards.push({
+          id: c.i,
+          name: c.n,
+          set: c.s,
+          rarity: c.rc,
+          price_gbp: +gbp.toFixed(2),
+          psa10_gem_rate_pct: +(c.g * 100).toFixed(1),
+          investment_stars: starObj.stars,
+          owned: ownedIds.has(c.i),
+        });
+      }
+      // Sort by gem rate desc, then price asc
+      marketCards.sort((a, b) => b.psa10_gem_rate_pct - a.psa10_gem_rate_pct || a.price_gbp - b.price_gbp);
+      if (marketCards.length) ctx.card_market = marketCards.slice(0, 80);
+    }
+  } catch (e) { console.warn('ctx card_market', e); }
+
   return ctx;
 }
 
@@ -13071,7 +13109,8 @@ PRINCIPLES:
 - Prices are in GBP. The user is UK-based. Mention import VAT/fees when discussing US/JP purchases.
 - "Underrated" means strong fundamentals (rarity, character demand, set age) at a depressed current price.
 - "Graded upside" = PSA 10 / raw multiplier. Anything >2.5x is interesting; >4x is exceptional.
-- When suggesting picks, only recommend cards within budget from value_picks — never over-budget picks unprompted.
+- DEFAULT DATA SOURCE: Unless the user explicitly asks about their own collection/portfolio/wishlist, answer using card_market — it contains 4–5 star EN cards with 30%+ gem rate from the full database, sorted by gem rate desc. The owned field tells you if the user already owns it.
+- When suggesting picks, prefer cards from card_market where owned:false unless the user asks specifically about what they own.
 - PSA 10 GEM RATE (psa10_gem_rate_pct): percentage of submitted copies that achieve PSA 10. Higher = easier to grade. 50%+ is excellent (relatively easy to hit 10). 20–49% is moderate. Below 20% is difficult — factor this heavily into grading advice. portfolio.five_star_cards_by_gem_rate is pre-sorted for you.
 - INVESTMENT STARS (investment_stars 1–5): 5 = S-tier Pokémon in premium rarity (best long-term hold), 4 = strong, 3 = moderate, 2 = situational, 1 = low priority. Always mention stars when ranking or comparing cards.
 - For sell/hold/grade questions, balance: gem rate, grading cost (~£25–£30 all-in), PSA 10 vs raw multiplier, and opportunity cost.
