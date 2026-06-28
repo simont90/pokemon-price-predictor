@@ -13301,6 +13301,17 @@ function aiRenderHistory() {
     }
     return `<div class="ai-msg ai-msg-bot"><div class="ai-msg-content">${aiProcessSentinels(aiMdRender(m.content))}</div></div>`;
   }).join('');
+  // Re-attach follow-up suggestions for the last assistant message
+  const lastBot = aiChatHistory.slice().reverse().find(m => m.role === 'assistant');
+  const lastUser = aiChatHistory.slice().reverse().find(m => m.role === 'user');
+  if (lastBot) {
+    const botEls = list.querySelectorAll('.ai-msg-bot');
+    const lastBotEl = botEls[botEls.length - 1];
+    if (lastBotEl) {
+      const followups = aiGenerateFollowups(lastBot.content, lastUser?.content || '');
+      if (followups.length) aiAppendFollowups(lastBotEl, followups);
+    }
+  }
   list.scrollTop = list.scrollHeight;
   aiHydrateCharts(list);
 }
@@ -13413,11 +13424,164 @@ async function aiSubmit(userText) {
       aiSaveHistory();
       target.innerHTML = aiProcessSentinels(aiMdRender(whole));
       aiHydrateCharts(target);
+      const followups = aiGenerateFollowups(whole, text);
+      if (followups.length) aiAppendFollowups(target.parentElement, followups);
+      const list = document.getElementById('aiChatMessages');
+      if (list) list.scrollTop = list.scrollHeight;
     },
     onError: (err) => {
       target.innerHTML = `<p style="color:var(--red)">${aiMdRender('**Error:** ' + err)}</p>`;
     },
   });
+}
+
+function aiAppendFollowups(msgEl, followups) {
+  const existing = msgEl.querySelector('.ai-followups');
+  if (existing) existing.remove();
+  const row = document.createElement('div');
+  row.className = 'ai-followups';
+  row.innerHTML = followups.map(f =>
+    `<button class="ai-quick ai-followup" data-prompt="${esc(f.prompt)}">${esc(f.label)}</button>`
+  ).join('');
+  msgEl.appendChild(row);
+}
+
+function aiGenerateFollowups(responseText, userText) {
+  const r = (responseText || '').toLowerCase();
+  const u = (userText  || '').toLowerCase();
+  const card = selectedCard;
+  const cn = card ? esc(card.n) : '';
+  const cs = card ? esc(card.s) : '';
+  const has = (...words) => words.some(w => r.includes(w) || u.includes(w));
+  const suggestions = [];
+
+  // Grading / PSA / gem rate
+  if (has('grade', 'psa', 'gem rate', 'slab', 'submit', 'gem %')) {
+    if (card) suggestions.push({
+      label: `Grade economics for ${cn}`,
+      prompt: `Break down the full grading economics for ${cn} (${cs}): cost to grade, PSA 10 estimate, gem rate, and net profit if I sell graded on eBay.`,
+    });
+    suggestions.push({
+      label: 'Best grading candidates in my collection',
+      prompt: 'Which cards in my portfolio are the best PSA grading candidates right now? Rank by gem rate and PSA 10 upside, only include ones where grading makes financial sense.',
+    });
+  }
+
+  // Buy / entry timing / sets
+  if (has('buy', 'entry', 'timing', 'window', 'optimal', 'too early', 'approaching')) {
+    suggestions.push({
+      label: 'Which sets are in the buy window?',
+      prompt: 'Which Scarlet & Violet sets are currently in the 6–10 month optimal entry window? Rank the best buys by set and character.',
+    });
+    if (card) suggestions.push({
+      label: `Max buy price for ${cn}`,
+      prompt: `What's the maximum I should pay for ${cn} (${cs}) to achieve a 20% ROI if I sell on eBay? Include the eBay fee buffer.`,
+    });
+  }
+
+  // Sell / exit
+  if (has('sell', 'exit', 'take profit', 'liquidate', 'offload')) {
+    suggestions.push({
+      label: 'Which portfolio cards to sell first?',
+      prompt: 'Looking at my portfolio, which cards have the strongest sell signal right now based on set maturity, ROI already achieved, and market timing? Be direct.',
+    });
+  }
+
+  // Hold / long-term forecast
+  if (has('hold', '5-year', '5 year', 'long-term', 'long term', 'forecast')) {
+    if (card) suggestions.push({
+      label: `5-year forecast for ${cn}`,
+      prompt: `Show me the 5-year price forecast for ${cn} (${cs}) across expected, optimistic, and pessimistic scenarios. What's driving the spread?`,
+    });
+    suggestions.push({
+      label: 'Best long-term holds in my collection',
+      prompt: 'Rank my portfolio cards by long-term hold potential over 5 years. Which should I never sell and which should I rotate out?',
+    });
+  }
+
+  // Portfolio / P&L
+  if (has('portfolio', 'collection', 'total value', 'p&l', 'profit', 'loss')) {
+    suggestions.push({
+      label: 'Which are my weakest holds?',
+      prompt: 'Which cards in my portfolio have the worst long-term outlook or are most likely to underperform? Give me a clear ranking and what to do about each.',
+    });
+    suggestions.push({
+      label: 'What should I sell to free up budget?',
+      prompt: 'If I needed to free up £200–£500 from my portfolio without sacrificing the best long-term holds, what should I sell?',
+    });
+  }
+
+  // Wishlist
+  if (has('wishlist', 'target price', 'want list', 'wanted')) {
+    suggestions.push({
+      label: 'Which wishlist cards to buy first?',
+      prompt: 'Looking at my wishlist, which should I prioritise buying first and why? Consider set age, current pricing vs target, and growth potential.',
+    });
+  }
+
+  // Stars / investment rating
+  if (has('star', '5-star', '4-star', 'investment rating', 'tier')) {
+    suggestions.push({
+      label: 'Rank all 5-star cards by gem rate',
+      prompt: 'List all 5-star investment cards in my portfolio ordered by PSA 10 gem rate, highest first. Which are easiest to grade to PSA 10?',
+    });
+    suggestions.push({
+      label: "Best 5-star buys under my budget",
+      prompt: `What are the best 5-star investment cards I could buy right now within my budget, ranked by value? Include raw and graded options.`,
+    });
+  }
+
+  // Marketplace / deals / eBay
+  if (has('ebay', 'listing', 'deal', 'market', 'undervalued', 'underrated', 'cardmarket')) {
+    if (card) suggestions.push({
+      label: `Find live listings for ${cn}`,
+      prompt: `Search for live eBay listings for ${cn} (${cs}). What's the best deal available right now versus fair value?`,
+    });
+    suggestions.push({
+      label: "What's underrated right now?",
+      prompt: "What are the most underrated 5-star cards available right now with the best risk/reward ratio? Give me your top 3 picks.",
+    });
+  }
+
+  // EN vs JP
+  if (has('japanese', 'jp version', 'en version', 'english', 'en vs', 'jp vs')) {
+    if (card) suggestions.push({
+      label: `EN vs JP for ${cn}`,
+      prompt: `Compare the EN and JP versions of ${cn} (${cs}) — price gap, grading ceiling difference, liquidity, and which is better value right now.`,
+    });
+  }
+
+  // Card-specific fallback when card is on screen but nothing specific triggered
+  if (card && suggestions.length < 2) {
+    suggestions.push({
+      label: `Should I grade ${cn}?`,
+      prompt: `Should I grade my ${cn} (${cs})? Factor in the gem rate, grading cost, PSA 10 vs raw multiplier, and whether the timing makes sense.`,
+    });
+    suggestions.push({
+      label: `5-year outlook for ${cn}`,
+      prompt: `What's the 5-year price outlook for ${cn} (${cs})? Walk through the bear, base, and bull scenarios.`,
+    });
+  }
+
+  // General fallback
+  if (suggestions.length < 2) {
+    suggestions.push({
+      label: 'Analyse my portfolio',
+      prompt: 'Give me a full portfolio analysis: best holds, weakest links, top 3 action items.',
+    });
+    suggestions.push({
+      label: 'Best spend this week',
+      prompt: 'What is the single best card I could buy this week for long-term value within my budget?',
+    });
+  }
+
+  // Deduplicate and cap at 3
+  const seen = new Set();
+  return suggestions.filter(s => {
+    if (seen.has(s.label)) return false;
+    seen.add(s.label);
+    return true;
+  }).slice(0, 3);
 }
 
 function aiSetupQuickPrompts() {
