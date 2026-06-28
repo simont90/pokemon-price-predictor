@@ -946,6 +946,32 @@ const MCP_TOOLS = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
+    name: 'search_card_database',
+    description: 'Search the Pokémon TCG card database for any card — not just cards the user owns. Use this when the user asks to find a card, explore what exists in a set, look up Pokémon cards by character name, rarity, or set. Returns card details, current market prices in GBP, and whether the card is already in the user\'s collection or wishlist. Works for EN cards. Examples: "find Charizard SIRs", "what Umbreon cards are in Scarlet & Violet?", "show me Illustration Rares from 151".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pokemon:  { type: 'string', description: 'Pokémon name to search for (e.g. "Charizard", "Umbreon", "Mew"). Partial names work.' },
+        set:      { type: 'string', description: 'Set name or code (e.g. "Obsidian Flames", "sv3", "151", "Scarlet & Violet").' },
+        rarity:   { type: 'string', description: 'Rarity type (e.g. "Special Illustration Rare", "Illustration Rare", "Hyper Rare", "Double Rare").' },
+        limit:    { type: 'integer', minimum: 1, maximum: 20, description: 'Max results to return. Default: 10.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_card_analysis',
+    description: 'Get a full investment analysis for a specific card: current market price (GBP), max buy price (what you should pay on eBay including fee buffer), star rating (1–5), entry timing (is now a good time to buy?), and grading economics (is it worth submitting to PSA?). Use when the user asks "is X card worth buying?", "what should I pay for Y?", "should I grade this?", or wants a full breakdown of a specific card.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        card_id: { type: 'string', description: 'pokemontcg.io card ID (e.g. "sv3-215", "sv3pt5-197"). Use this if you already know it from a search_card_database result.' },
+        query:   { type: 'string', description: 'Card name + set to search for if you don\'t have the card ID (e.g. "Charizard ex Obsidian Flames 215").' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'search_marketplace_deals',
     description: 'Search live eBay UK, eBay US, and Cardmarket for listings of a specific card under a given fair-value ceiling. Returns ranked deals with seller, price, currency, URL, and a deal score. Use when the user asks "any good deals on X right now?" or wants to find underpriced listings.',
     inputSchema: {
@@ -1039,7 +1065,8 @@ function asError(message) {
 async function dispatchTool(name, args, env, kvKey) {
   const { snap, empty, error } = await loadSnapshot(env, kvKey);
   if (error) return asError(error);
-  if (empty && name !== 'search_marketplace_deals') {
+  const SNAPSHOT_FREE_TOOLS = ['search_marketplace_deals', 'search_card_database', 'get_card_analysis'];
+  if (empty && !SNAPSHOT_FREE_TOOLS.includes(name)) {
     return asError('No data synced yet. Open the app on any device and tap sync first.');
   }
 
@@ -1139,9 +1166,216 @@ async function dispatchTool(name, args, env, kvKey) {
         deals: deals.slice(0, 30),
       });
     }
+    case 'search_card_database': {
+      const pokemon  = args && args.pokemon  ? String(args.pokemon).trim()  : '';
+      const set      = args && args.set      ? String(args.set).trim()      : '';
+      const rarity   = args && args.rarity   ? String(args.rarity).trim()   : '';
+      const limit    = (args && Number.isInteger(args.limit) && args.limit > 0) ? Math.min(args.limit, 20) : 10;
+      if (!pokemon && !set && !rarity) return asError('Provide at least one of: pokemon, set, rarity.');
+
+      // Build pokemontcg.io query string
+      const qParts = [];
+      if (pokemon) qParts.push(`name:"${pokemon.replace(/"/g, '')}*"`);
+      if (set) {
+        // Looks like a set ID (e.g. sv3, swsh9, xy1)?
+        const looksLikeId = /^[a-z][a-z0-9_-]{1,10}$/i.test(set) && !set.includes(' ');
+        qParts.push(looksLikeId ? `set.id:${set}` : `set.name:"${set.replace(/"/g, '')}"`);
+      }
+      if (rarity) qParts.push(`rarity:"${rarity.replace(/"/g, '')}"`);
+
+      const tcgUrl = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(qParts.join(' '))}&pageSize=${limit}&orderBy=-set.releaseDate`;
+      let tcgResp;
+      try {
+        tcgResp = await fetch(tcgUrl, { headers: { 'User-Agent': 'PokemonPricePredictor/1.0' } });
+      } catch (e) {
+        return asError(`Card database fetch failed: ${e.message}`);
+      }
+      if (!tcgResp.ok) return asError(`Card database returned ${tcgResp.status}.`);
+      const tcgData = await tcgResp.json();
+      const cards = (tcgData.data || []).slice(0, limit);
+      if (!cards.length) return asTextContent({ query: qParts.join(' '), count: 0, cards: [], note: 'No cards matched. Try a broader search.' });
+
+      // Load user's owned / wishlisted card IDs for cross-reference
+      const portfolio = !empty ? (snapKey(snap, 'pkm-portfolio', []) || []) : [];
+      const wishlist  = !empty ? (snapKey(snap, 'pkm-wishlist',  []) || []) : [];
+      const ownedIds  = new Set(portfolio.map(c => (c.id || c.cardId || '').toLowerCase()));
+      const wishedIds = new Set(wishlist.map(c  => (c.id || c.cardId || '').toLowerCase()));
+
+      const FX = 0.79;
+      const results = cards.map(c => {
+        const priceUSD = _bestTcgPrice(c.tcgplayer);
+        const priceGBP = priceUSD != null ? +(priceUSD * FX).toFixed(2) : null;
+        const cardIdLow = (c.id || '').toLowerCase();
+        return {
+          id:         c.id,
+          name:       c.name,
+          set:        c.set?.name,
+          set_code:   c.set?.id,
+          number:     c.number,
+          rarity:     c.rarity,
+          release_date: c.set?.releaseDate,
+          price_usd:  priceUSD != null ? +priceUSD.toFixed(2) : null,
+          price_gbp:  priceGBP,
+          image_sm:   c.images?.small,
+          stars:      _cardStars(c.name, c.rarity),
+          in_collection: ownedIds.has(cardIdLow),
+          in_wishlist:   wishedIds.has(cardIdLow),
+        };
+      });
+      return asTextContent({ query: qParts.join(' '), count: results.length, cards: results });
+    }
+
+    case 'get_card_analysis': {
+      const cardId    = args && args.card_id ? String(args.card_id).trim() : '';
+      const queryStr  = args && args.query   ? String(args.query).trim()   : '';
+      if (!cardId && !queryStr) return asError('Provide card_id or query.');
+
+      let card;
+      try {
+        if (cardId) {
+          const r = await fetch(`https://api.pokemontcg.io/v2/cards/${encodeURIComponent(cardId)}`, { headers: { 'User-Agent': 'PokemonPricePredictor/1.0' } });
+          if (!r.ok) return asError(`Card ${cardId} not found (${r.status}).`);
+          card = (await r.json()).data;
+        } else {
+          const q = encodeURIComponent(`name:"${queryStr.replace(/"/g, '')}"`);
+          const r = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}&pageSize=1&orderBy=-set.releaseDate`, { headers: { 'User-Agent': 'PokemonPricePredictor/1.0' } });
+          if (!r.ok) return asError(`Card database returned ${r.status}.`);
+          const d = await r.json();
+          card = d.data?.[0] ?? null;
+          if (!card) return asTextContent({ found: false, query: queryStr, note: 'No card matched. Try a more specific name.' });
+        }
+      } catch (e) {
+        return asError(`Card database fetch failed: ${e.message}`);
+      }
+
+      const FX = 0.79;
+      const priceUSD = _bestTcgPrice(card.tcgplayer);
+      const priceGBP = priceUSD != null ? priceUSD * FX : null;
+
+      // eBay economics
+      const EBAY_FEE = 0.129, EBAY_FIXED = 0.30;
+      const ebayNetGBP    = priceGBP != null ? +(priceGBP * (1 - EBAY_FEE) - EBAY_FIXED).toFixed(2) : null;
+      const maxBuy20pctGBP = ebayNetGBP != null ? +(ebayNetGBP / 1.20).toFixed(2) : null;
+      const ebayFairList   = priceGBP  != null ? +((priceGBP + EBAY_FIXED) / (1 - EBAY_FEE)).toFixed(2) : null;
+
+      // Entry timing
+      const releaseDate = card.set?.releaseDate;
+      const timing = _entryTiming(releaseDate);
+
+      // Grading economics
+      const grading = priceGBP != null ? _gradingEconomics(priceGBP) : null;
+
+      // Stars
+      const stars = _cardStars(card.name, card.rarity);
+
+      // Ownership
+      const portfolio = !empty ? (snapKey(snap, 'pkm-portfolio', []) || []) : [];
+      const wishlist  = !empty ? (snapKey(snap, 'pkm-wishlist',  []) || []) : [];
+      const idLow = (card.id || '').toLowerCase();
+      const inCollection = portfolio.some(c => (c.id || c.cardId || '').toLowerCase() === idLow);
+      const inWishlist   = wishlist.some(c  => (c.id || c.cardId || '').toLowerCase() === idLow);
+
+      return asTextContent({
+        id:         card.id,
+        name:       card.name,
+        set:        card.set?.name,
+        set_code:   card.set?.id,
+        number:     card.number,
+        rarity:     card.rarity,
+        release_date: releaseDate,
+        investment_stars: stars,
+        price_usd:  priceUSD != null ? +priceUSD.toFixed(2) : null,
+        price_gbp:  priceGBP != null ? +priceGBP.toFixed(2) : null,
+        ebay: priceGBP != null ? {
+          net_if_sold_now_gbp:    ebayNetGBP,
+          max_buy_for_20pct_roi:  maxBuy20pctGBP,
+          fair_listing_price_gbp: ebayFairList,
+        } : null,
+        entry_timing:     timing,
+        grading:          grading,
+        in_collection:    inCollection,
+        in_wishlist:      inWishlist,
+        image_sm:  card.images?.small,
+        image_lg:  card.images?.large,
+      });
+    }
+
     default:
       return asError(`Unknown tool: ${name}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions for new MCP tools
+// ---------------------------------------------------------------------------
+
+function _bestTcgPrice(tcgplayer) {
+  if (!tcgplayer?.prices) return null;
+  const ORDER = ['holofoil', '1stEditionHolofoil', 'unlimitedHolofoil', 'reverseHolofoil', 'normal', 'unlimited', '1stEdition'];
+  for (const k of ORDER) {
+    if (tcgplayer.prices[k]?.market != null) return tcgplayer.prices[k].market;
+  }
+  for (const k of Object.keys(tcgplayer.prices)) {
+    if (tcgplayer.prices[k]?.market != null) return tcgplayer.prices[k].market;
+  }
+  return null;
+}
+
+const _S_CHARS = ['charizard','umbreon','mew','mewtwo','pikachu','eevee'];
+const _A_CHARS = ['gengar','dragonite','gyarados','lugia','lucario','gardevoir','greninja','sylveon','snorlax',
+                  'blastoise','venusaur','articuno','zapdos','moltres','alakazam','togekiss','garchomp',
+                  'infernape','empoleon','espeon','flareon','vaporeon','jolteon','leafeon','glaceon','sylveon'];
+const _ULTRA_PREM_RARITIES = new Set(['Special Illustration Rare','Hyper Rare','Shiny Super Rare','Shiny Ultra Rare']);
+const _PREM_RARITIES       = new Set(['Illustration Rare','Double Rare','Ultra Rare','Secret Rare','Rainbow Rare','Gold Rare']);
+
+function _cardStars(name, rarity) {
+  const n = (name || '').toLowerCase();
+  const isS = _S_CHARS.some(c => n.includes(c));
+  const isA = _A_CHARS.some(c => n.includes(c));
+  const isUltra = _ULTRA_PREM_RARITIES.has(rarity || '');
+  const isPrem  = isUltra || _PREM_RARITIES.has(rarity || '');
+  if (isS && isUltra) return 5;
+  if ((isS && isPrem) || (isA && isUltra)) return 4;
+  if ((isA && isPrem) || (isS && !isPrem)) return 3;
+  if (isPrem) return 2;
+  return 1;
+}
+
+function _setAgeDays(releaseDate) {
+  if (!releaseDate) return null;
+  const rel = new Date(releaseDate.replace(/\//g, '-'));
+  if (isNaN(rel.getTime())) return null;
+  return Math.floor((Date.now() - rel.getTime()) / 86400000);
+}
+
+function _entryTiming(releaseDate) {
+  const days = _setAgeDays(releaseDate);
+  if (days === null) return { label: 'Unknown', detail: 'Release date not available.' };
+  const months = days / 30;
+  if (months < 3)  return { label: 'Too early',          months_since_release: +months.toFixed(1), detail: 'Set under 3 months old. Prices inflated post-launch. Wait.' };
+  if (months < 6)  return { label: 'Approaching window', months_since_release: +months.toFixed(1), detail: '3–6 months out. Prices cooling. Watch closely but not yet optimal.' };
+  if (months < 10) return { label: 'Optimal entry',      months_since_release: +months.toFixed(1), detail: '6–10 months post-launch is the ideal buy window before secondary market recovers.' };
+  if (months < 24) return { label: 'Mature market',      months_since_release: +months.toFixed(1), detail: 'Over 10 months old. Fair value established. Buy on dips only.' };
+  return            { label: 'Aged set',                  months_since_release: +months.toFixed(1), detail: 'Over 2 years. Value locked in. Premium for nostalgia pieces; hold long-term.' };
+}
+
+function _gradingEconomics(marketGBP) {
+  const GRADING_COST = 28;   // approx PSA regular (£) after shipping both ways
+  const PSA10_MULT   = 3.0;  // conservative: many cards do 3–5×, use 3× floor
+  const psa10est = marketGBP * PSA10_MULT;
+  const netIfSold = psa10est * (1 - 0.129) - 0.30;
+  const breakEven = marketGBP + GRADING_COST;
+  const worthIt   = netIfSold > breakEven * 1.30;  // need 30% margin over break-even
+  return {
+    raw_market_gbp:         +marketGBP.toFixed(2),
+    psa10_estimate_gbp:     +psa10est.toFixed(2),
+    grading_cost_approx_gbp: GRADING_COST,
+    estimated_net_after_grading_and_ebay: +netIfSold.toFixed(2),
+    worth_grading: worthIt,
+    note: worthIt
+      ? `PSA 10 est. £${psa10est.toFixed(0)} → net ~£${netIfSold.toFixed(0)} after fees. Likely worth grading.`
+      : `PSA 10 est. £${psa10est.toFixed(0)} → net ~£${netIfSold.toFixed(0)} after fees. Grading at £${GRADING_COST} probably not worth it at this price.`,
+  };
 }
 
 async function handleMcp(request, env, url) {
@@ -1202,7 +1436,7 @@ async function handleMcp(request, env, url) {
             protocolVersion: MCP_PROTOCOL_VERSION,
             capabilities: { tools: { listChanged: false } },
             serverInfo: MCP_SERVER_INFO,
-            instructions: 'Tools read the Pokémon collection synced to this pair code. Use search_marketplace_deals to scan eBay / Cardmarket for live listings.',
+            instructions: 'Tools to query the Pokémon collection and card database. Use search_card_database to find any Pokémon TCG card by name, set, or rarity. Use get_card_analysis to get full investment analysis (price, max buy, stars, entry timing, grading economics) for any specific card. Use search_marketplace_deals to scan live eBay / Cardmarket listings. Collection tools (get_collection, get_wishlist, etc.) read the synced snapshot.',
           },
         });
         break;
