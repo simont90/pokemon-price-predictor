@@ -1217,12 +1217,18 @@ async function dispatchTool(name, args, env, kvKey) {
           price_usd:  priceUSD != null ? +priceUSD.toFixed(2) : null,
           price_gbp:  priceGBP,
           image_sm:   c.images?.small,
-          stars:      _cardStars(c.name, c.rarity),
+          investment_stars:       _cardStars(c.name, c.rarity),
+          investment_stars_label: _STAR_LABELS[_cardStars(c.name, c.rarity)],
           in_collection: ownedIds.has(cardIdLow),
           in_wishlist:   wishedIds.has(cardIdLow),
         };
       });
-      return asTextContent({ query: qParts.join(' '), count: results.length, cards: results });
+      return asTextContent({
+        query: qParts.join(' '),
+        count: results.length,
+        cards: results,
+        star_framework: _STAR_FRAMEWORK,
+      });
     }
 
     case 'get_card_analysis': {
@@ -1266,7 +1272,8 @@ async function dispatchTool(name, args, env, kvKey) {
       const grading = priceGBP != null ? _gradingEconomics(priceGBP) : null;
 
       // Stars
-      const stars = _cardStars(card.name, card.rarity);
+      const stars      = _cardStars(card.name, card.rarity);
+      const starsLabel = _STAR_LABELS[stars];
 
       // Ownership
       const portfolio = !empty ? (snapKey(snap, 'pkm-portfolio', []) || []) : [];
@@ -1283,7 +1290,9 @@ async function dispatchTool(name, args, env, kvKey) {
         number:     card.number,
         rarity:     card.rarity,
         release_date: releaseDate,
-        investment_stars: stars,
+        investment_stars:       stars,
+        investment_stars_label: starsLabel,
+        star_framework:         _STAR_FRAMEWORK,
         price_usd:  priceUSD != null ? +priceUSD.toFixed(2) : null,
         price_gbp:  priceGBP != null ? +priceGBP.toFixed(2) : null,
         ebay: priceGBP != null ? {
@@ -1320,6 +1329,31 @@ function _bestTcgPrice(tcgplayer) {
   }
   return null;
 }
+
+const _STAR_LABELS = [
+  '',
+  '1 star — low priority: common character, standard rarity. Hold or pass.',
+  '2 stars — average: premium rarity but niche Pokémon, or popular Pokémon in basic rarity. Situational buy.',
+  '3 stars — moderate: strong character or premium art. Worth buying at the right price.',
+  '4 stars — strong pick: top-tier character with premium art, or S-tier at a basic premium rarity. Buy on the dip.',
+  '5 stars — top tier: S-tier Pokémon (Charizard, Umbreon, Mew, Mewtwo, Pikachu, Eevee) in Special Illustration Rare or Hyper Rare. Long-hold investment.',
+];
+
+const _STAR_FRAMEWORK = {
+  description: 'Investment rating 1–5 based on character desirability and card rarity/art tier.',
+  criteria: {
+    '5': 'S-tier Pokémon + Ultra Premium rarity (SIR, Hyper Rare, Shiny Super Rare). Highest long-term value.',
+    '4': 'S-tier + Premium rarity, OR A-tier + Ultra Premium. Strong investment.',
+    '3': 'A-tier + Premium rarity, OR S-tier without premium rarity.',
+    '2': 'Premium/high-art rarity but B-tier or unknown Pokémon.',
+    '1': 'Common/uncommon rarity or low-demand Pokémon.',
+  },
+  s_tier_pokemon: ['Charizard','Umbreon','Mew','Mewtwo','Pikachu','Eevee'],
+  a_tier_pokemon: ['Gengar','Dragonite','Gyarados','Lugia','Lucario','Gardevoir','Greninja','Sylveon','Snorlax','Blastoise','Venusaur','Togekiss','Garchomp','Infernape','Empoleon'],
+  ultra_premium_rarities: ['Special Illustration Rare','Hyper Rare','Shiny Super Rare','Shiny Ultra Rare'],
+  premium_rarities: ['Illustration Rare','Double Rare','Ultra Rare','Secret Rare','Rainbow Rare','Gold Rare'],
+  note: 'Entry timing and current market conditions also affect buy/hold/sell decisions — see entry_timing and ebay fields.',
+};
 
 const _S_CHARS = ['charizard','umbreon','mew','mewtwo','pikachu','eevee'];
 const _A_CHARS = ['gengar','dragonite','gyarados','lugia','lucario','gardevoir','greninja','sylveon','snorlax',
