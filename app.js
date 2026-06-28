@@ -13305,12 +13305,7 @@ function aiOpenPanel() {
     try { history.pushState({ aiOpen: true }, '', location.href); } catch(e) {}
   }
 
-  // Card on screen → fresh analysis every time
   const _autoCard = selectedCard;
-  if (_autoCard) {
-    aiChatHistory = [];
-    aiSaveHistory();
-  }
 
   panel.style.display = 'flex';
   if (backdrop) backdrop.style.display = 'block';
@@ -13325,8 +13320,8 @@ function aiOpenPanel() {
   const input = document.getElementById('aiChatInput');
   if (input) setTimeout(() => input.focus(), 200);
 
-  // Auto-submit card analysis if provider is ready
-  if (_autoCard && !_needsKey) {
+  // Auto-submit card analysis only if there's no existing conversation to resume.
+  if (_autoCard && !_needsKey && aiChatHistory.length === 0) {
     setTimeout(() => aiSubmit(`Analyse ${_autoCard.n} (${_autoCard.s}) in full. What's the signal, should I buy it, hold it, or grade it? Give me the 5-year outlook and any risks.`), 300);
   }
 }
