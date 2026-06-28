@@ -12918,15 +12918,31 @@ function aiBuildContext() {
         totalGBP += gbp;
         const acqCost = (typeof getAcqCostBasisGBP === 'function') ? getAcqCostBasisGBP(p.id) : 0;
         if (acqCost > 0) { totalCost += acqCost; hasCost++; }
-        return { id: p.id, name: p.name, set: p.set, price_gbp: +gbp.toFixed(2), cost_gbp: acqCost > 0 ? +acqCost.toFixed(2) : null };
+        const pullForCard = (() => { try { if (setsData?.[card?.sc]) { const r = setsData[card.sc].rarities?.[card.rc]; if (r?.pullRate > 0) return Math.round(1 / r.pullRate) * r.count / 100; } } catch {} return 7.65; })();
+        const desForCard = card && (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pullForCard) : { total: 5 };
+        const starsForCard = card && (typeof getInvestmentStars === 'function') ? getInvestmentStars(card, desForCard.total) : null;
+        return {
+          id: p.id, name: p.name, set: p.set,
+          price_gbp: +gbp.toFixed(2),
+          cost_gbp: acqCost > 0 ? +acqCost.toFixed(2) : null,
+          psa10_gem_rate_pct: card?.g ? +(card.g * 100).toFixed(1) : null,
+          investment_stars: starsForCard?.stars ?? null,
+        };
       });
       items.sort((a, b) => b.price_gbp - a.price_gbp);
+
+      // Pre-sorted list of 5-star cards by gem rate — answers sorting questions directly
+      const fiveStarByGem = items
+        .filter(i => i.investment_stars === 5 && i.psa10_gem_rate_pct != null)
+        .sort((a, b) => b.psa10_gem_rate_pct - a.psa10_gem_rate_pct);
+
       ctx.portfolio = {
         count: portfolio.length,
         total_value_gbp: +totalGBP.toFixed(2),
         total_cost_gbp: hasCost ? +totalCost.toFixed(2) : null,
         pl_gbp: hasCost ? +(totalGBP - totalCost).toFixed(2) : null,
         top_cards: items.slice(0, 10),
+        five_star_cards_by_gem_rate: fiveStarByGem,
       };
     }
   } catch (e) { console.warn('ctx portfolio', e); }
@@ -12938,10 +12954,15 @@ function aiBuildContext() {
         const card = getCardById(w.id);
         const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(w.id) : null;
         const usd = cached ? (cached.pcUngraded || cached.market || cached.mid || (card ? card.p : 0)) : (card ? card.p : 0);
+        const pullW = (() => { try { if (setsData?.[card?.sc]) { const r = setsData[card.sc].rarities?.[card.rc]; if (r?.pullRate > 0) return Math.round(1 / r.pullRate) * r.count / 100; } } catch {} return 7.65; })();
+        const desW = card && (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pullW) : { total: 5 };
+        const starsW = card && (typeof getInvestmentStars === 'function') ? getInvestmentStars(card, desW.total) : null;
         return {
           id: w.id, name: w.name, set: w.set, lang: w.lang || 'EN',
           current_gbp: +usdToGbp(usd).toFixed(2),
           target_gbp: w.targetGBP || null,
+          psa10_gem_rate_pct: card?.g ? +(card.g * 100).toFixed(1) : null,
+          investment_stars: starsW?.stars ?? null,
         };
       });
     }
@@ -12973,11 +12994,15 @@ function aiBuildContext() {
       const hc  = (typeof computeHoldCore === 'function') ? computeHoldCore(c) : null;
       const fc  = (typeof forecast === 'function') ? forecast(c, pull, des.total) : null;
 
+      const starResult = (typeof getInvestmentStars === 'function') ? getInvestmentStars(c, des.total) : null;
       ctx.selected_card = {
         id: c.i, name: c.n, set: c.s, number: c.cn, rarity: c.rc, lang: c.lang || 'EN',
         raw_gbp: +usdToGbp(usd).toFixed(2),
         psa10_gbp: anchor.usd ? +usdToGbp(anchor.usd).toFixed(2) : null,
         psa10_source: anchor.source,
+        psa10_gem_rate_pct: c.g ? +(c.g * 100).toFixed(1) : null,
+        investment_stars: starResult?.stars ?? null,
+        investment_stars_hint: starResult?.hint ?? null,
         signal: sig?.signal || null,
         signal_score: sig?.score != null ? +sig.score.toFixed(1) : null,
         signal_reasons: sig?.reasons || [],
@@ -13027,7 +13052,7 @@ function aiSystemPrompt(ctx) {
     : `BUDGET: No per-card limit set.`;
 
   const cardLine = ctx.selected_card
-    ? `ACTIVE CARD: The user has [[card:${ctx.selected_card.id}|${ctx.selected_card.name}]] loaded on screen. When asked to analyse it, use signal (${ctx.selected_card.signal || 'n/a'}), signal_reasons, desirability (${ctx.selected_card.desirability}), best_strategy, and forecast fields to give a complete verdict: buy/hold/sell, whether to grade, 5-year trajectory, and risks. Cite the actual numbers — don't be vague.`
+    ? `ACTIVE CARD: The user has [[card:${ctx.selected_card.id}|${ctx.selected_card.name}]] loaded on screen. Investment stars: ${ctx.selected_card.investment_stars ?? 'n/a'}/5. PSA 10 gem rate: ${ctx.selected_card.psa10_gem_rate_pct != null ? ctx.selected_card.psa10_gem_rate_pct + '%' : 'unknown'}. When asked to analyse it, use signal (${ctx.selected_card.signal || 'n/a'}), signal_reasons, desirability (${ctx.selected_card.desirability}), best_strategy, and forecast fields to give a complete verdict: buy/hold/sell, whether to grade, 5-year trajectory, and risks. Cite the actual numbers — don't be vague.`
     : '';
 
   return `You are "PokeKnow", an expert Pokemon TCG market analyst built into the user's collection-tracking app.
@@ -13047,7 +13072,9 @@ PRINCIPLES:
 - "Underrated" means strong fundamentals (rarity, character demand, set age) at a depressed current price.
 - "Graded upside" = PSA 10 / raw multiplier. Anything >2.5x is interesting; >4x is exceptional.
 - When suggesting picks, only recommend cards within budget from value_picks — never over-budget picks unprompted.
-- For sell/hold/grade questions, balance: gem rate, grading cost (~£25), opportunity cost.
+- PSA 10 GEM RATE (psa10_gem_rate_pct): percentage of submitted copies that achieve PSA 10. Higher = easier to grade. 50%+ is excellent (relatively easy to hit 10). 20–49% is moderate. Below 20% is difficult — factor this heavily into grading advice. portfolio.five_star_cards_by_gem_rate is pre-sorted for you.
+- INVESTMENT STARS (investment_stars 1–5): 5 = S-tier Pokémon in premium rarity (best long-term hold), 4 = strong, 3 = moderate, 2 = situational, 1 = low priority. Always mention stars when ranking or comparing cards.
+- For sell/hold/grade questions, balance: gem rate, grading cost (~£25–£30 all-in), PSA 10 vs raw multiplier, and opportunity cost.
 - Keep replies tight: 3-6 short paragraphs or a focused table. No filler.
 - Use **bold** sparingly for emphasis. Bullet lists are fine. Never invent prices not in context.
 - If asked something not about Pokemon TCG or the user's data, gently redirect.
