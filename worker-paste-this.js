@@ -1075,17 +1075,18 @@ async function dispatchTool(name, args, env, kvKey) {
       const portfolio = snapKey(snap, 'pkm-portfolio', []);
       const list = Array.isArray(portfolio) ? portfolio : [];
       const limit = args && Number.isInteger(args.limit) ? args.limit : list.length;
-      return asTextContent({ count: list.length, items: list.slice(0, limit) });
+      const items = list.slice(0, limit).map(c => _enrichWithStars(c));
+      return asTextContent({ count: list.length, items });
     }
     case 'get_wishlist': {
       const wishlist = snapKey(snap, 'pkm-wishlist', []);
       const list = Array.isArray(wishlist) ? wishlist : [];
-      return asTextContent({ count: list.length, items: list });
+      return asTextContent({ count: list.length, items: list.map(c => _enrichWithStars(c)) });
     }
     case 'get_watchlist': {
       const watchlist = snapKey(snap, 'pkm-watchlist-v1', []);
       const list = Array.isArray(watchlist) ? watchlist : [];
-      return asTextContent({ count: list.length, items: list });
+      return asTextContent({ count: list.length, items: list.map(c => _enrichWithStars(c)) });
     }
     case 'get_collection_stats': {
       const portfolio = snapKey(snap, 'pkm-portfolio', []);
@@ -1131,7 +1132,7 @@ async function dispatchTool(name, args, env, kvKey) {
         for (const item of arr) {
           const hay = [item.name, item.cardName, item.set, item.setCode, item.number, item.cardNumber, item.id, item.i]
             .filter(Boolean).join(' ').toLowerCase();
-          if (hay.includes(query)) matches.push({ list: listName, item });
+          if (hay.includes(query)) matches.push({ list: listName, item: _enrichWithStars(item) });
           if (matches.length >= 50) break;
         }
         if (matches.length >= 50) break;
@@ -1282,6 +1283,8 @@ async function dispatchTool(name, args, env, kvKey) {
       const inCollection = portfolio.some(c => (c.id || c.cardId || '').toLowerCase() === idLow);
       const inWishlist   = wishlist.some(c  => (c.id || c.cardId || '').toLowerCase() === idLow);
 
+      const recommendation = _makeRecommendation(stars, timing, priceGBP, maxBuy20pctGBP, inCollection, inWishlist);
+
       return asTextContent({
         id:         card.id,
         name:       card.name,
@@ -1292,7 +1295,7 @@ async function dispatchTool(name, args, env, kvKey) {
         release_date: releaseDate,
         investment_stars:       stars,
         investment_stars_label: starsLabel,
-        star_framework:         _STAR_FRAMEWORK,
+        recommendation,
         price_usd:  priceUSD != null ? +priceUSD.toFixed(2) : null,
         price_gbp:  priceGBP != null ? +priceGBP.toFixed(2) : null,
         ebay: priceGBP != null ? {
@@ -1306,6 +1309,7 @@ async function dispatchTool(name, args, env, kvKey) {
         in_wishlist:      inWishlist,
         image_sm:  card.images?.small,
         image_lg:  card.images?.large,
+        star_framework:   _STAR_FRAMEWORK,
       });
     }
 
@@ -1317,6 +1321,48 @@ async function dispatchTool(name, args, env, kvKey) {
 // ---------------------------------------------------------------------------
 // Helper functions for new MCP tools
 // ---------------------------------------------------------------------------
+
+function _enrichWithStars(card) {
+  const name   = card.name || card.cardName || '';
+  const rarity = card.rarity || '';
+  const s = _cardStars(name, rarity);
+  return { ...card, investment_stars: s, investment_stars_label: _STAR_LABELS[s] };
+}
+
+function _makeRecommendation(stars, timing, priceGBP, maxBuyGBP, inCollection, inWishlist) {
+  if (inCollection) {
+    if (stars >= 4) return `Already in your collection. ${stars === 5 ? '5-star card — hold long-term (3–5+ years).' : '4-star — hold unless you need liquidity.'}`;
+    if (stars === 3) return 'Already in your collection. Moderate card — hold if at a profit, otherwise reassign budget to higher-star picks.';
+    return 'Already in your collection. Low-star card — consider selling if not personally attached and redirecting to a higher-star opportunity.';
+  }
+
+  const priceFair  = (maxBuyGBP != null && priceGBP != null) ? priceGBP <= maxBuyGBP * 1.10 : null;
+  const priceCheap = (maxBuyGBP != null && priceGBP != null) ? priceGBP <= maxBuyGBP * 0.90 : null;
+  const tLabel = timing?.label ?? '';
+  const optimalTiming = tLabel === 'Optimal entry';
+  const approachTiming = tLabel === 'Approaching window';
+  const tooEarly = tLabel === 'Too early';
+
+  if (stars === 5) {
+    if (tooEarly) return '5-star card but set is under 3 months old — prices still inflated. Wait for the 6-month window then buy.';
+    if (optimalTiming && priceCheap) return 'Strong buy — 5-star card in the optimal entry window at below-fair price. Buy now.';
+    if (optimalTiming) return 'Buy — 5-star card in the optimal entry window. Long-hold investment.';
+    if (approachTiming) return 'Watch — 5-star card approaching the buy window. Set a price alert and move in the next 2–3 months.';
+    return '5-star card outside the ideal entry window. Still worth buying on a dip; hold 3–5+ years.';
+  }
+  if (stars === 4) {
+    if (tooEarly) return '4-star card but too early — wait for the 6-month window.';
+    if ((optimalTiming || approachTiming) && priceFair !== false) return 'Good buy — 4-star card in a solid entry window at fair value.';
+    if (optimalTiming || approachTiming) return 'Watch — 4-star card but price is above your 20% ROI threshold. Wait for a dip.';
+    return '4-star card. Buy on a significant dip only.';
+  }
+  if (stars === 3) {
+    if (priceCheap && optimalTiming) return 'Moderate pick — 3-star card at a good price in the right window. Acceptable at this level.';
+    return '3-star card. Only buy if the price is notably below market (>15% under fair value).';
+  }
+  if (stars === 2) return '2-star card. Low investment priority — only buy for personal collection reasons, not investment.';
+  return '1-star card. Pass from an investment standpoint.';
+}
 
 function _bestTcgPrice(tcgplayer) {
   if (!tcgplayer?.prices) return null;
@@ -1470,7 +1516,25 @@ async function handleMcp(request, env, url) {
             protocolVersion: MCP_PROTOCOL_VERSION,
             capabilities: { tools: { listChanged: false } },
             serverInfo: MCP_SERVER_INFO,
-            instructions: 'Tools to query the Pokémon collection and card database. Use search_card_database to find any Pokémon TCG card by name, set, or rarity. Use get_card_analysis to get full investment analysis (price, max buy, stars, entry timing, grading economics) for any specific card. Use search_marketplace_deals to scan live eBay / Cardmarket listings. Collection tools (get_collection, get_wishlist, etc.) read the synced snapshot.',
+            instructions: `Pokémon TCG investment assistant. You have access to the user's synced collection, wishlist, and watchlist, plus live card database search and marketplace deal scanning.
+
+INVESTMENT STAR SYSTEM (1–5, always factor into recommendations):
+★★★★★ 5 — S-tier Pokémon (Charizard, Umbreon, Mew, Mewtwo, Pikachu, Eevee) in Special Illustration Rare / Hyper Rare / Shiny Super Rare. Long-hold, highest long-term value. BUY and hold 3–5+ years.
+★★★★  4 — S-tier in a Premium rarity (Illustration Rare, Double Rare, Ultra Rare), OR A-tier (Gengar, Dragonite, Gyarados, Lugia, Lucario, Gardevoir, Greninja, Sylveon, Snorlax, Blastoise, Venusaur, Togekiss, Garchomp, Infernape, Empoleon) in SIR/Hyper Rare. Strong investment — buy on dips.
+★★★   3 — A-tier in Premium rarity, OR S-tier in standard rarity. Moderate — buy at the right price.
+★★    2 — Premium/high-art rarity with B-tier or unknown Pokémon. Situational.
+★     1 — Common or low-demand. Low priority; consider alternatives first.
+
+ENTRY TIMING (6–10 months post-launch = optimal window):
+- Under 3 months: too early — prices still inflated
+- 3–6 months: approaching — prices cooling, watch closely
+- 6–10 months: OPTIMAL — best time to buy
+- 10–24 months: mature — buy on dips only
+- 24+ months: aged — value established, premium for nostalgia pieces
+
+GRADING (PSA): only submit if PSA 10 estimated value > (raw market + grading cost) × 1.3.
+
+Always cite the star rating and entry timing when recommending buy/hold/sell. Be direct and concise — GBP figures, no fluff.`,
           },
         });
         break;
