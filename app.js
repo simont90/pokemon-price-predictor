@@ -91,6 +91,20 @@ function getDefaultPackCostGBP(setCode, lang) {
   return 80.00; // WOTC era
 }
 
+// Per-set pack cost overrides — stored as { [setCode]: gbpValue } in pkm-pack-cost-override-v1
+function _getPackCostOverrides() {
+  try { return JSON.parse(localStorage.getItem('pkm-pack-cost-override-v1') || '{}'); } catch { return {}; }
+}
+function getPackCostOverride(setCode) { return _getPackCostOverrides()[setCode] || null; }
+function setPackCostOverride(setCode, gbp) {
+  const ov = _getPackCostOverrides(); ov[setCode] = gbp;
+  localStorage.setItem('pkm-pack-cost-override-v1', JSON.stringify(ov));
+}
+function clearPackCostOverride(setCode) {
+  const ov = _getPackCostOverrides(); delete ov[setCode];
+  localStorage.setItem('pkm-pack-cost-override-v1', JSON.stringify(ov));
+}
+
 // Resolve pack economics for a card — returns { packsPerHit, tierSize, packsNeeded, packCost }.
 // Always returns numbers (uses fallbacks if sets-db lacks the data).
 function resolvePackEconomics(card) {
@@ -110,8 +124,11 @@ function resolvePackEconomics(card) {
     tierSize = FALLBACK_TIER_SIZE[card.rc] || 10;
   }
 
-  // 3. Pack cost — sets-db value (treated as USD), otherwise era-based GBP default → USD
-  if (set?.packCost > 0) {
+  // 3. Pack cost — user override takes priority, then sets-db, then era-based fallback
+  const _overrideGBP = getPackCostOverride(card.sc);
+  if (_overrideGBP > 0) {
+    packCost = fxRate > 0 ? _overrideGBP / fxRate : _overrideGBP / 0.79;
+  } else if (set?.packCost > 0) {
     packCost = set.packCost; // assumed USD per existing code
   } else {
     const gbp = getDefaultPackCostGBP(card.sc, card.lang);
@@ -3456,10 +3473,14 @@ function updateRipOrBuy(card, pullCost) {
 
   // Source label — transparency about where numbers come from
   const usingFallbackRate = !(set?.rarities?.[card.rc]?.pullRate > 0);
-  const usingFallbackCost = !(set?.packCost > 0);
+  const overrideGBP = getPackCostOverride(card.sc);
+  const usingOverrideCost = overrideGBP > 0;
+  const usingFallbackCost = !usingOverrideCost && !(set?.packCost > 0);
   const sourceLabel = usingFallbackRate || usingFallbackCost
     ? 'Estimated from rarity & set era'
-    : 'Tracked pull-rate data';
+    : usingOverrideCost
+      ? 'Tracked pull-rate data · Pack price overridden'
+      : 'Tracked pull-rate data';
 
   // ---- Packs Needed callout (always shown) ----
   $('ripPacksNeeded').textContent = packsNeeded.toLocaleString();
@@ -3533,6 +3554,41 @@ function updateRipOrBuy(card, pullCost) {
     <div class="rip-luck-row"><span class="rip-luck-label">Median (50%)</span><span>${medianPacks.toLocaleString()} packs → net ${fmtGBP(medianNet)}</span></div>
     <div class="rip-luck-row"><span class="rip-luck-label">Unlucky (75th pct)</span><span>${unluckyPacks.toLocaleString()} packs → net ${fmtGBP(unluckyNet)}</span></div>
   `;
+
+  // ---- Pack cost override UI ----
+  const packCostGBPVal = usdToGbp(packCost);
+  const overrideCurrentCostEl = $('ripOverrideCurrentCost');
+  const overrideFormEl = $('ripOverrideForm');
+  const overrideToggleBtn = $('ripOverrideToggle');
+  const overrideInputEl = $('ripOverrideInput');
+  const overrideSaveBtn = $('ripOverrideSaveBtn');
+  const overrideClearBtn = $('ripOverrideClearBtn');
+
+  if (overrideCurrentCostEl) {
+    if (usingOverrideCost) {
+      overrideCurrentCostEl.innerHTML = `<span class="rip-override-active">${fmtGBPDirect(overrideGBP)}/pack (overridden)</span>`;
+    } else {
+      overrideCurrentCostEl.textContent = `${fmtGBPDirect(packCostGBPVal)}/pack`;
+    }
+  }
+  if (overrideInputEl) overrideInputEl.value = (overrideGBP || packCostGBPVal).toFixed(2);
+  if (overrideFormEl) overrideFormEl.style.display = 'none';
+  if (overrideToggleBtn) {
+    overrideToggleBtn.textContent = usingOverrideCost ? 'Edit' : 'Override';
+    overrideToggleBtn.className = `rip-override-toggle-btn${usingOverrideCost ? ' active' : ''}`;
+    overrideToggleBtn.onclick = () => {
+      if (overrideFormEl) overrideFormEl.style.display = overrideFormEl.style.display === 'none' ? 'flex' : 'none';
+    };
+  }
+  if (overrideSaveBtn) {
+    overrideSaveBtn.onclick = () => {
+      const val = parseFloat(overrideInputEl?.value);
+      if (val > 0) { setPackCostOverride(card.sc, val); updateRipOrBuy(card, pullCost); }
+    };
+  }
+  if (overrideClearBtn) {
+    overrideClearBtn.onclick = () => { clearPackCostOverride(card.sc); updateRipOrBuy(card, pullCost); };
+  }
 }
 
 // ---- Market Dynamics (live from collectrics API) ----

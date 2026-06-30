@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260628i">
+  <link rel="stylesheet" href="style.css?v=20260701a">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1705,6 +1705,18 @@
           </div>
           <div class="rip-savings" id="ripSavings"></div>
           <div class="rip-luck" id="ripLuck"></div>
+          <div class="rip-pack-override" id="ripOverrideSection">
+            <div class="rip-override-row">
+              <span class="rip-override-label">Pack price: <strong id="ripOverrideCurrentCost"></strong></span>
+              <button class="rip-override-toggle-btn" id="ripOverrideToggle" type="button">Override</button>
+            </div>
+            <div class="rip-override-form" id="ripOverrideForm" style="display:none">
+              <input type="number" id="ripOverrideInput" min="0.01" step="0.01" placeholder="0.00">
+              <span class="rip-override-unit">£/pack</span>
+              <button type="button" id="ripOverrideSaveBtn" class="rip-override-save">Save</button>
+              <button type="button" id="ripOverrideClearBtn" class="rip-override-clear">Reset</button>
+            </div>
+          </div>
         </section>
 
         <!-- eBay Deal Check -->
@@ -2297,7 +2309,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260628i"></script>
+  <script src="app.js?v=20260701a"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

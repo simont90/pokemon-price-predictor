@@ -1096,6 +1096,17 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .rip-luck { border-top: 1px solid var(--border); padding-top: 10px; }
 .rip-luck-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; color: var(--text-muted); }
 .rip-luck-label { color: var(--text-faint); font-size: 11px; }
+.rip-pack-override { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+.rip-override-row { display: flex; align-items: center; gap: 10px; }
+.rip-override-label { font-size: 12px; color: var(--text-faint); flex: 1; }
+.rip-override-toggle-btn { font-size: 11px; color: var(--text-muted); background: transparent; border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+.rip-override-toggle-btn.active { color: var(--accent); border-color: var(--accent); }
+.rip-override-form { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rip-override-form input[type="number"] { width: 80px; font-size: 13px; padding: 4px 8px; background: var(--surface2, #1a1c2e); border: 1px solid var(--border); border-radius: 4px; color: var(--text); }
+.rip-override-unit { font-size: 12px; color: var(--text-muted); }
+.rip-override-save { font-size: 12px; padding: 4px 12px; background: var(--accent); color: #111; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+.rip-override-clear { font-size: 12px; padding: 4px 12px; background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+.rip-override-active { color: var(--accent); }
 
 /* Forecast */
 .forecast-card h2 { margin-bottom: 4px; }
