@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260628h">
+  <link rel="stylesheet" href="style.css?v=20260628i">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1086,6 +1086,7 @@
           <div class="pp-model">
             <div class="predicted-price" id="predictedPriceGBP">£228</div>
             <div class="predicted-usd" id="predictedPriceUSD">≈ $287</div>
+            <div class="pp-model-rationale" id="ppModelRationale"></div>
             <div class="price-breakdown" style="display:none">
               <div class="breakdown-item"><span class="breakdown-label">Supply factor</span><span class="breakdown-value" id="supplyFactor">×3.79</span></div>
               <div class="breakdown-item"><span class="breakdown-label">Demand factor</span><span class="breakdown-value" id="demandFactor">×10.71</span></div>
@@ -2296,7 +2297,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260628h"></script>
+  <script src="app.js?v=20260628i"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

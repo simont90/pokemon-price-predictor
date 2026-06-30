@@ -3206,12 +3206,41 @@ function updateAll() {
   $('artworkHypeValue').textContent = parseFloat($('artworkHype').value).toFixed(1);
   $('universalAppealValue').textContent = parseFloat($('universalAppeal').value).toFixed(1);
 
-  const { priceUSD, sf, df } = predictPrice(pullCost, des);
+  const { priceUSD: rawModelUSD, sf, df } = predictPrice(pullCost, des);
+
+  // Cap the model price at a character-tier multiple of the current market price.
+  // The raw formula is pack-economics (cost to guarantee a pull) which can be 10-30×
+  // the secondary market rate for rare Charizard SIRs. The cap grounds it in reality.
+  const marketUSD = selectedCard ? getCurrentPrice(selectedCard) : 0;
+  const charCapFactor = selectedCard
+    ? (getCharacterMultiplier(selectedCard.n) >= 1.6 ? 3.0
+     : getCharacterMultiplier(selectedCard.n) >= 1.3 ? 2.5
+     : getCharacterMultiplier(selectedCard.n) >= 1.1 ? 2.0 : 1.75)
+    : 2.0;
+  const priceUSD = (marketUSD > 0 && rawModelUSD > marketUSD * charCapFactor)
+    ? marketUSD * charCapFactor
+    : rawModelUSD;
+  const isCapped = priceUSD < rawModelUSD;
+
   lastModelPriceUSD = priceUSD;
   const priceGBP = usdToGbp(priceUSD);
   $('predictedPriceGBP').textContent = fmtGBPDirect(priceGBP);
   $('supplyFactor').textContent = `×${sf.toFixed(2)}`;
   $('demandFactor').textContent = `×${df.toFixed(2)}`;
+
+  // Rationale line beneath the model price
+  const rationaleEl = document.getElementById('ppModelRationale');
+  if (rationaleEl && selectedCard) {
+    const packRate = parseFloat($('packRate').value) || 1;
+    const tierSize = parseFloat($('cardsInTier').value) || 1;
+    const rarLabel = (RARITY_RATES[selectedCard.rc] || RARITY_RATES['']).label;
+    const charLabel = selectedCard ? getCharacterMultiplier(selectedCard.n).toFixed(1) : '1.0';
+    const capNote = isCapped ? ` · capped at ${charCapFactor}× market` : '';
+    rationaleEl.textContent =
+      `${rarLabel} · ${packRate} packs/hit × ${tierSize} cards · ×${sf.toFixed(1)} supply · ×${df.toFixed(1)} demand${capNote}`;
+  } else if (rationaleEl) {
+    rationaleEl.textContent = '';
+  }
 
   updateMaxPrice(priceUSD);
   updateDealCheck(priceUSD);

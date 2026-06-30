@@ -500,6 +500,12 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 }
 .predicted-price { font-size: 52px; font-weight: 700; font-family: var(--mono); color: var(--accent); line-height: 1.1; letter-spacing: -0.03em; }
 .predicted-usd { font-size: 14px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
+.pp-model-rationale {
+  font-size: 10px;
+  color: var(--text-faint, #4a4c60);
+  margin-top: 6px;
+  line-height: 1.4;
+}
 .price-breakdown { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .breakdown-item { display: flex; justify-content: space-between; padding: 4px 0; }
 .breakdown-label { font-size: 12px; color: var(--text-muted); }
