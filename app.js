@@ -21,13 +21,13 @@ const WEIGHTS = { char: 0.55, art: 0.35, appeal: 0.10 };
 // Mew 1.4, Dragonite high-variance A. Gen 4 in active nostalgia cycle (2025-2027).
 const CHAR_TIERS = {
   S: { score: 9.5, names: ['charizard','umbreon','mew','mewtwo','pikachu','eevee'] },
-  A: { score: 8.2, names: ['gengar','dragonite','gyarados','lugia','rayquaza','gardevoir','lucario','greninja','sylveon','espeon','vaporeon','leafeon','flareon','jolteon','glaceon','magikarp','snorlax','blastoise','venusaur','meowth','togekiss','garchomp','infernape','empoleon'] },
-  B: { score: 6.5, names: ['arcanine','ninetales','alakazam','machamp','lapras','tyranitar','celebi','suicune','entei','raikou','ho-oh','latios','latias','deoxys','dialga','palkia','giratina','darkrai','arceus','reshiram','zekrom','kyurem','xerneas','yveltal','zygarde','lunala','solgaleo','necrozma','zacian','zamazenta','calyrex','miraidon','koraidon','terapagos','luxray','roserade','torterra','staraptor','gallade','leafeon'] },
+  A: { score: 8.2, names: ['gengar','dragonite','gyarados','lugia','rayquaza','gardevoir','lucario','greninja','sylveon','espeon','vaporeon','leafeon','flareon','jolteon','glaceon','magikarp','snorlax','blastoise','venusaur','meowth','togekiss','garchomp','infernape','empoleon','arcanine','zoroark','zorua'] },
+  B: { score: 6.5, names: ['ninetales','alakazam','machamp','lapras','tyranitar','celebi','suicune','entei','raikou','ho-oh','latios','latias','deoxys','dialga','palkia','giratina','darkrai','arceus','reshiram','zekrom','kyurem','xerneas','yveltal','zygarde','lunala','solgaleo','necrozma','zacian','zamazenta','calyrex','miraidon','koraidon','terapagos','luxray','roserade','torterra','staraptor','gallade','leafeon'] },
 };
 
 const APPEAL_TIERS = {
   S: { score: 9.5, names: ['charizard','pikachu','mewtwo','eevee','mew','umbreon'] },
-  A: { score: 7.5, names: ['gengar','snorlax','gyarados','dragonite','gardevoir','lucario','greninja','blastoise','venusaur','magikarp','sylveon','arcanine','togekiss','garchomp','infernape'] },
+  A: { score: 7.5, names: ['gengar','snorlax','gyarados','dragonite','gardevoir','lucario','greninja','blastoise','venusaur','magikarp','sylveon','arcanine','togekiss','garchomp','infernape','zoroark'] },
 };
 
 // ---- Pack Economics: Fallback Pull Rates ----
@@ -2797,8 +2797,18 @@ function computeSignal(card, pullCost, desirability) {
   if (isHighRarity && isChaseChar) { score += 1; reasons.push('Chase card premium'); }
 
   const ageMonths = getSetAgeMonths(card.sc);
-  if (ageMonths < 6) { score -= 1; reasons.push('New set — price may drop'); }
-  else if (ageMonths > 48) { score += 1; reasons.push('Vintage scarcity premium'); }
+  if (ageMonths < 3)       { score -= 2; reasons.push('Very new — price typically dips first 3 months'); }
+  else if (ageMonths < 6)  { score -= 1; reasons.push('New set — price may still drop'); }
+  else if (ageMonths < 24) { /* neutral — active market, no age adjustment */ }
+  else if (ageMonths < 48) { score += 1; reasons.push('Proven set — demand well established'); }
+  else                     { score += 2; reasons.push('Vintage scarcity premium'); }
+
+  // Gem-rate signal: hard-to-grade cards command extra PSA 10 scarcity premium
+  const gemRate = card.g != null ? card.g : null;
+  if (gemRate !== null) {
+    if (gemRate < 0.05)      { score += 1; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — very hard to grade`); }
+    else if (gemRate >= 0.30) { score -= 1; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — easy to grade, many PSA 10s`); }
+  }
 
   let signal, cls;
   if (score >= 3) { signal = 'STRONG BUY'; cls = 'signal-strong-buy'; }
@@ -7552,10 +7562,24 @@ const GRADE_GROWTH_PREMIUM = {
   1:  0.60,
 };
 
+// Returns an adjusted PSA 9/8 ratio based on gem rate.
+// Low gem rate = scarce PSA 10s = wider premium gap vs lower grades.
+// High gem rate = many PSA 10s = grades 8/9 relatively closer.
+function _gemRateGradeRatio(card, grade) {
+  const base = PSA_RATIOS[grade] || 0;
+  if (grade !== 9 && grade !== 8) return base;
+  const g = card && card.g != null ? card.g : null;
+  if (g === null) return base;
+  if (g < 0.05) return base * (grade === 9 ? 0.68 : 0.72); // very hard — 10s command steep premium
+  if (g < 0.15) return base * (grade === 9 ? 0.85 : 0.88); // moderately hard
+  if (g >= 0.30) return base * (grade === 9 ? 1.20 : 1.15); // easy grade — 9s worth more relative
+  return base; // normal range — no adjustment
+}
+
 // Compute estimated price for a single PSA grade.
 function estimateGradePrice(card, grade, psa10Price) {
   if (!psa10Price || psa10Price <= 0) return 0;
-  return psa10Price * (PSA_RATIOS[grade] || 0);
+  return psa10Price * _gemRateGradeRatio(card, grade);
 }
 
 // Project a grade's price forward `years`, using the same base rate the
