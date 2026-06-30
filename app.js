@@ -685,16 +685,21 @@ function autoFillDesirability(card, pullCost) {
   // Art/Hype: base from rarity + card type
   let artScore = getArtBaseScore(card.rc, card.n);
 
-  // Price-premium adjustment: if card trades above/below expected for its rarity, adjust art
+  // Price-premium adjustment: if card trades above/below expected for its rarity, adjust art.
+  // For S/A-tier characters the price premium is already captured by charScore, so upward
+  // art boosts are skipped to avoid double-counting. Downward adjustments still apply.
   const price = getCurrentPrice(card);
   const expected = EXPECTED_PRICE_BY_RARITY[card.rc] || 2;
+  const isTopChar = charScore >= 7.5; // A-tier or above
   if (price > 0 && expected > 0) {
     const ratio = price / expected;
-    if (ratio > 5)       artScore = Math.min(10, artScore + 2.0);
-    else if (ratio > 3)  artScore = Math.min(10, artScore + 1.5);
-    else if (ratio > 2)  artScore = Math.min(10, artScore + 1.0);
-    else if (ratio > 1.5) artScore = Math.min(10, artScore + 0.5);
-    else if (ratio < 0.2) artScore = Math.max(1, artScore - 1.5);
+    if (!isTopChar) {
+      if (ratio > 5)        artScore = Math.min(10, artScore + 2.0);
+      else if (ratio > 3)   artScore = Math.min(10, artScore + 1.5);
+      else if (ratio > 2)   artScore = Math.min(10, artScore + 1.0);
+      else if (ratio > 1.5) artScore = Math.min(10, artScore + 0.5);
+    }
+    if (ratio < 0.2) artScore = Math.max(1, artScore - 1.5);
     else if (ratio < 0.4) artScore = Math.max(1, artScore - 1.0);
     else if (ratio < 0.6) artScore = Math.max(1, artScore - 0.5);
   }
@@ -2617,8 +2622,14 @@ function selectCard(id) {
     }
   }
   if (!pullCostFound) {
+    // Reset to rarity-based fallback so stale values from a previous card don't distort the model price.
+    const fallbackPacks = FALLBACK_PACKS_PER_HIT[card.rc] || 30;
+    const fallbackTier  = FALLBACK_TIER_SIZE[card.rc] || 10;
+    $('packRate').value     = fallbackPacks;
+    $('cardsInTier').value  = fallbackTier;
+    pullCost = (fallbackPacks * fallbackTier) / 100;
     $('autoPullCost').textContent = '—';
-    $('autoPullPacks').textContent = 'No pull rate data for this set';
+    $('autoPullPacks').textContent = `Estimated (no pull data — using ${fallbackPacks}× ${fallbackTier} fallback)`;
   }
 
   // Auto-fill desirability from static price initially
