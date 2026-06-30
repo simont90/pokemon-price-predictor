@@ -14693,15 +14693,29 @@ function openHomePip(id, imgUrl) {
   _pipSetPrice(_pipPriceUSD, cachedPsa10);
 
   // 5yr expected growth
-  const potentialEl = document.getElementById('homePipPotential');
+  const potentialEl     = document.getElementById('homePipPotential');
+  const rationaleEl     = document.getElementById('homePipPotentialRationale');
   if (potentialEl && card) {
     try {
       const fc = forecast(card, 0, 5);
       const yr5USD = fc.scenarios.expected[4].priceUSD;
       const pct = fc.currentPriceUSD > 0 ? Math.round((yr5USD / fc.currentPriceUSD - 1) * 100) : 0;
       potentialEl.textContent = `${fmtGBP(yr5USD)} · +${pct}%`;
-    } catch { potentialEl.textContent = '—'; }
-  } else if (potentialEl) { potentialEl.textContent = '—'; }
+      if (rationaleEl) {
+        const annualPct = (fc.scenarios.expected[0].rate * 100).toFixed(1);
+        const rarityLabel = (RARITY_RATES[card.rc] || RARITY_RATES['']).label;
+        const charLabel = fc.charMult > 1 ? ` · ×${fc.charMult.toFixed(1)} char` : '';
+        const ageLabel = fc.ageMonths >= 48 ? ' · vintage' : fc.ageMonths < 6 ? ' · very new' : fc.ageMonths < 24 ? ' · recent' : '';
+        rationaleEl.textContent = `${rarityLabel}${charLabel} · ${annualPct}%/yr${ageLabel}`;
+      }
+    } catch {
+      potentialEl.textContent = '—';
+      if (rationaleEl) rationaleEl.textContent = '';
+    }
+  } else {
+    if (potentialEl) potentialEl.textContent = '—';
+    if (rationaleEl) rationaleEl.textContent = '';
+  }
 
   // Max buy — grade-aware, updates when live prices arrive
   function _pipUpdateMaxBuy() {

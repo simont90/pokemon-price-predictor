@@ -7766,6 +7766,14 @@ section.card .card-collapse-btn { padding: 10px; }
 }
 .pip-accent { color: var(--accent, #e8b634); }
 .pip-upside { color: #4caf6e; font-size: 12.5px; }
+.pip-potential-rationale {
+  font-size: 9px;
+  color: var(--text-faint, #4a4c60);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .pip-live-dot {
   display: inline-block;
   width: 5px; height: 5px;
