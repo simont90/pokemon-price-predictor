@@ -1192,7 +1192,7 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 }
 
 @media (max-width: 480px) {
-  .app { padding: 0 14px; }
+  .app { padding-left: 14px; padding-right: 14px; }
   .card { padding: 16px; }
   .selected-card-info h2 { white-space: normal; }
 }
