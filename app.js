@@ -3223,44 +3223,30 @@ function updateAll() {
   $('artworkHypeValue').textContent = parseFloat($('artworkHype').value).toFixed(1);
   $('universalAppealValue').textContent = parseFloat($('universalAppeal').value).toFixed(1);
 
-  const { priceUSD: rawModelUSD, sf, df } = predictPrice(pullCost, des);
-
-  // Cap the model price at a character-tier multiple of the current market price.
-  // The raw formula is pack-economics (cost to guarantee a pull) which can be 10-30×
-  // the secondary market rate for rare Charizard SIRs. The cap grounds it in reality.
+  // Pack cost — same calculation as Rip or Buy so both sections are consistent
+  const econDisp = selectedCard ? resolvePackEconomics(selectedCard) : null;
   const marketUSD = selectedCard ? getCurrentPrice(selectedCard) : 0;
-  const charCapFactor = selectedCard
-    ? (getCharacterMultiplier(selectedCard.n) >= 1.6 ? 3.0
-     : getCharacterMultiplier(selectedCard.n) >= 1.3 ? 2.5
-     : getCharacterMultiplier(selectedCard.n) >= 1.1 ? 2.0 : 1.75)
-    : 2.0;
-  const priceUSD = (marketUSD > 0 && rawModelUSD > marketUSD * charCapFactor)
-    ? marketUSD * charCapFactor
-    : rawModelUSD;
-  const isCapped = priceUSD < rawModelUSD;
+  let packTotalUSD = 0;
+  if (econDisp) {
+    const evPerPack = setsData?.[selectedCard.sc]?.evPerPack || 0;
+    packTotalUSD = Math.max(0, (econDisp.packsNeeded * econDisp.packCost) - (econDisp.packsNeeded * evPerPack));
+  }
+  lastModelPriceUSD = packTotalUSD;
+  const packTotalGBP = usdToGbp(packTotalUSD);
+  $('predictedPriceGBP').textContent = packTotalGBP > 0 ? fmtGBPDirect(packTotalGBP) : '—';
 
-  lastModelPriceUSD = priceUSD;
-  const priceGBP = usdToGbp(priceUSD);
-  $('predictedPriceGBP').textContent = fmtGBPDirect(priceGBP);
-  $('supplyFactor').textContent = `×${sf.toFixed(2)}`;
-  $('demandFactor').textContent = `×${df.toFixed(2)}`;
-
-  // Rationale line beneath the model price
+  // Rationale line beneath the pack cost
   const rationaleEl = document.getElementById('ppModelRationale');
-  if (rationaleEl && selectedCard) {
-    const packRate = parseFloat($('packRate').value) || 1;
-    const tierSize = parseFloat($('cardsInTier').value) || 1;
-    const rarLabel = (RARITY_RATES[selectedCard.rc] || RARITY_RATES['']).label;
-    const charLabel = selectedCard ? getCharacterMultiplier(selectedCard.n).toFixed(1) : '1.0';
-    const capNote = isCapped ? ` · capped at ${charCapFactor}× market` : '';
-    rationaleEl.textContent =
-      `${rarLabel} · ${packRate} packs/hit × ${tierSize} cards · ×${sf.toFixed(1)} supply · ×${df.toFixed(1)} demand${capNote}`;
+  if (rationaleEl && econDisp) {
+    const pppc = fmtGBPDirect(usdToGbp(econDisp.packCost));
+    const overrideNote = selectedCard && getPackCostOverride(selectedCard.sc) ? ' · overridden' : '';
+    rationaleEl.textContent = `${econDisp.packsNeeded.toLocaleString()} packs × ${pppc}/pack${overrideNote}`;
   } else if (rationaleEl) {
     rationaleEl.textContent = '';
   }
 
-  updateMaxPrice(priceUSD);
-  updateDealCheck(priceUSD);
+  updateMaxPrice(marketUSD);
+  updateDealCheck(marketUSD);
 
   if (selectedCard) {
     renderForecast(selectedCard, pullCost, des);
@@ -3310,10 +3296,8 @@ function updateMaxPrice(modelPriceUSD) {
         logic = 'No PSA 10 anchor — refresh live prices for this card first';
       }
     } else {
-      // Raw: use min(model, market) as the fair-value reference, then apply
-      // eBay fee buffer. Hold-strategy context shown as a note only — the
-      // Strategy tab has the full per-grade ROI breakdown.
-      const refGBP = usdToGbp(Math.min(modelPriceUSD, mkt));
+      // Raw: market price is the reference — max you should pay on eBay
+      const refGBP = mktGBP;
       maxGBP = _ebayFair(refGBP);
       const hc = (typeof computeHoldCore === 'function') ? computeHoldCore(selectedCard) : { ok: false };
       let holdNote = '';
@@ -3321,15 +3305,11 @@ function updateMaxPrice(modelPriceUSD) {
         const roi = Math.round(hc.bestLongTermPick.roi);
         holdNote = ` · ${hc.bestLongTermPick.label} hold ROI +${roi}%`;
       }
-      if (modelPriceUSD < mkt) {
-        logic = `Model (${fmtGBP(modelPriceUSD)}) below ${priceTag} (${fmtGBPDirect(mktGBP)}) — overvalued signal · seller nets ${fmtGBPDirect(refGBP)} after fees${holdNote}`;
-      } else {
-        logic = `${priceTag.charAt(0).toUpperCase() + priceTag.slice(1)} ${fmtGBPDirect(mktGBP)} · seller nets ${fmtGBPDirect(refGBP)} after fees${holdNote}`;
-      }
+      logic = `${priceTag.charAt(0).toUpperCase() + priceTag.slice(1)} ${fmtGBPDirect(mktGBP)} · seller nets ${fmtGBPDirect(refGBP)} after fees${holdNote}`;
     }
   } else {
-    maxGBP = gradeNum === 0 ? _ebayFair(usdToGbp(modelPriceUSD)) : 0;
-    logic = 'Based on model only — select a card for market comparison.';
+    maxGBP = 0;
+    logic = 'Select a card to calculate max buy price';
   }
   $('maxPriceGBP').textContent = maxGBP > 0
     ? `£${maxGBP.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -3358,10 +3338,10 @@ function updateDealCheck(modelPriceUSD) {
       const gradeNum = parseInt(gradeKey.replace('psa', ''), 10) || 10;
       refUSD = psa10USD * (PSA_RATIOS[gradeNum] || 1);
     } else {
-      refUSD = Math.min(modelPriceUSD, getCurrentPrice(selectedCard));
+      refUSD = getCurrentPrice(selectedCard);
     }
   } else {
-    refUSD = selectedCard ? Math.min(modelPriceUSD, getCurrentPrice(selectedCard)) : modelPriceUSD;
+    refUSD = selectedCard ? getCurrentPrice(selectedCard) : 0;
   }
   const marketGBP = usdToGbp(refUSD); // raw market reference
 
