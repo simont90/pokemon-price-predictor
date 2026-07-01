@@ -9708,4 +9708,151 @@ body {
   }
 }
 
+/* ============================================================
+   WIDE-SCREEN / iPAD / MAC EXPERIENCE
+   Fills horizontal space and adopts a 2-column dashboard on
+   large viewports — feels native on Mac and iPad Pro.
+   ============================================================ */
+
+/* App shell scales up gracefully on large screens */
+@media (min-width: 1280px) {
+  .app { max-width: min(1400px, 96vw); }
+  .home-dashboard { max-width: 100%; }
+}
+@media (min-width: 1600px) {
+  .app { max-width: min(1580px, 96vw); }
+}
+@media (min-width: 1920px) {
+  .app { max-width: min(1760px, 96vw); }
+}
+
+/* iPad (768–1199px): unlock home dashboard from 860px cap */
+@media (min-width: 768px) and (max-width: 1199px) {
+  .home-dashboard { max-width: 100%; }
+}
+
+/* Home dashboard: 2-column side-by-side on 1200px+ */
+@media (min-width: 1200px) {
+  .home-dashboard {
+    max-width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 32px;
+    row-gap: 28px;
+    align-items: start;
+  }
+  /* Budget bar and Collection span the full width */
+  .home-dashboard > .home-budget-bar,
+  .home-dashboard > .home-section-wrap,
+  .home-dashboard > #hTabBuy {
+    grid-column: 1 / -1;
+  }
+  /* Watchlist/Wishlist → left, Recommendations → right */
+  .home-dashboard > #hTabWW  { grid-column: 1; }
+  .home-dashboard > #hTabReco { grid-column: 2; }
+}
+
+/* Predict: slight weight shift on very wide screens */
+@media (min-width: 1440px) {
+  .main { grid-template-columns: 1.2fr 1fr; gap: 28px; }
+}
+
+/* ── Liquid Glass — deeper material on large non-touch surfaces ── */
+@media (min-width: 1024px) {
+  .card {
+    backdrop-filter: blur(40px) saturate(240%);
+    -webkit-backdrop-filter: blur(40px) saturate(240%);
+  }
+  .portfolio-panel,
+  .wishlist-panel,
+  .hva-modal {
+    backdrop-filter: blur(52px) saturate(260%);
+    -webkit-backdrop-filter: blur(52px) saturate(260%);
+  }
+}
+
+/* Glass hover depth on pointer devices only (no hover flash on touch) */
+@media (hover: hover) {
+  .card {
+    transition: box-shadow 0.22s ease, border-color 0.22s ease;
+  }
+  .card:hover {
+    box-shadow:
+      inset 0 2.5px 0 rgba(255,255,255,0.46),
+      inset 1px 0 0 rgba(255,255,255,0.13),
+      inset 0 -1px 0 rgba(0,0,0,0.22),
+      0 28px 80px rgba(0,0,0,0.60),
+      0 0 0 0.5px rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.30);
+  }
+}
+
+/* ── Smooth scroll ── */
+html { scroll-behavior: smooth; }
+.home-scroll-row,
+.portfolio-list,
+.wishlist-list,
+.search-results,
+.hva-grid {
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+}
+
+/* ── Page entry animation — fades in when a page becomes visible ── */
+@keyframes page-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page:not([style*="display: none"]) {
+  animation: page-fade-in 0.24s ease both;
+}
+
+/* ── Home section entry — stagger cards as they load ── */
+@keyframes section-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.home-section-wrap {
+  animation: section-in 0.3s ease both;
+}
+
+/* ── Safe areas: ensure nothing clips under iPhone notch or Dynamic Island ── */
+.page-nav {
+  padding-left: max(5px, env(safe-area-inset-left));
+  padding-right: max(5px, env(safe-area-inset-right));
+}
+
+/* ── Touch spring feedback for home cards (iOS-native feel) ── */
+@media (hover: none) {
+  .home-card:active {
+    transform: scale(0.96);
+    transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .home-scroll-row .home-card {
+    will-change: transform;
+  }
+}
+
+/* ── Promoted compositor layers for panels that animate in ── */
+.home-pip-sheet { will-change: transform; }
+
+/* ── Card image: full GPU compositing for smooth 3D tilt if added later ── */
+.card-thumb { transform: translateZ(0); }
+
+/* ── Disable 300ms tap delay on interactive elements that aren't scroll surfaces ── */
+.home-section-hd button,
+.home-group-hd button,
+.home-view-all,
+.home-budget-go,
+.home-refresh-btn,
+.home-section-refresh,
+.range-btn,
+.filter-fab {
+  touch-action: manipulation;
+}
+
+/* ── min-height: 0 fix: grid/flex children don't overflow their containers ── */
+.home-dashboard > .home-tab-group { min-height: 0; }
+
 
