@@ -9728,13 +9728,14 @@ body {
   .app { max-width: min(1760px, 96vw); }
 }
 
-/* iPad (768–1199px): unlock home dashboard from 860px cap */
-@media (min-width: 768px) and (max-width: 1199px) {
+/* iPad portrait (768–1023px): unlock home dashboard width cap before grid kicks in */
+@media (min-width: 768px) and (max-width: 1023px) {
   .home-dashboard { max-width: 100%; }
 }
 
-/* Home dashboard: 2-column side-by-side on 1200px+ */
-@media (min-width: 1200px) {
+/* Home dashboard: 2-column side-by-side on 1024px+
+   Covers all landscape iPads and iPad Pro 12.9" portrait */
+@media (min-width: 1024px) {
   .home-dashboard {
     max-width: 100%;
     display: grid;
@@ -9743,7 +9744,9 @@ body {
     row-gap: 28px;
     align-items: start;
   }
-  /* Budget bar and Collection span the full width */
+  /* Allow grid tracks to shrink — prevents scroll-row intrinsic width from blowing up the grid */
+  .home-dashboard > * { min-width: 0; }
+  /* Budget bar and Collection span full width */
   .home-dashboard > .home-budget-bar,
   .home-dashboard > .home-section-wrap,
   .home-dashboard > #hTabBuy {
