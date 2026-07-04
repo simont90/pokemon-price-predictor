@@ -282,7 +282,7 @@ async function _resolveLegacyTCGCImage(card) {
 
 // ---- Live Pricing Cache (localStorage with TTL) ----
 const PRICE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
-const PRICE_CACHE_KEY = 'pkm-live-prices-v4'; // v4: PriceCharting primary for ALL cards
+const PRICE_CACHE_KEY = 'pkm-live-prices-v5'; // v5: adds ACE/CGC/BGS/TAG/SGC 10 anchors from PC full-grade table
 let _priceCache = null; // in-memory mirror; avoids JSON.parse on every getCachedPrice call
 // Computation caches — per-card, invalidated when that card's price data changes
 const _sigCache = new Map(); // card.i → { v: computeSignal result, ts }
@@ -1788,6 +1788,73 @@ function clearCachedPcProxy() {
   try { localStorage.removeItem('pcProxyWinner'); } catch {}
 }
 
+// Shared proxy-chain walker for PriceCharting requests. Parameterised on the
+// response parser + a "is this response usable?" predicate so it can be shared
+// by both the JSON search endpoint and the HTML product-page endpoint we hit
+// for full-grade prices (ACE 10, CGC 10, BGS 10, TAG 10, SGC 10). Returns
+// whatever `parse` returned on the first successful proxy hop.
+async function pcFetchViaProxy(pcUrl, opts = {}) {
+  const asText = opts.as === 'text';
+  const isUsable = opts.isUsable || (data => !!data);
+
+  // Build ordered proxy list — user override first, then last known winner,
+  // then the rest of the declared chain. De-duplicated.
+  const seen = new Set();
+  const chain = [];
+  const override = pcProxyOverride();
+  if (override) {
+    chain.push({
+      name: 'override',
+      fn: u => override.includes('{RAWURL}')
+        ? override.replace('{RAWURL}', u)
+        : override.replace('{URL}', encodeURIComponent(u)),
+      // Override doesn't know its own response type — respect opts.as.
+      parse: r => asText ? r.text() : r.json(),
+    });
+    seen.add('override');
+  }
+  const cached = cachedPcProxy();
+  if (cached) {
+    const p = PC_PROXIES.find(x => x.name === cached);
+    if (p && !seen.has(p.name)) { chain.push(p); seen.add(p.name); }
+  }
+  for (const p of PC_PROXIES) {
+    if (!seen.has(p.name)) { chain.push(p); seen.add(p.name); }
+  }
+
+  // Per-proxy timeout via AbortController.
+  const PROXY_TIMEOUT_MS = 6000;
+  const fetchWithTimeout = (url) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), PROXY_TIMEOUT_MS);
+    return fetch(url, { method: 'GET', signal: ctrl.signal })
+      .finally(() => clearTimeout(t));
+  };
+
+  const errors = [];
+  for (const p of chain) {
+    try {
+      const r = await fetchWithTimeout(p.fn(pcUrl));
+      if (!r.ok) { errors.push(`${p.name} ${r.status}`); continue; }
+      // The default parse for JSON proxies is `r.json()`. When we want HTML
+      // through those same proxies we override with r.text() — the raw
+      // upstream body is what the proxies return either way.
+      const data = asText ? await r.text() : await p.parse(r);
+      if (isUsable(data)) {
+        if (p.name !== cached) setCachedPcProxy(p.name);
+        return data;
+      }
+      errors.push(`${p.name} unusable`);
+    } catch (e) {
+      errors.push(`${p.name} ${e && e.name === 'AbortError' ? 'timeout' : (e && e.message) || 'err'}`);
+    }
+  }
+  clearCachedPcProxy();
+  const err = new Error('All proxies failed: ' + errors.join('; '));
+  err.allProxiesFailed = true;
+  throw err;
+}
+
 async function pcSearchRaw(query) {
   const pcUrl = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(query)}&format=json`;
 
@@ -1825,34 +1892,93 @@ async function pcSearchRaw(query) {
       .finally(() => clearTimeout(t));
   };
 
-  const errors = [];
-  for (const p of chain) {
-    try {
-      const r = await fetchWithTimeout(p.fn(pcUrl));
-      if (!r.ok) { errors.push(`${p.name} ${r.status}`); continue; }
-      const data = await p.parse(r);
-      if (data && Array.isArray(data.products)) {
-        if (p.name !== cached) setCachedPcProxy(p.name);
-        return data.products;
-      }
-      errors.push(`${p.name} no-products`);
-    } catch (e) {
-      errors.push(`${p.name} ${e && e.name === 'AbortError' ? 'timeout' : (e && e.message) || 'err'}`);
-    }
+  // Walk the shared proxy chain, expecting JSON with a `products` array.
+  try {
+    const data = await pcFetchViaProxy(pcUrl, {
+      isUsable: d => d && Array.isArray(d.products),
+    });
+    return data.products;
+  } catch (e) {
+    throw e;
   }
-  // All proxies failed — forget the cached winner so next attempt re-walks the chain.
-  clearCachedPcProxy();
-  const err = new Error('All proxies failed: ' + errors.join('; '));
-  err.allProxiesFailed = true;
-  throw err;
 }
 
-function productToPC(p) {
+// ---- PriceCharting full-grade fetch (ACE 10, CGC 10, BGS 10, TAG 10, SGC 10)
+//
+// The public search JSON endpoint only exposes 3 grades (ungraded, PSA 10,
+// Grade 9). The individual product page includes a full grade table — we
+// fetch it by numeric product ID (PC 302-redirects `/game/{id}` to the
+// canonical slug URL) and parse the `#full-prices` table with a regex.
+//
+// Returns { pcAce10, pcCgc10, pcBgs10, pcTag10, pcSgc10 } in USD (0 when the
+// grade has no recorded sales). All fields are always present so callers can
+// spread the result safely.
+const PC_FULL_GRADE_PARSE_LABELS = {
+  'ACE 10':  'pcAce10',
+  'CGC 10':  'pcCgc10',
+  'BGS 10':  'pcBgs10',
+  'TAG 10':  'pcTag10',
+  'SGC 10':  'pcSgc10',
+};
+function _emptyFullGrades() {
+  return { pcAce10: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0 };
+}
+function parsePCFullGrades(html) {
+  const out = _emptyFullGrades();
+  if (typeof html !== 'string' || html.length === 0) return out;
+  // Isolate the `#full-prices` table so we don't accidentally pick up prices
+  // from the header or sold-listings sidebar.
+  const m = /id="full-prices"([\s\S]*?)<\/table>/.exec(html);
+  const section = m ? m[1] : html;
+  // Rows look like: <td...>ACE 10</td><td...>$95.82</td>
+  // "-" / "N/A" means no recent sale — map to 0.
+  const rowRe = /<td[^>]*>\s*([^<]+?)\s*<\/td>\s*<td[^>]*>\s*\$?([\d,.]+|-|N\/A)/g;
+  let row;
+  while ((row = rowRe.exec(section)) !== null) {
+    const label = row[1].trim();
+    const key = PC_FULL_GRADE_PARSE_LABELS[label];
+    if (!key) continue;
+    const rawVal = row[2].trim();
+    if (rawVal === '-' || rawVal === 'N/A') continue;
+    const n = parseFloat(rawVal.replace(/,/g, ''));
+    if (Number.isFinite(n) && n > 0) out[key] = n;
+  }
+  return out;
+}
+async function pcFetchFullGrades(productId) {
+  if (!productId) return _emptyFullGrades();
+  // `/game/{numericId}` 302-redirects to the canonical slug URL. The proxy
+  // chain follows redirects automatically.
+  const url = `https://www.pricecharting.com/game/${encodeURIComponent(productId)}`;
+  try {
+    const html = await pcFetchViaProxy(url, {
+      as: 'text',
+      // Only accept HTML that actually contains the full-prices table — protects
+      // us from proxies that return an error page as 200 OK.
+      isUsable: t => typeof t === 'string' && t.indexOf('full-prices') !== -1,
+    });
+    return parsePCFullGrades(html);
+  } catch (e) {
+    // Non-fatal: full-grade fetch failing just means we fall back to the raw-based
+    // ACE model. Callers still get a valid (all-zero) object.
+    console.warn('PriceCharting full-grade fetch failed:', e && e.message || e);
+    return _emptyFullGrades();
+  }
+}
+
+function productToPC(p, fullGrades) {
   if (!p) return null;
+  const fg = fullGrades || _emptyFullGrades();
   return {
     pcUngraded: parsePCPrice(p.price1),
     pcPsa10: parsePCPrice(p.price2),
     pcGrade9: parsePCPrice(p.price3),
+    // Full-grade table (USD, 0 = missing)
+    pcAce10: fg.pcAce10 || 0,
+    pcCgc10: fg.pcCgc10 || 0,
+    pcBgs10: fg.pcBgs10 || 0,
+    pcTag10: fg.pcTag10 || 0,
+    pcSgc10: fg.pcSgc10 || 0,
     pcName: p.productName || '',
     pcConsole: p.consoleName || '',
     pcId: p.id || '',
@@ -1892,14 +2018,23 @@ async function fetchPriceChartingData(card) {
       const products = await pcSearchRaw(override.productName || override.id);
       const exact = products.find(p => String(p.id) === String(override.id));
       if (exact) {
-        return { ...productToPC(exact), pcMatchConfidence: 'override' };
+        const fg = await pcFetchFullGrades(exact.id);
+        return { ...productToPC(exact, fg), pcMatchConfidence: 'override' };
       }
     } catch {}
-    // If re-fetch fails, return the cached override blob unchanged
+    // If re-fetch fails, return the cached override blob — still try to grab
+    // full grades from the product page (cheap, non-fatal on failure).
+    let fgOverride = _emptyFullGrades();
+    try { fgOverride = await pcFetchFullGrades(override.id); } catch {}
     return {
       pcUngraded: parsePCPrice(override.price1),
       pcPsa10: parsePCPrice(override.price2),
       pcGrade9: parsePCPrice(override.price3),
+      pcAce10: fgOverride.pcAce10 || 0,
+      pcCgc10: fgOverride.pcCgc10 || 0,
+      pcBgs10: fgOverride.pcBgs10 || 0,
+      pcTag10: fgOverride.pcTag10 || 0,
+      pcSgc10: fgOverride.pcSgc10 || 0,
       pcName: override.productName || '',
       pcConsole: override.consoleName || '',
       pcId: override.id || '',
@@ -1912,7 +2047,10 @@ async function fetchPriceChartingData(card) {
   const products = await searchPCCandidates(card);
   if (products.length === 0) return null;
   const best = products[0];
-  return productToPC(best);
+  // Fetch ACE 10 + other grade anchors from the product page.
+  // Non-fatal — returns empty grades on any failure so ACE mode can fall back.
+  const fg = await pcFetchFullGrades(best.id);
+  return productToPC(best, fg);
 }
 
 // Fetch live pricing for JP cards — PriceCharting is primary source
@@ -2026,6 +2164,7 @@ async function fetchFreshPriceData(card) {
     cmTrend: 0, cmAvg1: 0, cmAvg7: 0, cmAvg30: 0, cmLow: 0, cmSuggested: 0,
     cmUpdated: '', cmUrl: '', cmLang: card.lang || 'EN',
     pcUngraded: 0, pcPsa10: 0, pcGrade9: 0, pcName: '', pcConsole: '', pcId: '',
+    pcAce10: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0,
     crRaw: 0, crPsa10: 0, crGemRate: 0, crName: '', crUrl: '', crPsa10VsRaw: 0,
   };
 
@@ -10912,11 +11051,25 @@ function renderHoldStrategy(card) {
     + SUBGEM_DISTRIBUTION[8]       * psa8Yr5
     + SUBGEM_DISTRIBUTION[7]       * psa7Yr5
     + SUBGEM_DISTRIBUTION.rawLike  * rawYr5USD;
-  // In ACE mode, slabbing doesn't unlock a resale premium — the 5yr value is
-  // just the raw projection. In PSA mode, it's the gem-rate-weighted mix of
-  // PSA 10 and subgem outcomes.
+  // ACE mode: when we have a live ACE 10 comp on PriceCharting, anchor the 5yr
+  // projection on that (with the same gem-rate weighting as PSA — subgem ACE
+  // slabs trade near raw because there's no active subgem-ACE resale market).
+  // When no ACE 10 comp exists, fall back to raw — same behaviour as before.
+  const aceAnchor = isAce ? getAce10Anchor(card) : { usd: 0, source: 'none' };
+  const ace10USD = aceAnchor.usd;
+  const hasAceAnchor = ace10USD > 0;
+  const ace10Yr5 = hasAceAnchor ? projectGradePrice(card, 10, ace10USD, 5) : 0;
+  // ACE 10 vs PSA 10 ratio — useful context for the recommendation copy.
+  const aceVsPsaPct = (hasAceAnchor && psa10Price > 0) ? (ace10USD / psa10Price) * 100 : 0;
+  const aceSubgemEV = rawYr5USD; // ACE 7/8/9 slabs trade near raw — no tracked premium
+  const aceGradeYr5EV = hasAceAnchor
+    ? gemRate * ace10Yr5 + (1 - gemRate) * aceSubgemEV
+    : rawYr5USD;
+  // In ACE mode without an anchor, slabbing doesn't unlock a resale premium
+  // — the 5yr value is just the raw projection. With an anchor, use the
+  // ACE-anchored EV. PSA mode: gem-rate-weighted mix of PSA 10 and subgem.
   const gradeYr5EVRaw = isAce
-    ? rawYr5USD
+    ? aceGradeYr5EV
     : gemRate * psa10Yr5 + (1 - gemRate) * subgemEV;
   // Apply opportunity-cost discount because your capital is locked for the wait.
   const gradeYr5EV = gradeYr5EVRaw * waitDiscount;
@@ -11033,10 +11186,12 @@ function renderHoldStrategy(card) {
   } else {
     gambleLabel = usingAcqCost ? 'Grade My Card' : 'Buy Raw + Grade';
   }
-  // ACE slabbing is a deterministic protection service — no gem-rate variance,
-  // no loss-case distribution — so it should look and rank as low-risk in the grid.
-  const gambleRisk = isAce ? 'low' : 'high';
-  const gambleVariance = isAce ? 0.20 : 0.85;
+  // ACE slabbing risk depends on whether we have a real ACE 10 anchor:
+  //   - No anchor → 5yr value == raw → low variance protection play
+  //   - Anchor available → there IS gem-rate variance (ACE 10 vs subgem ACE)
+  //     so we treat it more like PSA gambling, just with a smaller upside.
+  const gambleRisk = isAce ? (hasAceAnchor ? 'med' : 'low') : 'high';
+  const gambleVariance = isAce ? (hasAceAnchor ? 0.45 : 0.20) : 0.85;
 
   const strategies = [
     { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',      desc: rawDesc,     today: rawEntryUSD, yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20, acqCost: usingAcqCost },
@@ -11177,12 +11332,28 @@ function renderHoldStrategy(card) {
       feeVerdict = `ACE ${aceInfo.label} costs more than the card itself \u2014 pick a lower tier, or leave it raw.`;
       feeClass   = 'hold-rec-pill hold-rec-skip';
     }
+    // ACE 10 anchor context: shows the ratio to PSA 10 comp when both are live,
+    // and reframes the roiDelta interpretation — with a real anchor, slabbing
+    // may actually beat raw (protection + real resale premium), not just cost.
+    const aceAnchorLine = hasAceAnchor
+      ? `<div class="hold-rec-line hold-rec-line-sub">Anchored on live ACE 10 comps: <strong>${fmtGBP(ace10USD)}</strong>${aceVsPsaPct > 0 ? ` \u2248 <strong>${aceVsPsaPct.toFixed(0)}%</strong> of PSA 10 (${fmtGBP(psa10Price)})` : ''} \u2014 ACE-graded resale market is <em>real but thinner</em> than PSA. 5yr projection reflects that.</div>`
+      : `<div class="hold-rec-line hold-rec-line-sub">No ACE 10 comp on PriceCharting for this card yet \u2014 5yr projection defaults to the raw price curve (ACE fee treated as pure protection cost, no resale uplift modelled).</div>`;
+    // Interpret the ROI delta: negative means slab loses to raw (protection cost),
+    // positive means the ACE 10 anchor actually beats raw on projection.
+    const roiInterp = hasAceAnchor && roiDelta < -1
+      ? `Slabbing costs you ~${Math.abs(roiDelta).toFixed(0)} ROI points \u2014 protection premium on top of a real ACE resale market.`
+      : hasAceAnchor && roiDelta > 1
+      ? `ACE slab actually beats raw by ~${roiDelta.toFixed(0)} ROI points on this card \u2014 the ACE 10 comp uplift pays for the fee.`
+      : hasAceAnchor
+      ? `Roughly ROI-neutral vs raw \u2014 ACE 10 uplift here just covers the fee.`
+      : `Slabbing costs you ~${Math.abs(roiDelta).toFixed(0)} ROI points \u2014 the price of certified protection for a keeper.`;
     recEl.innerHTML = `
       <div class="${feeClass}">ACE ${aceInfo.label}</div>
       <div class="hold-rec-body">
         <div class="hold-rec-line">${feeVerdict} \u00a3${gradingFeeGBP} fee is <strong>${feePctOfRaw.toFixed(0)}%</strong> of the card's raw price (${fmtGBPDirect(rawGBP_h)}), turnaround ~${gradingWaitDisplay}.${tierHint}</div>
-        <div class="hold-rec-line hold-rec-line-sub">5yr ROI comparison: <strong>Hold raw</strong> ${rawRoi_h >= 0 ? '+' : ''}${rawRoi_h.toFixed(0)}% \u00b7 <strong>ACE slab</strong> ${slabRoi_h >= 0 ? '+' : ''}${slabRoi_h.toFixed(0)}%. Slabbing costs you ~${Math.abs(roiDelta).toFixed(0)} ROI points \u2014 the price of certified protection for a keeper.</div>
-        <div class="hold-rec-line hold-rec-line-sub">ACE doesn't unlock a resale premium; use it when the goal is to protect + certify the condition, not to appreciate on the graded market. Switch to <strong>PSA</strong> above for the resale-focused analysis.</div>
+        ${aceAnchorLine}
+        <div class="hold-rec-line hold-rec-line-sub">5yr ROI comparison: <strong>Hold raw</strong> ${rawRoi_h >= 0 ? '+' : ''}${rawRoi_h.toFixed(0)}% \u00b7 <strong>ACE slab</strong> ${slabRoi_h >= 0 ? '+' : ''}${slabRoi_h.toFixed(0)}%. ${roiInterp}</div>
+        <div class="hold-rec-line hold-rec-line-sub">Best use of ACE: protect + certify condition on a personal-collection keeper. Switch to <strong>PSA</strong> above for the resale-focused analysis.</div>
       </div>
     `;
   } else if (!winner) {
@@ -11477,21 +11648,21 @@ function renderHoldStrategy(card) {
 
   if (isAce) {
     const aceInfo = ACE_TIERS[tier] || ACE_TIERS.standard;
+    // Anchor block — different copy depending on whether we found a live ACE 10 comp.
+    const aceAnchorFootnote = hasAceAnchor
+      ? `<strong>ACE 10 anchor (live):</strong> pulled from PriceCharting \u2014 <strong>${fmtGBP(ace10USD)}</strong>${aceVsPsaPct > 0 ? ` (\u2248 ${aceVsPsaPct.toFixed(0)}% of PSA 10)` : ''}. 5yr slab value = gem-rate-weighted mix of <strong>ACE 10</strong> (${(gemRate*100).toFixed(0)}% weight) and raw-equivalent for subgem outcomes (${((1-gemRate)*100).toFixed(0)}%) \u2014 there's no active subgem-ACE resale market, so ACE 7/8/9 slabs are modelled as trading near raw.`
+      : `<strong>No ACE 10 comp found:</strong> PriceCharting has no ACE 10 sales for this card. 5yr projection falls back to the raw price curve, treating the fee as pure protection cost. If ACE comps appear later a fresh price refresh will pick them up.`;
     $('holdFootnote').innerHTML = `
       <strong>ACE (UK) assumptions:</strong> \u00a3${gradingFeeGBP} (${aceInfo.label} tier) + \u00a30.28 materials
       (penny sleeve + toploader, waived if already present) per card. Turnaround ~${gradingWaitDisplay}
       (${aceInfo.availability} availability). Wait discount applied at ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a.
       opportunity cost so capital locked during the turnaround is fairly penalised. Also assumes
       ${(BUY_SELL_FRICTION*100).toFixed(0)}% combined buy + sell friction on the raw exit.<br>
-      <strong>Why the 5yr value equals raw:</strong> ACE-graded cards do not currently command a resale premium
-      over an equivalent raw copy on the UK secondary market. The 5-year projection therefore just tracks the raw
-      price curve \u2014 you're paying the fee for authentication + physical protection, not for a graded-market
-      uplift. This makes ACE most defensible on personal-collection keepers, not on cards you plan to flip.<br>
+      ${aceAnchorFootnote}<br>
       <strong>Tier ladder:</strong> Basic \u00a318 / 45d \u00b7 Standard \u00a325 / 25d \u00b7 Premier \u00a332 / 10d
       \u00b7 Ultra \u00a360 / 5d \u00b7 Luxury \u00a3120 / 2d. Higher tiers only buy faster turnaround, not a better
       slab.<br>
-      Risk-adjusted ranking treats an ACE slab as low-variance (no gem-rate uncertainty), so it will only win the
-      badge if its post-fee ROI genuinely beats the raw hold.
+      Risk-adjusted ranking treats ACE as ${hasAceAnchor ? 'medium-variance (real ACE 10 uplift, but thinner resale market)' : 'low-variance (protection-only, no resale uplift)'}, so the badge only lands when post-fee ROI genuinely beats the raw hold.
     `;
   } else {
   $('holdFootnote').innerHTML = `
@@ -12860,6 +13031,28 @@ function getPsa10Anchor(card) {
     const mult = PSA10_FROM_RAW[card.rc] || PSA10_FROM_RAW[''];
     return { usd: raw * mult, source: 'estimated', multiplier: mult };
   }
+  return { usd: 0, source: 'none' };
+}
+
+// Returns { usd, source } where source is:
+//   'live'      — PriceCharting ACE 10 from a live fetch (only reliable source)
+//   'cached'    — PriceCharting ACE 10 from a background-cached fetch
+//   'none'      — PC has no ACE 10 comp for this card; caller should fall back
+// Unlike PSA 10 there is no static catalog value and no reliable multiplier
+// (ACE tracks ~70% of PSA 10 across the market but the variance is too large
+// to synthesize a per-card estimate). ACE mode falls back to raw-based projection
+// when no anchor is available.
+function getAce10Anchor(card) {
+  if (!card) return { usd: 0, source: 'none' };
+  // Live PriceCharting ACE 10 for the currently-selected card
+  if (typeof livePrice !== 'undefined' && livePrice
+      && selectedCard && card.i === selectedCard.i
+      && livePrice.pcAce10 > 0) {
+    return { usd: livePrice.pcAce10, source: 'live' };
+  }
+  // Cached fetch for non-selected card
+  const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(card.i) : null;
+  if (cached && cached.pcAce10 > 0) return { usd: cached.pcAce10, source: 'cached' };
   return { usd: 0, source: 'none' };
 }
 
