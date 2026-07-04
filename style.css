@@ -11238,7 +11238,7 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
   color: var(--text-faint);
 }
 .bdg-legend-item { display: flex; align-items: center; gap: 5px; }
-.bdg-legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.bdg-legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 .bdg-legend-dash {
   display: inline-block;
   width: 14px;
@@ -11252,10 +11252,11 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
   .page-nav-btn {
     padding: 14px 4px;
     min-width: 0;
-    font-size: 0;
     gap: 0;
     min-height: 52px;
+    overflow: hidden;
   }
+  .page-nav-btn > span:not(.page-nav-sub) { display: none; }
   .page-nav-btn svg { width: 22px; height: 22px; }
 }
 
