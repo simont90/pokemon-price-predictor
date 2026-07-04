@@ -9313,7 +9313,12 @@ section.card .card-collapse-btn { padding: 10px; }
 .home-tab-bar {
   position: static !important;
   margin: 8px 16px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
+.home-tab-bar::-webkit-scrollbar { display: none; }
+.home-tab-bar .ptab { gap: 3px; font-size: 11px !important; }
 [data-theme="dark"]  .home-tab-bar { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.08); }
 [data-theme="light"] .home-tab-bar { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.06); }
 
@@ -10385,26 +10390,6 @@ html { scroll-behavior: smooth; }
 #homeGradingListWishlist,
 #homeRecoGradingList { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
 
-/* Collection / Wishlist source toggle inside Consider Grading */
-.hg-src-tab-bar {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px 2px;
-}
-.hg-src-tab {
-  background: none;
-  border: none;
-  font: 600 12px/1 var(--font-main);
-  color: var(--text-muted);
-  padding: 5px 12px;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.hg-src-tab.hg-src-active {
-  background: var(--accent);
-  color: #111;
-}
 
 .home-grading-item {
   display: flex;
@@ -10523,16 +10508,26 @@ html { scroll-behavior: smooth; }
 .grade-view-more-btn:hover { background: var(--border); }
 
 /* Grade analysis modal */
+@keyframes gradeModalSlideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes gradeOverlayFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 .grade-modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.65);
   display: flex; align-items: flex-end; justify-content: center;
   z-index: 9999; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  animation: gradeOverlayFadeIn 0.22s ease;
 }
 .grade-modal {
   background: var(--bg-card); border-radius: 20px 20px 0 0;
   width: 100%; max-width: 680px; max-height: 92dvh;
   display: flex; flex-direction: column; overflow: hidden;
   box-shadow: 0 -4px 40px rgba(0,0,0,0.4);
+  animation: gradeModalSlideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 }
 .grade-modal-header {
   display: flex; align-items: center; justify-content: space-between;
