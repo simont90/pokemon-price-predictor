@@ -16892,6 +16892,7 @@ function setupPageNav() {
     discover: document.getElementById('pageDiscover'),
     tools: document.getElementById('pageTools'),
     binder: document.getElementById('pageBinder'),
+    budget: document.getElementById('pageBudget'),
   };
 
   function go(page) {
@@ -16920,6 +16921,7 @@ function setupPageNav() {
     if (page === 'home') { renderHomeDashboard(); _homeAutoRefresh(); _syncOnHomeNav(); }
     if (page === 'binder') { try { renderBinderPage(); } catch(e) {} }
     if (page === 'tools') { try { updateToolsDupeBadge(); } catch(e) {} }
+    if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
     // URL + title: cards get their own address (#cardId); other pages reset to page hash
     if (page === 'predict' && selectedCard) {
       try { history.replaceState({ cardId: selectedCard.i }, '', '#' + selectedCard.i); } catch(e) {}
@@ -19014,4 +19016,256 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', syncBindOnce);
 } else {
   syncBindOnce();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BUDGETER — Aug–Dec 2026 monthly Pokémon spend tracker
+// ═══════════════════════════════════════════════════════════════════════════
+
+const BUDGET_KEY = 'pkm-budgeter-v1';
+const BUDGET_MONTHS = [
+  { key: '2026-08', label: 'August',    short: 'Aug' },
+  { key: '2026-09', label: 'September', short: 'Sep' },
+  { key: '2026-10', label: 'October',   short: 'Oct' },
+  { key: '2026-11', label: 'November',  short: 'Nov' },
+  { key: '2026-12', label: 'December',  short: 'Dec' },
+];
+
+function _loadBudget() {
+  try { const r = localStorage.getItem(BUDGET_KEY); if (r) return JSON.parse(r); } catch(e) {}
+  return { target: 250, months: {} };
+}
+function _saveBudget(data) {
+  try { localStorage.setItem(BUDGET_KEY, JSON.stringify(data)); } catch(e) {}
+}
+function _budgetMonth(data, key) {
+  return data.months[key] || { packs: 0, singles: 0, sold: 0 };
+}
+function _gbp(n) {
+  return '£' + (n || 0).toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function _budgetMonthNetHTML(md, target) {
+  const gross = (md.packs || 0) + (md.singles || 0);
+  const net   = gross - (md.sold || 0);
+  if (!gross && !md.sold) return '<span class="bdg-net-empty">No entries yet</span>';
+  const under = target > 0 ? net <= target : true;
+  const diff  = target > 0 ? target - net : null;
+  return `
+    <div class="bdg-net-breakdown">
+      ${_gbp(md.packs)} packs
+      <span class="bdg-sep">+</span>
+      ${_gbp(md.singles)} singles
+      <span class="bdg-sep">−</span>
+      <span class="bdg-sold">${_gbp(md.sold || 0)} sold</span>
+      <span class="bdg-sep">=</span>
+      <strong class="${under ? 'bdg-under' : 'bdg-over'}">${_gbp(net)} net</strong>
+    </div>
+    ${diff !== null ? `<span class="bdg-diff ${diff >= 0 ? 'bdg-diff-ok' : 'bdg-diff-over'}">${diff >= 0 ? _gbp(diff) + ' under budget' : _gbp(-diff) + ' over budget'}</span>` : ''}
+  `;
+}
+
+function _budgetMonthHTML(data, m) {
+  const md     = _budgetMonth(data, m.key);
+  const gross  = (md.packs || 0) + (md.singles || 0);
+  const net    = gross - (md.sold || 0);
+  const target = data.target || 0;
+  const under  = target === 0 || net <= target;
+  const pct    = target > 0 ? Math.min(100, (net / target) * 100) : 0;
+  const fillCls = pct >= 100 ? 'bdg-fill-over' : pct >= 80 ? 'bdg-fill-warn' : 'bdg-fill-ok';
+  const hasData = gross > 0 || md.sold > 0;
+
+  return `
+    <div class="bdg-month card" data-month-card="${m.key}">
+      <div class="bdg-month-hd">
+        <span class="bdg-month-name">${m.label}</span>
+        ${hasData ? `<span class="bdg-status ${under ? 'bdg-status-ok' : 'bdg-status-over'}">${under ? '✓ Under' : '✗ Over'}</span>` : '<span class="bdg-status bdg-status-none">—</span>'}
+      </div>
+
+      ${target > 0 ? `
+      <div class="bdg-progress-wrap">
+        <div class="bdg-progress-track">
+          <div class="bdg-progress-fill ${fillCls}" style="width:${pct}%"></div>
+        </div>
+        <span class="bdg-progress-lbl">${_gbp(net)} / ${_gbp(target)}</span>
+      </div>` : ''}
+
+      <div class="bdg-fields">
+        <div class="bdg-field">
+          <label class="bdg-field-lbl">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="1" y="3" width="22" height="18" rx="2.5"/><path d="M1 9h22"/></svg>
+            Ripped Packs
+          </label>
+          <div class="bdg-amount">
+            <span class="bdg-cur">£</span>
+            <input type="number" class="bdg-inp" data-month="${m.key}" data-field="packs"
+              value="${md.packs || ''}" placeholder="0" min="0" inputmode="decimal">
+          </div>
+        </div>
+        <div class="bdg-field">
+          <label class="bdg-field-lbl">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+            Bought Singles
+          </label>
+          <div class="bdg-amount">
+            <span class="bdg-cur">£</span>
+            <input type="number" class="bdg-inp" data-month="${m.key}" data-field="singles"
+              value="${md.singles || ''}" placeholder="0" min="0" inputmode="decimal">
+          </div>
+        </div>
+        <div class="bdg-field bdg-field-sold">
+          <label class="bdg-field-lbl bdg-lbl-sold">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Sold
+          </label>
+          <div class="bdg-amount">
+            <span class="bdg-cur bdg-cur-sold">−£</span>
+            <input type="number" class="bdg-inp bdg-inp-sold" data-month="${m.key}" data-field="sold"
+              value="${md.sold || ''}" placeholder="0" min="0" inputmode="decimal">
+          </div>
+        </div>
+      </div>
+
+      <div class="bdg-net-row" data-net-row="${m.key}">
+        ${_budgetMonthNetHTML(md, target)}
+      </div>
+    </div>
+  `;
+}
+
+function _budgetAnalyticsHTML(data) {
+  let totalPacks = 0, totalSingles = 0, totalSold = 0;
+  BUDGET_MONTHS.forEach(m => {
+    const md = _budgetMonth(data, m.key);
+    totalPacks   += md.packs   || 0;
+    totalSingles += md.singles || 0;
+    totalSold    += md.sold    || 0;
+  });
+  const gross       = totalPacks + totalSingles;
+  const net         = gross - totalSold;
+  const target      = data.target || 0;
+  const totalTarget = target * BUDGET_MONTHS.length;
+  const remaining   = totalTarget - net;
+  const monthsOver  = BUDGET_MONTHS.filter(m => {
+    const md = _budgetMonth(data, m.key);
+    const mn = (md.packs || 0) + (md.singles || 0) - (md.sold || 0);
+    return target > 0 && mn > target;
+  }).length;
+
+  return `
+    <div class="bdg-analytics">
+      <div class="bdg-stat">
+        <div class="bdg-stat-val">${_gbp(gross)}</div>
+        <div class="bdg-stat-lbl">Gross spend</div>
+      </div>
+      <div class="bdg-stat">
+        <div class="bdg-stat-val bdg-green">−${_gbp(totalSold)}</div>
+        <div class="bdg-stat-lbl">Sold</div>
+      </div>
+      <div class="bdg-stat">
+        <div class="bdg-stat-val ${net > totalTarget ? 'bdg-red' : ''}">${_gbp(net)}</div>
+        <div class="bdg-stat-lbl">Net spend</div>
+      </div>
+      <div class="bdg-stat">
+        <div class="bdg-stat-val ${remaining >= 0 ? 'bdg-green' : 'bdg-red'}">${remaining >= 0 ? _gbp(remaining) : '−'+_gbp(-remaining)}</div>
+        <div class="bdg-stat-lbl">${remaining >= 0 ? 'Remaining' : 'Over target'}</div>
+      </div>
+    </div>
+    ${monthsOver > 0 ? `<p class="bdg-months-over">${monthsOver} month${monthsOver > 1 ? 's' : ''} over budget</p>` : ''}
+  `;
+}
+
+let _bdgData = null;
+
+function renderBudgetPage() {
+  const el = document.getElementById('pageBudget');
+  if (!el) return;
+
+  _bdgData = _loadBudget();
+
+  el.innerHTML = `
+    <div class="app bdg-page">
+      <div class="bdg-page-hd">
+        <div class="bdg-page-title">2026 Pokémon Budget</div>
+        <div class="bdg-page-sub">August – December · Strategic spend tracker</div>
+      </div>
+
+      <div class="bdg-target-card card">
+        <div class="bdg-target-label">Monthly target</div>
+        <div class="bdg-target-row">
+          <span class="bdg-target-cur">£</span>
+          <input type="number" id="bdgTargetInput" class="bdg-target-inp"
+            value="${_bdgData.target || ''}" placeholder="250" min="0" step="10" inputmode="decimal">
+          <span class="bdg-target-hint">per month</span>
+        </div>
+        <div class="bdg-target-total">Total target: ${_gbp((_bdgData.target || 0) * 5)} across Aug–Dec</div>
+      </div>
+
+      <div id="bdgAnalyticsWrap">${_budgetAnalyticsHTML(_bdgData)}</div>
+
+      <div class="bdg-months-list" id="bdgMonthsList">
+        ${BUDGET_MONTHS.map(m => _budgetMonthHTML(_bdgData, m)).join('')}
+      </div>
+    </div>
+  `;
+
+  // Wire target input
+  el.querySelector('#bdgTargetInput')?.addEventListener('input', function() {
+    _bdgData.target = parseFloat(this.value) || 0;
+    _saveBudget(_bdgData);
+    el.querySelector('.bdg-target-total').textContent =
+      'Total target: ' + _gbp((_bdgData.target || 0) * 5) + ' across Aug–Dec';
+    _bdgRefreshAll(el);
+  });
+
+  // Wire month field inputs (event delegation on the list)
+  el.querySelector('#bdgMonthsList')?.addEventListener('input', function(e) {
+    const inp = e.target.closest('.bdg-inp');
+    if (!inp) return;
+    const { month, field } = inp.dataset;
+    if (!month || !field) return;
+    if (!_bdgData.months[month]) _bdgData.months[month] = { packs: 0, singles: 0, sold: 0 };
+    _bdgData.months[month][field] = parseFloat(inp.value) || 0;
+    _saveBudget(_bdgData);
+    _bdgRefreshMonth(el, month);
+    el.querySelector('#bdgAnalyticsWrap').innerHTML = _budgetAnalyticsHTML(_bdgData);
+  });
+}
+
+function _bdgRefreshMonth(el, key) {
+  const md      = _budgetMonth(_bdgData, key);
+  const target  = _bdgData.target || 0;
+  const gross   = (md.packs || 0) + (md.singles || 0);
+  const net     = gross - (md.sold || 0);
+  const under   = target === 0 || net <= target;
+  const pct     = target > 0 ? Math.min(100, (net / target) * 100) : 0;
+  const hasData = gross > 0 || md.sold > 0;
+  const card    = el.querySelector(`[data-month-card="${key}"]`);
+  if (!card) return;
+
+  // Net row
+  const netRow = card.querySelector(`[data-net-row="${key}"]`);
+  if (netRow) netRow.innerHTML = _budgetMonthNetHTML(md, target);
+
+  // Status badge
+  const status = card.querySelector('.bdg-status');
+  if (status) {
+    status.className = `bdg-status ${hasData ? (under ? 'bdg-status-ok' : 'bdg-status-over') : 'bdg-status-none'}`;
+    status.textContent = hasData ? (under ? '✓ Under' : '✗ Over') : '—';
+  }
+
+  // Progress bar
+  const fill = card.querySelector('.bdg-progress-fill');
+  if (fill) {
+    fill.style.width = pct + '%';
+    fill.className = `bdg-progress-fill ${pct >= 100 ? 'bdg-fill-over' : pct >= 80 ? 'bdg-fill-warn' : 'bdg-fill-ok'}`;
+  }
+  const lbl = card.querySelector('.bdg-progress-lbl');
+  if (lbl) lbl.textContent = _gbp(net) + ' / ' + _gbp(target);
+}
+
+function _bdgRefreshAll(el) {
+  BUDGET_MONTHS.forEach(m => _bdgRefreshMonth(el, m.key));
+  const aw = el.querySelector('#bdgAnalyticsWrap');
+  if (aw) aw.innerHTML = _budgetAnalyticsHTML(_bdgData);
 }
