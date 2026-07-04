@@ -11224,4 +11224,38 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
   .bdg-analytics { grid-template-columns: repeat(4, 1fr); }
 }
 
+/* ── Chart ── */
+.bdg-chart-wrap {
+  padding: 14px 12px 8px;
+  margin-bottom: 12px;
+}
+.bdg-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.bdg-legend-item { display: flex; align-items: center; gap: 5px; }
+.bdg-legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.bdg-legend-dash {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  border-top: 1px dashed rgba(255,255,255,0.32);
+  vertical-align: middle;
+}
+
+/* ── 7-item bottom nav: icon-only on narrow mobile ── */
+@media (max-width: 560px) {
+  .page-nav-btn {
+    padding: 14px 4px;
+    min-width: 0;
+    font-size: 0;
+    gap: 0;
+    min-height: 52px;
+  }
+  .page-nav-btn svg { width: 22px; height: 22px; }
+}
 

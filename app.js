@@ -19061,6 +19061,96 @@ function _computeEffectiveTargets(data) {
   return result;
 }
 
+function _budgetChartHTML(data) {
+  const effs = _computeEffectiveTargets(data);
+  const W = 500, H = 200;
+  const PL = 36, PR = 6, PT = 14, PB = 30;
+  const CW = W - PL - PR, CH = H - PT - PB;
+  const base = data.target || 250;
+
+  let maxVal = base;
+  BUDGET_MONTHS.forEach(m => {
+    const md = _budgetMonth(data, m.key);
+    maxVal = Math.max(maxVal, (md.packs||0)+(md.singles||0), effs[m.key].target);
+  });
+  const step = maxVal <= 500 ? 50 : maxVal <= 1500 ? 100 : 250;
+  maxVal = Math.max(Math.ceil(maxVal / step) * step, step);
+
+  const toY = v => PT + CH * (1 - v / maxVal);
+  const toH = v => Math.max(0, CH * v / maxVal);
+
+  const groupW = CW / 5;
+  const mainW  = Math.min(28, groupW * 0.4);
+  const soldW  = Math.min(12, groupW * 0.17);
+  const gap    = 3;
+
+  let svg = '';
+
+  // Gridlines
+  [0, 0.5, 1].forEach(f => {
+    const v = maxVal * f, y = toY(v);
+    svg += `<line x1="${PL}" y1="${y.toFixed(1)}" x2="${W-PR}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.055)" stroke-width="1"/>`;
+    svg += `<text x="${(PL-5).toFixed(1)}" y="${(y+3.5).toFixed(1)}" text-anchor="end" font-size="9" fill="rgba(255,255,255,0.27)" font-family="monospace">£${v>=1000?(v/1000)+'k':v}</text>`;
+  });
+
+  // Base target dashed line
+  const ty = toY(base);
+  svg += `<line x1="${PL}" y1="${ty.toFixed(1)}" x2="${(W-PR).toFixed(1)}" y2="${ty.toFixed(1)}" stroke="rgba(255,255,255,0.20)" stroke-width="1" stroke-dasharray="4,3"/>`;
+
+  BUDGET_MONTHS.forEach((m, i) => {
+    const md     = _budgetMonth(data, m.key);
+    const packs   = md.packs   || 0;
+    const singles = md.singles || 0;
+    const sold    = md.sold    || 0;
+    const gross   = packs + singles;
+
+    const cx    = PL + i * groupW + groupW / 2;
+    const totalW = mainW + gap + soldW;
+    const mainX  = cx - totalW / 2;
+    const soldX  = mainX + mainW + gap;
+    const bot    = PT + CH;
+
+    const grossH   = toH(gross);
+    const singlesH = toH(singles);
+    const soldH    = toH(sold);
+
+    // Gross bar (packs = accent yellow as base)
+    if (grossH > 0) {
+      svg += `<rect x="${mainX.toFixed(1)}" y="${(bot-grossH).toFixed(1)}" width="${mainW}" height="${grossH.toFixed(1)}" fill="#e8b634" opacity="0.82" rx="3"/>`;
+      // Singles overlay (purple) at the top
+      if (singlesH > 0) {
+        svg += `<rect x="${mainX.toFixed(1)}" y="${(bot-grossH).toFixed(1)}" width="${mainW}" height="${singlesH.toFixed(1)}" fill="#8a6ee0" opacity="0.88" rx="3"/>`;
+        // Patch rounded bottom of singles rect so it sits flush on packs
+        if (grossH - singlesH > 3) {
+          svg += `<rect x="${mainX.toFixed(1)}" y="${(bot-grossH+singlesH-3).toFixed(1)}" width="${mainW}" height="3" fill="#8a6ee0" opacity="0.88"/>`;
+        }
+      }
+    } else {
+      svg += `<rect x="${mainX.toFixed(1)}" y="${(bot-1).toFixed(1)}" width="${mainW}" height="1" fill="rgba(255,255,255,0.07)"/>`;
+    }
+
+    // Sold bar (green)
+    if (soldH > 0) {
+      svg += `<rect x="${soldX.toFixed(1)}" y="${(bot-soldH).toFixed(1)}" width="${soldW}" height="${soldH.toFixed(1)}" fill="#4caf8c" opacity="0.85" rx="3"/>`;
+    } else {
+      svg += `<rect x="${soldX.toFixed(1)}" y="${(bot-1).toFixed(1)}" width="${soldW}" height="1" fill="rgba(255,255,255,0.06)"/>`;
+    }
+
+    // Month label
+    svg += `<text x="${cx.toFixed(1)}" y="${(H-7).toFixed(1)}" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.40)" font-family="system-ui,sans-serif">${m.short}</text>`;
+  });
+
+  return `<div class="bdg-chart-wrap card">
+    <div class="bdg-chart-legend">
+      <span class="bdg-legend-item"><span class="bdg-legend-dot" style="background:#e8b634"></span>Packs</span>
+      <span class="bdg-legend-item"><span class="bdg-legend-dot" style="background:#8a6ee0"></span>Singles</span>
+      <span class="bdg-legend-item"><span class="bdg-legend-dot" style="background:#4caf8c"></span>Sold</span>
+      <span class="bdg-legend-item"><span class="bdg-legend-dash"></span>Monthly target</span>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">${svg}</svg>
+  </div>`;
+}
+
 function _budgetMonthNetHTML(md, target) {
   const gross = (md.packs || 0) + (md.singles || 0);
   const net   = gross - (md.sold || 0);
@@ -19220,6 +19310,8 @@ function renderBudgetPage() {
         <div class="bdg-target-total">Total target: ${_gbp((_bdgData.target || 0) * 5)} across Aug–Dec</div>
       </div>
 
+      <div id="bdgChartContainer">${_budgetChartHTML(_bdgData)}</div>
+
       <div id="bdgAnalyticsWrap">${_budgetAnalyticsHTML(_bdgData)}</div>
 
       <div class="bdg-months-list" id="bdgMonthsList">
@@ -19298,4 +19390,6 @@ function _bdgRefreshAll(el) {
   BUDGET_MONTHS.forEach(m => _bdgRefreshMonth(el, m.key, effs[m.key]));
   const aw = el.querySelector('#bdgAnalyticsWrap');
   if (aw) aw.innerHTML = _budgetAnalyticsHTML(_bdgData);
+  const cc = el.querySelector('#bdgChartContainer');
+  if (cc) cc.innerHTML = _budgetChartHTML(_bdgData);
 }
