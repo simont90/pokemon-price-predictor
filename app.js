@@ -16720,6 +16720,87 @@ function _renderGradeItemHTML({ card, name, img, rawGBP, p10GBP, psaFeeGBP, psaP
     </div>`;
 }
 
+// ---- Grade modal + inline list helpers ----
+
+const GRADE_LIST_LIMIT = 5;
+const _gradeAllItems = { collection: [], wishlist: [], reco: [] };
+let _gradeModalItems = [];
+let _gradeModalSort  = 'roi-desc';
+
+function _sortGradeItems(items, sort) {
+  const s = [...items];
+  if      (sort === 'roi-asc')    s.sort((a, b) => Math.max(a.psaROI, a.aceROI) - Math.max(b.psaROI, b.aceROI));
+  else if (sort === 'price-desc') s.sort((a, b) => b.rawGBP - a.rawGBP);
+  else if (sort === 'price-asc')  s.sort((a, b) => a.rawGBP - b.rawGBP);
+  else                            s.sort((a, b) => Math.max(b.psaROI, b.aceROI) - Math.max(a.psaROI, a.aceROI));
+  return s;
+}
+
+function _gradeModalRender() {
+  const list = $('gradeModalList');
+  if (!list) return;
+  list.innerHTML = _sortGradeItems(_gradeModalItems, _gradeModalSort).map(_renderGradeItemHTML).join('');
+}
+
+function _openGradeModal(title, items) {
+  _gradeModalItems = items;
+  _gradeModalSort  = 'roi-desc';
+  const modal = $('gradeModal');
+  if (!modal) return;
+  $('gradeModalTitle').textContent = title;
+  modal.querySelectorAll('.gm-sort-btn').forEach(b =>
+    b.classList.toggle('gm-sort-active', b.dataset.gmsort === 'roi-desc'));
+  _gradeModalRender();
+  modal.style.display = '';
+  document.body.style.overflow = 'hidden';
+}
+
+function _closeGradeModal() {
+  const modal = $('gradeModal');
+  if (modal) modal.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function _setupGradeModal() {
+  const modal = $('gradeModal');
+  if (!modal || modal._gradeModalSetup) return;
+  modal._gradeModalSetup = true;
+  modal.addEventListener('click', e => { if (e.target === modal) _closeGradeModal(); });
+  $('gradeModalClose')?.addEventListener('click', _closeGradeModal);
+  modal.querySelector('.grade-modal-sort-bar')?.addEventListener('click', e => {
+    const btn = e.target.closest('.gm-sort-btn');
+    if (!btn) return;
+    _gradeModalSort = btn.dataset.gmsort;
+    modal.querySelectorAll('.gm-sort-btn').forEach(b => b.classList.toggle('gm-sort-active', b === btn));
+    _gradeModalRender();
+  });
+  $('gradeModalList')?.addEventListener('click', e => {
+    const row = e.target.closest('.home-grading-item[data-id]');
+    if (row) { _closeGradeModal(); go('predict'); setTimeout(() => { try { selectCard(row.dataset.id); } catch {} }, 80); }
+  });
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-grade-viewall]');
+    if (!btn) return;
+    _openGradeModal(btn.dataset.gradeTitle || 'Consider Grading', _gradeAllItems[btn.dataset.gradeViewall] || []);
+  });
+}
+
+function _renderGradeListInline(container, items, src, title, emptyMsg) {
+  _gradeAllItems[src] = items;
+  if (!items.length) { container.innerHTML = `<div class="home-empty">${emptyMsg}</div>`; return; }
+  const shown = items.slice(0, GRADE_LIST_LIMIT);
+  const more  = items.length - GRADE_LIST_LIMIT;
+  container.innerHTML = shown.map(_renderGradeItemHTML).join('') +
+    (more > 0 ? `<button class="grade-view-more-btn" data-grade-viewall="${esc(src)}" data-grade-title="${esc(title)}">View all ${items.length}</button>` : '');
+  if (!container._gradingClickAdded) {
+    container._gradingClickAdded = true;
+    container.addEventListener('click', e => {
+      const row = e.target.closest('.home-grading-item[data-id]');
+      if (row) { go('predict'); setTimeout(() => { try { selectCard(row.dataset.id); } catch {} }, 80); }
+    });
+  }
+}
+
 let _homeGradingHash = '';
 function _renderHomeConsiderGrading() {
   const collList  = $('homeGradingListCollection');
@@ -16734,13 +16815,10 @@ function _renderHomeConsiderGrading() {
   if (hash === _homeGradingHash && collList.querySelector('.home-grading-item')) return;
   _homeGradingHash = hash;
 
-  collList.innerHTML = collItems.length
-    ? collItems.map(_renderGradeItemHTML).join('')
-    : '<div class="home-empty">No collection cards with PSA 10 data yet.<br>Add cards to your collection and sync prices.</div>';
-
-  wishList.innerHTML = wishItems.length
-    ? wishItems.map(_renderGradeItemHTML).join('')
-    : '<div class="home-empty">No wishlist cards with PSA 10 data yet.<br>Add cards to your wishlist and sync prices.</div>';
+  _renderGradeListInline(collList, collItems, 'collection', 'Collection — Consider Grading',
+    'No collection cards with PSA 10 data yet.<br>Add cards to your collection and sync prices.');
+  _renderGradeListInline(wishList, wishItems, 'wishlist', 'Wishlist — Consider Grading',
+    'No wishlist cards with PSA 10 data yet.<br>Add cards to your wishlist and sync prices.');
 
   if (countEl) countEl.textContent = collList.style.display === 'none' ? wishItems.length : collItems.length;
 
@@ -16758,15 +16836,7 @@ function _renderHomeConsiderGrading() {
     });
   }
 
-  [collList, wishList].forEach(container => {
-    if (!container._gradingClickAdded) {
-      container._gradingClickAdded = true;
-      container.addEventListener('click', e => {
-        const row = e.target.closest('.home-grading-item[data-id]');
-        if (row) { go('predict'); setTimeout(() => { try { selectCard(row.dataset.id); } catch {} }, 80); }
-      });
-    }
-  });
+  _setupGradeModal();
 }
 
 function _renderRecoConsiderGrading(recoItems) {
@@ -16774,27 +16844,14 @@ function _renderRecoConsiderGrading(recoItems) {
   const countEl = $('homeRecoGradingCount');
   if (!list) return;
 
-  // Convert reco items (have card + marketUSD) to the {id,name,img} format _buildGradeItems expects
-  const normalized = (recoItems || []).map(r => ({
-    id:   r.card.i,
-    name: r.card.n,
-    img:  getCardImg(r.card),
-  }));
-
-  const items = _buildGradeItems(normalized).slice(0, 50);
+  const normalized = (recoItems || []).map(r => ({ id: r.card.i, name: r.card.n, img: getCardImg(r.card) }));
+  const items = _buildGradeItems(normalized);
   if (countEl) countEl.textContent = items.length;
 
-  list.innerHTML = items.length
-    ? items.map(_renderGradeItemHTML).join('')
-    : '<div class="home-empty">No recommended cards with grading ROI data yet — sync prices to populate.</div>';
+  _renderGradeListInline(list, items, 'reco', 'Recommended — Consider Grading',
+    'No recommended cards with grading ROI data yet — sync prices to populate.');
 
-  if (!list._gradingClickAdded) {
-    list._gradingClickAdded = true;
-    list.addEventListener('click', e => {
-      const row = e.target.closest('.home-grading-item[data-id]');
-      if (row) { go('predict'); setTimeout(() => { try { selectCard(row.dataset.id); } catch {} }, 80); }
-    });
-  }
+  _setupGradeModal();
 }
 
 function setupPageNav() {

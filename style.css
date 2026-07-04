@@ -10512,6 +10512,56 @@ html { scroll-behavior: smooth; }
 .groi-worth-maybe { color: var(--accent); }
 .groi-worth-no    { color: #ef5350; }
 
+/* View-more button (inline grade lists) */
+.grade-view-more-btn {
+  display: block; width: calc(100% - 24px); margin: 0 12px 8px;
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--accent); font: 600 12px/1 var(--font-main);
+  padding: 10px; cursor: pointer; text-align: center;
+  transition: background 0.15s;
+}
+.grade-view-more-btn:hover { background: var(--border); }
+
+/* Grade analysis modal */
+.grade-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+  display: flex; align-items: flex-end; justify-content: center;
+  z-index: 9999; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.grade-modal {
+  background: var(--bg-card); border-radius: 20px 20px 0 0;
+  width: 100%; max-width: 680px; max-height: 92dvh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 -4px 40px rgba(0,0,0,0.4);
+}
+.grade-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 16px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.grade-modal-title { font-weight: 700; font-size: 15px; }
+.grade-modal-close {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 6px; line-height: 1;
+  transition: color 0.15s;
+}
+.grade-modal-close:hover { color: var(--text); }
+.grade-modal-sort-bar {
+  display: flex; gap: 6px; padding: 10px 14px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.gm-sort-btn {
+  background: var(--bg-raised); border: none; border-radius: 16px;
+  font: 600 11px/1 var(--font-main); color: var(--text-muted);
+  padding: 6px 14px; cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.gm-sort-btn.gm-sort-active { background: var(--accent); color: #111; }
+.grade-modal-list {
+  overflow-y: auto; flex: 1;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px 32px;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ============================================================
    Tools page — inner tabs + Duplicates section
    ============================================================ */
