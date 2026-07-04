@@ -16803,9 +16803,10 @@ function _renderGradeListInline(container, items, src, title, emptyMsg) {
 
 let _homeGradingHash = '';
 function _renderHomeConsiderGrading() {
-  const collList  = $('homeGradingListCollection');
-  const wishList  = $('homeGradingListWishlist');
-  const countEl   = $('homeGradingCount');
+  const collList      = $('homeGradingListCollection');
+  const wishList      = $('homeGradingListWishlist');
+  const collCountEl   = $('homeCollGradingCount');
+  const wishCountEl   = $('homeGradingCount');
   if (!collList || !wishList) return;
 
   const collItems = _buildGradeItems(portfolio);
@@ -16820,21 +16821,8 @@ function _renderHomeConsiderGrading() {
   _renderGradeListInline(wishList, wishItems, 'wishlist', 'Wishlist — Consider Grading',
     'No wishlist cards with PSA 10 data yet.<br>Add cards to your wishlist and sync prices.');
 
-  if (countEl) countEl.textContent = collList.style.display === 'none' ? wishItems.length : collItems.length;
-
-  const tabBar = document.querySelector('.hg-src-tab-bar');
-  if (tabBar && !tabBar._hgTabListenerAdded) {
-    tabBar._hgTabListenerAdded = true;
-    tabBar.addEventListener('click', e => {
-      const btn = e.target.closest('.hg-src-tab');
-      if (!btn) return;
-      tabBar.querySelectorAll('.hg-src-tab').forEach(b => b.classList.toggle('hg-src-active', b === btn));
-      const src = btn.dataset.hgsrc;
-      collList.style.display = src === 'collection' ? '' : 'none';
-      wishList.style.display = src === 'wishlist'   ? '' : 'none';
-      if (countEl) countEl.textContent = src === 'collection' ? collItems.length : wishItems.length;
-    });
-  }
+  if (collCountEl) collCountEl.textContent = collItems.length;
+  if (wishCountEl) wishCountEl.textContent = wishItems.length;
 
   _setupGradeModal();
 }

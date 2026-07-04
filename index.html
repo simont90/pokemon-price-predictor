@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260704v">
+  <link rel="stylesheet" href="style.css?v=20260704w">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -729,19 +729,45 @@
           </button>
         </div>
 
-        <!-- My Collection -->
-        <section class="home-section-wrap">
-          <div class="home-section-hd">
-            <div class="home-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
+        <!-- GROUP: My Collection & Consider Grading -->
+        <div class="home-tab-group" id="hTabColl">
+          <div class="predict-tab-bar home-tab-bar" role="tablist" aria-label="My Collection">
+            <button class="ptab ptab-active" data-htab="my-collection" type="button" role="tab" aria-selected="true">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
               My Collection
-            </div>
-            <span class="home-count-badge" id="homeCollCount">0</span>
-            <button class="home-view-all" id="homeOpenCollection">View all</button>
+            </button>
+            <button class="ptab" data-htab="coll-grading" type="button" role="tab" aria-selected="false">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+              Consider Grading
+            </button>
           </div>
-          <div class="home-total" id="homeCollTotal"></div>
-          <div class="home-scroll-row" id="homeCollList"><div class="home-empty">No cards in collection yet.</div></div>
-        </section>
+          <div class="home-htab-panel" data-htab-panel="my-collection">
+            <section class="home-section-wrap">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
+                  My Collection
+                </div>
+                <span class="home-count-badge" id="homeCollCount">0</span>
+                <button class="home-view-all" id="homeOpenCollection">View all</button>
+              </div>
+              <div class="home-total" id="homeCollTotal"></div>
+              <div class="home-scroll-row" id="homeCollList"><div class="home-empty">No cards in collection yet.<br>Search a card and tap + to add it.</div></div>
+            </section>
+          </div>
+          <div class="home-htab-panel" data-htab-panel="coll-grading" style="display:none">
+            <section class="home-section-wrap">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+                  Consider Grading
+                </div>
+                <span class="home-count-badge" id="homeCollGradingCount">0</span>
+              </div>
+              <div id="homeGradingListCollection"><div class="home-empty">No collection cards with grading data yet.</div></div>
+            </section>
+          </div>
+        </div>
 
         <!-- GROUP: Wishlist (merged watchlist + wishlist) & Consider Grading -->
         <div class="home-tab-group" id="hTabWW">
@@ -769,12 +795,8 @@
               <div class="home-scroll-row" id="homeWishlistMerged"><div class="home-empty">No cards added yet.<br>Tap ♥ or Watch on any card.</div></div>
             </section>
           </div>
-          <!-- Consider Grading: PSA vs ACE ROI for collection + wishlist cards -->
+          <!-- Consider Grading: PSA vs ACE ROI for wishlist cards -->
           <div class="home-htab-panel" data-htab-panel="grading" style="display:none">
-            <div class="hg-src-tab-bar">
-              <button class="hg-src-tab hg-src-active" data-hgsrc="collection" type="button">Collection</button>
-              <button class="hg-src-tab" data-hgsrc="wishlist" type="button">Wishlist</button>
-            </div>
             <section class="home-section-wrap">
               <div class="home-section-hd">
                 <div class="home-section-title">
@@ -783,8 +805,7 @@
                 </div>
                 <span class="home-count-badge" id="homeGradingCount">0</span>
               </div>
-              <div id="homeGradingListCollection"><div class="home-empty">No collection cards with grading data yet.</div></div>
-              <div id="homeGradingListWishlist" style="display:none"><div class="home-empty">No wishlist cards with grading data yet.</div></div>
+              <div id="homeGradingListWishlist"><div class="home-empty">No wishlist cards with grading data yet.</div></div>
             </section>
           </div>
         </div>
@@ -2424,7 +2445,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260704v"></script>
+  <script src="app.js?v=20260704w"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
