@@ -7163,12 +7163,12 @@ section.card .card-collapse-btn { padding: 10px; }
 
 /* ─── Home Dashboard ──────────────────────────────────────── */
 .home-dashboard {
-  max-width: 860px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 16px 0 24px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
 }
 /* Hide all USD sub-displays — currency shown via selector only */
 .price-tile-usd, .live-main-usd, .ql-price-usd, .predicted-usd, span.usd { display: none !important; }
@@ -7178,9 +7178,17 @@ section.card .card-collapse-btn { padding: 10px; }
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  background: var(--surface);
-  border-radius: var(--radius-md);
-  margin: 0 4px;
+  border-radius: 16px;
+}
+[data-theme="dark"] .home-budget-bar {
+  background: #111317;
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+[data-theme="light"] .home-budget-bar {
+  background: rgba(255,255,255,0.82);
+  border: 1px solid rgba(0,0,0,0.07);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.95);
 }
 .budget-divider {
   width: 1px;
@@ -7278,14 +7286,32 @@ section.card .card-collapse-btn { padding: 10px; }
   .home-budget-label { display: none; }
   .home-budget-input { width: 60px; }
 }
-.home-section-wrap { /* sections float directly on page background */ }
+/* Section containers: elevated card look at all viewport widths */
+.home-section-wrap { border-radius: 16px; overflow: hidden; }
+.home-dashboard > .home-section-wrap { margin: 0; }
+[data-theme="dark"] .home-dashboard > .home-section-wrap {
+  background: #111317;
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+[data-theme="light"] .home-dashboard > .home-section-wrap {
+  background: rgba(255,255,255,0.82);
+  border: 1px solid rgba(0,0,0,0.07);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.95);
+}
+
 .home-section-hd {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 20px;
-  margin-bottom: 6px;
+  padding: 8px 20px;
+  margin-bottom: 0;
+  min-height: 40px;
 }
+[data-theme="dark"]  .home-section-hd { border-bottom: 1px solid rgba(255,255,255,0.065); }
+[data-theme="light"] .home-section-hd { border-bottom: 1px solid rgba(0,0,0,0.05); }
+[data-theme="dark"]  .home-htab-panel .home-section-title { color: rgba(255,255,255,0.6); }
+[data-theme="light"] .home-htab-panel .home-section-title { color: rgba(0,0,0,0.45); }
 .home-section-title {
   display: flex;
   align-items: center;
@@ -9256,22 +9282,51 @@ section.card .card-collapse-btn { padding: 10px; }
 /* ============================================================
    Homepage tab groups
    ============================================================ */
+/* Tab groups: same elevated card as section-wraps */
 .home-tab-group {
-  margin-bottom: 4px;
+  margin-bottom: 0;
+  border-radius: 16px;
+  overflow: hidden;
+}
+[data-theme="dark"] .home-tab-group {
+  background: #111317;
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+[data-theme="light"] .home-tab-group {
+  background: rgba(255,255,255,0.82);
+  border: 1px solid rgba(0,0,0,0.07);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.95);
 }
 
 /* Override sticky positioning from .predict-tab-bar for home use */
 .home-tab-bar {
   position: static !important;
-  margin: 0 16px 4px;
+  margin: 8px 16px 8px;
 }
+[data-theme="dark"]  .home-tab-bar { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.08); }
+[data-theme="light"] .home-tab-bar { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.06); }
 
 /* Group heading (like home-section-hd but for the group wrapper) */
 .home-group-hd {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 20px;
+  padding: 12px 20px;
+  min-height: 44px;
+}
+[data-theme="dark"]  .home-group-hd { border-bottom: 1px solid rgba(255,255,255,0.07); }
+[data-theme="dark"]  .home-group-hd .home-section-title { color: rgba(255,255,255,0.42); }
+[data-theme="dark"]  .home-group-hd .home-section-title svg { opacity: 0.35; }
+[data-theme="light"] .home-group-hd { border-bottom: 1px solid rgba(0,0,0,0.06); }
+[data-theme="light"] .home-group-hd .home-section-title { color: rgba(0,0,0,0.36); }
+[data-theme="light"] .home-group-hd .home-section-title svg { opacity: 0.30; }
+/* WHOOP-style uppercase muted group label */
+.home-group-hd .home-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 
 /* ============================================================
@@ -9924,28 +9979,14 @@ body {
   .home-dashboard { max-width: 100%; }
 }
 
-/* Home dashboard: 2-column side-by-side on 1024px+
-   Covers all landscape iPads and iPad Pro 12.9" portrait */
+/* Home dashboard: wider single-column on tablet/desktop —
+   full-width scroll rows show more cards than a 2-col split */
 @media (min-width: 1024px) {
   .home-dashboard {
     max-width: 100%;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 32px;
-    row-gap: 28px;
-    align-items: start;
+    gap: 20px;
+    padding: 20px 0 80px;
   }
-  /* Allow grid tracks to shrink — prevents scroll-row intrinsic width from blowing up the grid */
-  .home-dashboard > * { min-width: 0; }
-  /* Budget bar and Collection span full width */
-  .home-dashboard > .home-budget-bar,
-  .home-dashboard > .home-section-wrap,
-  .home-dashboard > #hTabBuy {
-    grid-column: 1 / -1;
-  }
-  /* Watchlist/Wishlist → left, Recommendations → right */
-  .home-dashboard > #hTabWW  { grid-column: 1; }
-  .home-dashboard > #hTabReco { grid-column: 2; }
 }
 
 /* Predict: slight weight shift on very wide screens */
