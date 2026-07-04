@@ -16679,8 +16679,6 @@ function _renderHomeConsiderGrading() {
     const psaBetter = psaROI >= aceROI;
     const margin    = Math.abs(psaROI - aceROI);
     const feeDelta  = psaFeeGBP - aceFeeBase;
-    const psaCls    = psaROI >= 40 ? 'groi-good' : psaROI >= 0 ? 'groi-ok' : 'groi-bad';
-    const aceCls    = aceROI >= 40 ? 'groi-good' : aceROI >= 0 ? 'groi-ok' : 'groi-bad';
     const winnerCls = psaBetter ? 'groi-winner-psa' : 'groi-winner-ace';
 
     // Verdict badge: winner + always surface the fee delta
@@ -16698,48 +16696,56 @@ function _renderHomeConsiderGrading() {
 
     // Which service is the practical winner (ACE wins unless PSA beats it by ≥15pp)
     const aceIsPracticalWinner = !psaBetter || margin < 15;
-    // Grade 9 outcome for the recommended service
-    const rec9Profit = aceIsPracticalWinner ? ace9Profit : psa9Profit;
-    const rec9ROI    = aceIsPracticalWinner ? ace9ROI    : psa9ROI;
-    const recProfit  = aceIsPracticalWinner ? aceProfit  : psaProfit;
-    // Grade range suffix — always appended to the worth-it line
-    const g9s = rec9Profit >= 0
-      ? ` Grade 10: +£${recProfit.toFixed(0)} · Grade 9: +£${rec9Profit.toFixed(0)} (${rec9ROI.toFixed(0)}%).`
-      : ` Grade 10: +£${recProfit.toFixed(0)} · Grade 9 loses money — only submit if confident in condition.`;
 
-    // "Worth it" single line — service recommendation + grade range
+    // "Worth it" single line — service recommendation only (grade grid shows the detail)
     let worthIt, worthCls;
     if (bestROI < 0) {
-      worthIt = `Not worth grading at current raw price — hold raw.${g9s}`; worthCls = 'groi-worth-no';
+      worthIt = 'Not worth grading at current raw price — hold raw.'; worthCls = 'groi-worth-no';
     } else if (psaBetter && margin >= 15) {
-      worthIt = `PSA is the call — ${margin.toFixed(0)}pp ROI advantage outweighs the £${feeDelta.toFixed(0)} ACE fee saving.${g9s}`;
+      worthIt = `PSA is the call — ${margin.toFixed(0)}pp ROI advantage outweighs the £${feeDelta.toFixed(0)} ACE fee saving.`;
       worthCls = bestROI >= 30 ? 'groi-worth-yes' : 'groi-worth-maybe';
     } else if (aceIsPracticalWinner && aceROI >= 25) {
-      worthIt = `ACE is the play — saves £${feeDelta.toFixed(0)} in fees, solid return, faster turnaround.${g9s}`;
+      worthIt = `ACE is the play — saves £${feeDelta.toFixed(0)} in fees, solid return, faster turnaround.`;
       worthCls = 'groi-worth-yes';
     } else if (aceIsPracticalWinner && aceROI >= 0) {
-      worthIt = `ACE makes more sense — £${feeDelta.toFixed(0)} fee saving reduces downside vs PSA.${g9s}`;
+      worthIt = `ACE makes more sense — £${feeDelta.toFixed(0)} fee saving reduces downside vs PSA.`;
       worthCls = 'groi-worth-maybe';
     } else {
-      worthIt = `Borderline — ACE's lower fees reduce the risk; only grade if confident on condition.${g9s}`;
+      worthIt = `Borderline — only grade if confident on condition; ACE's lower fees limit the downside.`;
       worthCls = 'groi-worth-maybe';
     }
 
     const tierLabel = (ACE_TIERS[aceTier] || ACE_TIERS.standard).label;
+    const fmt = (profit, cost) => {
+      const roi = (profit / cost) * 100;
+      const cls = roi >= 40 ? 'groi-good' : roi >= 0 ? 'groi-ok' : 'groi-bad';
+      return `<span class="${cls}">${profit >= 0 ? '+' : ''}£${profit.toFixed(0)} (${roi.toFixed(0)}%)</span>`;
+    };
+    const psaCostBase  = rawGBP + psaFeeGBP;
+    const aceCostBase  = rawGBP + aceFeeBase;
     const img = item.img ? `<img class="home-card-art" src="${esc(item.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="home-card-art"></div>';
     return `<div class="home-grading-item" data-id="${esc(card.i)}">
       ${img}
       <div class="home-grading-info">
         <div class="home-card-name">${esc(item.name)}</div>
-        <div class="home-grading-raw">Buy raw £${rawGBP.toFixed(2)} · PSA 10 £${p10GBP.toFixed(2)}</div>
-        <div class="home-grading-compare">
-          <span class="groi-label ${psaBetter && margin >= 5 ? winnerCls : ''}">PSA</span>
-          <span class="groi-val ${psaCls}">${psaProfit >= 0 ? '+' : ''}£${psaProfit.toFixed(0)} (${psaROI.toFixed(0)}%)</span>
-          <span class="groi-fee">£${psaFeeGBP} fee</span>
-          <span class="groi-sep">·</span>
-          <span class="groi-label ${!psaBetter && margin >= 5 ? winnerCls : ''}">ACE ${tierLabel}</span>
-          <span class="groi-val ${aceCls}">${aceProfit >= 0 ? '+' : ''}£${aceProfit.toFixed(0)} (${aceROI.toFixed(0)}%)</span>
-          <span class="groi-fee">£${aceFeeBase.toFixed(0)} fee</span>
+        <div class="home-grading-raw">Buy raw £${rawGBP.toFixed(2)} · PSA 10 £${p10GBP.toFixed(2)} · PSA 9 £${psa9GBP.toFixed(2)}</div>
+        <div class="home-grading-compare-grid">
+          <div class="groi-svc-row">
+            <span class="groi-svc-label ${psaBetter && margin >= 5 ? winnerCls : ''}">PSA</span>
+            <span class="groi-grade-pair">
+              <span class="groi-grade-col"><span class="groi-grade-num">10</span>${fmt(psaProfit, psaCostBase)}</span>
+              <span class="groi-grade-col"><span class="groi-grade-num">9</span>${fmt(psa9Profit, psaCostBase)}</span>
+            </span>
+            <span class="groi-fee">£${psaFeeGBP} fee</span>
+          </div>
+          <div class="groi-svc-row">
+            <span class="groi-svc-label ${!psaBetter && margin >= 5 ? winnerCls : ''}">ACE ${tierLabel}</span>
+            <span class="groi-grade-pair">
+              <span class="groi-grade-col"><span class="groi-grade-num">10</span>${fmt(aceProfit, aceCostBase)}</span>
+              <span class="groi-grade-col"><span class="groi-grade-num">9</span>${fmt(ace9Profit, aceCostBase)}</span>
+            </span>
+            <span class="groi-fee">£${aceFeeBase.toFixed(0)} fee</span>
+          </div>
         </div>
         <div class="home-grading-verdict ${verdictCls}">${verdictText}</div>
         <div class="home-grading-worthit ${worthCls}">${worthIt}</div>

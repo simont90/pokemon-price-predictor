@@ -6,7 +6,7 @@
 //   HTML                       → Network First, cache fallback (gets fresh busters)
 //   External APIs              → Network Only (PriceCharting, Worker, eBay)
 
-const SW_VER   = '20260704q';
+const SW_VER   = '20260704r';
 const S_CACHE  = 'pkm-static-' + SW_VER;
 const D_CACHE  = 'pkm-data-v1'; // survives SW updates — data files don't change often
 
