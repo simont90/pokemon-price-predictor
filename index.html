@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260701j">
+  <link rel="stylesheet" href="style.css?v=20260704a">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1598,6 +1598,20 @@
           <div class="grade-content" id="gradeContent"></div>
         </section>
 
+        <!-- ACE Grading — UK alternative with lower fees. User enters market prices; app calculates ROI -->
+        <section class="card ace-grade-card" id="aceGradeSection" data-tab-group="grade" data-collapse-mobile="1" style="display:none">
+          <div class="ace-header-row">
+            <div>
+              <h2>ACE Grading</h2>
+              <p class="card-desc">UK-based grader — lower fees, no transatlantic shipping. Enter sold prices from eBay to see your grading ROI.</p>
+            </div>
+            <a class="ace-tier-link" href="https://acegrading.com/pages/submission-service" target="_blank" rel="noopener noreferrer">ACE fees ↗</a>
+          </div>
+          <div class="ace-fee-strip" id="aceFeeStrip"></div>
+          <div class="ace-table" id="aceTable"></div>
+          <div class="ace-verdict" id="aceVerdict" style="display:none"></div>
+        </section>
+
         <!-- PSA 1-10 Grade Range — estimated values + 5yr projections per grade -->
         <section class="card psa-range-card" id="psaRangeSection" data-tab-group="grade" data-collapse-mobile="1" style="display:none">
           <div class="psa-range-header">
@@ -2327,7 +2341,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260701j"></script>
+  <script src="app.js?v=20260704a"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

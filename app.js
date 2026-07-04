@@ -2806,6 +2806,7 @@ function selectCard(id) {
   updateCompareButton();
   renderCounterpartFlag(card);
   renderPsaGradeRange(card, pullCost, des.total);
+  renderAceGradingSection();
   updateWatchButton();
   renderMarketplaceScan(card, pullCost, des.total);
   renderHoldStrategy(card);
@@ -2819,6 +2820,7 @@ function selectCard(id) {
   $('marketTrend').className = 'market-trend-badge';
   $('gradeSection').style.display = 'none';
   // PSA range section is recomputed in renderPsaGradeRange()
+  // aceGradeSection visibility is managed by renderAceGradingSection() above
 
   // Reset price history section
   if (card.mi) {
@@ -4233,6 +4235,104 @@ function renderGradingROI(apiData) {
       <div class="grade-verdict-detail">${verdictDetail}</div>
     </div>
   `;
+}
+
+// ---- ACE Grading ----
+const ACE_FEE_STANDARD_GBP = 18;
+const ACE_FEE_EXPRESS_GBP  = 35;
+const ACE_PRICES_KEY = 'pkm-ace-prices-v1';
+
+function _getAceStore() {
+  try { return JSON.parse(localStorage.getItem(ACE_PRICES_KEY) || '{}'); } catch { return {}; }
+}
+function getAcePrices(cardId) { return _getAceStore()[cardId] || {}; }
+function saveAcePrice(cardId, grade, gbp) {
+  const store = _getAceStore();
+  if (!store[cardId]) store[cardId] = {};
+  if (gbp > 0) store[cardId][grade] = gbp; else delete store[cardId][grade];
+  localStorage.setItem(ACE_PRICES_KEY, JSON.stringify(store));
+}
+
+function renderAceGradingSection() {
+  const section = $('aceGradeSection');
+  const card = selectedCard;
+  if (!card) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+
+  const rawGBP = usdToGbp(getCurrentPrice(card));
+  const fee = ACE_FEE_STANDARD_GBP;
+  const saved = getAcePrices(card.i);
+
+  // Fee strip
+  $('aceFeeStrip').innerHTML =
+    `<span class="ace-fee-item"><span class="ace-fee-k">Standard</span><span class="ace-fee-v">£${fee}</span></span>` +
+    `<span class="ace-fee-sep">·</span>` +
+    `<span class="ace-fee-item"><span class="ace-fee-k">Express</span><span class="ace-fee-v">£${ACE_FEE_EXPRESS_GBP}</span></span>` +
+    `<span class="ace-fee-sep">·</span>` +
+    `<span class="ace-fee-item"><span class="ace-fee-k">Shipping back</span><span class="ace-fee-v ace-domestic">Free (UK domestic)</span></span>`;
+
+  // Per-grade rows
+  const grades = [10, 9, 8, 7];
+  const rows = grades.map(g => {
+    const price = saved[g] || 0;
+    const q = `${card.n.replace(/[™®]/g, '').trim()}${card.num ? ' ' + card.num : ''} ACE ${g}`;
+    const ebayUrl = `https://www.ebay.co.uk/sch/i.html?_nkw=${encodeURIComponent(q)}&LH_Sold=1&LH_Complete=1&LH_TitleDesc=0&_sacat=2536`;
+    const profit = price > 0 ? price - rawGBP - fee : null;
+    const roi = profit !== null ? Math.round(profit / (rawGBP + fee) * 100) : null;
+    const profitCls = profit === null ? '' : profit >= 0 ? 'ace-pos' : 'ace-neg';
+    const profitStr = profit === null
+      ? '<span class="ace-profit-empty">enter price →</span>'
+      : `<span class="${profitCls}">${profit >= 0 ? '+' : ''}${fmtGBPDirect(profit)}</span><span class="ace-roi ${profitCls}">${roi > 0 ? '+' : ''}${roi}%</span>`;
+    return `<div class="ace-row" data-grade="${g}">
+      <span class="ace-grade-lbl">ACE ${g}</span>
+      <div class="ace-input-wrap"><span class="ace-sym">£</span><input type="number" class="ace-input" data-grade="${g}" min="0" step="0.01" placeholder="—" value="${price > 0 ? price.toFixed(2) : ''}"></div>
+      <a class="ace-ebay" href="${ebayUrl}" target="_blank" rel="noopener noreferrer">eBay ↗</a>
+      <div class="ace-profit-wrap">${profitStr}</div>
+    </div>`;
+  }).join('');
+
+  $('aceTable').innerHTML =
+    `<div class="ace-table-hd"><span>Grade</span><span>Market price</span><span></span><span>Profit · ROI (std fee)</span></div>` +
+    rows;
+
+  // Wire inputs (use input event so values update live as user types)
+  $('aceTable').querySelectorAll('.ace-input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const g = parseInt(inp.dataset.grade);
+      const val = parseFloat(inp.value) || 0;
+      saveAcePrice(card.i, g, val);
+      renderAceGradingSection();
+    });
+  });
+
+  // Verdict
+  const ace10 = saved[10] || 0;
+  const verdictEl = $('aceVerdict');
+  if (ace10 <= 0) { verdictEl.style.display = 'none'; return; }
+
+  const profit10 = ace10 - rawGBP - fee;
+  const roi10 = Math.round(profit10 / (rawGBP + fee) * 100);
+  // PSA comparison — what raw+PSA fee would need to beat ACE's take
+  const psaFee = 65;
+  const psaBreakeven = rawGBP + psaFee;
+
+  let cls, title, detail;
+  if (profit10 > 0 && roi10 >= 50) {
+    cls = 'ace-worth';
+    title = 'Grade with ACE';
+    detail = `ACE 10 nets +${fmtGBPDirect(profit10)} (${roi10}% ROI at £${fee} std fee) · PSA would need £${psaBreakeven.toFixed(0)} in just to break even`;
+  } else if (profit10 > 0) {
+    cls = 'ace-maybe';
+    title = 'Marginal — check gem rate';
+    detail = `${fmtGBPDirect(profit10)} profit if graded ACE 10 · Slim margin — only worthwhile if condition is strong`;
+  } else {
+    cls = 'ace-skip';
+    title = 'Skip grading';
+    detail = `ACE 10 market (${fmtGBPDirect(ace10)}) is below raw + fee (${fmtGBPDirect(rawGBP + fee)}) — grading loses money`;
+  }
+
+  verdictEl.style.display = '';
+  verdictEl.innerHTML = `<div class="ace-verdict-inner ${cls}"><div class="ace-verdict-title">${title}</div><div class="ace-verdict-detail">${detail}</div></div>`;
 }
 
 // ---- Market-Adjusted Forecast ----

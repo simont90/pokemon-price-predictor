@@ -1005,6 +1005,49 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .grade-verdict.grade-maybe .grade-verdict-title { color: var(--accent); }
 .grade-verdict-detail { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
+/* ── ACE Grading section ─────────────────────────────────────── */
+.ace-grade-card h2 { margin-bottom: 2px; }
+.ace-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.ace-header-row > div { flex: 1; }
+.ace-tier-link { font-size: 11px; font-family: var(--mono); color: var(--accent); text-decoration: none; white-space: nowrap; padding: 4px 8px; border: 1px solid rgba(232,182,52,0.3); border-radius: 6px; flex-shrink: 0; }
+.ace-tier-link:hover { background: var(--accent-dim); }
+
+.ace-fee-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; padding: 8px 10px; background: var(--bg-raised); border-radius: var(--radius-sm); }
+.ace-fee-item { display: flex; align-items: center; gap: 5px; }
+.ace-fee-k { font-size: 11px; color: var(--text-muted); }
+.ace-fee-v { font-size: 12px; font-family: var(--mono); font-weight: 600; }
+.ace-fee-sep { color: var(--border); font-size: 12px; }
+.ace-domestic { color: var(--green); }
+
+.ace-table-hd { display: grid; grid-template-columns: 56px 1fr 60px 1fr; gap: 8px; padding: 0 4px 6px; border-bottom: 1px solid var(--border); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+.ace-row { display: grid; grid-template-columns: 56px 1fr 60px 1fr; gap: 8px; align-items: center; padding: 9px 4px; border-bottom: 1px solid var(--border); }
+.ace-row:last-child { border-bottom: none; }
+.ace-grade-lbl { font-size: 13px; font-weight: 700; font-family: var(--mono); }
+.ace-input-wrap { display: flex; align-items: center; gap: 3px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+.ace-sym { font-size: 12px; color: var(--text-muted); }
+.ace-input { background: none; border: none; outline: none; font-size: 13px; font-family: var(--mono); color: var(--text); width: 68px; }
+.ace-input::placeholder { color: var(--text-faint); }
+.ace-ebay { font-size: 11px; font-family: var(--mono); color: var(--accent); text-decoration: none; white-space: nowrap; }
+.ace-ebay:hover { text-decoration: underline; }
+.ace-profit-wrap { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; }
+.ace-profit-empty { font-size: 11px; color: var(--text-faint); font-style: italic; }
+.ace-pos { color: var(--green); font-weight: 600; }
+.ace-neg { color: var(--red); font-weight: 600; }
+.ace-roi { font-size: 11px; padding: 1px 5px; border-radius: 4px; }
+.ace-roi.ace-pos { background: rgba(61,214,140,0.12); }
+.ace-roi.ace-neg { background: rgba(229,83,83,0.12); }
+
+.ace-verdict { margin-top: 12px; }
+.ace-verdict-inner { padding: 12px; border-radius: var(--radius-sm); text-align: center; }
+.ace-verdict-inner.ace-worth { background: var(--green-dim); border: 1px solid var(--green-border); }
+.ace-verdict-inner.ace-maybe { background: var(--accent-dim); border: 1px solid rgba(232,182,52,0.25); }
+.ace-verdict-inner.ace-skip  { background: var(--red-dim); border: 1px solid var(--red-border); }
+.ace-verdict-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.ace-verdict-inner.ace-worth .ace-verdict-title { color: var(--green); }
+.ace-verdict-inner.ace-maybe .ace-verdict-title { color: var(--accent); }
+.ace-verdict-inner.ace-skip  .ace-verdict-title { color: var(--red); }
+.ace-verdict-detail { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
 /* Price History */
 .pricehist-card h2 { margin-bottom: 4px; }
 .ph-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
