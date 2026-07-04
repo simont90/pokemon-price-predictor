@@ -919,6 +919,16 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   letter-spacing: 0.08em;
   opacity: 0.75;
 }
+.cg-grade-pill-ace {
+  background: #5c6bc0; /* ACE brand blue-purple */
+  color: #fff;
+}
+.cg-grade-ace {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
 .cg-grade-info {
   display: flex;
   flex-direction: column;

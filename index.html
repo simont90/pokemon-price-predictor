@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260704o">
+  <link rel="stylesheet" href="style.css?v=20260704p">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1550,6 +1550,10 @@
                 <span class="cg-grade-num" id="cgGradeNum">—</span>
                 <span class="cg-grade-psa">PSA</span>
               </div>
+              <div class="cg-grade-pill cg-grade-pill-ace">
+                <span class="cg-grade-num" id="cgAceGradeNum">—</span>
+                <span class="cg-grade-ace">ACE</span>
+              </div>
               <div class="cg-grade-info">
                 <span class="cg-grade-label" id="cgGradeLabel">—</span>
                 <span class="cg-grade-notes" id="cgGradeNotes"></span>
@@ -2397,7 +2401,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260704o"></script>
+  <script src="app.js?v=20260704p"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -10611,20 +10611,21 @@ async function mktAIGrade(btn) {
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
 
-    // Compute PSA grade using same logic as _cgCalcGrade
+    // Compute PSA + ACE grades using same logic as _cgCalcGrade / _cgCalcAceGrade
     const scores = [data.centering, data.corners, data.edges, data.surface].filter(v => v != null);
-    let grade = null;
+    let grade = null, aceGrade = null;
     if (scores.length === 4) {
       const min = Math.min(...scores);
       const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-      if (min >= 10) grade = 10;
-      else if (min >= 8 && avg >= 9.5) grade = 10;
-      else if (min >= 8 && avg >= 8.5) grade = 9;
-      else if (min >= 8) grade = 8;
-      else if (min >= 6 && avg >= 7.5) grade = 7;
-      else if (min >= 6) grade = 6;
-      else if (min >= 4 && avg >= 6) grade = 5;
-      else grade = 4;
+      if (min >= 10) { grade = 10; aceGrade = 10; }
+      else if (min >= 8 && avg >= 9.5) { grade = 10; aceGrade = 10; }
+      else if (min >= 8 && avg >= 9.0) { grade = 9;  aceGrade = 9.5; }
+      else if (min >= 8 && avg >= 8.5) { grade = 9;  aceGrade = 9; }
+      else if (min >= 8)               { grade = 8;  aceGrade = 8.5; }
+      else if (min >= 6 && avg >= 7.5) { grade = 7;  aceGrade = 8; }
+      else if (min >= 6)               { grade = 6;  aceGrade = 7; }
+      else if (min >= 4 && avg >= 6)   { grade = 5;  aceGrade = 6; }
+      else                             { grade = 4;  aceGrade = 5; }
     }
 
     if (grade != null) {
@@ -10656,7 +10657,7 @@ async function mktAIGrade(btn) {
     if (resultEl) {
       resultEl.className = 'mkt-grade-ai-result';
       resultEl.innerHTML = grade != null
-        ? `<span class="mkt-grade-label">AI: PSA ~${grade}</span>` +
+        ? `<span class="mkt-grade-label">AI: PSA ~${grade} · ACE ~${aceGrade}</span>` +
           `<span class="mkt-grade-breakdown">C:${data.centering} Co:${data.corners} E:${data.edges} S:${data.surface}</span>` +
           (data.verdict ? `<span class="mkt-grade-verdict">${esc(data.verdict)}</span>` : '')
         : `<span class="mkt-grade-err">Grade unavailable</span>`;
@@ -13142,6 +13143,10 @@ const PSA_GRADE_LABELS = {
   10: 'Gem Mint', 9: 'Mint', 8: 'NM-MT', 7: 'Near Mint',
   6: 'EX-MT', 5: 'Excellent', 4: 'VG-EX', 3: 'Very Good', 2: 'Good', 1: 'Poor',
 };
+const ACE_GRADE_LABELS = {
+  10: 'Gem Mint', 9.5: 'Mint+', 9: 'Mint', 8.5: 'NM-MT+',
+  8: 'NM-MT', 7: 'Near Mint', 6: 'Excellent', 5: 'Very Good',
+};
 
 let _cgScores = { centering: null, corners: null, edges: null, surface: null };
 
@@ -13150,10 +13155,8 @@ function _cgCalcGrade() {
   if (vals.length < 4) return null;
   const min = Math.min(...vals);
   const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-  // PSA 10: all perfect, OR at most one "near perfect" criterion (avg ≥ 9.5)
   if (min >= 10) return 10;
   if (min >= 8 && avg >= 9.5) return 10;
-  // PSA 9: all 8+, average ≥ 8.5 (up to three slight issues)
   if (min >= 8 && avg >= 8.5) return 9;
   if (min >= 8) return 8;
   if (min >= 6 && avg >= 7.5) return 7;
@@ -13162,26 +13165,50 @@ function _cgCalcGrade() {
   return 4;
 }
 
+// ACE uses half-grade increments (9.5, 8.5) — same criteria, more granularity.
+// Thresholds reflect that a card scoring "three 10s one 8" is a borderline 10
+// (ACE 9.5) rather than falling to PSA 9. Not fundamentally stricter than PSA.
+function _cgCalcAceGrade() {
+  const vals = Object.values(_cgScores).filter(v => v != null);
+  if (vals.length < 4) return null;
+  const min = Math.min(...vals);
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  if (min >= 10) return 10;
+  if (min >= 8 && avg >= 9.5) return 10;   // all criteria excellent, one minor → same as PSA 10
+  if (min >= 8 && avg >= 9.0) return 9.5;  // "strong 9" — PSA rounds to 9, ACE captures it
+  if (min >= 8 && avg >= 8.5) return 9;
+  if (min >= 8) return 8.5;                // all 8s → solid but one clear issue
+  if (min >= 6 && avg >= 7.5) return 8;
+  if (min >= 6) return 7;
+  if (min >= 4 && avg >= 6) return 6;
+  return 5;
+}
+
 function _cgUpdateResult() {
-  const grade = _cgCalcGrade();
+  const psaGrade = _cgCalcGrade();
+  const aceGrade = _cgCalcAceGrade();
   const resultEl = document.getElementById('cgResult');
   if (!resultEl) return;
-  if (grade == null) { resultEl.style.display = 'none'; return; }
+  if (psaGrade == null) { resultEl.style.display = 'none'; return; }
   resultEl.style.display = 'block';
-  document.getElementById('cgGradeNum').textContent = grade;
-  document.getElementById('cgGradeLabel').textContent = PSA_GRADE_LABELS[grade] || '';
-  // Describe the limiting factor
+
+  document.getElementById('cgGradeNum').textContent    = psaGrade;
+  const aceEl = document.getElementById('cgAceGradeNum');
+  if (aceEl) aceEl.textContent = aceGrade != null ? aceGrade : '—';
+
+  document.getElementById('cgGradeLabel').textContent =
+    `PSA: ${PSA_GRADE_LABELS[psaGrade] || ''} · ACE: ${ACE_GRADE_LABELS[aceGrade] || ''}`;
+
   const issues = [];
   if (_cgScores.centering != null && _cgScores.centering < 10) issues.push(`centering (${_cgScores.centering < 6 ? 'miscut' : _cgScores.centering < 8 ? 'noticeable' : 'slight'})`);
-  if (_cgScores.corners != null && _cgScores.corners < 10) issues.push(`corners`);
-  if (_cgScores.edges != null && _cgScores.edges < 10) issues.push(`edges`);
-  if (_cgScores.surface != null && _cgScores.surface < 10) issues.push(`surface`);
-  const min = Math.min(...Object.values(_cgScores).filter(v => v != null));
+  if (_cgScores.corners  != null && _cgScores.corners  < 10) issues.push('corners');
+  if (_cgScores.edges    != null && _cgScores.edges    < 10) issues.push('edges');
+  if (_cgScores.surface  != null && _cgScores.surface  < 10) issues.push('surface');
   let notes = '';
-  if (issues.length === 0) notes = 'All criteria perfect — strong PSA 10 candidate.';
-  else if (grade >= 9) notes = `Minor issues on ${issues.join(', ')} — clean submission.`;
-  else if (grade >= 7) notes = `Held back by ${issues.join(' and ')} — grade carefully before paying for grading.`;
-  else notes = `Multiple issues on ${issues.join(', ')} — grading likely not worth the fee at this condition.`;
+  if (issues.length === 0)   notes = 'All criteria perfect — strong PSA 10 / ACE 10 candidate.';
+  else if (psaGrade >= 9)    notes = `Minor issues on ${issues.join(', ')} — clean submission for either service.`;
+  else if (psaGrade >= 7)    notes = `Held back by ${issues.join(' and ')} — grade carefully; ACE's lower fee reduces downside.`;
+  else                       notes = `Multiple issues on ${issues.join(', ')} — grading not worth the fee at this condition.`;
   document.getElementById('cgGradeNotes').textContent = notes;
 }
 
@@ -13488,12 +13515,13 @@ function setupCardGrader() {
   // Save grade
   document.getElementById('cgSaveGrade')?.addEventListener('click', () => {
     if (!selectedCard) return;
-    const grade = _cgCalcGrade();
+    const grade    = _cgCalcGrade();
+    const aceGrade = _cgCalcAceGrade();
     if (grade == null) return;
     const btn = document.getElementById('cgSaveGrade');
-    updateAcq({ cgScores: { ..._cgScores }, expectedGrade: grade });
+    updateAcq({ cgScores: { ..._cgScores }, expectedGrade: grade, expectedAceGrade: aceGrade });
     btn.classList.add('is-saved');
-    btn.textContent = `Saved: expected PSA ${grade} — update`;
+    btn.textContent = `Saved: PSA ~${grade} · ACE ~${aceGrade ?? '?'} — update`;
     setTimeout(() => btn.classList.remove('is-saved'), 2000);
     // Re-render hold strategy immediately
     if (typeof renderHoldStrategy === 'function' && selectedCard) {
