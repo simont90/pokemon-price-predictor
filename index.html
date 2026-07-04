@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260704c">
+  <link rel="stylesheet" href="style.css?v=20260704d">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -820,6 +820,18 @@
               </div>
               <div class="home-scroll-row" id="homeGradeCandList"></div>
             </section>
+            <!-- ACE Grading Picks — collection cards with positive ACE 10 ROI -->
+            <section class="home-section-wrap" id="homeAcePicksWrap" style="display:none">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  ACE Grading Picks
+                </div>
+                <span class="home-count-badge" id="homeAcePicksCount">0</span>
+              </div>
+              <div class="ace-picks-batch-note" id="homeAcePicksBatchNote"></div>
+              <div class="home-scroll-row" id="homeAcePicksList"></div>
+            </section>
           </div>
         </div>
 
@@ -1607,6 +1619,8 @@
             </div>
             <a class="ace-tier-link" href="https://acegrading.com/pages/submission-service" target="_blank" rel="noopener noreferrer">ACE fees ↗</a>
           </div>
+          <div class="ace-live-strip" id="aceLiveStrip" style="display:none"></div>
+          <div class="ace-batch-note" id="aceBatchNote"></div>
           <div class="ace-fee-strip" id="aceFeeStrip"></div>
           <div class="ace-table" id="aceTable"></div>
           <div class="ace-verdict" id="aceVerdict" style="display:none"></div>
@@ -2341,7 +2355,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260704c"></script>
+  <script src="app.js?v=20260704d"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

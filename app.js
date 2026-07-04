@@ -4319,6 +4319,32 @@ function renderAceGradingSection() {
   };
   const hasPcData = pcAce[0] > 0;
 
+  // Live ACE 10 market price strip (shown when PC data available)
+  const liveStripEl = $('aceLiveStrip');
+  if (liveStripEl) {
+    if (pcAceByGrade[10] > 0 || psaByGrade[10] > 0) {
+      const ace10disp = pcAceByGrade[10] > 0
+        ? `<span class="ace-live-v">${fmtGBPDirect(pcAceByGrade[10])}</span>`
+        : `<span class="ace-live-v" style="color:var(--text-muted);font-size:12px">—</span>`;
+      const psa10disp = psaByGrade[10] > 0
+        ? `<div class="ace-live-item"><span class="ace-live-k">PSA 10 (PC)</span><span class="ace-live-v" style="color:var(--text-muted);font-size:12px">${fmtGBPDirect(psaByGrade[10])}</span></div><span class="ace-live-sep">·</span>` : '';
+      liveStripEl.style.display = '';
+      liveStripEl.innerHTML =
+        `<div class="ace-live-item"><span class="ace-live-k">ACE 10 (PC live)</span>${ace10disp}</div>` +
+        `<span class="ace-live-sep">·</span>` +
+        psa10disp +
+        `<div class="ace-live-item"><span class="ace-live-k">Raw market</span><span class="ace-live-v ace-live-raw">${fmtGBPDirect(rawGBP)}</span></div>`;
+    } else {
+      liveStripEl.style.display = 'none';
+    }
+  }
+
+  // Batch shipping note
+  const batchNoteEl = $('aceBatchNote');
+  if (batchNoteEl) {
+    batchNoteEl.innerHTML = `£${ACE_FEE_SHIPPING_GBP.toFixed(2)} shipping covers your entire submission regardless of how many cards — the more you batch, the lower the cost per card (e.g. 5 cards = £${(ACE_FEE_SHIPPING_GBP / 5).toFixed(2)}/card).`;
+  }
+
   // Fee strip
   $('aceFeeStrip').innerHTML =
     `<span class="ace-fee-item"><span class="ace-fee-k">Standard</span><span class="ace-fee-v">£${ACE_FEE_STANDARD_GBP}</span></span>` +
@@ -10221,7 +10247,7 @@ async function mktAIGrade(btn) {
         const cands = JSON.parse(localStorage.getItem('pkm-grade-candidates-v1') || '[]');
         localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(cands.filter(c => c.listingUrl !== listingUrl)));
 
-        try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); } catch {}
+        try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); _renderHomeAcePicks(); } catch {}
       }
     }
     if (resultEl) {
@@ -15388,12 +15414,96 @@ function setupHomeScrollControls() {
   });
 }
 
+function _renderHomeAcePicks() {
+  const wrap = $('homeAcePicksWrap');
+  const list = $('homeAcePicksList');
+  if (!wrap || !list) return;
+
+  if (!portfolio.length || !cardData) { wrap.style.display = 'none'; return; }
+
+  const fx    = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const grade = ACE_FEE_STANDARD_GBP;   // £18
+  const label = ACE_FEE_LABEL_GBP;      // £3
+  const ship  = ACE_FEE_SHIPPING_GBP;   // £7.99 shared across whole batch
+
+  // Score each portfolio card
+  const scored = portfolio.map(p => {
+    const dbCard = getCardById(p.id);
+    if (!dbCard) return null;
+    const cached = getCachedPrice(p.id);
+
+    // ACE 10 price: prefer direct pcAce10 from cache, fall back to PSA 10 × 0.80
+    let ace10GBP = 0, fromDirectPC = false;
+    if (cached?.pcAce10 > 0) {
+      ace10GBP = cached.pcAce10 * fx;
+      fromDirectPC = true;
+    } else {
+      const psa10USD = cached?.pcPsa10 || dbCard.p10 || 0;
+      if (psa10USD > 0) ace10GBP = psa10USD * fx * 0.80;
+    }
+    if (ace10GBP <= 0) return null;
+
+    // Raw price: live cached ungraded, then portfolio-add price
+    const rawGBP = (cached?.pcUngraded > 0 ? cached.pcUngraded * fx : 0)
+      || p.addedPriceGBP
+      || (p.price ? p.price * fx : 0);
+    if (rawGBP <= 0) return null;
+
+    // Per-card cost excludes batch shipping (shown separately); include in ROI calc
+    const totalFee = grade + label + ship;
+    const profit   = ace10GBP - rawGBP - totalFee;
+    if (profit <= 0) return null;
+
+    const roi = Math.round(profit / (rawGBP + totalFee) * 100);
+    return { p, dbCard, ace10GBP, rawGBP, profit, roi, fromDirectPC };
+  }).filter(Boolean).sort((a, b) => b.profit - a.profit);
+
+  const countEl = $('homeAcePicksCount');
+  if (countEl) countEl.textContent = scored.length;
+
+  if (!scored.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
+  // Batch shipping note
+  const batchEl = $('homeAcePicksBatchNote');
+  if (batchEl) {
+    const n = scored.length;
+    const perCard = (ship / Math.min(n, 10)).toFixed(2);
+    batchEl.textContent = `£${ship.toFixed(2)} shipping covers the entire batch — sending all ${n} pick${n !== 1 ? 's' : ''} together works out to ~£${perCard}/card for shipping.`;
+  }
+
+  list.innerHTML = scored.slice(0, 12).map(({ p, dbCard, ace10GBP, rawGBP, profit, roi, fromDirectPC }) => {
+    const img = p.img || getCardImg(dbCard) || '';
+    const imgEl = img
+      ? `<img class="ace-pick-art" src="${esc(img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+      : `<div class="ace-pick-art"></div>`;
+    const pcBadge = fromDirectPC
+      ? `<span class="ace-pick-pc-badge">PC live</span>`
+      : `<span class="ace-pick-pc-badge" style="opacity:0.6">~est.</span>`;
+    return `<div class="ace-pick-tile" data-id="${esc(p.id)}">
+      ${imgEl}
+      ${pcBadge}
+      <div class="ace-pick-name">${esc(dbCard.n)}</div>
+      <div class="ace-pick-set">${esc(dbCard.s || '')}${dbCard.num ? ' #' + dbCard.num : ''}</div>
+      <div class="ace-pick-profit">+${fmtGBPDirect(profit)}</div>
+      <div class="ace-pick-roi">+${roi}% ROI</div>
+      <div class="ace-pick-raw">Raw ${fmtGBPDirect(rawGBP)} · ACE 10 ${fmtGBPDirect(ace10GBP)}</div>
+    </div>`;
+  }).join('');
+
+  // Clicking a tile navigates to that card in Predict
+  list.querySelectorAll('.ace-pick-tile').forEach(tile => {
+    tile.addEventListener('click', () => _homeItemClick(tile.dataset.id));
+  });
+}
+
 function renderHomeDashboard() {
   _renderHomeCollection();
   _renderHomeWishlist();
   _renderHomeWatchlist();
   _renderHomeAiGrades();
   _renderHomeGradeCandidates();
+  _renderHomeAcePicks();
   _renderHomeReco(); // use cache if valid; savePortfolio/Wishlist/Watchlist null it on change
 }
 
@@ -15423,7 +15533,7 @@ async function _homeAutoRefresh() {
   psSetLastSync(Date.now());
   _psState.running = false;
   try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
-  try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); } catch {}
+  try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); _renderHomeAcePicks(); } catch {}
   try { _renderHomeReco(true); } catch {}
 }
 
@@ -15691,7 +15801,7 @@ function _scheduleHomeRender() {
   clearTimeout(_homeRenderTimer);
   _homeRenderTimer = setTimeout(() => {
     try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
-    try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); } catch {}
+    try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); _renderHomeAcePicks(); } catch {}
   }, 350);
 }
 
@@ -15921,7 +16031,7 @@ async function _gradeHomeCandidate(btn) {
       localStorage.setItem('pkm-grade-candidates-v1', JSON.stringify(cands.filter(c => c.listingUrl !== listingUrl)));
 
       _homeGradeCandHash = '';
-      setTimeout(() => { try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); } catch {} }, 1500);
+      setTimeout(() => { try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); _renderHomeAcePicks(); } catch {} }, 1500);
     }
   } catch (err) {
     console.error('[AI Grade]', err.message);
