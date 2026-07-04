@@ -8366,14 +8366,15 @@ function _homeTabActivate(groupId, tab) {
 }
 
 function _initHomeTabs() {
-  ['hTabWW', 'hTabReco', 'hTabBuy'].forEach(groupId => {
+  ['hTabColl', 'hTabWW', 'hTabReco', 'hTabBuy'].forEach(groupId => {
     const group = document.getElementById(groupId);
     if (!group || group._wired) return;
     group._wired = true;
     group.querySelectorAll('.ptab').forEach(btn => {
       btn.addEventListener('click', () => {
         _homeTabActivate(groupId, btn.dataset.htab);
-        if (groupId === 'hTabWW' && btn.dataset.htab === 'grading') {
+        if ((groupId === 'hTabColl' && btn.dataset.htab === 'coll-grading') ||
+            (groupId === 'hTabWW'  && btn.dataset.htab === 'grading')) {
           _homeGradingHash = '';
           try { _renderHomeConsiderGrading(); } catch {}
         }
