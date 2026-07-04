@@ -10709,4 +10709,134 @@ html { scroll-behavior: smooth; }
   .binder-pg-add-btn { font-size: 11px; padding: 4px 10px; }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   LIQUID GLASS POLISH — iOS 26 / macOS Tahoe inspired visual upgrade
+   Deeper atmospheric gradients, true glassmorphism, premium depth.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Richer atmospheric body: stronger gradients bleed through glass ── */
+body {
+  background:
+    radial-gradient(ellipse 90% 55% at 8%  -5%,  rgba(110,45,255,0.58) 0%, transparent 54%),
+    radial-gradient(ellipse 65% 45% at 92%  8%,  rgba(0,200,235,0.34) 0%, transparent 54%),
+    radial-gradient(ellipse 60% 45% at 50% 105%, rgba(232,182,52,0.26) 0%, transparent 54%),
+    radial-gradient(ellipse 40% 30% at 15%  80%, rgba(255,80,120,0.12) 0%, transparent 55%),
+    var(--bg);
+}
+
+/* ── Section panels: true Liquid Glass — body gradients bleed through ── */
+[data-theme="dark"] .home-dashboard > .home-section-wrap,
+[data-theme="dark"] .home-tab-group {
+  background: rgba(16,18,26,0.52);
+  backdrop-filter: blur(32px) saturate(200%) brightness(1.06);
+  -webkit-backdrop-filter: blur(32px) saturate(200%) brightness(1.06);
+  border: 1px solid rgba(255,255,255,0.11);
+  box-shadow:
+    0 8px 40px rgba(0,0,0,0.42),
+    inset 0 1.5px 0 rgba(255,255,255,0.11),
+    inset 0 -1px 0 rgba(0,0,0,0.22);
+}
+
+/* ── Active tab pill: frosted glass, not flat black ── */
+.ptab.ptab-active {
+  background: rgba(255,255,255,0.13);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.30),
+    inset 0 -1px 0 rgba(0,0,0,0.14),
+    0 2px 14px rgba(0,0,0,0.28),
+    0 0 0 0.5px rgba(255,255,255,0.14);
+}
+
+/* ── Tab bar: backdrop blur so it floats above its panel ── */
+[data-theme="dark"] .home-tab-bar {
+  background: rgba(255,255,255,0.055);
+  border-color: rgba(255,255,255,0.09);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+}
+
+/* ── Card info strip: glass overlay, reveals card art tone through it ── */
+.home-card-info {
+  background: linear-gradient(to bottom, rgba(5,6,14,0.65) 0%, rgba(5,6,14,0.90) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ── Card price: warm accent glow ── */
+.home-card-price {
+  text-shadow: 0 0 16px rgba(232,182,52,0.42);
+}
+
+/* ── Card tiles: deeper shadow, specular top edge ── */
+.home-card-tile {
+  border-color: rgba(255,255,255,0.14);
+  box-shadow:
+    0 6px 24px rgba(0,0,0,0.52),
+    0 1px 4px rgba(0,0,0,0.46),
+    inset 0 1px 0 rgba(255,255,255,0.11);
+}
+@media (hover: hover) {
+  .home-card-tile:hover {
+    box-shadow:
+      0 14px 38px rgba(0,0,0,0.62),
+      0 2px 6px rgba(0,0,0,0.50),
+      inset 0 1px 0 rgba(255,255,255,0.16);
+  }
+}
+
+/* ── Grading items: glass cards within the section ── */
+[data-theme="dark"] .home-grading-item {
+  background: rgba(255,255,255,0.045);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+}
+[data-theme="dark"] .home-grading-item:hover {
+  background: rgba(255,255,255,0.075);
+  border-color: rgba(255,255,255,0.12);
+}
+
+/* ── Grading card thumbnail: richer shadow ── */
+.home-grading-item .home-card-art {
+  box-shadow: 0 4px 14px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.4);
+  border-radius: 6px;
+}
+
+/* ── ROI values: slightly larger for instant scannability ── */
+.groi-good, .groi-ok, .groi-bad { font-size: 12px; }
+
+/* ── Grade modal: deep glass panel ── */
+.grade-modal {
+  background: rgba(11,12,20,0.84);
+  backdrop-filter: blur(44px) saturate(200%);
+  -webkit-backdrop-filter: blur(44px) saturate(200%);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-bottom: none;
+  box-shadow: 0 -8px 64px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.09);
+}
+.grade-modal-overlay {
+  background: rgba(0,0,0,0.70);
+  backdrop-filter: blur(8px) saturate(160%);
+  -webkit-backdrop-filter: blur(8px) saturate(160%);
+}
+
+/* ── Count badges: accent halo ── */
+.home-count-badge {
+  box-shadow: 0 0 10px rgba(232,182,52,0.32);
+}
+
+/* ── View-all link: subtle accent glow ── */
+.home-view-all {
+  text-shadow: 0 0 10px rgba(232,182,52,0.28);
+}
+
+/* ── Section entry: slide-up + fade for premium feel ── */
+@keyframes section-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.home-section-wrap,
+.home-tab-group {
+  animation: section-in 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
 
