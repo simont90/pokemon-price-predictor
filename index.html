@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260704d">
+  <link rel="stylesheet" href="style.css?v=20260704e">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1624,6 +1624,7 @@
           <div class="ace-fee-strip" id="aceFeeStrip"></div>
           <div class="ace-table" id="aceTable"></div>
           <div class="ace-verdict" id="aceVerdict" style="display:none"></div>
+          <div class="ace-bundle-note" id="aceBundleNote" style="display:none"></div>
         </section>
 
         <!-- PSA 1-10 Grade Range — estimated values + 5yr projections per grade -->
@@ -2355,7 +2356,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260704d"></script>
+  <script src="app.js?v=20260704e"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

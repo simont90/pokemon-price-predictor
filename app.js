@@ -4493,6 +4493,53 @@ function renderAceGradingSection() {
       <div class="ace-verdict-detail">${verdict3detail}</div>
     </div>
     ${pcNote}`;
+
+  // ── Bundle recommendation ──────────────────────────────────────────────────
+  // Scan portfolio for other cards that also pass the ACE profitability bar,
+  // so the user knows whether to send this card alone or batch it.
+  const bundleEl = $('aceBundleNote');
+  if (bundleEl && portfolio.length > 0) {
+    const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+    const bundlePicks = portfolio.map(p => {
+      if (p.id === card.i) return null;
+      const dbC = getCardById(p.id);
+      if (!dbC) return null;
+      const cached = getCachedPrice(p.id);
+      let ace10GBP = 0;
+      if (cached?.pcAce10 > 0) {
+        ace10GBP = cached.pcAce10 * fx;
+      } else {
+        const psa10USD = cached?.pcPsa10 || dbC.p10 || 0;
+        if (psa10USD > 0) ace10GBP = psa10USD * fx * 0.80;
+      }
+      if (ace10GBP <= 0) return null;
+      const rawC = (cached?.pcUngraded > 0 ? cached.pcUngraded * fx : 0)
+                || p.addedPriceGBP
+                || (p.price ? p.price * fx : 0);
+      if (rawC <= 0) return null;
+      const profit = ace10GBP - rawC - ACE_FEE_STANDARD_GBP - ACE_FEE_LABEL_GBP - ACE_FEE_SHIPPING_GBP;
+      if (profit <= 0) return null;
+      return { name: dbC.n, set: dbC.s };
+    }).filter(Boolean);
+
+    if (bundlePicks.length > 0) {
+      const total = bundlePicks.length + 1;  // include current card
+      const perCard = (ACE_FEE_SHIPPING_GBP / total).toFixed(2);
+      const names = bundlePicks.map(p => `<span class="ace-bundle-card">${p.name}</span>`).join(', ');
+      bundleEl.style.display = '';
+      bundleEl.innerHTML =
+        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>` +
+        `<span><strong>Bundle opportunity:</strong> ${bundlePicks.length} other card${bundlePicks.length > 1 ? 's' : ''} in your collection ${bundlePicks.length > 1 ? 'are' : 'is'} also worth ACE grading — ` +
+        `send all ${total} together to reduce shipping to <strong>~£${perCard}/card</strong>: ${names}</span>`;
+    } else {
+      bundleEl.style.display = '';
+      bundleEl.innerHTML =
+        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>` +
+        `<span>No other cards in your collection currently pass the ACE profit bar — send this alone or wait to batch with future picks to share the £${ACE_FEE_SHIPPING_GBP.toFixed(2)} shipping.</span>`;
+    }
+  } else if (bundleEl) {
+    bundleEl.style.display = 'none';
+  }
 }
 
 // ---- Market-Adjusted Forecast ----
