@@ -14910,6 +14910,29 @@ function setupTheme() {
   });
 }
 
+function setupGlassTint() {
+  const STATES = ['default', 'clear', 'tinted'];
+  const TITLES = { default: 'Default', clear: 'Ultraclear', tinted: 'Tinted' };
+  const stored = localStorage.getItem('pkm-glass-tint') || 'default';
+  let idx = Math.max(0, STATES.indexOf(stored));
+
+  function apply(state) {
+    document.documentElement.dataset.glass = state;
+    const btn = document.getElementById('glassTintBtn');
+    if (btn) btn.title = `Liquid Glass: ${TITLES[state]} — click to cycle`;
+  }
+
+  apply(STATES[idx]);
+
+  document.getElementById('glassTintBtn')?.addEventListener('click', () => {
+    idx = (idx + 1) % STATES.length;
+    const state = STATES[idx];
+    localStorage.setItem('pkm-glass-tint', state);
+    apply(state);
+  });
+}
+setupGlassTint();
+
 // ─── Home Dashboard ───────────────────────────────────────────────
 // ── Home Recommendations ──────────────────────────────────────────────────
 const RECO_DISMISSED_KEY = 'pkm-reco-dismissed-v1';

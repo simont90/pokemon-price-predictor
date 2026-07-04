@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260705c">
+  <link rel="stylesheet" href="style.css?v=20260705d">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -96,6 +96,11 @@
           <button class="portfolio-toggle" id="quickLookupToggle" title="Quick Lookup — search live prices for any card">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
             <span class="btn-label">Search</span>
+          </button>
+          <!-- Liquid Glass tint control (OS 27) -->
+          <button class="portfolio-toggle glass-tint-btn" id="glassTintBtn" title="Liquid Glass: Default — click to change">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 20h20L12 2z"/><path d="M8.5 20l3.5-9 3.5 9" opacity="0.5"/></svg>
+            <span class="btn-label">Glass</span>
           </button>
           <!-- theme picker -->
           <div class="theme-picker" id="themePicker" role="group" aria-label="Theme">
@@ -2442,7 +2447,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260705c"></script>
+  <script src="app.js?v=20260705d"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
