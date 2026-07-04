@@ -10366,6 +10366,61 @@ html { scroll-behavior: smooth; }
 [data-theme="light"] .binder-multibuy { border-top: 1px solid rgba(0,0,0,0.04); }
 .binder-multibuy strong { color: var(--text-secondary); }
 
+/* ══════════════════════════════════════════════════════════════
+   CONSIDER GRADING — home dashboard list
+   ══════════════════════════════════════════════════════════════ */
+
+#homeGradingList { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+
+.home-grading-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+[data-theme="dark"]  .home-grading-item { background: rgba(255,255,255,0.03); }
+[data-theme="dark"]  .home-grading-item:hover { background: rgba(255,255,255,0.06); }
+[data-theme="light"] .home-grading-item { background: rgba(0,0,0,0.025); }
+[data-theme="light"] .home-grading-item:hover { background: rgba(0,0,0,0.05); }
+
+.home-grading-item .home-card-art {
+  width: 52px; height: 72px; border-radius: 5px;
+  object-fit: cover; flex-shrink: 0;
+}
+
+.home-grading-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.home-grading-info .home-card-name { font-size: 13px; font-weight: 600; }
+.home-grading-raw { font-size: 11px; color: var(--text-muted); }
+
+.home-grading-compare {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.groi-label { font-weight: 700; font-size: 10px; color: var(--text-muted); letter-spacing: 0.05em; }
+.groi-sep { color: var(--text-muted); }
+.groi-val { font-weight: 700; }
+.groi-good { color: #4caf7d; }
+.groi-ok   { color: var(--accent); }
+.groi-bad  { color: #ef5350; }
+
+.home-grading-verdict {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+.groi-verdict-psa { background: rgba(74,158,255,0.15); color: #4a9eff; }
+.groi-verdict-ace { background: rgba(124,108,214,0.15); color: #9d8fe0; }
+
 /* Responsive: stack cards vertically on narrow screens */
 @media (max-width: 480px) {
   .binder-pair-cards { flex-direction: column; }

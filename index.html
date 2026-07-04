@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260704l">
+  <link rel="stylesheet" href="style.css?v=20260704m">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -743,42 +743,43 @@
           <div class="home-scroll-row" id="homeCollList"><div class="home-empty">No cards in collection yet.</div></div>
         </section>
 
-        <!-- GROUP: Watchlist & Wishlist -->
+        <!-- GROUP: Wishlist (merged watchlist + wishlist) & Consider Grading -->
         <div class="home-tab-group" id="hTabWW">
-          <div class="predict-tab-bar home-tab-bar" role="tablist" aria-label="Watchlist and Wishlist">
-            <button class="ptab ptab-active" data-htab="watchlist" type="button" role="tab" aria-selected="true">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              Watchlist
-            </button>
-            <button class="ptab" data-htab="wishlist" type="button" role="tab" aria-selected="false">
+          <div class="predict-tab-bar home-tab-bar" role="tablist" aria-label="Wishlist">
+            <button class="ptab ptab-active" data-htab="wishlist" type="button" role="tab" aria-selected="true">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
               Wishlist
             </button>
+            <button class="ptab" data-htab="grading" type="button" role="tab" aria-selected="false">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+              Consider Grading
+            </button>
           </div>
-          <div class="home-htab-panel" data-htab-panel="watchlist">
-            <section class="home-section-wrap">
-              <div class="home-section-hd">
-                <div class="home-section-title">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                  Watchlist
-                </div>
-                <span class="home-count-badge" id="homeWatchCount">0</span>
-                <button class="home-view-all" id="homeOpenWatchlist">View all</button>
-              </div>
-              <div class="home-scroll-row" id="homeWatchList"><div class="home-empty">No cards being watched yet.</div></div>
-            </section>
-          </div>
-          <div class="home-htab-panel" data-htab-panel="wishlist" style="display:none">
+          <!-- Combined watchlist + wishlist -->
+          <div class="home-htab-panel" data-htab-panel="wishlist">
             <section class="home-section-wrap">
               <div class="home-section-hd">
                 <div class="home-section-title">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
                   Wishlist
                 </div>
-                <span class="home-count-badge" id="homeWishCount">0</span>
+                <span class="home-count-badge" id="homeWishlistCount">0</span>
                 <button class="home-view-all" id="homeOpenWishlist">View all</button>
               </div>
-              <div class="home-scroll-row" id="homeWishList"><div class="home-empty">No wishlisted cards yet.</div></div>
+              <div class="home-scroll-row" id="homeWishlistMerged"><div class="home-empty">No cards added yet.<br>Tap ♥ or Watch on any card.</div></div>
+            </section>
+          </div>
+          <!-- Consider Grading: PSA vs ACE ROI for wishlist cards -->
+          <div class="home-htab-panel" data-htab-panel="grading" style="display:none">
+            <section class="home-section-wrap">
+              <div class="home-section-hd">
+                <div class="home-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+                  Consider Grading
+                </div>
+                <span class="home-count-badge" id="homeGradingCount">0</span>
+              </div>
+              <div id="homeGradingList"><div class="home-empty">No wishlist cards with grading data yet.</div></div>
             </section>
           </div>
         </div>
@@ -2387,7 +2388,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260704l"></script>
+  <script src="app.js?v=20260704m"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

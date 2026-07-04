@@ -643,10 +643,23 @@ const EXPECTED_PRICE_BY_RARITY = {
 const PREMIUM_RARITIES  = new Set(['SIR','SHR','MHR','SHUR','SAR','HR']);
 const HIGH_ART_RARITIES = new Set(['SIR','IR','SHR','MHR','SHUR','SAR','HR','AR','UR']);
 
+function _inferJPRarityRc(card) {
+  // Most JP cards in the DB have no rarity code — infer an effective EN-equivalent
+  // code from the static price so scoring isn't always stuck at the lowest tier.
+  if (!card || card.lang !== 'JP' || card.rc || !card.p || card.p <= 0) return card?.rc || '';
+  const pg = usdToGbp(card.p);
+  if (pg >= 150) return 'SIR';
+  if (pg >= 80)  return 'IR';
+  if (pg >= 40)  return 'HR';
+  if (pg >= 15)  return 'RR';
+  if (pg >= 5)   return 'R';
+  return 'C';
+}
+
 function getInvestmentStars(card, desTot) {
   if (!card) return { stars: 0, tier: '', hint: '', color: '' };
   const charScore = getCharacterScore(card.n);
-  const rc = card.rc || '';
+  const rc = card.rc || _inferJPRarityRc(card);
   const des = typeof desTot === 'number' ? desTot : 5;
   const isS   = charScore >= 9.0;
   const isA   = charScore >= 7.5 && !isS;
@@ -700,8 +713,8 @@ function autoFillDesirability(card, pullCost) {
   const charScore = getCharacterScore(card.n);
   const appealScore = getAppealScore(card.n);
 
-  // Art/Hype: base from rarity + card type
-  let artScore = getArtBaseScore(card.rc, card.n);
+  // Art/Hype: base from rarity + card type (use price-inferred RC for JP cards with no rc)
+  let artScore = getArtBaseScore(card.rc || _inferJPRarityRc(card), card.n);
 
   // Price-premium adjustment: if card trades above/below expected for its rarity, adjust art.
   // For S/A-tier characters the price premium is already captured by charScore, so upward
@@ -8355,7 +8368,13 @@ function _initHomeTabs() {
     if (!group || group._wired) return;
     group._wired = true;
     group.querySelectorAll('.ptab').forEach(btn => {
-      btn.addEventListener('click', () => _homeTabActivate(groupId, btn.dataset.htab));
+      btn.addEventListener('click', () => {
+        _homeTabActivate(groupId, btn.dataset.htab);
+        if (groupId === 'hTabWW' && btn.dataset.htab === 'grading') {
+          _homeGradingHash = '';
+          try { _renderHomeConsiderGrading(); } catch {}
+        }
+      });
     });
     const saved = (() => { try { return localStorage.getItem('home-tab-' + groupId); } catch { return null; } })();
     const first = group.querySelector('.ptab')?.dataset?.htab;
@@ -15756,8 +15775,8 @@ function _renderHomeAcePicks() {
 
 function renderHomeDashboard() {
   _renderHomeCollection();
-  _renderHomeWishlist();
-  _renderHomeWatchlist();
+  _renderHomeCombinedWishlist();
+  _renderHomeConsiderGrading();
   _renderHomeAiGrades();
   _renderHomeGradeCandidates();
   _renderHomeAcePicks();
@@ -16374,7 +16393,7 @@ function _bestInBudgetPick(card, maxBudget, fx) {
 
 function _renderHomeWishlist() {
   const list = $('homeWishList'), countEl = $('homeWishCount');
-  if (!list) return;
+  if (!list) { _renderHomeCombinedWishlist(); return; }
   if (wishlist.length === 0) {
     if (countEl) countEl.textContent = '0';
     list.innerHTML = '<div class="home-empty">No wishlisted cards yet.<br>Tap ♥ on any card to add it.</div>';
@@ -16428,7 +16447,7 @@ function _renderHomeWishlist() {
 
 function _renderHomeWatchlist() {
   const list = $('homeWatchList'), countEl = $('homeWatchCount');
-  if (!list) return;
+  if (!list) { _renderHomeCombinedWishlist(); return; }
   if (watchlist.length === 0) {
     if (countEl) countEl.textContent = '0';
     list.innerHTML = '<div class="home-empty">No cards being watched yet.<br>Tap "Watch" on any card to track it.</div>';
@@ -16481,6 +16500,170 @@ function _renderHomeWatchlist() {
     if (idx >= 0) { watchlist.splice(idx, 1); saveWatchlist(); }
     _renderHomeWatchlist();
   });
+}
+
+// ── Combined Wishlist (watchlist + wishlist merged for home dashboard) ──────
+let _homeWishlistMergedHash = '';
+function _renderHomeCombinedWishlist() {
+  const list = $('homeWishlistMerged'), countEl = $('homeWishlistCount');
+  if (!list) return;
+  const maxBudget = getMaxBudgetGBP();
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const hash = _homeItemHash([...wishlist, ...watchlist], maxBudget);
+  if (hash === _homeWishlistMergedHash && list.querySelector('.home-card-tile')) return;
+  _homeWishlistMergedHash = hash;
+
+  const alerts = (typeof computeActiveAlerts === 'function') ? computeActiveAlerts() : [];
+  const alertMap = Object.fromEntries(alerts.map(a => [a.id, a]));
+  const watchIds = new Set(watchlist.map(w => w.id));
+
+  // Merge: watchlist first, then wishlist items not already in watchlist
+  const merged = [
+    ...watchlist,
+    ...wishlist.filter(w => !watchIds.has(w.id)),
+  ];
+
+  if (merged.length === 0) {
+    if (countEl) countEl.textContent = '0';
+    list.innerHTML = '<div class="home-empty">No cards added yet.<br>Tap ♥ or Watch on any card.</div>';
+    return;
+  }
+
+  const tiles = merged.flatMap(w => {
+    const card = getCardById(w.id);
+    if (!card) return [];
+    const isWatch = watchIds.has(w.id);
+    const hc = _getHoldCoreCached(card);
+    const budgetPick = hc.ok ? _bestInBudgetPick(card, maxBudget, fx) : null;
+    const filtered = hc.ok && !budgetPick;
+    let displayGBP, stratLabel = '';
+    if (budgetPick) {
+      displayGBP = budgetPick.displayGBP;
+      stratLabel = budgetPick.stratLabel;
+    } else {
+      const cached = getCachedPrice(w.id) || getLastKnownPrice(w.id);
+      const usd = cached ? (cached.pcUngraded || cached.market || cached.mid || card.p) : card.p;
+      displayGBP = usdToGbp(usd) || 0;
+    }
+    let alertClass, alertLabel;
+    if (isWatch) {
+      const a = alertMap[w.id];
+      const signal = a ? a.signal : (w.addedSignal || '—');
+      alertClass = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
+      alertLabel = signal;
+    } else {
+      const target = w.targetGBP || 0;
+      if (target > 0 && displayGBP <= target) { alertClass = 'alert-buy'; alertLabel = 'BUY NOW'; }
+      else if (target > 0 && displayGBP <= target * 1.10) { alertClass = 'alert-watch'; alertLabel = 'Close'; }
+      else { alertClass = 'alert-far'; alertLabel = 'Watching'; }
+    }
+    const subParts = [];
+    if (!isWatch && w.targetGBP > 0) subParts.push(`Target: ${fmtGBPDirect(w.targetGBP)}`);
+    else if (w.set) subParts.push(w.set);
+    if (stratLabel) subParts.push(stratLabel);
+    const urgentBuy = !!budgetPick && budgetPick.pick.roi >= 150;
+    return [_homeTile(w.id, w.img, w.name, displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', alertClass, alertLabel, '', subParts.join(' · '), { hidden: filtered, urgentBuy })];
+  });
+
+  const visible = tiles.filter(t => !t.includes('style="display:none"')).length;
+  if (countEl) countEl.textContent = visible;
+  list.innerHTML = tiles.length ? tiles.join('') : '<div class="home-empty">No cards to show within your budget.</div>';
+
+  _setupTileEvents(list, id => {
+    const inWish = wishlist.findIndex(w => w.id === id);
+    if (inWish >= 0) { wishlist.splice(inWish, 1); saveWishlist(); renderWishlist(); updateWishlistButton(); }
+    const inWatch = watchlist.findIndex(w => w.id === id);
+    if (inWatch >= 0) { watchlist.splice(inWatch, 1); saveWatchlist(); }
+    _homeWishlistMergedHash = '';
+    _renderHomeCombinedWishlist();
+  });
+}
+
+// ── Consider Grading: PSA vs ACE ROI for wishlist / watchlist cards ─────────
+let _homeGradingHash = '';
+function _renderHomeConsiderGrading() {
+  const list = $('homeGradingList'), countEl = $('homeGradingCount');
+  if (!list) return;
+
+  const allItems = [...watchlist, ...wishlist.filter(w => !watchlist.some(x => x.id === w.id))];
+  const hash = allItems.map(w => w.id).join('|');
+  if (hash === _homeGradingHash && list.querySelector('.home-grading-item')) return;
+  _homeGradingHash = hash;
+
+  const aceFee = ACE_FEE_STANDARD_GBP + ACE_FEE_LABEL_GBP + ACE_FEE_SHIPPING_GBP;
+  const acePricesAll = (() => { try { return JSON.parse(localStorage.getItem('pkm-ace-prices-v1') || '{}'); } catch { return {}; } })();
+
+  const gradeItems = allItems.flatMap(item => {
+    const card = getCardById(item.id);
+    if (!card) return [];
+    const cached = getCachedPrice(item.id);
+    const rawUSD = cached ? (cached.pcUngraded || cached.market || cached.mid || card.p) : card.p;
+    const rawGBP = usdToGbp(rawUSD || 0);
+    if (rawGBP < 8) return []; // skip cheap cards not worth grading
+
+    const p10USD = cached?.pcPsa10 || card.p10 || 0;
+    if (!p10USD || p10USD <= 0) return [];
+    const p10GBP = usdToGbp(p10USD);
+    if (p10GBP <= rawGBP) return []; // no uplift
+
+    const psaFeeGBP = (typeof getUkGradingFeeGBP === 'function') ? getUkGradingFeeGBP(p10USD) : 65;
+    const psaProfit = p10GBP - rawGBP - psaFeeGBP;
+    const psaROI = (psaProfit / (rawGBP + psaFeeGBP)) * 100;
+
+    // ACE 10: use cached ACE data if available; else model at 75% of PSA 10
+    const aceData = acePricesAll[item.id] || {};
+    const ace10USD = aceData['10'] ? usdToGbp(aceData['10']) : p10GBP * 0.75;
+    const ace10GBP = typeof ace10USD === 'number' && ace10USD > 0 ? ace10USD : p10GBP * 0.75;
+    const aceProfit = ace10GBP - rawGBP - aceFee;
+    const aceROI = (aceProfit / (rawGBP + aceFee)) * 100;
+
+    return [{ card, item, rawGBP, p10GBP, psaProfit, psaROI, ace10GBP, aceProfit, aceROI }];
+  });
+
+  gradeItems.sort((a, b) => Math.max(b.psaROI, b.aceROI) - Math.max(a.psaROI, a.aceROI));
+
+  if (countEl) countEl.textContent = gradeItems.length;
+
+  if (gradeItems.length === 0) {
+    list.innerHTML = '<div class="home-empty">No cards with PSA 10 data yet.<br>Add cards to your wishlist and sync prices.</div>';
+    return;
+  }
+
+  list.innerHTML = gradeItems.map(({ card, item, rawGBP, p10GBP, psaProfit, psaROI, ace10GBP, aceProfit, aceROI }) => {
+    const psaCls = psaROI >= 50 ? 'groi-good' : psaROI >= 0 ? 'groi-ok' : 'groi-bad';
+    const aceCls = aceROI >= 50 ? 'groi-good' : aceROI >= 0 ? 'groi-ok' : 'groi-bad';
+    const psaBetter = psaROI >= aceROI;
+    const psaAceMargin = Math.abs(psaROI - aceROI).toFixed(0);
+    let verdictText;
+    if (Math.abs(psaROI - aceROI) < 5) verdictText = 'Similar ROI — ACE is faster';
+    else if (psaBetter) verdictText = `PSA ${psaAceMargin}pp better ROI`;
+    else verdictText = `ACE ${psaAceMargin}pp better ROI`;
+    const verdictCls = psaBetter ? 'groi-verdict-psa' : 'groi-verdict-ace';
+    const img = item.img ? `<img class="home-card-art" src="${esc(item.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="home-card-art"></div>';
+    return `<div class="home-grading-item" data-id="${esc(card.i)}">
+      ${img}
+      <div class="home-grading-info">
+        <div class="home-card-name">${esc(item.name)}</div>
+        <div class="home-grading-raw">Raw £${rawGBP.toFixed(2)} → PSA 10 £${p10GBP.toFixed(2)}</div>
+        <div class="home-grading-compare">
+          <span class="groi-label">PSA</span>
+          <span class="groi-val ${psaCls}">${psaProfit >= 0 ? '+' : ''}£${psaProfit.toFixed(0)} (${psaROI.toFixed(0)}%)</span>
+          <span class="groi-sep">·</span>
+          <span class="groi-label">ACE</span>
+          <span class="groi-val ${aceCls}">${aceProfit >= 0 ? '+' : ''}£${aceProfit.toFixed(0)} (${aceROI.toFixed(0)}%)</span>
+        </div>
+        <div class="home-grading-verdict ${verdictCls}">${verdictText}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  if (!list._gradingListenerAdded) {
+    list._gradingListenerAdded = true;
+    list.addEventListener('click', e => {
+      const item = e.target.closest('.home-grading-item[data-id]');
+      if (item) { go('predict'); setTimeout(() => { try { selectCard(item.dataset.id); } catch {} }, 80); }
+    });
+  }
 }
 
 function setupPageNav() {
