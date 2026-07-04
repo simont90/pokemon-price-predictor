@@ -4748,7 +4748,7 @@ function initLayoutResizer() {
   }
   if (isDesktop && colResizer) {
     requestAnimationFrame(positionColResizer);
-    window.addEventListener('resize', positionColResizer);
+    window.addEventListener('resize', positionColResizer, { passive: true });
   }
 
   let colDragStartX = 0, colDragStartPct = 0.5;
@@ -5158,7 +5158,7 @@ function renderPortfolio() {
     return `
       <div class="portfolio-item-card" data-id="${p.id}">
         <div class="portfolio-item" data-id="${p.id}">
-          ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="" onerror="this.style.display='none'">` : '<div class="portfolio-item-img"></div>'}
+          ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="portfolio-item-img"></div>'}
           <div class="portfolio-item-info">
             <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}</div>
             <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}${isStale ? ' · <span class="stale-price-tag" title="Cached price (>1h old) — tap Refresh prices to update">cached</span>' : ''}</div>
@@ -5539,7 +5539,7 @@ function renderFullArtBinder() {
     const currentGBP = usdToGbp(currentUSD);
     return `
       <div class="binder-item ${b.owned ? 'binder-owned' : ''}" data-id="${b.id}">
-        ${b.img ? `<img class="wishlist-item-img" src="${b.img}" alt="" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
+        ${b.img ? `<img class="wishlist-item-img" src="${b.img}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
         <div class="wishlist-item-info">
           <div class="wishlist-item-name">${esc(b.name)}</div>
           <div class="wishlist-item-meta"><span>${esc(b.set)}</span> <span class="lang-pill">${b.lang === 'JP' ? '\u{1F1EF}\u{1F1F5} JP' : '\u{1F1EC}\u{1F1E7} EN'}</span></div>
@@ -5825,7 +5825,7 @@ function renderWishlist() {
     return `
       <div class="wishlist-item-card ${rowClass}" data-id="${w.id}">
         <div class="wishlist-item ${rowClass}" data-id="${w.id}">
-          ${w.img ? `<img class="wishlist-item-img" src="${w.img}" alt="" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
+          ${w.img ? `<img class="wishlist-item-img" src="${w.img}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
           <div class="wishlist-item-info">
             <div class="wishlist-item-name">${esc(w.name)}</div>
             <div class="wishlist-item-meta">
@@ -6044,7 +6044,7 @@ function renderCompareSlot(idx, slot, other, verdict) {
       <button class="compare-slot-remove" data-slot="${idx}" title="Remove">✕</button>
       <div class="compare-slot-label">Slot ${slotLabel} · ${slot.lang === 'JP' ? '🇯🇵 Japanese' : '🇬🇧 English'}</div>
       <div class="compare-card-row">
-        ${slot.img ? `<img class="compare-card-img" src="${slot.img}" alt="" onerror="this.style.display='none'">` : '<div class="compare-card-img"></div>'}
+        ${slot.img ? `<img class="compare-card-img" src="${slot.img}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="compare-card-img"></div>'}
         <div class="compare-card-info">
           <div class="compare-card-name">${esc(slot.name)}</div>
           <div class="compare-card-meta">${esc(slot.set)}${slot.cn ? ` · #${slot.cn}` : ''}${slot.rc ? ` · ${slot.rc}` : ''}</div>
@@ -8896,7 +8896,7 @@ function renderDealHistory() {
     const fairStr  = entry.fairValueGBP ? `£${entry.fairValueGBP.toFixed(2)}` : '';
     return `
       <div class="deal-history-item">
-        ${entry.cardImg ? `<img class="alert-item-img" src="${esc(entry.cardImg)}" alt="" onerror="this.style.display='none'">` : '<div class="alert-item-img"></div>'}
+        ${entry.cardImg ? `<img class="alert-item-img" src="${esc(entry.cardImg)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="alert-item-img"></div>'}
         <div class="deal-history-info">
           <div class="deal-history-name">${esc(entry.cardName)}</div>
           <div class="deal-history-price">
@@ -9173,7 +9173,7 @@ function renderAlertsList() {
     const reasons = a.reasons.length ? `<div class="alert-reasons">${a.reasons.map(r => `<span>${esc(r)}</span>`).join(' · ')}</div>` : '';
     return `
       <div class="alert-item" data-id="${a.id}">
-        ${a.img ? `<img class="alert-item-img" src="${a.img}" alt="" onerror="this.style.display='none'">` : '<div class="alert-item-img"></div>'}
+        ${a.img ? `<img class="alert-item-img" src="${a.img}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="alert-item-img"></div>'}
         <div class="alert-item-info">
           <div class="alert-item-name">${esc(a.name)} ${a.lang === 'JP' ? '<span class="lang-pill">🇯🇵 JP</span>' : ''}</div>
           <div class="alert-item-meta"><span>${esc(a.set)}</span> ${dropStr}</div>

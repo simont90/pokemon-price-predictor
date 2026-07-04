@@ -10088,8 +10088,37 @@ html { scroll-behavior: smooth; }
 /* ── Promoted compositor layers for panels that animate in ── */
 .home-pip-sheet { will-change: transform; }
 
-/* ── Card image: full GPU compositing for smooth 3D tilt if added later ── */
-.card-thumb { transform: translateZ(0); }
+/* ── Card image: GPU compositing + sharp rendering on HiDPI/iOS ── */
+.card-thumb {
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  image-rendering: -webkit-optimize-contrast;
+}
+.home-card-art {
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  image-rendering: -webkit-optimize-contrast;
+}
+.portfolio-item-img,
+.wishlist-item-img,
+.compare-card-img,
+.alert-item-img,
+.dupe-card-thumb,
+.binder-pg-img {
+  image-rendering: -webkit-optimize-contrast;
+}
+
+/* ── Tabular numerics on all money / stat displays ── */
+.lp-val { font-variant-numeric: tabular-nums; }
+.home-grading-raw { font-variant-numeric: tabular-nums; }
+.groi-good, .groi-ok, .groi-bad { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 11px; font-weight: 600; }
+.groi-fee { font-variant-numeric: tabular-nums; }
+
+/* ── CSS layout containment: isolate re-render cost per section ── */
+.home-tab-group { contain: layout style; }
+.home-section-wrap { contain: layout style; }
 
 /* ── Disable 300ms tap delay on interactive elements that aren't scroll surfaces ── */
 .home-section-hd button,

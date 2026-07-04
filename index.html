@@ -16,8 +16,17 @@
   <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260704z">
+  <link rel="dns-prefetch" href="https://images.pokemontcg.io">
+  <link rel="dns-prefetch" href="https://api.pokemontcg.io">
+  <link rel="dns-prefetch" href="https://pokemon-marketplace.simontariq.workers.dev">
+  <link rel="dns-prefetch" href="https://www.pricecharting.com">
+  <!-- Non-blocking font load: preload fires early, onload swaps rel to stylesheet -->
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <!-- Preload large data files so they start downloading during head parse -->
+  <link rel="preload" href="data/cards-db.js" as="script">
+  <link rel="preload" href="data/sets-db.js" as="script">
+  <link rel="stylesheet" href="style.css?v=20260705b">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -989,10 +998,10 @@
         <!-- Selected Card -->
         <section class="card selected-card" id="selectedCardSection" style="display:none">
           <div class="selected-card-header">
-            <img id="cardHeroBg" src="" alt="" class="card-hero-bg" aria-hidden="true">
+            <img id="cardHeroBg" src="" alt="" class="card-hero-bg" aria-hidden="true" decoding="async">
             <div class="card-images">
-              <img id="cardImage" src="" alt="" class="card-thumb" title="English version">
-              <img id="cardImageJp" src="" alt="" class="card-thumb card-thumb-jp" title="Japanese version" style="display:none">
+              <img id="cardImage" src="" alt="" class="card-thumb" title="English version" decoding="async" fetchpriority="high">
+              <img id="cardImageJp" src="" alt="" class="card-thumb card-thumb-jp" title="Japanese version" style="display:none" decoding="async">
             </div>
             <div class="selected-card-info">
               <div class="card-name-row">
@@ -2331,7 +2340,7 @@
     <button id="imgLightboxClose" class="img-lb-close" type="button" aria-label="Close">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
-    <img id="imgLightboxImg" src="" alt="">
+    <img id="imgLightboxImg" src="" alt="" decoding="async">
     <div id="imgLightboxCaption" class="img-lb-caption"></div>
   </div>
 
@@ -2370,7 +2379,7 @@
     <div class="home-pip-sheet" id="homePipSheet">
       <div class="home-pip-handle"></div>
       <div class="home-pip-layout">
-        <img id="homePipImg" class="home-pip-img" src="" alt="" onerror="this.style.display='none'">
+        <img id="homePipImg" class="home-pip-img" src="" alt="" decoding="async" onerror="this.style.display='none'">
         <div class="home-pip-body">
           <div id="homePipName" class="home-pip-name"></div>
           <div id="homePipSet" class="home-pip-set"></div>
@@ -2433,10 +2442,14 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260704z"></script>
+  <script src="app.js?v=20260705b"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      // Defer SW registration until page is fully loaded to avoid competing
+      // with critical resources during the initial page load.
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
     }
   </script>
 
