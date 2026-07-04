@@ -1915,13 +1915,19 @@ async function pcSearchRaw(query) {
 // spread the result safely.
 const PC_FULL_GRADE_PARSE_LABELS = {
   'ACE 10':  'pcAce10',
+  'ACE 9':   'pcAce9',
+  'ACE 8':   'pcAce8',
+  'ACE 7':   'pcAce7',
   'CGC 10':  'pcCgc10',
   'BGS 10':  'pcBgs10',
   'TAG 10':  'pcTag10',
   'SGC 10':  'pcSgc10',
+  'PSA 7':   'pcPsa7',
+  'PSA 8':   'pcPsa8',
+  'PSA 9':   'pcPsa9',
 };
 function _emptyFullGrades() {
-  return { pcAce10: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0 };
+  return { pcAce10: 0, pcAce9: 0, pcAce8: 0, pcAce7: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0, pcPsa7: 0, pcPsa8: 0, pcPsa9: 0 };
 }
 function parsePCFullGrades(html) {
   const out = _emptyFullGrades();
@@ -1975,10 +1981,16 @@ function productToPC(p, fullGrades) {
     pcGrade9: parsePCPrice(p.price3),
     // Full-grade table (USD, 0 = missing)
     pcAce10: fg.pcAce10 || 0,
+    pcAce9:  fg.pcAce9  || 0,
+    pcAce8:  fg.pcAce8  || 0,
+    pcAce7:  fg.pcAce7  || 0,
     pcCgc10: fg.pcCgc10 || 0,
     pcBgs10: fg.pcBgs10 || 0,
     pcTag10: fg.pcTag10 || 0,
     pcSgc10: fg.pcSgc10 || 0,
+    pcPsa7:  fg.pcPsa7  || 0,
+    pcPsa8:  fg.pcPsa8  || 0,
+    pcPsa9:  fg.pcPsa9  || 0,
     pcName: p.productName || '',
     pcConsole: p.consoleName || '',
     pcId: p.id || '',
@@ -2031,10 +2043,16 @@ async function fetchPriceChartingData(card) {
       pcPsa10: parsePCPrice(override.price2),
       pcGrade9: parsePCPrice(override.price3),
       pcAce10: fgOverride.pcAce10 || 0,
+      pcAce9:  fgOverride.pcAce9  || 0,
+      pcAce8:  fgOverride.pcAce8  || 0,
+      pcAce7:  fgOverride.pcAce7  || 0,
       pcCgc10: fgOverride.pcCgc10 || 0,
       pcBgs10: fgOverride.pcBgs10 || 0,
       pcTag10: fgOverride.pcTag10 || 0,
       pcSgc10: fgOverride.pcSgc10 || 0,
+      pcPsa7:  fgOverride.pcPsa7  || 0,
+      pcPsa8:  fgOverride.pcPsa8  || 0,
+      pcPsa9:  fgOverride.pcPsa9  || 0,
       pcName: override.productName || '',
       pcConsole: override.consoleName || '',
       pcId: override.id || '',
@@ -2079,6 +2097,13 @@ async function fetchLivePriceJP(card) {
     pcUngraded: pc ? pc.pcUngraded : 0,
     pcPsa10: pc ? pc.pcPsa10 : 0,
     pcGrade9: pc ? pc.pcGrade9 : 0,
+    pcAce10: pc ? pc.pcAce10 : 0,
+    pcAce9:  pc ? pc.pcAce9  : 0,
+    pcAce8:  pc ? pc.pcAce8  : 0,
+    pcAce7:  pc ? pc.pcAce7  : 0,
+    pcPsa7:  pc ? pc.pcPsa7  : 0,
+    pcPsa8:  pc ? pc.pcPsa8  : 0,
+    pcPsa9:  pc ? pc.pcPsa9  : 0,
     pcName: pc ? pc.pcName : '',
     pcConsole: pc ? pc.pcConsole : '',
     pcId: pc ? pc.pcId : '',
@@ -2637,6 +2662,8 @@ function recalcWithLivePrice(card) {
   // Re-render Acquisition + Grader sections so ROI uses the live raw + PSA 10 prices
   if (typeof renderAcquisition === 'function') renderAcquisition();
   if (typeof renderCardGrader === 'function') renderCardGrader();
+  // Re-render ACE section so PC grade prices populate now that livePrice is set
+  if (typeof renderAceGradingSection === 'function') renderAceGradingSection();
   // Re-render Hold Strategy so it uses the live raw price instead of the
   // static / cached price it had at initial card-select time.
   if (typeof renderHoldStrategy === 'function') {
@@ -4262,9 +4289,35 @@ function renderAceGradingSection() {
   section.style.display = 'block';
 
   const rawGBP = usdToGbp(getCurrentPrice(card));
-  // Total cost basis: grading fee + outbound shipping + premium label
-  const fee = ACE_FEE_STANDARD_GBP + ACE_FEE_SHIPPING_GBP + ACE_FEE_LABEL_GBP;
+  // Total ACE cost basis: grading + outbound shipping + premium label
+  const aceFeeTotal = ACE_FEE_STANDARD_GBP + ACE_FEE_SHIPPING_GBP + ACE_FEE_LABEL_GBP;
+  const psaFeeGBP   = 65;  // PSA standard UK (incl. transatlantic shipping estimate)
   const saved = getAcePrices(card.i);
+
+  // PC-sourced prices for each ACE grade (GBP). pcAce9/8/7 are often 0 — we
+  // estimate them from PSA grade ratios if the specific ACE grade is missing.
+  const lp = livePrice || {};
+  const pcAce  = [10, 9, 8, 7].map(g => {
+    const field = `pcAce${g}`;
+    const usd = lp[field] || 0;
+    if (usd > 0) return usdToGbp(usd);
+    // Fallback: derive from PSA peer grade if available
+    const psaField = g === 10 ? 'pcPsa10' : `pcPsa${g}`;
+    const psaUsd = lp[psaField] || (g === 9 ? lp.pcGrade9 : 0) || 0;
+    // ACE typically trades at ~75–85% of equivalent PSA for popular cards
+    return psaUsd > 0 ? usdToGbp(psaUsd * 0.80) : 0;
+  });
+  // [idx0=grade10, idx1=grade9, idx2=grade8, idx3=grade7]
+  const pcAceByGrade = { 10: pcAce[0], 9: pcAce[1], 8: pcAce[2], 7: pcAce[3] };
+
+  // PSA PC prices for comparison column
+  const psaByGrade = {
+    10: usdToGbp(lp.pcPsa10  || 0),
+    9:  usdToGbp(lp.pcPsa9   || lp.pcGrade9 || 0),
+    8:  usdToGbp(lp.pcPsa8   || 0),
+    7:  usdToGbp(lp.pcPsa7   || 0),
+  };
+  const hasPcData = pcAce[0] > 0;
 
   // Fee strip
   $('aceFeeStrip').innerHTML =
@@ -4276,70 +4329,144 @@ function renderAceGradingSection() {
     `<span class="ace-fee-sep">·</span>` +
     `<span class="ace-fee-item"><span class="ace-fee-k">Premium label</span><span class="ace-fee-v">£${ACE_FEE_LABEL_GBP}</span></span>` +
     `<span class="ace-fee-sep">·</span>` +
-    `<span class="ace-fee-item"><span class="ace-fee-k">Shipping back</span><span class="ace-fee-v ace-domestic">Free (UK domestic)</span></span>`;
+    `<span class="ace-fee-item"><span class="ace-fee-k">Return</span><span class="ace-fee-v ace-domestic">Free (UK domestic)</span></span>`;
 
-  // Per-grade rows
+  // Per-grade rows — value comes from saved > PC suggestion > blank
   const grades = [10, 9, 8, 7];
+  const pcSourceLabel = hasPcData
+    ? `<span class="ace-pc-badge" title="Price from PriceCharting recent sales">PC</span>`
+    : '';
   const rows = grades.map(g => {
-    const price = saved[g] || 0;
-    const q = `${card.n.replace(/[™®]/g, '').trim()}${card.num ? ' ' + card.num : ''} ACE ${g}`;
+    const manualPrice  = saved[g] || 0;
+    const pcSuggested  = pcAceByGrade[g] || 0;
+    // Use manual saved value if present, else PC suggestion
+    const displayPrice = manualPrice > 0 ? manualPrice : pcSuggested;
+    const isFromPC     = manualPrice <= 0 && pcSuggested > 0;
+    const isEstimated  = isFromPC && !(lp[`pcAce${g}`] > 0);  // derived, not direct
+    const cardName = card.n.replace(/[™®]/g, '').trim();
+    const cardNum  = card.num ? ' ' + card.num : '';
+    const q = `${cardName}${cardNum} ACE ${g}`;
     const ebayUrl = `https://www.ebay.co.uk/sch/i.html?_nkw=${encodeURIComponent(q)}&LH_Sold=1&LH_Complete=1&LH_TitleDesc=0&_sacat=2536`;
-    const profit = price > 0 ? price - rawGBP - fee : null;
-    const roi = profit !== null ? Math.round(profit / (rawGBP + fee) * 100) : null;
+
+    const effectivePrice = manualPrice > 0 ? manualPrice : pcSuggested;
+    const profit = effectivePrice > 0 ? effectivePrice - rawGBP - aceFeeTotal : null;
+    const roi    = profit !== null ? Math.round(profit / (rawGBP + aceFeeTotal) * 100) : null;
     const profitCls = profit === null ? '' : profit >= 0 ? 'ace-pos' : 'ace-neg';
     const profitStr = profit === null
       ? '<span class="ace-profit-empty">enter price →</span>'
       : `<span class="${profitCls}">${profit >= 0 ? '+' : ''}${fmtGBPDirect(profit)}</span><span class="ace-roi ${profitCls}">${roi > 0 ? '+' : ''}${roi}%</span>`;
+
+    const inputVal = displayPrice > 0 ? displayPrice.toFixed(2) : '';
+    const pcBadge  = isFromPC ? `<span class="ace-pc-tag" title="${isEstimated ? 'Estimated from PSA data' : 'From PriceCharting'}">${isEstimated ? '~PC' : 'PC'}</span>` : '';
     return `<div class="ace-row" data-grade="${g}">
       <span class="ace-grade-lbl">ACE ${g}</span>
-      <div class="ace-input-wrap"><span class="ace-sym">£</span><input type="number" class="ace-input" data-grade="${g}" min="0" step="0.01" placeholder="—" value="${price > 0 ? price.toFixed(2) : ''}"></div>
+      <div class="ace-input-wrap">${pcBadge}<span class="ace-sym">£</span><input type="number" class="ace-input" data-grade="${g}" min="0" step="0.01" placeholder="—" value="${inputVal}" ${isFromPC ? 'data-pc-suggested="1"' : ''}></div>
       <a class="ace-ebay" href="${ebayUrl}" target="_blank" rel="noopener noreferrer">eBay ↗</a>
       <div class="ace-profit-wrap">${profitStr}</div>
     </div>`;
   }).join('');
 
   $('aceTable').innerHTML =
-    `<div class="ace-table-hd"><span>Grade</span><span>Market price</span><span></span><span>Profit · ROI (std fee)</span></div>` +
+    `<div class="ace-table-hd"><span>Grade</span><span>Market price${hasPcData ? ' <span class="ace-pc-hd-badge">PC</span>' : ''}</span><span></span><span>Profit · ROI (std fee)</span></div>` +
     rows;
 
-  // Wire inputs (use input event so values update live as user types)
+  // Wire inputs — on change, persist and re-render
   $('aceTable').querySelectorAll('.ace-input').forEach(inp => {
     inp.addEventListener('change', () => {
-      const g = parseInt(inp.dataset.grade);
+      const g   = parseInt(inp.dataset.grade);
       const val = parseFloat(inp.value) || 0;
       saveAcePrice(card.i, g, val);
       renderAceGradingSection();
     });
   });
 
-  // Verdict
-  const ace10 = saved[10] || 0;
+  // ── 3-way comparison: RAW vs ACE vs PSA ──────────────────────────────────
   const verdictEl = $('aceVerdict');
-  if (ace10 <= 0) { verdictEl.style.display = 'none'; return; }
 
-  const profit10 = ace10 - rawGBP - fee;
-  const roi10 = Math.round(profit10 / (rawGBP + fee) * 100);
-  // PSA comparison — what raw+PSA fee would need to beat ACE's take
-  const psaFee = 65;
-  const psaBreakeven = rawGBP + psaFee;
+  // Effective ACE 10 price: manual first, then PC
+  const ace10 = saved[10] > 0 ? saved[10] : pcAceByGrade[10];
+  // PSA 10 from PC
+  const psa10 = psaByGrade[10];
 
-  let cls, title, detail;
-  if (profit10 > 0 && roi10 >= 50) {
-    cls = 'ace-worth';
-    title = 'Grade with ACE';
-    detail = `ACE 10 nets +${fmtGBPDirect(profit10)} (${roi10}% ROI · £${ACE_FEE_STANDARD_GBP} grade + £${ACE_FEE_SHIPPING_GBP.toFixed(2)} ship + £${ACE_FEE_LABEL_GBP} label) · PSA would need £${psaBreakeven.toFixed(0)} in just to break even`;
-  } else if (profit10 > 0) {
-    cls = 'ace-maybe';
-    title = 'Marginal — check gem rate';
-    detail = `${fmtGBPDirect(profit10)} profit if graded ACE 10 · Slim margin — only worthwhile if condition is strong`;
+  if (ace10 <= 0 && psa10 <= 0) { verdictEl.style.display = 'none'; return; }
+
+  const aceProfit  = ace10 > 0 ? ace10 - rawGBP - aceFeeTotal : null;
+  const aceRoi     = aceProfit !== null ? Math.round(aceProfit / (rawGBP + aceFeeTotal) * 100) : null;
+  const psaProfit  = psa10 > 0 ? psa10 - rawGBP - psaFeeGBP  : null;
+  const psaRoi     = psaProfit !== null ? Math.round(psaProfit / (rawGBP + psaFeeGBP)  * 100) : null;
+
+  // Pick winner
+  const options = [];
+  if (aceProfit !== null) options.push({ name: 'ACE', profit: aceProfit, roi: aceRoi });
+  if (psaProfit !== null) options.push({ name: 'PSA', profit: psaProfit, roi: psaRoi });
+  // RAW hold is always valid: profit = 0, roi = 0 (baseline)
+  options.push({ name: 'RAW', profit: 0, roi: 0 });
+  options.sort((a, b) => b.profit - a.profit);
+  const winner = options[0];
+
+  // Comparison rows
+  const fmtOption = (label, price, profit, roi, isWinner) => {
+    if (price === null || price <= 0) return '';
+    const cls   = profit >= 0 ? 'ace-pos' : 'ace-neg';
+    const roiStr = roi !== null ? `${roi > 0 ? '+' : ''}${roi}%` : '';
+    const winBadge = isWinner ? ' <span class="ace-win-badge">best</span>' : '';
+    return `<div class="ace-vs-row ${isWinner ? 'ace-vs-winner' : ''}">
+      <span class="ace-vs-label">${label}${winBadge}</span>
+      <span class="ace-vs-price">${fmtGBPDirect(price)}</span>
+      <span class="ace-vs-profit ${cls}">${profit >= 0 ? '+' : ''}${fmtGBPDirect(profit)}</span>
+      <span class="ace-vs-roi ${cls}">${roiStr}</span>
+    </div>`;
+  };
+
+  const rawRow = `<div class="ace-vs-row ${winner.name === 'RAW' ? 'ace-vs-winner' : ''}">
+    <span class="ace-vs-label">RAW${winner.name === 'RAW' ? ' <span class="ace-win-badge">best</span>' : ''}</span>
+    <span class="ace-vs-price">${fmtGBPDirect(rawGBP)}</span>
+    <span class="ace-vs-profit">—</span>
+    <span class="ace-vs-roi" style="color:var(--text-muted)">hold</span>
+  </div>`;
+
+  const aceRow = ace10 > 0
+    ? fmtOption('ACE 10', ace10, aceProfit, aceRoi, winner.name === 'ACE')
+    : '';
+  const psaRow = psa10 > 0
+    ? fmtOption('PSA 10', psa10, psaProfit, psaRoi, winner.name === 'PSA')
+    : '';
+
+  // Overall verdict
+  let verdict3cls, verdict3title, verdict3detail;
+  if (winner.name === 'ACE' && aceProfit >= 0) {
+    verdict3cls   = 'ace-worth';
+    verdict3title = 'Grade with ACE';
+    verdict3detail = `ACE 10 is the best exit: +${fmtGBPDirect(aceProfit)} (${aceRoi}% ROI) · Total fees £${aceFeeTotal.toFixed(2)} · PSA would need £${(rawGBP + psaFeeGBP).toFixed(0)} to break even`;
+  } else if (winner.name === 'PSA' && psaProfit >= 0) {
+    verdict3cls   = 'ace-worth';
+    verdict3title = 'Grade with PSA';
+    verdict3detail = `PSA 10 outperforms ACE on this card: +${fmtGBPDirect(psaProfit)} (${psaRoi}% ROI) · Worth the higher £${psaFeeGBP} fee`;
+  } else if ((aceProfit !== null && aceProfit > 0) || (psaProfit !== null && psaProfit > 0)) {
+    verdict3cls   = 'ace-maybe';
+    verdict3title = 'Marginal — grade only if mint';
+    verdict3detail = `Grading is barely profitable — only worthwhile if the card is likely to gem`;
   } else {
-    cls = 'ace-skip';
-    title = 'Skip grading';
-    detail = `ACE 10 market (${fmtGBPDirect(ace10)}) is below raw + all fees (${fmtGBPDirect(rawGBP + fee)}) — grading loses money`;
+    verdict3cls   = 'ace-skip';
+    verdict3title = 'Hold raw';
+    verdict3detail = `Neither ACE nor PSA grading covers fees at current market prices — raw hold is the best option`;
   }
 
+  const pcNote = hasPcData
+    ? `<div class="ace-pc-note">Prices from PriceCharting recent sales · ACE 9/8/7 estimated where no direct PC data</div>`
+    : `<div class="ace-pc-note">Enter ACE sold prices from eBay above to enable the comparison</div>`;
+
   verdictEl.style.display = '';
-  verdictEl.innerHTML = `<div class="ace-verdict-inner ${cls}"><div class="ace-verdict-title">${title}</div><div class="ace-verdict-detail">${detail}</div></div>`;
+  verdictEl.innerHTML = `
+    <div class="ace-vs-table">
+      <div class="ace-vs-hd"><span>Option</span><span>Grade value</span><span>Profit</span><span>ROI</span></div>
+      ${aceRow}${psaRow}${rawRow}
+    </div>
+    <div class="ace-verdict-inner ${verdict3cls}" style="margin-top:10px">
+      <div class="ace-verdict-title">${verdict3title}</div>
+      <div class="ace-verdict-detail">${verdict3detail}</div>
+    </div>
+    ${pcNote}`;
 }
 
 // ---- Market-Adjusted Forecast ----

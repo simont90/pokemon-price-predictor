@@ -1019,8 +1019,8 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .ace-fee-sep { color: var(--border); font-size: 12px; }
 .ace-domestic { color: var(--green); }
 
-.ace-table-hd { display: grid; grid-template-columns: 56px 1fr 60px 1fr; gap: 8px; padding: 0 4px 6px; border-bottom: 1px solid var(--border); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
-.ace-row { display: grid; grid-template-columns: 56px 1fr 60px 1fr; gap: 8px; align-items: center; padding: 9px 4px; border-bottom: 1px solid var(--border); }
+.ace-table-hd { display: grid; grid-template-columns: 56px 1fr 52px 90px; gap: 6px; padding: 0 4px 6px; border-bottom: 1px solid var(--border); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+.ace-row { display: grid; grid-template-columns: 56px 1fr 52px 90px; gap: 6px; align-items: center; padding: 9px 4px; border-bottom: 1px solid var(--border); }
 .ace-row:last-child { border-bottom: none; }
 .ace-grade-lbl { font-size: 13px; font-weight: 700; font-family: var(--mono); }
 .ace-input-wrap { display: flex; align-items: center; gap: 3px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
@@ -1029,11 +1029,11 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .ace-input::placeholder { color: var(--text-faint); }
 .ace-ebay { font-size: 11px; font-family: var(--mono); color: var(--accent); text-decoration: none; white-space: nowrap; }
 .ace-ebay:hover { text-decoration: underline; }
-.ace-profit-wrap { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; }
+.ace-profit-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font-family: var(--mono); font-size: 12px; min-width: 0; }
 .ace-profit-empty { font-size: 11px; color: var(--text-faint); font-style: italic; }
 .ace-pos { color: var(--green); font-weight: 600; }
 .ace-neg { color: var(--red); font-weight: 600; }
-.ace-roi { font-size: 11px; padding: 1px 5px; border-radius: 4px; }
+.ace-roi { font-size: 10px; padding: 1px 4px; border-radius: 4px; align-self: flex-start; }
 .ace-roi.ace-pos { background: rgba(61,214,140,0.12); }
 .ace-roi.ace-neg { background: rgba(229,83,83,0.12); }
 
@@ -1047,6 +1047,22 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .ace-verdict-inner.ace-maybe .ace-verdict-title { color: var(--accent); }
 .ace-verdict-inner.ace-skip  .ace-verdict-title { color: var(--red); }
 .ace-verdict-detail { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+/* PC badge in table header */
+.ace-pc-hd-badge { font-size: 9px; font-family: var(--mono); background: rgba(232,182,52,0.15); color: var(--accent); border: 1px solid rgba(232,182,52,0.3); border-radius: 3px; padding: 1px 4px; vertical-align: middle; }
+/* PC / ~PC tag inside input row */
+.ace-pc-tag { font-size: 9px; font-family: var(--mono); background: rgba(232,182,52,0.12); color: var(--accent); border: 1px solid rgba(232,182,52,0.25); border-radius: 3px; padding: 1px 4px; margin-right: 4px; flex-shrink: 0; }
+/* 3-way comparison table */
+.ace-vs-table { margin-bottom: 2px; }
+.ace-vs-hd { display: grid; grid-template-columns: 1fr 72px 68px 52px; gap: 6px; padding: 0 4px 6px; border-bottom: 1px solid var(--border); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+.ace-vs-row { display: grid; grid-template-columns: 1fr 72px 68px 52px; gap: 6px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 12px; }
+.ace-vs-row:last-child { border-bottom: none; }
+.ace-vs-row.ace-vs-winner { background: rgba(61,214,140,0.05); border-radius: 6px; }
+.ace-vs-label { font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 5px; }
+.ace-win-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; background: var(--green-dim); border: 1px solid var(--green-border); color: var(--green); border-radius: 4px; padding: 1px 5px; font-family: var(--mono); }
+.ace-vs-price { color: var(--text-muted); }
+.ace-vs-profit { font-weight: 600; }
+.ace-vs-roi { font-size: 11px; }
+.ace-pc-note { font-size: 10px; color: var(--text-faint); margin-top: 8px; text-align: center; font-style: italic; }
 
 /* Price History */
 .pricehist-card h2 { margin-bottom: 4px; }
