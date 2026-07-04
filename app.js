@@ -2509,6 +2509,8 @@ function renderLivePrice(data) {
     $('pcUngraded').textContent = fmtGBP(data.pcUngraded);
     $('pcPsa10').textContent = data.pcPsa10 > 0 ? fmtGBP(data.pcPsa10) : '—';
     $('pcGrade9').textContent = data.pcGrade9 > 0 ? fmtGBP(data.pcGrade9) : '—';
+    $('pcAce10').textContent = data.pcAce10 > 0 ? fmtGBP(data.pcAce10) : '—';
+    $('pcAce9').textContent  = data.pcAce9  > 0 ? fmtGBP(data.pcAce9)  : '—';
     // Grading ROI: (PSA10 price - Ungraded - ~£20 grading cost) / Ungraded
     if (data.pcPsa10 > 0 && data.pcUngraded > 0) {
       const gradingCostUSD = 25; // ~£20 grading cost in USD
@@ -16715,7 +16717,6 @@ function _renderHomeConsiderGrading() {
       worthCls = 'groi-worth-maybe';
     }
 
-    const tierLabel = (ACE_TIERS[aceTier] || ACE_TIERS.standard).label;
     const fmt = (profit, cost) => {
       const roi = (profit / cost) * 100;
       const cls = roi >= 40 ? 'groi-good' : roi >= 0 ? 'groi-ok' : 'groi-bad';
@@ -16739,7 +16740,7 @@ function _renderHomeConsiderGrading() {
             <span class="groi-fee">£${psaFeeGBP} fee</span>
           </div>
           <div class="groi-svc-row">
-            <span class="groi-svc-label ${!psaBetter && margin >= 5 ? winnerCls : ''}">ACE ${tierLabel}</span>
+            <span class="groi-svc-label ${!psaBetter && margin >= 5 ? winnerCls : ''}">ACE</span>
             <span class="groi-grade-pair">
               <span class="groi-grade-col"><span class="groi-grade-num">10</span>${fmt(aceProfit, aceCostBase)}</span>
               <span class="groi-grade-col"><span class="groi-grade-num">9</span>${fmt(ace9Profit, aceCostBase)}</span>
