@@ -1723,6 +1723,21 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .wishlist-panel .portfolio-header h2 { display: flex; align-items: baseline; gap: 8px; }
 .wishlist-sub { font-size: 11px; font-weight: 400; color: var(--text-faint); letter-spacing: 0; }
 
+/* Full Art Binder Panel */
+.binder-panel { border-color: rgba(124, 108, 214, 0.6); }
+.binder-panel .portfolio-header h2 { display: flex; align-items: baseline; gap: 8px; }
+#addBinderBtn:hover { border-color: #7c6cd6; color: #7c6cd6; background: rgba(124,108,214,0.12); }
+#addBinderBtn.in-binder { background: rgba(124,108,214,0.18); border-color: #7c6cd6; color: #7c6cd6; }
+#addBinderBtn.in-binder svg { display: none; }
+#addBinderBtn.in-binder::after { content: '\270E'; font-size: 13px; }
+.binder-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--bg-raised); cursor: pointer; transition: background 0.15s; position: relative; }
+.binder-item:hover { background: var(--bg-card); }
+.binder-item.binder-owned { opacity: 0.55; }
+.binder-owned-toggle { font-size: 11px; padding: 3px 7px; border-radius: 4px; border: 1px solid var(--border-faint); background: none; color: var(--text-muted); cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.binder-owned .binder-owned-toggle { border-color: var(--green, #4caf7d); color: var(--green, #4caf7d); background: var(--green-dim, rgba(76,175,125,0.12)); }
+.binder-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; margin-left: auto; min-width: 60px; }
+.binder-remove { position: absolute; top: 4px; right: 4px; }
+
 .wishlist-item {
   display: grid;
   grid-template-columns: 36px 1fr auto auto;

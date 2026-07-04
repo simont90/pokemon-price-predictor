@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260704i">
+  <link rel="stylesheet" href="style.css?v=20260704j">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -59,6 +59,11 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
             <span class="portfolio-count" id="wishlistCount" style="display:none">0</span>
             <span class="btn-label">Wishlist</span>
+          </button>
+          <button class="portfolio-toggle" id="binderToggle" title="Full Art Binder Project">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 0 3-3h7z"/></svg>
+            <span class="portfolio-count" id="binderCount" style="display:none">0</span>
+            <span class="btn-label">Binder</span>
           </button>
           <button class="portfolio-toggle" id="compareToggle" title="Compare two cards">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
@@ -204,6 +209,20 @@
       </div>
       <div class="portfolio-list" id="wishlistList">
         <div class="portfolio-empty">No wishlisted cards yet. Open a card and tap the heart icon to add it. Set a target price to get a BUY alert when the market drops below it.</div>
+      </div>
+    </section>
+
+    <!-- Full Art Binder Project Panel (slide-in) -->
+    <section class="portfolio-panel binder-panel" id="binderPanel" style="display:none">
+      <div class="portfolio-header">
+        <h2>Full Art Binder <span class="wishlist-sub">Gen 1 &amp; Gen 2 project</span></h2>
+        <div class="portfolio-actions">
+          <span class="portfolio-total" id="binderTotal">0 cards</span>
+          <button class="portfolio-close" id="binderClose">&#x2715;</button>
+        </div>
+      </div>
+      <div class="portfolio-list" id="binderList">
+        <div class="portfolio-empty">No cards yet. Open a card and tap the binder icon to add it.</div>
       </div>
     </section>
 
@@ -953,6 +972,9 @@
                 </button>
                 <button class="add-portfolio-btn watch-btn watch-btn-icon" id="watchBtn" type="button" title="Watch — get an alert when this card hits BUY or STRONG BUY">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+                <button class="add-portfolio-btn" id="addBinderBtn" title="Add to Full Art Binder Project Wishlist">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 0 3-3h7z"/></svg>
                 </button>
               </div>
               <div class="jp-name-subtitle" id="cardNameJp" style="display:none"></div>
@@ -2345,7 +2367,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260704i"></script>
+  <script src="app.js?v=20260704j"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -488,6 +488,7 @@ async function init() {
   setupInputs();
   setupPortfolio();
   setupWishlist();
+  setupFullArtBinder();
   setupCompare();
   setupScreener();
   setupValuePicks();
@@ -2830,6 +2831,7 @@ function selectCard(id) {
   updateSignal(card, pullCost, des.total);
   updatePortfolioButton();
   updateWishlistButton();
+  updateFullArtBinderButton();
   updateCompareButton();
   renderCounterpartFlag(card);
   renderPsaGradeRange(card, pullCost, des.total);
@@ -5342,6 +5344,8 @@ function drawPortfolioGrowthChart() {
 // =============================================================
 let wishlist = JSON.parse(localStorage.getItem('pkm-wishlist') || '[]');
 
+let fullArtBinder = JSON.parse(localStorage.getItem('pkm-fullart-binder-v1') || '[]');
+
 function setupWishlist() {
   $('wishlistToggle').addEventListener('click', () => toggleSidePanel('wishlistPanel'));
   $('wishlistClose').addEventListener('click', () => { $('wishlistPanel').style.display = 'none'; });
@@ -5383,11 +5387,120 @@ function setupWishlist() {
 
 function toggleSidePanel(id) {
   if (id === 'comparePanel') { openComparePanel(); return; }
-  ['portfolioPanel', 'wishlistPanel', 'alertsPanel'].forEach(p => {
+  ['portfolioPanel', 'wishlistPanel', 'alertsPanel', 'binderPanel'].forEach(p => {
     const el = document.getElementById(p);
     if (!el) return;
     el.style.display = p === id ? (el.style.display === 'none' ? 'block' : 'none') : 'none';
   });
+}
+
+function setupFullArtBinder() {
+  $('binderToggle').addEventListener('click', () => toggleSidePanel('binderPanel'));
+  $('binderClose').addEventListener('click', () => { $('binderPanel').style.display = 'none'; });
+  $('addBinderBtn').addEventListener('click', () => toggleCardInFullArtBinder());
+
+  const list = $('binderList');
+  if (list) {
+    list.addEventListener('click', e => {
+      if (e.target.closest('.binder-remove')) {
+        e.stopPropagation();
+        const id = e.target.closest('.binder-remove').dataset.id;
+        fullArtBinder = fullArtBinder.filter(b => b.id !== id);
+        saveFullArtBinder(); renderFullArtBinder(); updateFullArtBinderButton();
+        return;
+      }
+      if (e.target.closest('.binder-owned-toggle')) {
+        e.stopPropagation();
+        const id = e.target.closest('.binder-owned-toggle').dataset.id;
+        const item = fullArtBinder.find(b => b.id === id);
+        if (item) { item.owned = !item.owned; saveFullArtBinder(); renderFullArtBinder(); }
+        return;
+      }
+      const item = e.target.closest('.binder-item');
+      if (item) selectCard(item.dataset.id);
+    });
+  }
+
+  renderFullArtBinder();
+}
+
+function toggleCardInFullArtBinder(id) {
+  const card = id ? getCardById(id) : selectedCard;
+  if (!card) return;
+  const idx = fullArtBinder.findIndex(b => b.id === card.i);
+  if (idx >= 0) {
+    fullArtBinder.splice(idx, 1);
+  } else {
+    const currentUSD = getCurrentPrice(card);
+    const currentGBP = usdToGbp(currentUSD);
+    fullArtBinder.push({
+      id: card.i,
+      name: card.n,
+      set: card.s,
+      lang: card.lang || 'EN',
+      img: getCardImg(card),
+      addedDate: new Date().toISOString(),
+      addedPriceGBP: currentGBP,
+      owned: false,
+    });
+  }
+  saveFullArtBinder();
+  renderFullArtBinder();
+  updateFullArtBinderButton();
+}
+
+function updateFullArtBinderButton() {
+  const btn = $('addBinderBtn');
+  if (!btn || !selectedCard) return;
+  const inList = fullArtBinder.some(b => b.id === selectedCard.i);
+  btn.classList.toggle('in-binder', inList);
+  btn.title = inList ? 'Remove from Full Art Binder Project' : 'Add to Full Art Binder Project Wishlist';
+}
+
+function saveFullArtBinder() {
+  localStorage.setItem('pkm-fullart-binder-v1', JSON.stringify(fullArtBinder));
+}
+
+function renderFullArtBinder() {
+  const list = $('binderList');
+  const countEl = $('binderCount');
+  const totalEl = $('binderTotal');
+  if (!list) return;
+
+  if (fullArtBinder.length === 0) {
+    list.innerHTML = '<div class="portfolio-empty">No cards yet. Open a card and tap the binder icon to add it.</div>';
+    if (countEl) countEl.style.display = 'none';
+    if (totalEl) totalEl.textContent = '0 cards';
+    return;
+  }
+
+  const ownedCount = fullArtBinder.filter(b => b.owned).length;
+  if (countEl) { countEl.textContent = fullArtBinder.length; countEl.style.display = 'flex'; }
+  if (totalEl) totalEl.textContent = `${ownedCount}/${fullArtBinder.length} owned`;
+
+  const items = fullArtBinder.map(b => {
+    const currentCard = getCardById(b.id);
+    const cached = getCachedPrice(b.id);
+    const currentUSD = cached
+      ? (cached.pcUngraded || cached.market || cached.mid || (currentCard ? currentCard.p : 0))
+      : (currentCard ? currentCard.p : 0);
+    const currentGBP = usdToGbp(currentUSD);
+    return `
+      <div class="binder-item ${b.owned ? 'binder-owned' : ''}" data-id="${b.id}">
+        ${b.img ? `<img class="wishlist-item-img" src="${b.img}" alt="" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
+        <div class="wishlist-item-info">
+          <div class="wishlist-item-name">${esc(b.name)}</div>
+          <div class="wishlist-item-meta"><span>${esc(b.set)}</span> <span class="lang-pill">${b.lang === 'JP' ? '\u{1F1EF}\u{1F1F5} JP' : '\u{1F1EC}\u{1F1E7} EN'}</span></div>
+        </div>
+        <div class="binder-right">
+          <div class="wishlist-current">£${currentGBP.toFixed(2)}</div>
+          <button class="binder-owned-toggle" data-id="${b.id}" title="${b.owned ? 'Mark as needed' : 'Mark as owned'}">${b.owned ? 'Got it' : 'Need it'}</button>
+        </div>
+        <button class="wishlist-remove binder-remove" data-id="${b.id}" title="Remove">✕</button>
+      </div>
+    `;
+  });
+  list.innerHTML = items.join('');
 }
 
 function toggleCardInWishlist(id) {
@@ -17156,6 +17269,7 @@ const SYNC_KEYS = [
   'pkm-budget-max-gbp',           // Max per card budget slider
   'pkm-grading-service-v1',       // Grading service pref: PSA or ACE
   'pkm-ace-tier-v1',              // ACE grading tier pref
+  'pkm-fullart-binder-v1',        // Full Art Binder Project Wishlist
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
@@ -17255,6 +17369,7 @@ function syncApplyPayload(payload, mode) {
   try {
     if (typeof portfolio !== 'undefined') portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
     if (typeof wishlist !== 'undefined') wishlist = JSON.parse(localStorage.getItem('pkm-wishlist') || '[]');
+    if (typeof fullArtBinder !== 'undefined') fullArtBinder = JSON.parse(localStorage.getItem('pkm-fullart-binder-v1') || '[]');
     if (typeof compareSlots !== 'undefined') compareSlots = JSON.parse(localStorage.getItem('pkm-compare') || '[null, null]');
     if (typeof watchlist !== 'undefined') watchlist = JSON.parse(localStorage.getItem('pkm-watchlist-v1') || '[]');
     if (typeof acquisitions !== 'undefined') acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}');
@@ -17270,8 +17385,9 @@ function syncApplyPayload(payload, mode) {
   } catch {}
   // Trigger re-render of any visible panels.
   try { typeof renderPortfolio    === 'function' && renderPortfolio();    } catch {}
-  try { typeof renderWishlist     === 'function' && renderWishlist();     } catch {}
-  try { typeof renderCompare      === 'function' && renderCompare();      } catch {}
+  try { typeof renderWishlist        === 'function' && renderWishlist();        } catch {}
+  try { typeof renderFullArtBinder   === 'function' && renderFullArtBinder();   } catch {}
+  try { typeof renderCompare         === 'function' && renderCompare();         } catch {}
   try { typeof renderWatchlist    === 'function' && renderWatchlist();    } catch {}
   try { typeof renderAlerts       === 'function' && renderAlerts();       } catch {}
   try { typeof renderHomeDashboard === 'function' && renderHomeDashboard(); } catch {}
