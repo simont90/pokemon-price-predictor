@@ -19022,7 +19022,7 @@ if (document.readyState === 'loading') {
 // BUDGETER — Aug–Dec 2026 monthly Pokémon spend tracker
 // ═══════════════════════════════════════════════════════════════════════════
 
-const BUDGET_KEY = 'pkm-budgeter-v1';
+const BUDGETER_KEY = 'pkm-budgeter-v1';
 const BUDGET_MONTHS = [
   { key: '2026-08', label: 'August',    short: 'Aug' },
   { key: '2026-09', label: 'September', short: 'Sep' },
@@ -19032,11 +19032,11 @@ const BUDGET_MONTHS = [
 ];
 
 function _loadBudget() {
-  try { const r = localStorage.getItem(BUDGET_KEY); if (r) return JSON.parse(r); } catch(e) {}
+  try { const r = localStorage.getItem(BUDGETER_KEY); if (r) return JSON.parse(r); } catch(e) {}
   return { target: 250, months: {} };
 }
 function _saveBudget(data) {
-  try { localStorage.setItem(BUDGET_KEY, JSON.stringify(data)); } catch(e) {}
+  try { localStorage.setItem(BUDGETER_KEY, JSON.stringify(data)); } catch(e) {}
 }
 function _budgetMonth(data, key) {
   return data.months[key] || { packs: 0, singles: 0, sold: 0 };
