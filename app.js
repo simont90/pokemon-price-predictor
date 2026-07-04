@@ -5395,10 +5395,15 @@ function toggleSidePanel(id) {
 }
 
 function setupFullArtBinder() {
-  $('binderToggle').addEventListener('click', () => toggleSidePanel('binderPanel'));
+  // Header icon → go to dedicated binder page
+  $('binderToggle').addEventListener('click', () => go('binder'));
   $('binderClose').addEventListener('click', () => { $('binderPanel').style.display = 'none'; });
   $('addBinderBtn').addEventListener('click', () => toggleCardInFullArtBinder());
 
+  // "Find a card" button on binder page → jump to Predict search
+  $('binderPageAddBtn')?.addEventListener('click', () => go('predict'));
+
+  // Side panel list interactions
   const list = $('binderList');
   if (list) {
     list.addEventListener('click', e => {
@@ -5406,18 +5411,48 @@ function setupFullArtBinder() {
         e.stopPropagation();
         const id = e.target.closest('.binder-remove').dataset.id;
         fullArtBinder = fullArtBinder.filter(b => b.id !== id);
-        saveFullArtBinder(); renderFullArtBinder(); updateFullArtBinderButton();
+        saveFullArtBinder(); renderFullArtBinder(); renderBinderPage(); updateFullArtBinderButton();
         return;
       }
       if (e.target.closest('.binder-owned-toggle')) {
         e.stopPropagation();
         const id = e.target.closest('.binder-owned-toggle').dataset.id;
         const item = fullArtBinder.find(b => b.id === id);
-        if (item) { item.owned = !item.owned; saveFullArtBinder(); renderFullArtBinder(); }
+        if (item) { item.owned = !item.owned; saveFullArtBinder(); renderFullArtBinder(); renderBinderPage(); }
         return;
       }
       const item = e.target.closest('.binder-item');
       if (item) selectCard(item.dataset.id);
+    });
+  }
+
+  // Binder page event delegation (set up once)
+  const pageContent = $('binderPageContent');
+  if (pageContent && !pageContent._listenerAdded) {
+    pageContent._listenerAdded = true;
+    pageContent.addEventListener('click', e => {
+      const ownedBtn = e.target.closest('.binder-pg-owned');
+      if (ownedBtn) {
+        e.stopPropagation();
+        const id = ownedBtn.dataset.id;
+        const it = fullArtBinder.find(b => b.id === id);
+        if (it) { it.owned = !it.owned; saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); }
+        return;
+      }
+      const removeBtn = e.target.closest('.binder-pg-remove');
+      if (removeBtn) {
+        e.stopPropagation();
+        const id = removeBtn.dataset.id;
+        fullArtBinder = fullArtBinder.filter(b => b.id !== id);
+        saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
+        return;
+      }
+      const card = e.target.closest('.binder-pg-card[data-id]');
+      if (card && !e.target.closest('button')) {
+        const id = card.dataset.id;
+        go('predict');
+        setTimeout(() => { try { selectCard(id); } catch(err) {} }, 80);
+      }
     });
   }
 
@@ -5446,6 +5481,7 @@ function toggleCardInFullArtBinder(id) {
   }
   saveFullArtBinder();
   renderFullArtBinder();
+  renderBinderPage();
   updateFullArtBinderButton();
 }
 
@@ -5501,6 +5537,193 @@ function renderFullArtBinder() {
     `;
   });
   list.innerHTML = items.join('');
+}
+
+function renderBinderPage() {
+  const container = $('binderPageContent');
+  if (!container) return;
+
+  // Update owned count in header
+  const owned = fullArtBinder.filter(b => b.owned).length;
+  const pageOwnedEl = $('binderPageOwned');
+  if (pageOwnedEl) pageOwnedEl.textContent = `${owned}/${fullArtBinder.length} owned`;
+
+  if (fullArtBinder.length === 0) {
+    container.innerHTML = `<div class="binder-page-empty"><p>Nothing in the binder yet.</p><p class="binder-page-empty-sub">Open any card in Predict and tap "Add to Full Art Binder" to start your Gen 1 &amp; Gen 2 project.</p></div>`;
+    return;
+  }
+
+  // Get live or cached price in GBP for a binder item
+  function itemGBP(b) {
+    const card = getCardById(b.id);
+    const cached = getCachedPrice(b.id);
+    const usd = cached
+      ? (cached.pcUngraded || cached.market || cached.mid || (card ? card.p : 0))
+      : (card ? card.p : 0);
+    return usdToGbp(usd || 0);
+  }
+
+  // Extract species name from card name (Gen 1/2 edge cases handled)
+  function speciesOf(name) {
+    if (!name) return 'Unknown';
+    if (/^mr\.?\s*mime/i.test(name)) return 'Mr. Mime';
+    if (/^farfetch.d/i.test(name)) return "Farfetch'd";
+    if (/^ho.oh/i.test(name)) return 'Ho-Oh';
+    if (/^nidoran[♀♂]/i.test(name)) return 'Nidoran';
+    if (/^mime\s+jr/i.test(name)) return 'Mime Jr.';
+    return name.trim().split(/\s+/)[0];
+  }
+
+  // Group by species
+  const groups = {};
+  for (const b of fullArtBinder) {
+    const sp = speciesOf(b.name);
+    if (!groups[sp]) groups[sp] = [];
+    groups[sp].push(b);
+  }
+
+  // Set-level multi-buy detection: how many binder cards per set
+  const setBuckets = {};
+  for (const b of fullArtBinder) {
+    if (!setBuckets[b.set]) setBuckets[b.set] = [];
+    setBuckets[b.set].push(b.id);
+  }
+
+  // Pair EN and JP items within a species group using the counterpart index
+  function pairItems(items) {
+    const enItems = items.filter(b => (b.lang || 'EN') !== 'JP');
+    const jpItems = items.filter(b => b.lang === 'JP');
+    const pairs = [];
+    const usedJP = new Set();
+
+    for (const en of enItems) {
+      const enKey = counterpartByCard.get(en.id);
+      let jp = null;
+      if (enKey) {
+        for (const j of jpItems) {
+          if (usedJP.has(j.id)) continue;
+          if (counterpartByCard.get(j.id) === enKey) { jp = j; usedJP.add(j.id); break; }
+        }
+      }
+      // If only one JP card and no key match found, pair them (works for older sets)
+      if (!jp && jpItems.length === 1 && !usedJP.has(jpItems[0].id) && enItems.length === 1) {
+        jp = jpItems[0]; usedJP.add(jpItems[0].id);
+      }
+      pairs.push({ en, jp });
+    }
+    for (const j of jpItems) {
+      if (!usedJP.has(j.id)) pairs.push({ en: null, jp: j });
+    }
+    return pairs;
+  }
+
+  // Render a single card tile
+  function cardTile(b, gbp) {
+    const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
+    const langPill = b.lang === 'JP'
+      ? '<span class="binder-pg-lang jp">JP</span>'
+      : '<span class="binder-pg-lang en">EN</span>';
+    return `
+      <div class="binder-pg-card${b.owned ? ' binder-pg-owned-card' : ''}" data-id="${b.id}">
+        <div class="binder-pg-img-wrap">
+          ${b.img ? `<img class="binder-pg-img" src="${b.img}" alt="" loading="lazy" onerror="this.style.display='none'">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
+          ${langPill}
+        </div>
+        <div class="binder-pg-card-info">
+          <div class="binder-pg-card-name">${esc(b.name)}</div>
+          <div class="binder-pg-card-set">${esc(b.set)}</div>
+          <div class="binder-pg-card-price">${priceStr}</div>
+          <div class="binder-pg-card-actions">
+            <button class="binder-pg-owned binder-owned-toggle" data-id="${b.id}">${b.owned ? 'Got it' : 'Need it'}</button>
+            <button class="binder-pg-remove" data-id="${b.id}" title="Remove from binder">✕</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  let html = '';
+  const sortedSpecies = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+
+  for (const species of sortedSpecies) {
+    const items = groups[species];
+    const ownedInGroup = items.filter(b => b.owned).length;
+    const pairs = pairItems(items);
+    let bodyHtml = '';
+
+    for (const pair of pairs) {
+      const enB = pair.en, jpB = pair.jp;
+      const enGBP = enB ? itemGBP(enB) : 0;
+      const jpGBP = jpB ? itemGBP(jpB) : 0;
+
+      // Build comparison verdict
+      let verdictHtml = '';
+      if (enB && jpB && enGBP > 0 && jpGBP > 0) {
+        // diff > 0 → JP costs more than EN; diff < 0 → JP cheaper
+        const diff = ((jpGBP - enGBP) / enGBP) * 100;
+        const abs = Math.abs(diff).toFixed(0);
+        let msg, cls;
+        if (diff < -25) {
+          msg = `JP is ${abs}% cheaper — strong case for the Japanese version`;
+          cls = 'verdict-jp-strong';
+        } else if (diff < -10) {
+          msg = `JP is ${abs}% cheaper — worth considering over EN`;
+          cls = 'verdict-jp-mild';
+        } else if (diff > 25) {
+          msg = `EN is ${abs}% cheaper — English is considerably better value`;
+          cls = 'verdict-en-strong';
+        } else if (diff > 10) {
+          msg = `EN is ${abs}% cheaper — slight advantage to English`;
+          cls = 'verdict-en-mild';
+        } else {
+          msg = `Within ${abs}% of each other — get whichever you prefer`;
+          cls = 'verdict-neutral';
+        }
+        verdictHtml = `<div class="binder-verdict ${cls}"><span class="binder-verdict-dot"></span>${msg}</div>`;
+      }
+
+      // Multi-buy hint: does this card's set contain other binder cards?
+      let multiBuyHtml = '';
+      const checkedSets = new Set();
+      for (const b of [enB, jpB].filter(Boolean)) {
+        if (checkedSets.has(b.set)) continue;
+        checkedSets.add(b.set);
+        const bucket = setBuckets[b.set] || [];
+        const others = bucket.filter(id => id !== b.id && id !== (b === enB ? jpB?.id : enB?.id));
+        if (others.length >= 1) {
+          multiBuyHtml = `<div class="binder-multibuy">📦 ${others.length + 1} cards from <strong>${esc(b.set)}</strong> in binder — ask for a multi-buy discount</div>`;
+          break;
+        }
+      }
+
+      if (enB && jpB) {
+        bodyHtml += `
+          <div class="binder-pair">
+            <div class="binder-pair-cards">
+              <div class="binder-pair-side">${cardTile(enB, enGBP)}</div>
+              <div class="binder-pair-divider"><span class="binder-pair-vs">vs</span></div>
+              <div class="binder-pair-side">${cardTile(jpB, jpGBP)}</div>
+            </div>
+            ${verdictHtml}${multiBuyHtml}
+          </div>`;
+      } else {
+        const solo = enB || jpB;
+        const soloGBP = enB ? enGBP : jpGBP;
+        bodyHtml += `<div class="binder-pair binder-pair-solo">${cardTile(solo, soloGBP)}${multiBuyHtml}</div>`;
+      }
+    }
+
+    html += `
+      <details class="binder-species-group" open>
+        <summary class="binder-species-summary">
+          <svg class="binder-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          <span class="binder-species-name">${esc(species)}</span>
+          <span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${ownedInGroup}/${items.length} owned</span>
+        </summary>
+        <div class="binder-species-body">${bodyHtml}</div>
+      </details>`;
+  }
+
+  container.innerHTML = html;
 }
 
 function toggleCardInWishlist(id) {
@@ -16285,6 +16508,7 @@ function setupPageNav() {
     predict: document.getElementById('pagePredict'),
     discover: document.getElementById('pageDiscover'),
     tools: document.getElementById('pageTools'),
+    binder: document.getElementById('pageBinder'),
   };
 
   function go(page) {
@@ -16311,6 +16535,7 @@ function setupPageNav() {
       setTimeout(() => { try { urRunScan(); } catch (e) {} }, 100);
     }
     if (page === 'home') { renderHomeDashboard(); _homeAutoRefresh(); _syncOnHomeNav(); }
+    if (page === 'binder') { try { renderBinderPage(); } catch(e) {} }
     // URL + title: cards get their own address (#cardId); other pages reset to page hash
     if (page === 'predict' && selectedCard) {
       try { history.replaceState({ cardId: selectedCard.i }, '', '#' + selectedCard.i); } catch(e) {}

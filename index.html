@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260704k">
+  <link rel="stylesheet" href="style.css?v=20260704l">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -127,6 +127,11 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
         <span>Tools</span>
         <span class="page-nav-sub">Price sync · settings</span>
+      </button>
+      <button class="page-nav-btn" data-page="binder" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 0 3-3h7z"/></svg>
+        <span>Binder</span>
+        <span class="page-nav-sub">Gen 1 &amp; Gen 2 Full Art</span>
       </button>
       <button class="page-nav-btn page-nav-ask" id="aiChatBtn" type="button" aria-label="PokeKnow">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -1961,6 +1966,21 @@
       <div id="toolsMount"></div>
     </div><!-- /#pageTools -->
 
+    <!-- Full Art Binder dedicated page -->
+    <div class="page" id="pageBinder" data-page="binder" style="display:none">
+      <div class="binder-page-header">
+        <div class="binder-page-title-row">
+          <h2 class="binder-page-title">Full Art Binder</h2>
+          <span class="binder-page-subtitle">Gen 1 &amp; Gen 2 · EN / JP comparison</span>
+        </div>
+        <div class="binder-page-meta">
+          <span id="binderPageOwned">0/0 owned</span>
+          <button class="binder-pg-add-btn" id="binderPageAddBtn" type="button">+ Find a card</button>
+        </div>
+      </div>
+      <div id="binderPageContent" class="binder-page-content"></div>
+    </div><!-- /#pageBinder -->
+
     <!-- Vestigial main close to keep DOM well-formed. Hidden Top 50 placeholder below is moved at init. -->
     <main style="display:none">
       <section class="card top50-card" id="top50Section">
@@ -2367,7 +2387,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260704k"></script>
+  <script src="app.js?v=20260704l"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
