@@ -11502,7 +11502,7 @@ function renderHoldStrategy(card) {
 
   const strategies = [
     { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',      desc: rawDesc,     today: rawEntryUSD, yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20, acqCost: usingAcqCost },
-    { label: gambleLabel,  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: gambleRisk, variance: gambleVariance, waitMonths: gradingWaitMonths, lossProb: isAce ? 0 : lossProb, lossEV: isAce ? 0 : lossEV, acqCost: usingAcqCost, aceMode: isAce },
+    { label: gambleLabel,  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: gambleRisk, variance: gambleVariance, waitMonths: gradingWaitMonths, waitDisplay: gradingWaitDisplay, lossProb: isAce ? 0 : lossProb, lossEV: isAce ? 0 : lossEV, acqCost: usingAcqCost, aceMode: isAce },
     ...gradedStrategies.map((s, i) => ({
       ...s,
       desc: i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling',
@@ -11846,8 +11846,8 @@ function renderHoldStrategy(card) {
         </div>
         ${s.waitMonths ? `
         <div class="hold-tile-row hold-tile-warn">
-          <span class="hold-tile-k">UK wait</span>
-          <span class="hold-tile-v">~${s.waitMonths} mo locked</span>
+          <span class="hold-tile-k">Wait</span>
+          <span class="hold-tile-v">~${s.waitDisplay || s.waitMonths.toFixed(1) + ' mo'} locked</span>
         </div>` : ''}
         ${s.lossProb !== undefined && s.lossProb > 0 ? `
         <div class="hold-tile-row hold-tile-warn">
