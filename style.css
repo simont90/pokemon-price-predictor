@@ -4474,7 +4474,110 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
    Hold Strategy · Raw vs Graded comparison
    ========================================================= */
 .hold-card { margin-top: 16px; }
-.hold-header { margin-bottom: 14px; }
+.hold-header {
+  margin-bottom: 14px;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+}
+.hold-header > div:first-child { flex: 1 1 260px; min-width: 0; }
+
+/* PSA ↔ ACE segmented picker.
+   Two buttons side-by-side, chip-like, with a compact sub-label. Mirrors the
+   existing .acq-source-toggle look but pared down for a header. */
+.grading-service-picker {
+  display: inline-flex;
+  padding: 3px; gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0,0,0,0.20);
+  flex-shrink: 0;
+}
+.gs-btn {
+  display: inline-flex; flex-direction: column; align-items: center;
+  gap: 1px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  min-width: 78px;
+}
+.gs-btn:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.gs-btn.is-active {
+  background: rgba(232, 182, 52, 0.14);
+  border-color: rgba(232, 182, 52, 0.55);
+  color: var(--accent);
+}
+.gs-btn-label { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; }
+.gs-btn-sub   { font-size: 10px; letter-spacing: 0.02em; opacity: 0.85; }
+
+/* ACE tier picker — revealed only when service = ACE. */
+.ace-tier-picker {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(232, 182, 52, 0.05);
+}
+.ace-tier-picker-title {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase;
+  color: var(--muted);
+}
+.ace-tier-hint {
+  font-size: 11px; letter-spacing: 0; text-transform: none;
+  color: var(--accent); font-weight: 500;
+}
+.ace-tier-btns {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.ace-tier-btn {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.20);
+  color: var(--muted);
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.ace-tier-btn:hover { color: var(--text); border-color: rgba(232, 182, 52, 0.35); }
+.ace-tier-btn.is-active {
+  background: rgba(232, 182, 52, 0.14);
+  border-color: rgba(232, 182, 52, 0.65);
+  color: var(--accent);
+}
+.ace-tier-btn.is-suggested::after {
+  content: 'Suggested';
+  position: absolute;
+  top: -8px; right: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent); color: var(--bg);
+  font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ace-tier-btn-name { font-size: 12px; font-weight: 600; }
+.ace-tier-btn-fee  { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--text); }
+.ace-tier-btn-fee:not(:only-child) { color: inherit; }
+.ace-tier-btn.is-active .ace-tier-btn-fee { color: var(--accent); }
+.ace-tier-btn-wait { font-size: 10px; opacity: 0.75; }
+
+@media (max-width: 640px) {
+  .grading-service-picker { align-self: stretch; }
+  .gs-btn { flex: 1; min-width: 0; }
+  .ace-tier-btns { grid-template-columns: repeat(3, 1fr); }
+  .ace-tier-picker-title { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .ace-tier-hint { letter-spacing: 0; }
+}
 
 /* EN ↔ JP counterpart comparison panel.
    Drawn between the headline recommendation and the strategy grid; only

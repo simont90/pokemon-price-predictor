@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260701h">
+  <link rel="stylesheet" href="style.css?v=20260701i">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1221,9 +1221,28 @@
         <section class="card hold-card" id="holdStrategySection" data-tab-group="strategy" style="display:none">
           <div class="hold-header">
             <div>
-              <h2>Hold Strategy · Raw vs Graded <span class="anchor-badge" id="holdAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span></h2>
-              <p class="card-desc">Which version of this card is the best 5-year hold? We compare buying raw (and holding ungraded), buying raw and gambling on grading, and buying already-graded at PSA 7–10 — then highlight the winning play.</p>
+              <h2 id="holdHeadingTitle">Hold Strategy · Raw vs Graded <span class="anchor-badge" id="holdAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span></h2>
+              <p class="card-desc" id="holdHeadingDesc">Which version of this card is the best 5-year hold? We compare buying raw (and holding ungraded), buying raw and gambling on grading, and buying already-graded at PSA 7–10 — then highlight the winning play.</p>
             </div>
+            <!-- Grading service picker (PSA for resale premium / ACE for personal-keeper protection) -->
+            <div class="grading-service-picker" role="radiogroup" aria-label="Grading service">
+              <button class="gs-btn" data-service="PSA" role="radio" aria-checked="true" type="button" title="PSA — grade for resale premium at PSA 7/8/9/10 market prices">
+                <span class="gs-btn-label">PSA</span>
+                <span class="gs-btn-sub">grade for resale</span>
+              </button>
+              <button class="gs-btn" data-service="ACE" role="radio" aria-checked="false" type="button" title="ACE — slab for personal-keeper protection (no resale premium)">
+                <span class="gs-btn-label">ACE</span>
+                <span class="gs-btn-sub">slab for protection</span>
+              </button>
+            </div>
+          </div>
+          <!-- ACE tier picker: hidden when PSA is selected -->
+          <div class="ace-tier-picker" id="aceTierPicker" role="radiogroup" aria-label="ACE grading tier" style="display:none">
+            <div class="ace-tier-picker-title">
+              <span>ACE tier</span>
+              <span class="ace-tier-hint" id="aceTierHint"></span>
+            </div>
+            <div class="ace-tier-btns" id="aceTierBtns"></div>
           </div>
           <div class="hold-recommendation" id="holdRecommendation"></div>
           <div class="hold-market-context" id="holdMarketContext" style="display:none"></div>
@@ -2308,7 +2327,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260701h"></script>
+  <script src="app.js?v=20260701i"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

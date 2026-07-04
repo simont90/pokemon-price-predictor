@@ -10208,6 +10208,174 @@ function getUkGradingWaitMonths(psa10USD) {
 function getUkGradingWaitDisplay(psa10USD) {
   return (psa10USD && psa10USD > UK_GRADING_VALUE_THRESHOLD_USD) ? '4–6 wk' : '6–8 wk';
 }
+
+// ---- ACE Grading (UK service) ----
+// Alternative to PSA. Fixed per-tier pricing (no value-tier threshold). Faster
+// turnaround at every tier. Different mental model: ACE-graded cards do NOT
+// currently command a resale premium over raw. Users choose ACE when the goal
+// is to protect a personal-collection card and lock in its condition on record,
+// not to unlock a graded-market uplift. Prices in GBP, wait in days.
+const ACE_TIERS = {
+  basic:    { label: 'Basic',    feeGBP: 18,  waitDays: 45, availability: 'Final Spaces' },
+  standard: { label: 'Standard', feeGBP: 25,  waitDays: 25, availability: 'Limited' },
+  premier:  { label: 'Premier',  feeGBP: 32,  waitDays: 10, availability: 'Good' },
+  ultra:    { label: 'Ultra',    feeGBP: 60,  waitDays: 5,  availability: 'Limited' },
+  luxury:   { label: 'Luxury',   feeGBP: 120, waitDays: 2,  availability: 'Final Spaces' },
+};
+const ACE_TIER_ORDER = ['basic', 'standard', 'premier', 'ultra', 'luxury'];
+// Suggested tier by raw card value in GBP — keeps fee in a sensible proportion
+// while respecting the reality that higher-value cards deserve faster turnaround.
+function recommendAceTier(rawGBP) {
+  if (!rawGBP || rawGBP < 40)  return 'basic';
+  if (rawGBP < 150)  return 'standard';
+  if (rawGBP < 400)  return 'premier';
+  if (rawGBP < 1000) return 'ultra';
+  return 'luxury';
+}
+function getAceFeeGBP(tier) {
+  return (ACE_TIERS[tier] || ACE_TIERS.standard).feeGBP;
+}
+function getAceWaitDays(tier) {
+  return (ACE_TIERS[tier] || ACE_TIERS.standard).waitDays;
+}
+function getAceWaitDisplay(tier) {
+  const d = getAceWaitDays(tier);
+  return d >= 30 ? `${Math.round(d/7)} wk` : `${d} days`;
+}
+function getAceWaitMonths(tier) {
+  return getAceWaitDays(tier) / 30;
+}
+
+// ---- Grading service preference (global, per-user, synced) ----
+// User picks between PSA (grade for resale premium) and ACE (slab for
+// protection). Selection drives which cost/wait/EV model the Hold Strategy uses.
+const GRADING_SERVICE_KEY = 'pkm-grading-service-v1';
+const ACE_TIER_PREF_KEY   = 'pkm-ace-tier-v1';
+function getGradingService() {
+  const v = localStorage.getItem(GRADING_SERVICE_KEY);
+  return v === 'ACE' ? 'ACE' : 'PSA';
+}
+function setGradingService(v) {
+  const norm = v === 'ACE' ? 'ACE' : 'PSA';
+  try { localStorage.setItem(GRADING_SERVICE_KEY, norm); } catch {}
+}
+function getAceTier() {
+  const v = localStorage.getItem(ACE_TIER_PREF_KEY);
+  return ACE_TIERS[v] ? v : 'standard';
+}
+function setAceTier(v) {
+  const norm = ACE_TIERS[v] ? v : 'standard';
+  try { localStorage.setItem(ACE_TIER_PREF_KEY, norm); } catch {}
+}
+// Service-aware grading fee/wait — used by Hold Strategy only. Other places
+// (eBay Deal Check, PSA ROI, etc.) still call getUkGradingFeeGBP directly
+// because they're inherently about PSA resale.
+function getGradingFeeGBP(psa10USD, service, tier) {
+  return service === 'ACE' ? getAceFeeGBP(tier) : getUkGradingFeeGBP(psa10USD);
+}
+function getGradingWaitMonths(psa10USD, service, tier) {
+  return service === 'ACE' ? getAceWaitMonths(tier) : getUkGradingWaitMonths(psa10USD);
+}
+function getGradingWaitDisplay(psa10USD, service, tier) {
+  return service === 'ACE' ? getAceWaitDisplay(tier) : getUkGradingWaitDisplay(psa10USD);
+}
+
+// ---- Grading service + ACE tier picker (Hold Strategy UI) ----
+// Idempotent: wires listeners exactly once, then updates the visible state on
+// every call so it reflects the current pref + the currently selected card's
+// suggested tier.
+let _holdSvcPickerReady = false;
+function initHoldStrategyServicePicker(card) {
+  const gsHost = document.querySelector('.grading-service-picker');
+  const tierHost = $('aceTierBtns');
+  const tierPanel = $('aceTierPicker');
+  const tierHint = $('aceTierHint');
+  if (!gsHost || !tierHost || !tierPanel) return;
+
+  const currentSvc = getGradingService();
+  const currentTier = getAceTier();
+
+  // Render tier buttons on first init only — five buttons keyed by ACE_TIER_ORDER.
+  if (!_holdSvcPickerReady) {
+    tierHost.innerHTML = ACE_TIER_ORDER.map(k => {
+      const info = ACE_TIERS[k];
+      return `<button class="ace-tier-btn" data-tier="${k}" role="radio" aria-checked="false" type="button"
+        title="ACE ${info.label} \u2014 \u00a3${info.feeGBP}, ~${info.waitDays} day turnaround (${info.availability})">
+        <span class="ace-tier-btn-name">${info.label}</span>
+        <span class="ace-tier-btn-fee">\u00a3${info.feeGBP}</span>
+        <span class="ace-tier-btn-wait">${info.waitDays}d</span>
+      </button>`;
+    }).join('');
+
+    // PSA ↔ ACE toggle. Persists the choice and re-renders the Hold Strategy.
+    gsHost.querySelectorAll('.gs-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const svc = btn.dataset.service === 'ACE' ? 'ACE' : 'PSA';
+        if (getGradingService() === svc) return;
+        setGradingService(svc);
+        if (typeof syncSchedulePush === 'function') syncSchedulePush();
+        if (typeof renderHoldStrategy === 'function' && selectedCard) {
+          try { renderHoldStrategy(selectedCard); } catch {}
+        }
+      });
+    });
+
+    // ACE tier buttons — same pattern.
+    tierHost.querySelectorAll('.ace-tier-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const t = btn.dataset.tier;
+        if (!ACE_TIERS[t]) return;
+        if (getAceTier() === t) return;
+        setAceTier(t);
+        if (typeof syncSchedulePush === 'function') syncSchedulePush();
+        if (typeof renderHoldStrategy === 'function' && selectedCard) {
+          try { renderHoldStrategy(selectedCard); } catch {}
+        }
+      });
+    });
+
+    _holdSvcPickerReady = true;
+  }
+
+  // Reflect current service pref in the PSA/ACE segmented buttons.
+  gsHost.querySelectorAll('.gs-btn').forEach(btn => {
+    const active = btn.dataset.service === currentSvc;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-checked', active ? 'true' : 'false');
+  });
+
+  // Show/hide the ACE tier picker to match the service.
+  tierPanel.style.display = currentSvc === 'ACE' ? '' : 'none';
+
+  // Reflect selected tier and (if we have a card) surface a suggested tier hint.
+  tierHost.querySelectorAll('.ace-tier-btn').forEach(btn => {
+    const active = btn.dataset.tier === currentTier;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-checked', active ? 'true' : 'false');
+    btn.classList.remove('is-suggested');
+  });
+
+  if (tierHint) {
+    let rawGBP = 0;
+    if (card && typeof getCurrentPrice === 'function') {
+      const rawUSD = getCurrentPrice(card);
+      const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+      if (rawUSD > 0) rawGBP = rawUSD * fx;
+    }
+    if (rawGBP > 0) {
+      const suggested = recommendAceTier(rawGBP);
+      // Highlight suggestion in the button strip.
+      const suggBtn = tierHost.querySelector(`.ace-tier-btn[data-tier="${suggested}"]`);
+      if (suggBtn) suggBtn.classList.add('is-suggested');
+      const info = ACE_TIERS[suggested];
+      tierHint.textContent = suggested === currentTier
+        ? `Suggested for ${fmtGBPDirect(rawGBP)} card \u2713`
+        : `Suggested for ${fmtGBPDirect(rawGBP)} card: ${info.label} (\u00a3${info.feeGBP})`;
+    } else {
+      tierHint.textContent = '';
+    }
+  }
+}
 // Submission materials cost (penny sleeve + toploader).
 // For owned cards: deducts items already present per acquisition data.
 // For non-owned cards (cardId null/undefined): assumes both are needed.
@@ -10638,6 +10806,27 @@ function renderHoldStrategy(card) {
   }
   section.style.display = 'block';
 
+  // Ensure the service picker (PSA/ACE) + ACE tier picker is initialised and
+  // its UI state reflects the current localStorage prefs. Cheap to call every
+  // render — it wires event listeners exactly once via a flag.
+  if (typeof initHoldStrategyServicePicker === 'function') initHoldStrategyServicePicker(card);
+
+  // Swap the section title + intro copy so it matches the current service.
+  // PSA copy talks about resale premium; ACE copy talks about protection.
+  const titleEl = $('holdHeadingTitle');
+  const descEl  = $('holdHeadingDesc');
+  if (titleEl) {
+    const badgeHtml = '<span class="anchor-badge" id="holdAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span>';
+    titleEl.innerHTML = (getGradingService() === 'ACE'
+      ? 'Hold Strategy \u00b7 Raw vs ACE Slab '
+      : 'Hold Strategy \u00b7 Raw vs Graded ') + badgeHtml;
+  }
+  if (descEl) {
+    descEl.textContent = getGradingService() === 'ACE'
+      ? 'ACE certifies + protects the card without unlocking a PSA-market premium, so the maths becomes: is the protection worth the fee vs holding raw?'
+      : 'Which version of this card is the best 5-year hold? We compare buying raw (and holding ungraded), buying raw and gambling on grading, and buying already-graded at PSA 7\u201310 \u2014 then highlight the winning play.';
+  }
+
   // EN ↔ JP side-by-side: only rendered if the selected card has a
   // counterpart. Drawn above the strategy grid so the language verdict is
   // the first thing a collector sees after the headline recommendation.
@@ -10656,13 +10845,20 @@ function renderHoldStrategy(card) {
     }
   }
 
+  // Grading service pref — PSA (grade for resale premium) vs ACE (slab for
+  // personal-keeper protection). Drives fee, wait, and whether the PSA 7-10 buy
+  // tiles are shown. Tier is only used when service === 'ACE'.
+  const service = getGradingService();
+  const tier = getAceTier();
+  const isAce = service === 'ACE';
+
   // Convert UK all-in grading cost back to USD for internal arithmetic so the
   // rest of the math (which works in USD) stays consistent. fxRate is GBP/USD
   // — so USD = GBP / fxRate.
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
-  const gradingFeeGBP = getUkGradingFeeGBP(psa10Price);
-  const gradingWaitMonths = getUkGradingWaitMonths(psa10Price);
-  const gradingWaitDisplay = getUkGradingWaitDisplay(psa10Price);
+  const gradingFeeGBP = getGradingFeeGBP(psa10Price, service, tier);
+  const gradingWaitMonths = getGradingWaitMonths(psa10Price, service, tier);
+  const gradingWaitDisplay = getGradingWaitDisplay(psa10Price, service, tier);
   const gradingFeeUSD = gradingFeeGBP / fx;
   const gradingMaterialsGBP = getGradingMaterialsCostGBP(card.i);
   const gradingMaterialsUSD = gradingMaterialsGBP / fx;
@@ -10716,7 +10912,12 @@ function renderHoldStrategy(card) {
     + SUBGEM_DISTRIBUTION[8]       * psa8Yr5
     + SUBGEM_DISTRIBUTION[7]       * psa7Yr5
     + SUBGEM_DISTRIBUTION.rawLike  * rawYr5USD;
-  const gradeYr5EVRaw = gemRate * psa10Yr5 + (1 - gemRate) * subgemEV;
+  // In ACE mode, slabbing doesn't unlock a resale premium — the 5yr value is
+  // just the raw projection. In PSA mode, it's the gem-rate-weighted mix of
+  // PSA 10 and subgem outcomes.
+  const gradeYr5EVRaw = isAce
+    ? rawYr5USD
+    : gemRate * psa10Yr5 + (1 - gemRate) * subgemEV;
   // Apply opportunity-cost discount because your capital is locked for the wait.
   const gradeYr5EV = gradeYr5EVRaw * waitDiscount;
   const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
@@ -10785,8 +10986,10 @@ function renderHoldStrategy(card) {
     }
   });
 
-  // ----- Strategies 3-6: Buy (or Keep) graded at each tier -----
-  const gradedStrategies = [7, 8, 9, 10].map(g => {
+  // ----- Strategies 3-6: Buy (or Keep) graded at each PSA tier -----
+  // Only relevant in PSA mode — ACE-graded cards don't have a tiered resale
+  // market to buy into, so we skip these entirely when service === 'ACE'.
+  const gradedStrategies = isAce ? [] : [7, 8, 9, 10].map(g => {
     const isOwnedSlab = slabAcq && slabAcq.grade === g;
     const baseUSD = estimateGradePrice(card, g, psa10Price);
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
@@ -10808,13 +11011,36 @@ function renderHoldStrategy(card) {
     : rawShipGBP > 0
       ? `Hold ungraded for 5 yrs \u2014 incl. ~\u00a3${rawShipGBP} UK shipping`
       : 'Hold ungraded for 5 yrs';
-  const gambleDesc = usingAcqCost
-    ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${gradingFeeGBP} grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% PSA 9+`
-    : `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`;
+  let gambleDesc;
+  if (isAce) {
+    const aceInfo = ACE_TIERS[tier] || ACE_TIERS.standard;
+    gambleDesc = usingAcqCost
+      ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${gradingFeeGBP} ACE ${aceInfo.label} \u2014 protection, no resale uplift`
+      : `ACE ${aceInfo.label} slab (\u00a3${gradingFeeGBP}, ~${gradingWaitDisplay}) \u2014 protection, no resale uplift`;
+  } else {
+    gambleDesc = usingAcqCost
+      ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${gradingFeeGBP} grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% PSA 9+`
+      : `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`;
+  }
+
+  // Gamble tile label — different verb + qualifier for ACE (slab it) vs PSA (grade it).
+  let gambleLabel;
+  if (isAce) {
+    const aceInfo = ACE_TIERS[tier] || ACE_TIERS.standard;
+    gambleLabel = usingAcqCost
+      ? `Slab My Card (ACE ${aceInfo.label})`
+      : `Buy Raw + Slab (ACE ${aceInfo.label})`;
+  } else {
+    gambleLabel = usingAcqCost ? 'Grade My Card' : 'Buy Raw + Grade';
+  }
+  // ACE slabbing is a deterministic protection service — no gem-rate variance,
+  // no loss-case distribution — so it should look and rank as low-risk in the grid.
+  const gambleRisk = isAce ? 'low' : 'high';
+  const gambleVariance = isAce ? 0.20 : 0.85;
 
   const strategies = [
     { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',      desc: rawDesc,     today: rawEntryUSD, yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20, acqCost: usingAcqCost },
-    { label: usingAcqCost ? 'Grade My Card' : 'Buy Raw + Grade',  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: gradingWaitMonths, lossProb, lossEV, acqCost: usingAcqCost },
+    { label: gambleLabel,  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: gambleRisk, variance: gambleVariance, waitMonths: gradingWaitMonths, lossProb: isAce ? 0 : lossProb, lossEV: isAce ? 0 : lossEV, acqCost: usingAcqCost, aceMode: isAce },
     ...gradedStrategies.map((s, i) => ({
       ...s,
       desc: i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling',
@@ -10921,7 +11147,45 @@ function renderHoldStrategy(card) {
 
   // Build the two-line recommendation: raw-vs-graded verdict + best graded tier.
   const recEl = $('holdRecommendation');
-  if (!winner) {
+  // ACE-mode recommendation: no PSA resale premium, so the frame is
+  // "is the protection worth it?" — quantify the fee as a % of raw and give
+  // the user a clear-eyed protection-vs-hold-raw verdict.
+  if (isAce && recEl) {
+    const aceInfo = ACE_TIERS[tier] || ACE_TIERS.standard;
+    const rawStrat = strategies.find(s => s.key === 'raw');
+    const slabStrat = strategies.find(s => s.key === 'gamble');
+    const rawGBP_h  = rawUSD * fx;
+    const feePctOfRaw = rawGBP_h > 0 ? (gradingFeeGBP / rawGBP_h) * 100 : 0;
+    const rawRoi_h   = rawStrat ? rawStrat.roi : 0;
+    const slabRoi_h  = slabStrat ? slabStrat.roi : 0;
+    const roiDelta   = rawRoi_h - slabRoi_h;
+    const suggested  = recommendAceTier(rawGBP_h);
+    const tierHint   = suggested !== tier
+      ? ` Suggested tier for a ${fmtGBPDirect(rawGBP_h)} card: <strong>ACE ${(ACE_TIERS[suggested]||{}).label || suggested}</strong> (\u00a3${(ACE_TIERS[suggested]||{}).feeGBP}).`
+      : '';
+    let feeVerdict, feeClass;
+    if (feePctOfRaw <= 15) {
+      feeVerdict = 'Protection is cheap relative to the card.';
+      feeClass   = 'hold-rec-pill';
+    } else if (feePctOfRaw <= 40) {
+      feeVerdict = 'Protection is reasonable if this is a keeper.';
+      feeClass   = 'hold-rec-pill';
+    } else if (feePctOfRaw <= 100) {
+      feeVerdict = 'Protection cost is a meaningful slice of the card \u2014 only worth it for a personal-collection keeper.';
+      feeClass   = 'hold-rec-pill hold-rec-skip';
+    } else {
+      feeVerdict = `ACE ${aceInfo.label} costs more than the card itself \u2014 pick a lower tier, or leave it raw.`;
+      feeClass   = 'hold-rec-pill hold-rec-skip';
+    }
+    recEl.innerHTML = `
+      <div class="${feeClass}">ACE ${aceInfo.label}</div>
+      <div class="hold-rec-body">
+        <div class="hold-rec-line">${feeVerdict} \u00a3${gradingFeeGBP} fee is <strong>${feePctOfRaw.toFixed(0)}%</strong> of the card's raw price (${fmtGBPDirect(rawGBP_h)}), turnaround ~${gradingWaitDisplay}.${tierHint}</div>
+        <div class="hold-rec-line hold-rec-line-sub">5yr ROI comparison: <strong>Hold raw</strong> ${rawRoi_h >= 0 ? '+' : ''}${rawRoi_h.toFixed(0)}% \u00b7 <strong>ACE slab</strong> ${slabRoi_h >= 0 ? '+' : ''}${slabRoi_h.toFixed(0)}%. Slabbing costs you ~${Math.abs(roiDelta).toFixed(0)} ROI points \u2014 the price of certified protection for a keeper.</div>
+        <div class="hold-rec-line hold-rec-line-sub">ACE doesn't unlock a resale premium; use it when the goal is to protect + certify the condition, not to appreciate on the graded market. Switch to <strong>PSA</strong> above for the resale-focused analysis.</div>
+      </div>
+    `;
+  } else if (!winner) {
     recEl.innerHTML = `
       <div class="hold-rec-pill hold-rec-skip">Skip this card</div>
       <div class="hold-rec-body">
@@ -11123,8 +11387,14 @@ function renderHoldStrategy(card) {
   // ---------- Grading outcome distribution ----------
   // A focused little table showing what actually happens when you grade:
   // for each outcome, the probability bar + the realised P&L.
+  // ACE has no probabilistic grade outcome — it's a deterministic slab — so we
+  // hide this block entirely when service === 'ACE'.
   const outcomeHost = $('holdOutcomes');
-  if (outcomeHost) {
+  if (outcomeHost && isAce) {
+    outcomeHost.innerHTML = '';
+    outcomeHost.style.display = 'none';
+  } else if (outcomeHost) {
+    outcomeHost.style.display = '';
     const bestProfit = Math.max(...gradeOutcomes.map(o => o.profitUSD));
     const rows = gradeOutcomes.map(o => {
       const profitGBP = gbpFromUSD(o.profitUSD);
@@ -11205,6 +11475,25 @@ function renderHoldStrategy(card) {
     btn.classList.toggle('is-open', nowOpen);
   };
 
+  if (isAce) {
+    const aceInfo = ACE_TIERS[tier] || ACE_TIERS.standard;
+    $('holdFootnote').innerHTML = `
+      <strong>ACE (UK) assumptions:</strong> \u00a3${gradingFeeGBP} (${aceInfo.label} tier) + \u00a30.28 materials
+      (penny sleeve + toploader, waived if already present) per card. Turnaround ~${gradingWaitDisplay}
+      (${aceInfo.availability} availability). Wait discount applied at ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a.
+      opportunity cost so capital locked during the turnaround is fairly penalised. Also assumes
+      ${(BUY_SELL_FRICTION*100).toFixed(0)}% combined buy + sell friction on the raw exit.<br>
+      <strong>Why the 5yr value equals raw:</strong> ACE-graded cards do not currently command a resale premium
+      over an equivalent raw copy on the UK secondary market. The 5-year projection therefore just tracks the raw
+      price curve \u2014 you're paying the fee for authentication + physical protection, not for a graded-market
+      uplift. This makes ACE most defensible on personal-collection keepers, not on cards you plan to flip.<br>
+      <strong>Tier ladder:</strong> Basic \u00a318 / 45d \u00b7 Standard \u00a325 / 25d \u00b7 Premier \u00a332 / 10d
+      \u00b7 Ultra \u00a360 / 5d \u00b7 Luxury \u00a3120 / 2d. Higher tiers only buy faster turnaround, not a better
+      slab.<br>
+      Risk-adjusted ranking treats an ACE slab as low-variance (no gem-rate uncertainty), so it will only win the
+      badge if its post-fee ROI genuinely beats the raw hold.
+    `;
+  } else {
   $('holdFootnote').innerHTML = `
     <strong>UK grading assumptions:</strong> £${gradingFeeGBP} grading fee + £0.28 materials (penny sleeve + toploader, waived if already present) per card via PSA
     (${psa10Price > UK_GRADING_VALUE_THRESHOLD_USD ? '$1,501–$2,500 value tier, 20–30 business day turnaround' : '≤$1,500 value tier, 30–40 business day turnaround'};
@@ -11226,6 +11515,7 @@ function renderHoldStrategy(card) {
     Risk-adjusted ranking discounts ROI by variance so a coin-flip can't win "best" when
     a steadier graded copy delivers nearly the same return without the wait.
   `;
+  }
 
   // ---- Market context block: entry timing + grading economics + hold timeframe ----
   const ctxEl = $('holdMarketContext');
@@ -16406,6 +16696,8 @@ const SYNC_KEYS = [
   'pkm-jp-psa10-overrides-v1',     // Manually entered JP PSA 10 prices for EN↔JP comparison
   'pkm-reco-dismissed-v1',         // Cards dismissed from Recommendations
   'pkm-budget-max-gbp',           // Max per card budget slider
+  'pkm-grading-service-v1',       // Grading service pref: PSA or ACE
+  'pkm-ace-tier-v1',              // ACE grading tier pref
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
