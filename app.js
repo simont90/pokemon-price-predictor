@@ -4240,6 +4240,8 @@ function renderGradingROI(apiData) {
 // ---- ACE Grading ----
 const ACE_FEE_STANDARD_GBP = 18;
 const ACE_FEE_EXPRESS_GBP  = 35;
+const ACE_FEE_SHIPPING_GBP = 7.99;
+const ACE_FEE_LABEL_GBP    = 3;
 const ACE_PRICES_KEY = 'pkm-ace-prices-v1';
 
 function _getAceStore() {
@@ -4260,14 +4262,19 @@ function renderAceGradingSection() {
   section.style.display = 'block';
 
   const rawGBP = usdToGbp(getCurrentPrice(card));
-  const fee = ACE_FEE_STANDARD_GBP;
+  // Total cost basis: grading fee + outbound shipping + premium label
+  const fee = ACE_FEE_STANDARD_GBP + ACE_FEE_SHIPPING_GBP + ACE_FEE_LABEL_GBP;
   const saved = getAcePrices(card.i);
 
   // Fee strip
   $('aceFeeStrip').innerHTML =
-    `<span class="ace-fee-item"><span class="ace-fee-k">Standard</span><span class="ace-fee-v">£${fee}</span></span>` +
+    `<span class="ace-fee-item"><span class="ace-fee-k">Standard</span><span class="ace-fee-v">£${ACE_FEE_STANDARD_GBP}</span></span>` +
     `<span class="ace-fee-sep">·</span>` +
     `<span class="ace-fee-item"><span class="ace-fee-k">Express</span><span class="ace-fee-v">£${ACE_FEE_EXPRESS_GBP}</span></span>` +
+    `<span class="ace-fee-sep">·</span>` +
+    `<span class="ace-fee-item"><span class="ace-fee-k">Shipping</span><span class="ace-fee-v">£${ACE_FEE_SHIPPING_GBP.toFixed(2)}</span></span>` +
+    `<span class="ace-fee-sep">·</span>` +
+    `<span class="ace-fee-item"><span class="ace-fee-k">Premium label</span><span class="ace-fee-v">£${ACE_FEE_LABEL_GBP}</span></span>` +
     `<span class="ace-fee-sep">·</span>` +
     `<span class="ace-fee-item"><span class="ace-fee-k">Shipping back</span><span class="ace-fee-v ace-domestic">Free (UK domestic)</span></span>`;
 
@@ -4320,7 +4327,7 @@ function renderAceGradingSection() {
   if (profit10 > 0 && roi10 >= 50) {
     cls = 'ace-worth';
     title = 'Grade with ACE';
-    detail = `ACE 10 nets +${fmtGBPDirect(profit10)} (${roi10}% ROI at £${fee} std fee) · PSA would need £${psaBreakeven.toFixed(0)} in just to break even`;
+    detail = `ACE 10 nets +${fmtGBPDirect(profit10)} (${roi10}% ROI · £${ACE_FEE_STANDARD_GBP} grade + £${ACE_FEE_SHIPPING_GBP.toFixed(2)} ship + £${ACE_FEE_LABEL_GBP} label) · PSA would need £${psaBreakeven.toFixed(0)} in just to break even`;
   } else if (profit10 > 0) {
     cls = 'ace-maybe';
     title = 'Marginal — check gem rate';
@@ -4328,7 +4335,7 @@ function renderAceGradingSection() {
   } else {
     cls = 'ace-skip';
     title = 'Skip grading';
-    detail = `ACE 10 market (${fmtGBPDirect(ace10)}) is below raw + fee (${fmtGBPDirect(rawGBP + fee)}) — grading loses money`;
+    detail = `ACE 10 market (${fmtGBPDirect(ace10)}) is below raw + all fees (${fmtGBPDirect(rawGBP + fee)}) — grading loses money`;
   }
 
   verdictEl.style.display = '';
