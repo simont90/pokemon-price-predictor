@@ -10728,20 +10728,17 @@ function getGradingWaitDisplay(psa10USD, service, tier) {
 
 // ---- Grading service + ACE tier picker (Hold Strategy UI) ----
 // Idempotent: wires listeners exactly once, then updates the visible state on
-// every call so it reflects the current pref + the currently selected card's
-// suggested tier.
+// every call so it reflects the current ACE tier pref + suggested tier for the card.
+// The PSA/ACE toggle has been removed — both services are always shown.
 let _holdSvcPickerReady = false;
 function initHoldStrategyServicePicker(card) {
-  const gsHost = document.querySelector('.grading-service-picker');
   const tierHost = $('aceTierBtns');
   const tierPanel = $('aceTierPicker');
   const tierHint = $('aceTierHint');
-  if (!gsHost || !tierHost || !tierPanel) return;
+  if (!tierHost || !tierPanel) return;
 
-  const currentSvc = getGradingService();
   const currentTier = getAceTier();
 
-  // Render tier buttons on first init only — five buttons keyed by ACE_TIER_ORDER.
   if (!_holdSvcPickerReady) {
     tierHost.innerHTML = ACE_TIER_ORDER.map(k => {
       const info = ACE_TIERS[k];
@@ -10753,20 +10750,6 @@ function initHoldStrategyServicePicker(card) {
       </button>`;
     }).join('');
 
-    // PSA ↔ ACE toggle. Persists the choice and re-renders the Hold Strategy.
-    gsHost.querySelectorAll('.gs-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const svc = btn.dataset.service === 'ACE' ? 'ACE' : 'PSA';
-        if (getGradingService() === svc) return;
-        setGradingService(svc);
-        if (typeof syncSchedulePush === 'function') syncSchedulePush();
-        if (typeof renderHoldStrategy === 'function' && selectedCard) {
-          try { renderHoldStrategy(selectedCard); } catch {}
-        }
-      });
-    });
-
-    // ACE tier buttons — same pattern.
     tierHost.querySelectorAll('.ace-tier-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const t = btn.dataset.tier;
@@ -10783,17 +10766,9 @@ function initHoldStrategyServicePicker(card) {
     _holdSvcPickerReady = true;
   }
 
-  // Reflect current service pref in the PSA/ACE segmented buttons.
-  gsHost.querySelectorAll('.gs-btn').forEach(btn => {
-    const active = btn.dataset.service === currentSvc;
-    btn.classList.toggle('is-active', active);
-    btn.setAttribute('aria-checked', active ? 'true' : 'false');
-  });
+  // ACE tier picker is always visible.
+  tierPanel.style.display = '';
 
-  // Show/hide the ACE tier picker to match the service.
-  tierPanel.style.display = currentSvc === 'ACE' ? '' : 'none';
-
-  // Reflect selected tier and (if we have a card) surface a suggested tier hint.
   tierHost.querySelectorAll('.ace-tier-btn').forEach(btn => {
     const active = btn.dataset.tier === currentTier;
     btn.classList.toggle('is-active', active);
@@ -10810,7 +10785,6 @@ function initHoldStrategyServicePicker(card) {
     }
     if (rawGBP > 0) {
       const suggested = recommendAceTier(rawGBP);
-      // Highlight suggestion in the button strip.
       const suggBtn = tierHost.querySelector(`.ace-tier-btn[data-tier="${suggested}"]`);
       if (suggBtn) suggBtn.classList.add('is-suggested');
       const info = ACE_TIERS[suggested];
@@ -11257,20 +11231,14 @@ function renderHoldStrategy(card) {
   // render — it wires event listeners exactly once via a flag.
   if (typeof initHoldStrategyServicePicker === 'function') initHoldStrategyServicePicker(card);
 
-  // Swap the section title + intro copy so it matches the current service.
-  // PSA copy talks about resale premium; ACE copy talks about protection.
   const titleEl = $('holdHeadingTitle');
   const descEl  = $('holdHeadingDesc');
   if (titleEl) {
     const badgeHtml = '<span class="anchor-badge" id="holdAnchorBadge" style="display:none" title="PSA 10 anchor estimated from raw market">EST. PSA 10</span>';
-    titleEl.innerHTML = (getGradingService() === 'ACE'
-      ? 'Hold Strategy \u00b7 Raw vs ACE Slab '
-      : 'Hold Strategy \u00b7 Raw vs Graded ') + badgeHtml;
+    titleEl.innerHTML = 'Hold Strategy \u00b7 All Options ' + badgeHtml;
   }
   if (descEl) {
-    descEl.textContent = getGradingService() === 'ACE'
-      ? 'ACE certifies + protects the card without unlocking a PSA-market premium, so the maths becomes: is the protection worth the fee vs holding raw?'
-      : 'Which version of this card is the best 5-year hold? We compare buying raw (and holding ungraded), buying raw and gambling on grading, and buying already-graded at PSA 7\u201310 \u2014 then highlight the winning play.';
+    descEl.textContent = 'Which version of this card is the best 5-year hold? Compares raw hold, PSA grading, ACE slabbing, and buying already-graded PSA 7\u201310 \u2014 one recommendation across all options.';
   }
 
   // EN ↔ JP side-by-side: only rendered if the selected card has a
@@ -11292,20 +11260,27 @@ function renderHoldStrategy(card) {
   }
 
   // Grading service pref — PSA (grade for resale premium) vs ACE (slab for
-  // personal-keeper protection). Drives fee, wait, and whether the PSA 7-10 buy
-  // tiles are shown. Tier is only used when service === 'ACE'.
-  const service = getGradingService();
+  // Both PSA and ACE are always computed and shown. The ACE tier picker
+  // controls which ACE tier's tile appears. No service toggle needed.
   const tier = getAceTier();
-  const isAce = service === 'ACE';
+  const aceInfo_r = ACE_TIERS[tier] || ACE_TIERS.standard;
 
   // Convert UK all-in grading cost back to USD for internal arithmetic so the
   // rest of the math (which works in USD) stays consistent. fxRate is GBP/USD
   // — so USD = GBP / fxRate.
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
-  const gradingFeeGBP = getGradingFeeGBP(psa10Price, service, tier);
-  const gradingWaitMonths = getGradingWaitMonths(psa10Price, service, tier);
-  const gradingWaitDisplay = getGradingWaitDisplay(psa10Price, service, tier);
-  const gradingFeeUSD = gradingFeeGBP / fx;
+  // PSA (always computed)
+  const gradingFeeGBP    = getUkGradingFeeGBP(psa10Price);
+  const gradingWaitMonths = getUkGradingWaitMonths(psa10Price);
+  const gradingWaitDisplay = getUkGradingWaitDisplay(psa10Price);
+  const gradingFeeUSD    = gradingFeeGBP / fx;
+  // ACE (always computed, for selected tier)
+  const aceFeeGBP_r      = getAceFeeGBP(tier);
+  const aceWaitMonths_r  = getAceWaitMonths(tier);
+  const aceWaitDisplay_r = getAceWaitDisplay(tier);
+  const aceFeeUSD_r      = aceFeeGBP_r / fx;
+  const aceWaitDiscount_r = 1 / (1 + OPPORTUNITY_COST_ANNUAL * aceWaitMonths_r / 12);
+
   const gradingMaterialsGBP = getGradingMaterialsCostGBP(card.i);
   const gradingMaterialsUSD = gradingMaterialsGBP / fx;
   const waitYears = gradingWaitMonths / 12;
@@ -11358,33 +11333,31 @@ function renderHoldStrategy(card) {
     + SUBGEM_DISTRIBUTION[8]       * psa8Yr5
     + SUBGEM_DISTRIBUTION[7]       * psa7Yr5
     + SUBGEM_DISTRIBUTION.rawLike  * rawYr5USD;
-  // ACE mode: when we have a live ACE 10 comp on PriceCharting, anchor the 5yr
-  // projection on that (with the same gem-rate weighting as PSA — subgem ACE
-  // slabs trade near raw because there's no active subgem-ACE resale market).
-  // When no ACE 10 comp exists, fall back to raw — same behaviour as before.
-  const aceAnchor = isAce ? getAce10Anchor(card) : { usd: 0, source: 'none' };
+  // ACE 10 anchor: always fetched regardless of preferred service, so the
+  // ACE tile is always data-driven when PriceCharting comps exist.
+  const aceAnchor = getAce10Anchor(card);
   const ace10USD = aceAnchor.usd;
   const hasAceAnchor = ace10USD > 0;
   const ace10Yr5 = hasAceAnchor ? projectGradePrice(card, 10, ace10USD, 5) : 0;
-  // ACE 10 vs PSA 10 ratio — useful context for the recommendation copy.
   const aceVsPsaPct = (hasAceAnchor && psa10Price > 0) ? (ace10USD / psa10Price) * 100 : 0;
-  const aceSubgemEV = rawYr5USD; // ACE 7/8/9 slabs trade near raw — no tracked premium
+  const aceSubgemEV = rawYr5USD; // ACE 7/8/9 slabs trade near raw — no active subgem-ACE resale market
   const aceGradeYr5EV = hasAceAnchor
     ? gemRate * ace10Yr5 + (1 - gemRate) * aceSubgemEV
     : rawYr5USD;
-  // In ACE mode without an anchor, slabbing doesn't unlock a resale premium
-  // — the 5yr value is just the raw projection. With an anchor, use the
-  // ACE-anchored EV. PSA mode: gem-rate-weighted mix of PSA 10 and subgem.
-  const gradeYr5EVRaw = isAce
-    ? aceGradeYr5EV
-    : gemRate * psa10Yr5 + (1 - gemRate) * subgemEV;
-  // Apply opportunity-cost discount because your capital is locked for the wait.
+  // PSA EV: gem-rate-weighted mix of PSA 10 and subgem outcomes.
+  const gradeYr5EVRaw = gemRate * psa10Yr5 + (1 - gemRate) * subgemEV;
   const gradeYr5EV = gradeYr5EVRaw * waitDiscount;
   const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
-  // Cost basis: raw card + grading fee + submission materials (penny sleeve + toploader if not already present)
+  // PSA cost/profit/roi
   const gradeCost = rawEntryUSD + gradingFeeUSD + gradingMaterialsUSD;
   const gradeProfit = gradeSell5EV - gradeCost;
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
+  // ACE cost/profit/roi (always computed for selected tier)
+  const aceGradeYr5EV_final = aceGradeYr5EV * aceWaitDiscount_r;
+  const aceSell5EV_r = aceGradeYr5EV_final * (1 - BUY_SELL_FRICTION);
+  const aceCost_r   = rawEntryUSD + aceFeeUSD_r + gradingMaterialsUSD;
+  const aceProfit_r = aceSell5EV_r - aceCost_r;
+  const aceRoi_r    = aceCost_r > 0 ? (aceProfit_r / aceCost_r) * 100 : 0;
 
   // Per-outcome P&L for the gamble — used both to expose the loss case in the
   // tile and to render the "What you actually get" probability breakdown.
@@ -11447,9 +11420,8 @@ function renderHoldStrategy(card) {
   });
 
   // ----- Strategies 3-6: Buy (or Keep) graded at each PSA tier -----
-  // Only relevant in PSA mode — ACE-graded cards don't have a tiered resale
-  // market to buy into, so we skip these entirely when service === 'ACE'.
-  const gradedStrategies = isAce ? [] : [7, 8, 9, 10].map(g => {
+  // Always computed — PSA 7/8/9/10 tiles appear alongside ACE and raw.
+  const gradedStrategies = [7, 8, 9, 10].map(g => {
     const isOwnedSlab = slabAcq && slabAcq.grade === g;
     const baseUSD = estimateGradePrice(card, g, psa10Price);
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
@@ -11465,44 +11437,28 @@ function renderHoldStrategy(card) {
     return { label, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi, isOwnedSlab, slabMarketGBP, slabGainGBP };
   });
 
-  // Label the raw/grade strategies to show acquisition cost basis when applicable
+  // Labels and descs for each strategy tile
   const rawDesc = usingAcqCost
     ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} paid \u2014 holding ungraded 5 yrs`
     : rawShipGBP > 0
       ? `Hold ungraded for 5 yrs \u2014 incl. ~\u00a3${rawShipGBP} UK shipping`
       : 'Hold ungraded for 5 yrs';
-  let gambleDesc;
-  if (isAce) {
-    const aceInfo = ACE_TIERS[tier] || ACE_TIERS.standard;
-    gambleDesc = usingAcqCost
-      ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${gradingFeeGBP} ACE ${aceInfo.label} \u2014 protection, no resale uplift`
-      : `ACE ${aceInfo.label} slab (\u00a3${gradingFeeGBP}, ~${gradingWaitDisplay}) \u2014 protection, no resale uplift`;
-  } else {
-    gambleDesc = usingAcqCost
-      ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${gradingFeeGBP} grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% PSA 9+`
-      : `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`;
-  }
+  const gambleDesc = usingAcqCost
+    ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${gradingFeeGBP} PSA grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance PSA 9+`
+    : `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`;
+  const gambleLabel = usingAcqCost ? 'Grade My Card (PSA)' : 'Buy Raw + Grade (PSA)';
 
-  // Gamble tile label — different verb + qualifier for ACE (slab it) vs PSA (grade it).
-  let gambleLabel;
-  if (isAce) {
-    const aceInfo = ACE_TIERS[tier] || ACE_TIERS.standard;
-    gambleLabel = usingAcqCost
-      ? `Slab My Card (ACE ${aceInfo.label})`
-      : `Buy Raw + Slab (ACE ${aceInfo.label})`;
-  } else {
-    gambleLabel = usingAcqCost ? 'Grade My Card' : 'Buy Raw + Grade';
-  }
-  // ACE slabbing risk depends on whether we have a real ACE 10 anchor:
-  //   - No anchor → 5yr value == raw → low variance protection play
-  //   - Anchor available → there IS gem-rate variance (ACE 10 vs subgem ACE)
-  //     so we treat it more like PSA gambling, just with a smaller upside.
-  const gambleRisk = isAce ? (hasAceAnchor ? 'med' : 'low') : 'high';
-  const gambleVariance = isAce ? (hasAceAnchor ? 0.45 : 0.20) : 0.85;
+  const aceDesc_r = usingAcqCost
+    ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${aceFeeGBP_r} ACE ${aceInfo_r.label} \u2014 ${hasAceAnchor ? 'ACE 10 comp tracked' : 'protection, no resale uplift'}`
+    : `ACE ${aceInfo_r.label} slab (\u00a3${aceFeeGBP_r}, ~${aceWaitDisplay_r}) \u2014 ${hasAceAnchor ? `ACE 10 comp: ${fmtGBPDirect(ace10USD * fx)}` : 'protection, no resale uplift'}`;
+  const aceLabel_r  = usingAcqCost ? `Slab My Card (ACE ${aceInfo_r.label})` : `Buy Raw + Slab (ACE ${aceInfo_r.label})`;
+  const aceRisk_r   = hasAceAnchor ? 'med' : 'low';
+  const aceVariance_r = hasAceAnchor ? 0.45 : 0.20;
 
   const strategies = [
-    { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',      desc: rawDesc,     today: rawEntryUSD, yr5: rawSell5USD,   profit: rawProfitUSD, roi: rawRoi,    risk: 'low',    variance: 0.20, acqCost: usingAcqCost },
-    { label: gambleLabel,  key: 'gamble', desc: gambleDesc, today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: gambleRisk, variance: gambleVariance, waitMonths: gradingWaitMonths, waitDisplay: gradingWaitDisplay, lossProb: isAce ? 0 : lossProb, lossEV: isAce ? 0 : lossEV, acqCost: usingAcqCost, aceMode: isAce },
+    { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',    desc: rawDesc,    today: rawEntryUSD, yr5: rawSell5USD,  profit: rawProfitUSD, roi: rawRoi,    risk: 'low',      variance: 0.20,       acqCost: usingAcqCost },
+    { label: gambleLabel,  key: 'gamble', desc: gambleDesc, today: gradeCost,  yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: gradingWaitMonths, waitDisplay: gradingWaitDisplay, lossProb, lossEV, acqCost: usingAcqCost },
+    { label: aceLabel_r,   key: 'ace',    desc: aceDesc_r,  today: aceCost_r,  yr5: aceSell5EV_r, profit: aceProfit_r, roi: aceRoi_r, risk: aceRisk_r, variance: aceVariance_r, waitMonths: aceWaitMonths_r, waitDisplay: aceWaitDisplay_r, lossProb: 0, lossEV: 0, acqCost: usingAcqCost, aceMode: true },
     ...gradedStrategies.map((s, i) => ({
       ...s,
       desc: i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling',
@@ -11580,7 +11536,7 @@ function renderHoldStrategy(card) {
     ? positives.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
     : null;
 
-  const rawSide = strategies.filter(s => !s.na && (s.key === 'raw' || s.key === 'gamble') && s.roi > 0);
+  const rawSide = strategies.filter(s => !s.na && (s.key === 'raw' || s.key === 'gamble' || s.key === 'ace') && s.roi > 0);
   const gradedSide = strategies.filter(s => !s.na && s.key.startsWith('psa') && s.roi > 0);
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
@@ -11600,6 +11556,8 @@ function renderHoldStrategy(card) {
     const _wROI = Math.round(bestLongTermPick.roi);
     if (bestLongTermPick.key === 'raw') {
       _holdWinnerDesc = `Hold raw · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
+    } else if (bestLongTermPick.key === 'ace') {
+      _holdWinnerDesc = `Slab with ACE ${aceInfo_r.label} · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
     } else {
       _holdWinnerDesc = `Buy ${bestLongTermPick.key.replace('psa', 'PSA ')} slab · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
     }
@@ -11607,63 +11565,13 @@ function renderHoldStrategy(card) {
     _holdWinnerDesc = '';
   }
 
-  // Build the two-line recommendation: raw-vs-graded verdict + best graded tier.
+  // Unified "Smart move" recommendation across all strategies (PSA + ACE + raw + graded).
   const recEl = $('holdRecommendation');
-  // ACE-mode recommendation: no PSA resale premium, so the frame is
-  // "is the protection worth it?" — quantify the fee as a % of raw and give
-  // the user a clear-eyed protection-vs-hold-raw verdict.
-  if (isAce && recEl) {
-    const aceInfo = ACE_TIERS[tier] || ACE_TIERS.standard;
-    const rawStrat = strategies.find(s => s.key === 'raw');
-    const slabStrat = strategies.find(s => s.key === 'gamble');
-    const rawGBP_h  = rawUSD * fx;
-    const feePctOfRaw = rawGBP_h > 0 ? (gradingFeeGBP / rawGBP_h) * 100 : 0;
-    const rawRoi_h   = rawStrat ? rawStrat.roi : 0;
-    const slabRoi_h  = slabStrat ? slabStrat.roi : 0;
-    const roiDelta   = rawRoi_h - slabRoi_h;
-    const suggested  = recommendAceTier(rawGBP_h);
-    const tierHint   = suggested !== tier
-      ? ` Suggested tier for a ${fmtGBPDirect(rawGBP_h)} card: <strong>ACE ${(ACE_TIERS[suggested]||{}).label || suggested}</strong> (\u00a3${(ACE_TIERS[suggested]||{}).feeGBP}).`
-      : '';
-    let feeVerdict, feeClass;
-    if (feePctOfRaw <= 15) {
-      feeVerdict = 'Protection is cheap relative to the card.';
-      feeClass   = 'hold-rec-pill';
-    } else if (feePctOfRaw <= 40) {
-      feeVerdict = 'Protection is reasonable if this is a keeper.';
-      feeClass   = 'hold-rec-pill';
-    } else if (feePctOfRaw <= 100) {
-      feeVerdict = 'Protection cost is a meaningful slice of the card \u2014 only worth it for a personal-collection keeper.';
-      feeClass   = 'hold-rec-pill hold-rec-skip';
-    } else {
-      feeVerdict = `ACE ${aceInfo.label} costs more than the card itself \u2014 pick a lower tier, or leave it raw.`;
-      feeClass   = 'hold-rec-pill hold-rec-skip';
-    }
-    // ACE 10 anchor context: shows the ratio to PSA 10 comp when both are live,
-    // and reframes the roiDelta interpretation — with a real anchor, slabbing
-    // may actually beat raw (protection + real resale premium), not just cost.
-    const aceAnchorLine = hasAceAnchor
-      ? `<div class="hold-rec-line hold-rec-line-sub">Anchored on live ACE 10 comps: <strong>${fmtGBP(ace10USD)}</strong>${aceVsPsaPct > 0 ? ` \u2248 <strong>${aceVsPsaPct.toFixed(0)}%</strong> of PSA 10 (${fmtGBP(psa10Price)})` : ''} \u2014 ACE-graded resale market is <em>real but thinner</em> than PSA. 5yr projection reflects that.</div>`
-      : `<div class="hold-rec-line hold-rec-line-sub">No ACE 10 comp on PriceCharting for this card yet \u2014 5yr projection defaults to the raw price curve (ACE fee treated as pure protection cost, no resale uplift modelled).</div>`;
-    // Interpret the ROI delta: negative means slab loses to raw (protection cost),
-    // positive means the ACE 10 anchor actually beats raw on projection.
-    const roiInterp = hasAceAnchor && roiDelta < -1
-      ? `Slabbing costs you ~${Math.abs(roiDelta).toFixed(0)} ROI points \u2014 protection premium on top of a real ACE resale market.`
-      : hasAceAnchor && roiDelta > 1
-      ? `ACE slab actually beats raw by ~${roiDelta.toFixed(0)} ROI points on this card \u2014 the ACE 10 comp uplift pays for the fee.`
-      : hasAceAnchor
-      ? `Roughly ROI-neutral vs raw \u2014 ACE 10 uplift here just covers the fee.`
-      : `Slabbing costs you ~${Math.abs(roiDelta).toFixed(0)} ROI points \u2014 the price of certified protection for a keeper.`;
-    recEl.innerHTML = `
-      <div class="${feeClass}">ACE ${aceInfo.label}</div>
-      <div class="hold-rec-body">
-        <div class="hold-rec-line">${feeVerdict} \u00a3${gradingFeeGBP} fee is <strong>${feePctOfRaw.toFixed(0)}%</strong> of the card's raw price (${fmtGBPDirect(rawGBP_h)}), turnaround ~${gradingWaitDisplay}.${tierHint}</div>
-        ${aceAnchorLine}
-        <div class="hold-rec-line hold-rec-line-sub">5yr ROI comparison: <strong>Hold raw</strong> ${rawRoi_h >= 0 ? '+' : ''}${rawRoi_h.toFixed(0)}% \u00b7 <strong>ACE slab</strong> ${slabRoi_h >= 0 ? '+' : ''}${slabRoi_h.toFixed(0)}%. ${roiInterp}</div>
-        <div class="hold-rec-line hold-rec-line-sub">Best use of ACE: protect + certify condition on a personal-collection keeper. Switch to <strong>PSA</strong> above for the resale-focused analysis.</div>
-      </div>
-    `;
-  } else if (!winner) {
+  const psaStrat  = strategies.find(s => s.key === 'gamble');
+  const aceStrat  = strategies.find(s => s.key === 'ace');
+  const rawStrat  = strategies.find(s => s.key === 'raw');
+
+  if (!winner) {
     recEl.innerHTML = `
       <div class="hold-rec-pill hold-rec-skip">Skip this card</div>
       <div class="hold-rec-body">
@@ -11672,66 +11580,67 @@ function renderHoldStrategy(card) {
       </div>
     `;
   } else {
-    // Raw-vs-graded headline: which side wins outright?
-    // We also flag the UK wait + loss case whenever the gamble (Buy Raw + Grade)
-    // is the winning raw-side play, because the headline ROI hides the friction.
+    // PSA grading friction warning (used in verdict line when PSA grade is smart move)
     let gambleCaveat = '';
     if (bestRaw && bestRaw.key === 'gamble') {
       if (lossProb > 0.01) {
-        gambleCaveat = ` Heads-up: this means shipping to a UK third-party (Ludkins / GetGraded), waiting ~${gradingWaitDisplay} with your capital locked, and accepting a <strong>${(lossProb*100).toFixed(0)}% chance of a sub-PSA 9 outcome that loses money (avg −${fmtGBP(Math.abs(gbpFromUSD(lossEV)))})</strong>.`;
+        gambleCaveat = ` — ${(lossProb*100).toFixed(0)}% loss case (avg −${fmtGBP(Math.abs(gbpFromUSD(lossEV)))}) · ~${gradingWaitDisplay} UK wait with capital locked.`;
       } else {
-        gambleCaveat = ` Heads-up: still a ~${gradingWaitDisplay} UK grading wait with capital locked — every PSA outcome turns a profit on this card, but you forfeit liquidity until the grades come back.`;
+        gambleCaveat = ` — ~${gradingWaitDisplay} UK wait with capital locked (every PSA outcome turns a profit on this card).`;
       }
-      // Flag when grading is recommended despite PSA10 today trading below all-in cost.
-      // This is valid when the 5yr projection justifies the upfront gap, but the user
-      // should know the entry is currently underwater.
       if (underwaterAtEntry) {
         const psa10Proj5GBP = psa10Yr5 * (1 - BUY_SELL_FRICTION) * fx;
-        gambleCaveat += ` Note: PSA 10 today (${fmtGBPDirect(psa10GBP_h)}) is <strong>£${underwaterGBP.toFixed(0)} below your all-in cost</strong> of ${fmtGBPDirect(gradeCostGBP_h)} — grading is recommended on the 5yr projection (${fmtGBPDirect(psa10Proj5GBP)}), not current slab pricing.`;
+        gambleCaveat += ` PSA 10 today (${fmtGBPDirect(psa10GBP_h)}) is £${underwaterGBP.toFixed(0)} below all-in cost — grading recommended on 5yr projection (${fmtGBPDirect(psa10Proj5GBP)}), not current slab pricing.`;
       }
     }
-    let rawVsGradedLine;
+
+    // Smart move primary verdict line
+    let verdictLine;
     if (expectedGrade && expectedGrade < 9) {
-      // Scan result known — skip the stochastic "gem rate" framing and give grade-specific context
       const gradeLbl = PSA_GRADE_LABELS?.[expectedGrade] || '';
-      if (bestGraded) {
-        rawVsGradedLine = `Scan expects <strong>PSA ${expectedGrade} (${gradeLbl})</strong>. See advice below. Best graded hold if buying slabbed: <strong>${bestGraded.label}</strong>.`;
-      } else {
-        rawVsGradedLine = `Scan expects <strong>PSA ${expectedGrade} (${gradeLbl})</strong>. See advice below.`;
-      }
-    } else if (bestRaw && bestGraded) {
-      const rawScore = bestRaw.riskAdjusted;
-      const gradedScore = bestGraded.riskAdjusted;
-      const rawVerb = ownedCard
-        ? (bestRaw.key === 'gamble' ? 'Grade it' : 'Keep raw')
-        : (bestRaw.key === 'gamble' ? 'Buy raw + grade' : 'Buy raw');
-      if (rawScore > gradedScore + 30) {
-        rawVsGradedLine = `<strong>${rawVerb}</strong> — <strong>${bestRaw.label}</strong> beats the best graded option (${bestGraded.label}) by a wide margin on risk-adjusted return.${gambleCaveat}`;
-      } else if (gradedScore > rawScore + 30) {
-        rawVsGradedLine = `<strong>${ownedCard ? 'Sell raw, buy graded' : 'Buy graded'}</strong> — <strong>${bestGraded.label}</strong> beats the best raw approach (${bestRaw.label}) on risk-adjusted return. From the UK, skipping the ~${gradingWaitDisplay} grading wait is the better play here.`;
-      } else {
-        rawVsGradedLine = `<strong>Close call</strong> — ${bestRaw.label} and ${bestGraded.label} are within a few points of each other. From the UK, the tie-breaker is usually the ~${gradingWaitDisplay} grading wait and ${(lossProb*100).toFixed(0)}% loss case on Raw + Grade — the graded copy gives you an instant, certain position.`;
-      }
-    } else if (bestGraded) {
-      rawVsGradedLine = `<strong>${ownedCard ? 'Sell raw, buy graded' : 'Buy graded'}</strong> — no raw-side option projects positive 5yr ROI for this card; only graded holds make sense.`;
+      verdictLine = bestGraded
+        ? `Scan expects <strong>PSA ${expectedGrade} (${gradeLbl})</strong>. See card-scan advice below. Best PSA tier to buy slabbed: <strong>${bestGraded.label}</strong>.`
+        : `Scan expects <strong>PSA ${expectedGrade} (${gradeLbl})</strong>. See card-scan advice below.`;
     } else {
-      // No graded options profitable — raw side only
-      const rawVerb = ownedCard
-        ? (bestRaw && bestRaw.key === 'gamble' ? 'Grade it' : 'Keep raw')
-        : 'Buy raw';
-      rawVsGradedLine = `<strong>${rawVerb}</strong> — graded copies don't project a positive 5yr return at current prices; the raw card is the only sensible entry.`;
+      const sm = overallWinner;
+      if (sm.key === 'raw') {
+        const verb = ownedCard ? 'Hold raw' : 'Buy and hold raw';
+        verdictLine = `<strong>${verb}</strong> — ${fmtGBP(sm.today)} in → ${fmtGBP(sm.yr5)} in 5yrs (+${sm.roi.toFixed(0)}% ROI, low risk). Grading fees don’t justify the uplift at current prices.`;
+      } else if (sm.key === 'gamble') {
+        verdictLine = `<strong>${ownedCard ? 'Grade with PSA' : 'Buy raw + grade (PSA)'}</strong> — EV ${fmtGBP(sm.today)} in → ${fmtGBP(sm.yr5)} in 5yrs (+${sm.roi.toFixed(0)}% ROI)${gambleCaveat}`;
+      } else if (sm.key === 'ace') {
+        const aceRoiDelta = rawStrat ? aceStrat.roi - rawStrat.roi : 0;
+        const aceNote = hasAceAnchor
+          ? ` Live ACE 10 comp: ${fmtGBP(ace10USD)}${aceVsPsaPct > 0 ? ` (${aceVsPsaPct.toFixed(0)}% of PSA 10)` : ''} — beats raw by ${aceRoiDelta.toFixed(0)} ROI pts.`
+          : ` No ACE 10 comp — fee is ${(aceFeeGBP_r / (rawUSD * fx) * 100).toFixed(0)}% of card value, protection play.`;
+        verdictLine = `<strong>${ownedCard ? `Slab with ACE ${aceInfo_r.label}` : `Buy raw + slab (ACE ${aceInfo_r.label})`}</strong> — ${fmtGBP(sm.today)} in → ${fmtGBP(sm.yr5)} in 5yrs (+${sm.roi.toFixed(0)}% ROI, ~${aceWaitDisplay_r} turnaround).${aceNote}`;
+      } else {
+        const g = sm.key.replace('psa', 'PSA ');
+        const verb = ownedCard ? sm.label : `Buy ${g} slab`;
+        verdictLine = `<strong>${verb}</strong> — ${fmtGBP(sm.today)} in → ${fmtGBP(sm.yr5)} in 5yrs (+${sm.roi.toFixed(0)}% ROI, ${sm.risk}-risk). Skip the grading queue.`;
+      }
     }
 
-    // Best graded tier line.
-    let gradedLine;
-    if (bestGraded) {
-      const gradeNum = bestGraded.grade;
-      gradedLine = `Among graded copies, <strong>PSA ${gradeNum}</strong> is the best long-term hold: ${fmtGBP(bestGraded.today)} today → ${fmtGBP(bestGraded.yr5)} in 5yrs (+${bestGraded.roi.toFixed(0)}% ROI, +${fmtGBP(bestGraded.profit)} profit, ${bestGraded.risk === 'low' ? 'low' : 'medium'} risk).`;
-    } else {
-      gradedLine = `No graded tier projects positive 5yr ROI — every graded copy is overpriced relative to the model.`;
+    // ACE vs PSA grading comparison (always shown to make the trade-off explicit)
+    let gradingCompLine = '';
+    if (psaStrat && aceStrat) {
+      const psaR = psaStrat.roi, aceR = aceStrat.roi;
+      const diff = Math.abs(psaR - aceR);
+      if (diff < 5) {
+        gradingCompLine = `PSA grade (+${psaR.toFixed(0)}%, £${gradingFeeGBP}, ~${gradingWaitDisplay}) and ACE ${aceInfo_r.label} slab (+${aceR.toFixed(0)}%, £${aceFeeGBP_r}, ~${aceWaitDisplay_r}) are within ${diff.toFixed(0)} ROI pts — ACE is faster, PSA has deeper resale liquidity.`;
+      } else if (psaR > aceR) {
+        gradingCompLine = `If grading: <strong>PSA</strong> (+${psaR.toFixed(0)}% ROI, £${gradingFeeGBP}, ~${gradingWaitDisplay}) outperforms ACE ${aceInfo_r.label} (+${aceR.toFixed(0)}%) by ${diff.toFixed(0)} pts — deeper PSA resale market justifies the wait.`;
+      } else {
+        gradingCompLine = `If grading: <strong>ACE ${aceInfo_r.label}</strong> (+${aceR.toFixed(0)}% ROI, £${aceFeeGBP_r}, ~${aceWaitDisplay_r}) beats PSA (+${psaR.toFixed(0)}%) by ${diff.toFixed(0)} pts${hasAceAnchor ? ' — live ACE 10 comp tracked' : ' — lower fee advantage'}.`;
+      }
     }
 
-    // Card scan — actionable advice specific to this copy's condition
+    // Best PSA tier to buy pre-graded
+    const gradedLine = bestGraded
+      ? `Best PSA tier to buy pre-graded: <strong>PSA ${bestGraded.grade}</strong> · ${fmtGBP(bestGraded.today)} → ${fmtGBP(bestGraded.yr5)} in 5yrs (+${bestGraded.roi.toFixed(0)}% ROI, ${bestGraded.risk === 'low' ? 'low' : 'medium'} risk).`
+      : `No PSA graded tier projects positive 5yr ROI — every pre-graded copy is overpriced vs the model.`;
+
+    // Card scan advice specific to this copy's condition
     let scanLine = '';
     if (expectedGrade) {
       const gradeLbl = PSA_GRADE_LABELS?.[expectedGrade] || '';
@@ -11740,7 +11649,6 @@ function renderHoldStrategy(card) {
       const gradeClearsFee = gradeStrat && gradeStrat.roi > 0;
       const gradeBeatsGraded = gradeStrat && bestGraded && gradeStrat.yr5 >= bestGraded.yr5;
       let action = '';
-
       if (expectedGrade >= 9) {
         action = hasCard
           ? `Your scan predicts <strong>PSA ${expectedGrade} (${gradeLbl})</strong> — grade it. At that level the fee is comfortably earned back.`
@@ -11758,7 +11666,7 @@ function renderHoldStrategy(card) {
         }
       } else if (expectedGrade === 7) {
         action = hasCard
-          ? `Expected <strong>PSA 7 (${gradeLbl})</strong> won't clear grading fees. Hold raw long-term, or find a sharper copy to submit instead.`
+          ? `Expected <strong>PSA 7 (${gradeLbl})</strong> won’t clear grading fees. Hold raw long-term, or find a sharper copy to submit instead.`
           : `This copy grades at <strong>PSA 7</strong> — not enough margin after fees. Either buy raw and hold, or find a cleaner copy.`;
       } else {
         const altGrade = bestGraded ? `PSA ${bestGraded.grade}` : 'a graded copy';
@@ -11778,15 +11686,15 @@ function renderHoldStrategy(card) {
       : '';
 
     recEl.innerHTML = `
-      <div class="hold-rec-pill">Verdict</div>
+      <div class="hold-rec-pill">Smart move</div>
       <div class="hold-rec-body">
-        <div class="hold-rec-line">${rawVsGradedLine}</div>
+        <div class="hold-rec-line">${verdictLine}</div>
+        ${gradingCompLine ? `<div class="hold-rec-line hold-rec-line-sub">${gradingCompLine}</div>` : ''}
         <div class="hold-rec-line hold-rec-line-sub">${gradedLine}</div>
         ${scanLine}${acqLine}
       </div>
     `;
   }
-
   // Render the comparison grid.
   const grid = $('holdGrid');
   const _maxBudgetGBP = getMaxBudgetGBP();
@@ -11862,16 +11770,11 @@ function renderHoldStrategy(card) {
     `;
   }).join('');
 
-  // ---------- Grading outcome distribution ----------
-  // A focused little table showing what actually happens when you grade:
-  // for each outcome, the probability bar + the realised P&L.
-  // ACE has no probabilistic grade outcome — it's a deterministic slab — so we
-  // hide this block entirely when service === 'ACE'.
+  // ---------- PSA grading outcome distribution ----------
+  // Probability bar + P&L for each PSA grade outcome — always shown since
+  // PSA grading is always one of the strategy options.
   const outcomeHost = $('holdOutcomes');
-  if (outcomeHost && isAce) {
-    outcomeHost.innerHTML = '';
-    outcomeHost.style.display = 'none';
-  } else if (outcomeHost) {
+  if (outcomeHost) {
     outcomeHost.style.display = '';
     const bestProfit = Math.max(...gradeOutcomes.map(o => o.profitUSD));
     const rows = gradeOutcomes.map(o => {
@@ -11953,47 +11856,18 @@ function renderHoldStrategy(card) {
     btn.classList.toggle('is-open', nowOpen);
   };
 
-  if (isAce) {
-    const aceInfo = ACE_TIERS[tier] || ACE_TIERS.standard;
-    // Anchor block — different copy depending on whether we found a live ACE 10 comp.
-    const aceAnchorFootnote = hasAceAnchor
-      ? `<strong>ACE 10 anchor (live):</strong> pulled from PriceCharting \u2014 <strong>${fmtGBP(ace10USD)}</strong>${aceVsPsaPct > 0 ? ` (\u2248 ${aceVsPsaPct.toFixed(0)}% of PSA 10)` : ''}. 5yr slab value = gem-rate-weighted mix of <strong>ACE 10</strong> (${(gemRate*100).toFixed(0)}% weight) and raw-equivalent for subgem outcomes (${((1-gemRate)*100).toFixed(0)}%) \u2014 there's no active subgem-ACE resale market, so ACE 7/8/9 slabs are modelled as trading near raw.`
-      : `<strong>No ACE 10 comp found:</strong> PriceCharting has no ACE 10 sales for this card. 5yr projection falls back to the raw price curve, treating the fee as pure protection cost. If ACE comps appear later a fresh price refresh will pick them up.`;
-    $('holdFootnote').innerHTML = `
-      <strong>ACE (UK) assumptions:</strong> \u00a3${gradingFeeGBP} (${aceInfo.label} tier) + \u00a30.28 materials
-      (penny sleeve + toploader, waived if already present) per card. Turnaround ~${gradingWaitDisplay}
-      (${aceInfo.availability} availability). Wait discount applied at ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a.
-      opportunity cost so capital locked during the turnaround is fairly penalised. Also assumes
-      ${(BUY_SELL_FRICTION*100).toFixed(0)}% combined buy + sell friction on the raw exit.<br>
-      ${aceAnchorFootnote}<br>
-      <strong>Tier ladder:</strong> Basic \u00a318 / 45d \u00b7 Standard \u00a325 / 25d \u00b7 Premier \u00a332 / 10d
-      \u00b7 Ultra \u00a360 / 5d \u00b7 Luxury \u00a3120 / 2d. Higher tiers only buy faster turnaround, not a better
-      slab.<br>
-      Risk-adjusted ranking treats ACE as ${hasAceAnchor ? 'medium-variance (real ACE 10 uplift, but thinner resale market)' : 'low-variance (protection-only, no resale uplift)'}, so the badge only lands when post-fee ROI genuinely beats the raw hold.
-    `;
-  } else {
+  const aceAnchorFootnote = hasAceAnchor
+    ? `<strong>ACE 10 anchor (live):</strong> ${fmtGBP(ace10USD)}${aceVsPsaPct > 0 ? ` (\u2248 ${aceVsPsaPct.toFixed(0)}% of PSA 10)` : ''} from PriceCharting. 5yr ACE slab EV = gem-rate-weighted ACE 10 (${(gemRate*100).toFixed(0)}%) + raw-equivalent for subgem outcomes (${((1-gemRate)*100).toFixed(0)}%) \u2014 ACE 7/8/9 slabs modelled near raw (no active subgem-ACE resale market).`
+    : 'No ACE 10 comp on PriceCharting for this card \u2014 ACE 5yr projection defaults to the raw price curve (fee treated as pure protection cost).';
   $('holdFootnote').innerHTML = `
-    <strong>UK grading assumptions:</strong> £${gradingFeeGBP} grading fee + £0.28 materials (penny sleeve + toploader, waived if already present) per card via PSA
-    (${psa10Price > UK_GRADING_VALUE_THRESHOLD_USD ? '$1,501–$2,500 value tier, 20–30 business day turnaround' : '≤$1,500 value tier, 30–40 business day turnaround'};
-    submitted via Ludkins / GetGraded). Wait discount applied at
-    ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a. opportunity cost so capital locked during the ~${gradingWaitDisplay} turnaround
-    is fairly penalised. Also assumes ${(BUY_SELL_FRICTION*100).toFixed(0)}%
-    combined buy + sell friction.<br>
-    <strong>Online buy penalty:</strong> base gem rate is ${baseGemPctStr}% (${gemRateSource}) but we apply a
-    ${(ONLINE_BUY_GEM_PENALTY*100).toFixed(0)}% multiplier because buying raw online (eBay / TCGplayer) is sight-unseen —
-    you can't check centering, whitening, or surface scratches — so the effective PSA 10
-    hit rate drops to <strong>${gemPctStr}%</strong>. Hand-pick from a shop or show and you can dial that back up.<br>
-    <strong>Flip vs Crack on a non-10 outcome:</strong> for each PSA 7/8/9 row above we compare
-    flipping the slab at current market against cracking it out, paying another £${gradingFeeGBP}, waiting
-    another ~${gradingWaitDisplay}, and gambling on a regrade. PSA grades are sticky on resub —
-    upgrade rates used: PSA 9→10 = 10%, PSA 8→9+ = 15%, PSA 7→8+ = 25%. A ${(CRACK_DAMAGE_RISK*100).toFixed(0)}%
-    crack-damage haircut and the same wait discount apply to the crack EV. Cracking only
-    pays off when the PSA 10 / PSA 9 spread is wide enough to overcome those costs —
-    usually only on chase cards with 5-10× spread between adjacent grades.<br>
-    Risk-adjusted ranking discounts ROI by variance so a coin-flip can't win "best" when
-    a steadier graded copy delivers nearly the same return without the wait.
+    <strong>PSA grading:</strong> \u00a3${gradingFeeGBP} fee + \u00a30.28 materials per card
+    (${psa10Price > UK_GRADING_VALUE_THRESHOLD_USD ? '$1,501\u2013$2,500 tier, 20\u201330 business day turnaround' : '\u2264$1,500 tier, 30\u201340 business day turnaround'};
+    submitted via Ludkins / GetGraded). Gem rate effective ${gemPctStr}% (base ${baseGemPctStr}% ${gemRateSource}, \u00d7${(ONLINE_BUY_GEM_PENALTY*100).toFixed(0)}% online sight-unseen penalty). Wait discount: ${(OPPORTUNITY_COST_ANNUAL*100).toFixed(0)}% p.a. opportunity cost.<br>
+    <strong>ACE grading (${aceInfo_r.label} tier):</strong> \u00a3${aceFeeGBP_r} fee + \u00a30.28 materials, ~${aceWaitDisplay_r} turnaround (${aceInfo_r.availability}). ${aceAnchorFootnote}<br>
+    <strong>ACE tier ladder:</strong> Basic \u00a318 / 45d \u00b7 Standard \u00a325 / 25d \u00b7 Premier \u00a332 / 10d \u00b7 Ultra \u00a360 / 5d \u00b7 Luxury \u00a3120 / 2d. Higher tiers buy faster turnaround only.<br>
+    <strong>Flip vs Crack (PSA non-10 outcomes):</strong> flip vs crack EV compared for each PSA 7/8/9 result. Upgrade rates: 9\u219210 = 10%, 8\u21929+ = 15%, 7\u21928+ = 25%. ${(CRACK_DAMAGE_RISK*100).toFixed(0)}% crack-damage haircut applied. Another \u00a3${gradingFeeGBP} resub fee + wait discount included.<br>
+    Risk-adjusted ranking: ROI minus variance discount (${(0.35*100).toFixed(0)}% of variance \u00d7 100 pts) + upside bonus. High-variance PSA grade gamble needs meaningfully higher ROI to beat a steadier graded copy.
   `;
-  }
 
   // ---- Market context block: entry timing + grading economics + hold timeframe ----
   const ctxEl = $('holdMarketContext');
