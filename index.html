@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260704m">
+  <link rel="stylesheet" href="style.css?v=20260704n">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1961,10 +1961,19 @@
     <div class="page" id="pageTools" data-page="tools" style="display:none">
       <section class="page-intro">
         <h2 class="page-intro-title">Tools</h2>
-        <p class="page-intro-sub">Refresh prices and inspect how the model works under the hood.</p>
+        <p class="page-intro-sub">Refresh prices, review duplicates, and inspect how the model works.</p>
       </section>
-      <!-- (priceSyncSection and how-card get moved here on init) -->
-      <div id="toolsMount"></div>
+      <div class="predict-tab-bar tools-inner-tab-bar" role="tablist" aria-label="Tools sections">
+        <button class="ptab ptab-active" data-toolstab="sync" role="tab" aria-selected="true">Price Sync</button>
+        <button class="ptab" data-toolstab="dupes" role="tab" aria-selected="false">Duplicates&nbsp;<span class="tools-dupe-badge" id="toolsDupeBadge" style="display:none">0</span></button>
+      </div>
+      <div id="toolsSyncPanel">
+        <!-- (priceSyncSection and how-card get moved here on init) -->
+        <div id="toolsMount"></div>
+      </div>
+      <div id="toolsDupesPanel" style="display:none">
+        <div id="toolsDupesMount"></div>
+      </div>
     </div><!-- /#pageTools -->
 
     <!-- Full Art Binder dedicated page -->
@@ -2388,7 +2397,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260704m"></script>
+  <script src="app.js?v=20260704n"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

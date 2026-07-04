@@ -10421,6 +10421,136 @@ html { scroll-behavior: smooth; }
 .groi-verdict-psa { background: rgba(74,158,255,0.15); color: #4a9eff; }
 .groi-verdict-ace { background: rgba(124,108,214,0.15); color: #9d8fe0; }
 
+/* Winner label in Compare row */
+.groi-winner-psa { color: #4a9eff; font-weight: 700; }
+.groi-winner-ace { color: #9d8fe0; font-weight: 700; }
+
+/* Fee annotation */
+.groi-fee { font-size: 10px; color: var(--text-muted); }
+
+/* "Worth it" line */
+.home-grading-worthit {
+  font-size: 11px;
+  margin-top: 2px;
+  font-style: italic;
+}
+.groi-worth-yes   { color: #4caf7d; }
+.groi-worth-maybe { color: var(--accent); }
+.groi-worth-no    { color: #ef5350; }
+
+/* ============================================================
+   Tools page — inner tabs + Duplicates section
+   ============================================================ */
+.tools-inner-tab-bar { margin: 0 0 16px; padding: 0 16px; }
+
+.tools-dupe-badge {
+  display: inline-block;
+  background: #ef5350;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 0 5px;
+  line-height: 16px;
+  vertical-align: middle;
+}
+
+/* Duplicate rows */
+#toolsDupesMount { padding: 0 12px 40px; }
+
+.dupe-section-hd {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted);
+  padding: 12px 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.dupe-row {
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+[data-theme="dark"]  .dupe-row { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); }
+[data-theme="light"] .dupe-row { background: rgba(0,0,0,0.025);      border: 1px solid rgba(0,0,0,0.08); }
+
+.dupe-cards {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dupe-card-thumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.dupe-thumb {
+  width: 40px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.04);
+}
+.dupe-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dupe-lang {
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 1px 4px;
+  align-self: flex-start;
+}
+.dupe-lang.en { background: #1a73e8; color: #fff; }
+.dupe-lang.jp { background: #e53935; color: #fff; }
+.dupe-card-name { font-size: 12px; font-weight: 600; max-width: 120px; }
+.dupe-card-set  { font-size: 10px; color: var(--text-muted); max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dupe-card-price { font-size: 11px; font-weight: 600; color: var(--accent); }
+
+.dupe-vs {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
+.dupe-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.dupe-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dupe-btn {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 4px 10px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dupe-merge   { background: rgba(74,158,255,0.15); color: #4a9eff; }
+.dupe-compare { background: rgba(232,182,52,0.15);  color: var(--accent); }
+.dupe-dismiss { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+[data-theme="light"] .dupe-dismiss { background: rgba(0,0,0,0.06); }
+
+.dupe-empty { padding: 24px 0; text-align: center; color: var(--text-muted); font-size: 13px; }
+
 /* Responsive: stack cards vertically on narrow screens */
 @media (max-width: 480px) {
   .binder-pair-cards { flex-direction: column; }

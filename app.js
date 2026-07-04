@@ -4682,7 +4682,8 @@ function savePortfolio() {
 }
 
 // ---- Layout drag-resize ----
-const LAYOUT_KEY = 'pkm-layout-v1'; // device-local, NOT in SYNC_KEYS
+const LAYOUT_KEY      = 'pkm-layout-v1';       // device-local, NOT in SYNC_KEYS
+const DUPE_DISMISS_KEY = 'pkm-dupe-dismissed-v1'; // dismissed duplicate/counterpart pairs
 
 function initLayoutResizer() {
   const main = document.querySelector('.main');
@@ -16590,34 +16591,35 @@ function _renderHomeConsiderGrading() {
   if (hash === _homeGradingHash && list.querySelector('.home-grading-item')) return;
   _homeGradingHash = hash;
 
-  const aceFee = ACE_FEE_STANDARD_GBP + ACE_FEE_LABEL_GBP + ACE_FEE_SHIPPING_GBP;
   const acePricesAll = (() => { try { return JSON.parse(localStorage.getItem('pkm-ace-prices-v1') || '{}'); } catch { return {}; } })();
 
   const gradeItems = allItems.flatMap(item => {
     const card = getCardById(item.id);
     if (!card) return [];
-    const cached = getCachedPrice(item.id);
-    const rawUSD = cached ? (cached.pcUngraded || cached.market || cached.mid || card.p) : card.p;
+    // Use freshest price available (live cache or stale-but-known fallback), then static
+    const priceData = getCachedPrice(item.id) || getLastKnownPrice(item.id);
+    const rawUSD = priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || card.p) : card.p;
     const rawGBP = usdToGbp(rawUSD || 0);
-    if (rawGBP < 8) return []; // skip cheap cards not worth grading
+    if (rawGBP < 8) return [];
 
-    const p10USD = cached?.pcPsa10 || card.p10 || 0;
+    const p10USD = priceData?.pcPsa10 || card.p10 || 0;
     if (!p10USD || p10USD <= 0) return [];
     const p10GBP = usdToGbp(p10USD);
-    if (p10GBP <= rawGBP) return []; // no uplift
+    if (p10GBP <= rawGBP) return [];
 
-    const psaFeeGBP = (typeof getUkGradingFeeGBP === 'function') ? getUkGradingFeeGBP(p10USD) : 65;
+    const psaFeeGBP = getUkGradingFeeGBP(p10USD);
     const psaProfit = p10GBP - rawGBP - psaFeeGBP;
-    const psaROI = (psaProfit / (rawGBP + psaFeeGBP)) * 100;
+    const psaROI    = (psaProfit / (rawGBP + psaFeeGBP)) * 100;
 
-    // ACE 10: use cached ACE data if available; else model at 75% of PSA 10
-    const aceData = acePricesAll[item.id] || {};
-    const ace10USD = aceData['10'] ? usdToGbp(aceData['10']) : p10GBP * 0.75;
-    const ace10GBP = typeof ace10USD === 'number' && ace10USD > 0 ? ace10USD : p10GBP * 0.75;
-    const aceProfit = ace10GBP - rawGBP - aceFee;
-    const aceROI = (aceProfit / (rawGBP + aceFee)) * 100;
+    // ACE: pick the correct tier for this card value; shipping shared per batch (shown as note)
+    const aceTier    = recommendAceTier(rawGBP);
+    const aceFeeBase = getAceFeeGBP(aceTier) + ACE_FEE_LABEL_GBP + ACE_FEE_SHIPPING_GBP;
+    const aceData    = acePricesAll[item.id] || {};
+    const ace10GBP   = aceData['10'] ? usdToGbp(aceData['10']) : p10GBP * 0.75;
+    const aceProfit  = ace10GBP - rawGBP - aceFeeBase;
+    const aceROI     = (aceProfit / (rawGBP + aceFeeBase)) * 100;
 
-    return [{ card, item, rawGBP, p10GBP, psaProfit, psaROI, ace10GBP, aceProfit, aceROI }];
+    return [{ card, item, rawGBP, p10GBP, psaFeeGBP, psaProfit, psaROI, ace10GBP, aceFeeBase, aceProfit, aceROI, aceTier }];
   });
 
   gradeItems.sort((a, b) => Math.max(b.psaROI, b.aceROI) - Math.max(a.psaROI, a.aceROI));
@@ -16629,30 +16631,47 @@ function _renderHomeConsiderGrading() {
     return;
   }
 
-  list.innerHTML = gradeItems.map(({ card, item, rawGBP, p10GBP, psaProfit, psaROI, ace10GBP, aceProfit, aceROI }) => {
-    const psaCls = psaROI >= 50 ? 'groi-good' : psaROI >= 0 ? 'groi-ok' : 'groi-bad';
-    const aceCls = aceROI >= 50 ? 'groi-good' : aceROI >= 0 ? 'groi-ok' : 'groi-bad';
+  list.innerHTML = gradeItems.map(({ card, item, rawGBP, p10GBP, psaFeeGBP, psaProfit, psaROI, ace10GBP, aceFeeBase, aceProfit, aceROI, aceTier }) => {
+    const bestROI   = Math.max(psaROI, aceROI);
     const psaBetter = psaROI >= aceROI;
-    const psaAceMargin = Math.abs(psaROI - aceROI).toFixed(0);
+    const margin    = Math.abs(psaROI - aceROI);
+    const psaCls    = psaROI >= 40 ? 'groi-good' : psaROI >= 0 ? 'groi-ok' : 'groi-bad';
+    const aceCls    = aceROI >= 40 ? 'groi-good' : aceROI >= 0 ? 'groi-ok' : 'groi-bad';
+    const winnerCls = psaBetter ? 'groi-winner-psa' : 'groi-winner-ace';
+
+    // Which service wins and by how much
     let verdictText;
-    if (Math.abs(psaROI - aceROI) < 5) verdictText = 'Similar ROI — ACE is faster';
-    else if (psaBetter) verdictText = `PSA ${psaAceMargin}pp better ROI`;
-    else verdictText = `ACE ${psaAceMargin}pp better ROI`;
+    if (margin < 5)     verdictText = 'Similar ROI — ACE is faster';
+    else if (psaBetter) verdictText = `PSA ${margin.toFixed(0)}pp better ROI`;
+    else                verdictText = `ACE ${margin.toFixed(0)}pp better ROI`;
     const verdictCls = psaBetter ? 'groi-verdict-psa' : 'groi-verdict-ace';
+
+    // Single-line "is it worth it" assessment
+    let worthIt, worthCls;
+    if (bestROI >= 50)     { worthIt = 'Strong grading play at current market price.'; worthCls = 'groi-worth-yes'; }
+    else if (bestROI >= 25){ worthIt = 'Worth grading — solid return if card grades well.'; worthCls = 'groi-worth-yes'; }
+    else if (bestROI >= 5) { worthIt = 'Marginal — batch with other cards to spread shipping cost.'; worthCls = 'groi-worth-maybe'; }
+    else if (bestROI >= 0) { worthIt = 'Barely breaks even — only grade if confident on condition.'; worthCls = 'groi-worth-maybe'; }
+    else                   { worthIt = 'Not worth grading at current raw price — hold raw.'; worthCls = 'groi-worth-no'; }
+
+    const tierLabel = (ACE_TIERS[aceTier] || ACE_TIERS.standard).label;
     const img = item.img ? `<img class="home-card-art" src="${esc(item.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="home-card-art"></div>';
     return `<div class="home-grading-item" data-id="${esc(card.i)}">
       ${img}
       <div class="home-grading-info">
         <div class="home-card-name">${esc(item.name)}</div>
-        <div class="home-grading-raw">Raw £${rawGBP.toFixed(2)} → PSA 10 £${p10GBP.toFixed(2)}</div>
+        <div class="home-grading-raw">Buy raw £${rawGBP.toFixed(2)} · PSA 10 £${p10GBP.toFixed(2)}</div>
         <div class="home-grading-compare">
-          <span class="groi-label">PSA</span>
+          <span class="groi-label ${psaBetter && margin >= 5 ? winnerCls : ''}">PSA</span>
           <span class="groi-val ${psaCls}">${psaProfit >= 0 ? '+' : ''}£${psaProfit.toFixed(0)} (${psaROI.toFixed(0)}%)</span>
+          <span class="groi-fee">£${psaFeeGBP} fee</span>
           <span class="groi-sep">·</span>
-          <span class="groi-label">ACE</span>
+          <span class="groi-label ${!psaBetter && margin >= 5 ? winnerCls : ''}">ACE ${tierLabel}</span>
           <span class="groi-val ${aceCls}">${aceProfit >= 0 ? '+' : ''}£${aceProfit.toFixed(0)} (${aceROI.toFixed(0)}%)</span>
+          <span class="groi-fee">£${aceFeeBase.toFixed(0)} fee</span>
         </div>
         <div class="home-grading-verdict ${verdictCls}">${verdictText}</div>
+        <div class="home-grading-worthit ${worthCls}">${worthIt}</div>
       </div>
     </div>`;
   }).join('');
@@ -16719,6 +16738,7 @@ function setupPageNav() {
     }
     if (page === 'home') { renderHomeDashboard(); _homeAutoRefresh(); _syncOnHomeNav(); }
     if (page === 'binder') { try { renderBinderPage(); } catch(e) {} }
+    if (page === 'tools') { try { updateToolsDupeBadge(); } catch(e) {} }
     // URL + title: cards get their own address (#cardId); other pages reset to page hash
     if (page === 'predict' && selectedCard) {
       try { history.replaceState({ cardId: selectedCard.i }, '', '#' + selectedCard.i); } catch(e) {}
@@ -16912,6 +16932,227 @@ function setupPageNav() {
     if (nav) nav.classList.toggle('shrunk', y > _prevNavScrollY && y > 80);
     _prevNavScrollY = y;
   }, { passive: true });
+
+  setupToolsTabs();
+}
+
+// =============================================================
+// Tools page — inner tab bar (Price Sync / Duplicates)
+// =============================================================
+function setupToolsTabs() {
+  const bar = document.querySelector('.tools-inner-tab-bar');
+  if (!bar) return;
+  bar.addEventListener('click', e => {
+    const btn = e.target.closest('[data-toolstab]');
+    if (!btn) return;
+    const tab = btn.dataset.toolstab;
+    bar.querySelectorAll('[data-toolstab]').forEach(b => {
+      b.classList.toggle('ptab-active', b === btn);
+      b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+    });
+    const syncPanel  = document.getElementById('toolsSyncPanel');
+    const dupesPanel = document.getElementById('toolsDupesPanel');
+    if (syncPanel)  syncPanel.style.display  = tab === 'sync'  ? '' : 'none';
+    if (dupesPanel) dupesPanel.style.display = tab === 'dupes' ? '' : 'none';
+    if (tab === 'dupes') renderToolsDuplicates();
+  });
+}
+
+// =============================================================
+// Tools page — Duplicate / counterpart detection
+// =============================================================
+function _getDupeDismissed() {
+  try { return new Set(JSON.parse(localStorage.getItem(DUPE_DISMISS_KEY) || '[]')); } catch { return new Set(); }
+}
+function _saveDupeDismissed(set) {
+  try { localStorage.setItem(DUPE_DISMISS_KEY, JSON.stringify([...set])); } catch {}
+}
+
+function _detectDupes() {
+  const dismissed = _getDupeDismissed();
+  const results = { exact: [], counterparts: [], nameDupes: [] };
+
+  // 1. Exact ID duplicates (same card added twice)
+  const idFirst = new Map();
+  portfolio.forEach((p, i) => {
+    if (idFirst.has(p.id)) {
+      const key = `exact:${p.id}`;
+      if (!dismissed.has(key)) results.exact.push({ a: portfolio[idFirst.get(p.id)], b: p, key });
+    } else {
+      idFirst.set(p.id, i);
+    }
+  });
+
+  // 2. EN/JP counterpart pairs both in collection
+  const portfolioIds = new Set(portfolio.map(p => p.id));
+  const seenCpKeys   = new Set();
+  for (const p of portfolio) {
+    const card = getCardById(p.id);
+    if (!card || card.lang !== 'EN') continue;
+    const cpKey = counterpartByCard.get(p.id);
+    if (!cpKey) continue;
+    const bucket = counterpartIndex.get(cpKey);
+    if (!bucket) continue;
+    for (const jpCard of bucket.jp) {
+      if (!portfolioIds.has(jpCard.i)) continue;
+      const pairKey = [p.id, jpCard.i].sort().join(':');
+      if (seenCpKeys.has(pairKey)) continue;
+      seenCpKeys.add(pairKey);
+      const key = `cp:${pairKey}`;
+      if (dismissed.has(key)) continue;
+      const jpItem = portfolio.find(x => x.id === jpCard.i);
+      const enRawGBP = usdToGbp(getCurrentPrice(card));
+      const jpRawGBP = usdToGbp(getCurrentPrice(jpCard));
+      results.counterparts.push({ enItem: p, enCard: card, jpItem, jpCard, enRawGBP, jpRawGBP, key });
+    }
+  }
+
+  // 3. Same card name in collection with different IDs (possible wrong duplicates)
+  const nameGroups = new Map();
+  for (const p of portfolio) {
+    const card = getCardById(p.id);
+    if (!card) continue;
+    const norm = card.n.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const arr = nameGroups.get(norm) || [];
+    arr.push({ p, card });
+    nameGroups.set(norm, arr);
+  }
+  for (const [, group] of nameGroups) {
+    if (group.length < 2) continue;
+    const ids = group.map(g => g.card.i).sort();
+    // Skip pairs already covered by the EN/JP counterpart section
+    const alreadyCovered = results.counterparts.some(cp => ids.includes(cp.enCard.i) && ids.includes(cp.jpCard.i));
+    if (alreadyCovered) continue;
+    const key = `name:${ids.join(':')}`;
+    if (dismissed.has(key)) continue;
+    results.nameDupes.push({ group, key });
+  }
+
+  return results;
+}
+
+function updateToolsDupeBadge() {
+  const badge = document.getElementById('toolsDupeBadge');
+  if (!badge) return;
+  const d = _detectDupes();
+  const count = d.exact.length + d.counterparts.length + d.nameDupes.length;
+  badge.textContent = count;
+  badge.style.display = count > 0 ? '' : 'none';
+}
+
+function renderToolsDuplicates() {
+  const el = document.getElementById('toolsDupesMount');
+  if (!el) return;
+  const dupes = _detectDupes();
+  const total = dupes.exact.length + dupes.counterparts.length + dupes.nameDupes.length;
+
+  function cardThumb(item, card) {
+    const img   = (item?.img || '') ? `<img class="dupe-thumb" src="${esc(item.img)}" alt="" onerror="this.style.opacity='0'">` : '<div class="dupe-thumb"></div>';
+    const lang  = card?.lang === 'JP' ? '<span class="dupe-lang jp">JP</span>' : '<span class="dupe-lang en">EN</span>';
+    const name  = esc(card?.n || item?.name || '');
+    const set   = esc(card?.s || item?.set || '');
+    const price = card ? `£${usdToGbp(getCurrentPrice(card)).toFixed(2)}` : '';
+    return `<div class="dupe-card-thumb">${img}<div class="dupe-card-meta">${lang}<span class="dupe-card-name">${name}</span><span class="dupe-card-set">${set}</span>${price ? `<span class="dupe-card-price">${price}</span>` : ''}</div></div>`;
+  }
+
+  function actionBar(key, extra = '') {
+    return `<div class="dupe-actions">${extra}<button class="dupe-btn dupe-dismiss" data-dupe-key="${esc(key)}">Dismiss</button></div>`;
+  }
+
+  if (total === 0) {
+    el.innerHTML = '<div class="dupe-empty"><p>No duplicates or unconfirmed counterpart pairs found in your collection.</p></div>';
+    return;
+  }
+
+  let html = '';
+
+  // --- Exact duplicates ---
+  if (dupes.exact.length > 0) {
+    html += `<div class="dupe-section-hd">Exact duplicates · ${dupes.exact.length}</div>`;
+    for (const { a, b, key } of dupes.exact) {
+      const cardA = getCardById(a.id);
+      html += `<div class="dupe-row" data-dupe-key="${esc(key)}">
+        <div class="dupe-cards">
+          ${cardThumb(a, cardA)}
+          <span class="dupe-vs">×2</span>
+          ${cardThumb(b, cardA)}
+        </div>
+        <div class="dupe-detail">Same card added twice — added ${a.addedDate ? new Date(a.addedDate).toLocaleDateString('en-GB') : 'unknown'} and ${b.addedDate ? new Date(b.addedDate).toLocaleDateString('en-GB') : 'unknown'}.</div>
+        ${actionBar(key, `<button class="dupe-btn dupe-merge" data-dupe-key="${esc(key)}" data-keep-id="${esc(a.id)}" data-remove-id="${esc(b.id)}">Merge (keep older)</button>`)}
+      </div>`;
+    }
+  }
+
+  // --- EN/JP counterpart pairs ---
+  if (dupes.counterparts.length > 0) {
+    html += `<div class="dupe-section-hd">EN / JP pairs in collection · ${dupes.counterparts.length}</div>`;
+    for (const { enItem, enCard, jpItem, jpCard, enRawGBP, jpRawGBP, key } of dupes.counterparts) {
+      const diff = enRawGBP > 0 && jpRawGBP > 0
+        ? (jpRawGBP < enRawGBP ? `JP is £${(enRawGBP - jpRawGBP).toFixed(2)} cheaper (${Math.round((enRawGBP - jpRawGBP) / enRawGBP * 100)}%)` : `EN is £${(jpRawGBP - enRawGBP).toFixed(2)} cheaper`)
+        : '';
+      html += `<div class="dupe-row" data-dupe-key="${esc(key)}">
+        <div class="dupe-cards">
+          ${cardThumb(enItem, enCard)}
+          <span class="dupe-vs">vs</span>
+          ${cardThumb(jpItem, jpCard)}
+        </div>
+        ${diff ? `<div class="dupe-detail">${diff}</div>` : ''}
+        ${actionBar(key, `<button class="dupe-btn dupe-compare" data-en-id="${esc(enCard.i)}" data-jp-id="${esc(jpCard.i)}">Compare in Predict</button>`)}
+      </div>`;
+    }
+  }
+
+  // --- Name-based near-duplicates ---
+  if (dupes.nameDupes.length > 0) {
+    html += `<div class="dupe-section-hd">Same name, different cards · ${dupes.nameDupes.length}</div>`;
+    for (const { group, key } of dupes.nameDupes) {
+      const thumbs = group.map(({ p, card }) => cardThumb(p, card)).join('<span class="dupe-vs">·</span>');
+      html += `<div class="dupe-row" data-dupe-key="${esc(key)}">
+        <div class="dupe-cards">${thumbs}</div>
+        <div class="dupe-detail">Multiple cards with the same name — may be intentional (different sets/variants).</div>
+        ${actionBar(key)}
+      </div>`;
+    }
+  }
+
+  el.innerHTML = html;
+
+  // Wire actions
+  el.addEventListener('click', e => {
+    const dismissBtn = e.target.closest('.dupe-dismiss');
+    if (dismissBtn) {
+      const key = dismissBtn.dataset.dupeKey;
+      const dismissed = _getDupeDismissed();
+      dismissed.add(key);
+      _saveDupeDismissed(dismissed);
+      dismissBtn.closest('.dupe-row')?.remove();
+      updateToolsDupeBadge();
+      if (!el.querySelector('.dupe-row')) el.innerHTML = '<div class="dupe-empty"><p>All clear.</p></div>';
+      return;
+    }
+    const mergeBtn = e.target.closest('.dupe-merge');
+    if (mergeBtn) {
+      const removeId = mergeBtn.dataset.removeId;
+      const keepId   = mergeBtn.dataset.keepId;
+      const idx = portfolio.findIndex(p => p.id === removeId && portfolio.some(q => q.id === keepId && q !== p));
+      if (idx >= 0) portfolio.splice(idx, 1);
+      savePortfolio();
+      renderPortfolio?.();
+      const dismissed = _getDupeDismissed();
+      dismissed.add(mergeBtn.dataset.dupeKey);
+      _saveDupeDismissed(dismissed);
+      mergeBtn.closest('.dupe-row')?.remove();
+      updateToolsDupeBadge();
+      if (!el.querySelector('.dupe-row')) el.innerHTML = '<div class="dupe-empty"><p>All clear.</p></div>';
+      return;
+    }
+    const compareBtn = e.target.closest('.dupe-compare');
+    if (compareBtn) {
+      const enId = compareBtn.dataset.enId;
+      go('predict');
+      setTimeout(() => { try { selectCard(enId); } catch {} }, 80);
+    }
+  });
 }
 
 // =============================================================
@@ -17678,6 +17919,7 @@ const SYNC_KEYS = [
   'pkm-grading-service-v1',       // Grading service pref: PSA or ACE
   'pkm-ace-tier-v1',              // ACE grading tier pref
   'pkm-fullart-binder-v1',        // Full Art Binder Project Wishlist
+  'pkm-dupe-dismissed-v1',        // Dismissed duplicate / counterpart pairs
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
