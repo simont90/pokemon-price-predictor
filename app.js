@@ -16635,24 +16635,46 @@ function _renderHomeConsiderGrading() {
     const bestROI   = Math.max(psaROI, aceROI);
     const psaBetter = psaROI >= aceROI;
     const margin    = Math.abs(psaROI - aceROI);
+    // How much cheaper ACE is in fees — real cash saving regardless of sell price
+    const feeDelta  = psaFeeGBP - aceFeeBase; // positive = ACE cheaper
     const psaCls    = psaROI >= 40 ? 'groi-good' : psaROI >= 0 ? 'groi-ok' : 'groi-bad';
     const aceCls    = aceROI >= 40 ? 'groi-good' : aceROI >= 0 ? 'groi-ok' : 'groi-bad';
     const winnerCls = psaBetter ? 'groi-winner-psa' : 'groi-winner-ace';
 
-    // Which service wins and by how much
-    let verdictText;
-    if (margin < 5)     verdictText = 'Similar ROI — ACE is faster';
-    else if (psaBetter) verdictText = `PSA ${margin.toFixed(0)}pp better ROI`;
-    else                verdictText = `ACE ${margin.toFixed(0)}pp better ROI`;
-    const verdictCls = psaBetter ? 'groi-verdict-psa' : 'groi-verdict-ace';
+    // Verdict badge: winner + always surface the fee delta
+    let verdictText, verdictCls;
+    if (margin < 5) {
+      verdictText = `Similar ROI · ACE saves £${feeDelta.toFixed(0)} in fees`;
+      verdictCls  = 'groi-verdict-ace'; // fee advantage tips it toward ACE when ROI is even
+    } else if (psaBetter) {
+      verdictText = `PSA ${margin.toFixed(0)}pp better ROI · ACE saves £${feeDelta.toFixed(0)} in fees`;
+      verdictCls  = 'groi-verdict-psa';
+    } else {
+      verdictText = `ACE ${margin.toFixed(0)}pp better ROI · saves £${feeDelta.toFixed(0)} vs PSA`;
+      verdictCls  = 'groi-verdict-ace';
+    }
 
-    // Single-line "is it worth it" assessment
+    // "Worth it" single line — fee-aware recommendation
+    // ACE is the practical winner when PSA only beats it by a small margin,
+    // because the fee saving (guaranteed) offsets the modelled sell-price difference.
+    const aceIsPracticalWinner = !psaBetter || margin < 15;
     let worthIt, worthCls;
-    if (bestROI >= 50)     { worthIt = 'Strong grading play at current market price.'; worthCls = 'groi-worth-yes'; }
-    else if (bestROI >= 25){ worthIt = 'Worth grading — solid return if card grades well.'; worthCls = 'groi-worth-yes'; }
-    else if (bestROI >= 5) { worthIt = 'Marginal — batch with other cards to spread shipping cost.'; worthCls = 'groi-worth-maybe'; }
-    else if (bestROI >= 0) { worthIt = 'Barely breaks even — only grade if confident on condition.'; worthCls = 'groi-worth-maybe'; }
-    else                   { worthIt = 'Not worth grading at current raw price — hold raw.'; worthCls = 'groi-worth-no'; }
+    if (bestROI < 0) {
+      worthIt = 'Not worth grading at current raw price — hold raw.'; worthCls = 'groi-worth-no';
+    } else if (psaBetter && margin >= 15) {
+      // PSA's ROI edge is large enough to justify the higher fee
+      worthIt = `PSA is the call — ${margin.toFixed(0)}pp ROI advantage outweighs the £${feeDelta.toFixed(0)} ACE fee saving.`;
+      worthCls = bestROI >= 30 ? 'groi-worth-yes' : 'groi-worth-maybe';
+    } else if (aceIsPracticalWinner && aceROI >= 25) {
+      worthIt = `ACE is the play — saves £${feeDelta.toFixed(0)} in fees, solid return, faster turnaround.`;
+      worthCls = 'groi-worth-yes';
+    } else if (aceIsPracticalWinner && aceROI >= 0) {
+      worthIt = `ACE makes more sense — £${feeDelta.toFixed(0)} fee saving reduces downside vs PSA.`;
+      worthCls = 'groi-worth-maybe';
+    } else {
+      worthIt = `Borderline — ACE's lower fees reduce the risk; only grade if confident on condition.`;
+      worthCls = 'groi-worth-maybe';
+    }
 
     const tierLabel = (ACE_TIERS[aceTier] || ACE_TIERS.standard).label;
     const img = item.img ? `<img class="home-card-art" src="${esc(item.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="home-card-art"></div>';
