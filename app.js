@@ -19045,6 +19045,22 @@ function _gbp(n) {
   return '£' + (n || 0).toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+// Returns { '2026-08': { target: N, rollover: N }, ... } — effective target per month after rolling surplus forward.
+function _computeEffectiveTargets(data) {
+  const base = data.target || 0;
+  const result = {};
+  let rollover = 0;
+  BUDGET_MONTHS.forEach(m => {
+    const eff = base + rollover;
+    result[m.key] = { target: eff, rollover };
+    const md = _budgetMonth(data, m.key);
+    const net = (md.packs || 0) + (md.singles || 0) - (md.sold || 0);
+    const surplus = eff - net;
+    rollover = surplus > 0 ? surplus : 0;
+  });
+  return result;
+}
+
 function _budgetMonthNetHTML(md, target) {
   const gross = (md.packs || 0) + (md.singles || 0);
   const net   = gross - (md.sold || 0);
@@ -19065,13 +19081,13 @@ function _budgetMonthNetHTML(md, target) {
   `;
 }
 
-function _budgetMonthHTML(data, m) {
-  const md     = _budgetMonth(data, m.key);
-  const gross  = (md.packs || 0) + (md.singles || 0);
-  const net    = gross - (md.sold || 0);
-  const target = data.target || 0;
-  const under  = target === 0 || net <= target;
-  const pct    = target > 0 ? Math.min(100, (net / target) * 100) : 0;
+function _budgetMonthHTML(data, m, effInfo) {
+  const { target: effTarget, rollover } = effInfo || { target: data.target || 0, rollover: 0 };
+  const md      = _budgetMonth(data, m.key);
+  const gross   = (md.packs || 0) + (md.singles || 0);
+  const net     = gross - (md.sold || 0);
+  const under   = effTarget === 0 || net <= effTarget;
+  const pct     = effTarget > 0 ? Math.min(100, (net / effTarget) * 100) : 0;
   const fillCls = pct >= 100 ? 'bdg-fill-over' : pct >= 80 ? 'bdg-fill-warn' : 'bdg-fill-ok';
   const hasData = gross > 0 || md.sold > 0;
 
@@ -19081,13 +19097,14 @@ function _budgetMonthHTML(data, m) {
         <span class="bdg-month-name">${m.label}</span>
         ${hasData ? `<span class="bdg-status ${under ? 'bdg-status-ok' : 'bdg-status-over'}">${under ? '✓ Under' : '✗ Over'}</span>` : '<span class="bdg-status bdg-status-none">—</span>'}
       </div>
+      <div class="bdg-rollover-info" data-rollover-row="${m.key}"${rollover > 0 ? '' : ' style="display:none"'}>↪ ${_gbp(rollover)} rolled over · effective target ${_gbp(effTarget)}</div>
 
-      ${target > 0 ? `
+      ${effTarget > 0 ? `
       <div class="bdg-progress-wrap">
         <div class="bdg-progress-track">
           <div class="bdg-progress-fill ${fillCls}" style="width:${pct}%"></div>
         </div>
-        <span class="bdg-progress-lbl">${_gbp(net)} / ${_gbp(target)}</span>
+        <span class="bdg-progress-lbl">${_gbp(net)} / ${_gbp(effTarget)}</span>
       </div>` : ''}
 
       <div class="bdg-fields">
@@ -19127,7 +19144,7 @@ function _budgetMonthHTML(data, m) {
       </div>
 
       <div class="bdg-net-row" data-net-row="${m.key}">
-        ${_budgetMonthNetHTML(md, target)}
+        ${_budgetMonthNetHTML(md, effTarget)}
       </div>
     </div>
   `;
@@ -19146,10 +19163,12 @@ function _budgetAnalyticsHTML(data) {
   const target      = data.target || 0;
   const totalTarget = target * BUDGET_MONTHS.length;
   const remaining   = totalTarget - net;
+  const effs = _computeEffectiveTargets(data);
   const monthsOver  = BUDGET_MONTHS.filter(m => {
     const md = _budgetMonth(data, m.key);
     const mn = (md.packs || 0) + (md.singles || 0) - (md.sold || 0);
-    return target > 0 && mn > target;
+    const eff = effs[m.key].target;
+    return eff > 0 && mn > eff;
   }).length;
 
   return `
@@ -19204,7 +19223,7 @@ function renderBudgetPage() {
       <div id="bdgAnalyticsWrap">${_budgetAnalyticsHTML(_bdgData)}</div>
 
       <div class="bdg-months-list" id="bdgMonthsList">
-        ${BUDGET_MONTHS.map(m => _budgetMonthHTML(_bdgData, m)).join('')}
+        ${(() => { const e = _computeEffectiveTargets(_bdgData); return BUDGET_MONTHS.map(m => _budgetMonthHTML(_bdgData, m, e[m.key])).join(''); })()}
       </div>
     </div>
   `;
@@ -19227,25 +19246,35 @@ function renderBudgetPage() {
     if (!_bdgData.months[month]) _bdgData.months[month] = { packs: 0, singles: 0, sold: 0 };
     _bdgData.months[month][field] = parseFloat(inp.value) || 0;
     _saveBudget(_bdgData);
-    _bdgRefreshMonth(el, month);
-    el.querySelector('#bdgAnalyticsWrap').innerHTML = _budgetAnalyticsHTML(_bdgData);
+    _bdgRefreshAll(el);
   });
 }
 
-function _bdgRefreshMonth(el, key) {
+function _bdgRefreshMonth(el, key, effInfo) {
+  const { target: effTarget, rollover } = effInfo || { target: _bdgData.target || 0, rollover: 0 };
   const md      = _budgetMonth(_bdgData, key);
-  const target  = _bdgData.target || 0;
   const gross   = (md.packs || 0) + (md.singles || 0);
   const net     = gross - (md.sold || 0);
-  const under   = target === 0 || net <= target;
-  const pct     = target > 0 ? Math.min(100, (net / target) * 100) : 0;
+  const under   = effTarget === 0 || net <= effTarget;
+  const pct     = effTarget > 0 ? Math.min(100, (net / effTarget) * 100) : 0;
   const hasData = gross > 0 || md.sold > 0;
   const card    = el.querySelector(`[data-month-card="${key}"]`);
   if (!card) return;
 
+  // Rollover indicator
+  const rolloverRow = card.querySelector(`[data-rollover-row="${key}"]`);
+  if (rolloverRow) {
+    if (rollover > 0) {
+      rolloverRow.textContent = `↪ ${_gbp(rollover)} rolled over · effective target ${_gbp(effTarget)}`;
+      rolloverRow.style.display = '';
+    } else {
+      rolloverRow.style.display = 'none';
+    }
+  }
+
   // Net row
   const netRow = card.querySelector(`[data-net-row="${key}"]`);
-  if (netRow) netRow.innerHTML = _budgetMonthNetHTML(md, target);
+  if (netRow) netRow.innerHTML = _budgetMonthNetHTML(md, effTarget);
 
   // Status badge
   const status = card.querySelector('.bdg-status');
@@ -19261,11 +19290,12 @@ function _bdgRefreshMonth(el, key) {
     fill.className = `bdg-progress-fill ${pct >= 100 ? 'bdg-fill-over' : pct >= 80 ? 'bdg-fill-warn' : 'bdg-fill-ok'}`;
   }
   const lbl = card.querySelector('.bdg-progress-lbl');
-  if (lbl) lbl.textContent = _gbp(net) + ' / ' + _gbp(target);
+  if (lbl) lbl.textContent = _gbp(net) + ' / ' + _gbp(effTarget);
 }
 
 function _bdgRefreshAll(el) {
-  BUDGET_MONTHS.forEach(m => _bdgRefreshMonth(el, m.key));
+  const effs = _computeEffectiveTargets(_bdgData);
+  BUDGET_MONTHS.forEach(m => _bdgRefreshMonth(el, m.key, effs[m.key]));
   const aw = el.querySelector('#bdgAnalyticsWrap');
   if (aw) aw.innerHTML = _budgetAnalyticsHTML(_bdgData);
 }

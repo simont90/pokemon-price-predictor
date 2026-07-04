@@ -11208,6 +11208,14 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
 .bdg-diff-over { color: var(--red); }
 .bdg-net-empty { font-size: 12px; color: var(--text-faint); font-style: italic; }
 
+.bdg-rollover-info {
+  font-size: 11px;
+  color: var(--accent);
+  opacity: 0.82;
+  margin: -2px 0 6px;
+  letter-spacing: 0.01em;
+}
+
 /* ── Responsive: 2-col fields on wider screens ── */
 @media (min-width: 600px) {
   .bdg-fields { display: grid; grid-template-columns: repeat(3, 1fr); }
