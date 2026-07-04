@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260704s">
+  <link rel="stylesheet" href="style.css?v=20260704t">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -769,8 +769,12 @@
               <div class="home-scroll-row" id="homeWishlistMerged"><div class="home-empty">No cards added yet.<br>Tap ♥ or Watch on any card.</div></div>
             </section>
           </div>
-          <!-- Consider Grading: PSA vs ACE ROI for wishlist cards -->
+          <!-- Consider Grading: PSA vs ACE ROI for collection + wishlist cards -->
           <div class="home-htab-panel" data-htab-panel="grading" style="display:none">
+            <div class="hg-src-tab-bar">
+              <button class="hg-src-tab hg-src-active" data-hgsrc="collection" type="button">Collection</button>
+              <button class="hg-src-tab" data-hgsrc="wishlist" type="button">Wishlist</button>
+            </div>
             <section class="home-section-wrap">
               <div class="home-section-hd">
                 <div class="home-section-title">
@@ -779,7 +783,8 @@
                 </div>
                 <span class="home-count-badge" id="homeGradingCount">0</span>
               </div>
-              <div id="homeGradingList"><div class="home-empty">No wishlist cards with grading data yet.</div></div>
+              <div id="homeGradingListCollection"><div class="home-empty">No collection cards with grading data yet.</div></div>
+              <div id="homeGradingListWishlist" style="display:none"><div class="home-empty">No wishlist cards with grading data yet.</div></div>
             </section>
           </div>
         </div>
@@ -2403,7 +2408,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260704s"></script>
+  <script src="app.js?v=20260704t"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -16613,93 +16613,69 @@ function _renderHomeCombinedWishlist() {
 // ── Consider Grading: PSA vs ACE ROI for wishlist / watchlist cards ─────────
 let _homeGradingHash = '';
 function _renderHomeConsiderGrading() {
-  const list = $('homeGradingList'), countEl = $('homeGradingCount');
-  if (!list) return;
-
-  const allItems = [...watchlist, ...wishlist.filter(w => !watchlist.some(x => x.id === w.id))];
-  const hash = allItems.map(w => w.id).join('|');
-  if (hash === _homeGradingHash && list.querySelector('.home-grading-item')) return;
-  _homeGradingHash = hash;
+  const collList  = $('homeGradingListCollection');
+  const wishList  = $('homeGradingListWishlist');
+  const countEl   = $('homeGradingCount');
+  if (!collList || !wishList) return;
 
   const acePricesAll = (() => { try { return JSON.parse(localStorage.getItem('pkm-ace-prices-v1') || '{}'); } catch { return {}; } })();
 
-  const gradeItems = allItems.flatMap(item => {
-    const card = getCardById(item.id);
-    if (!card) return [];
-    // Use freshest price available (live cache or stale-but-known fallback), then static
-    const priceData = getCachedPrice(item.id) || getLastKnownPrice(item.id);
-    const rawUSD = priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || card.p) : card.p;
-    const rawGBP = usdToGbp(rawUSD || 0);
-    if (rawGBP < 8) return [];
+  function buildGradeItems(sourceItems) {
+    return sourceItems.flatMap(item => {
+      const card = getCardById(item.id);
+      if (!card) return [];
+      const priceData = getCachedPrice(item.id) || getLastKnownPrice(item.id);
+      const rawUSD = priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || card.p) : card.p;
+      const rawGBP = usdToGbp(rawUSD || 0);
+      if (rawGBP < 8) return [];
+      const p10USD = priceData?.pcPsa10 || card.p10 || 0;
+      if (!p10USD || p10USD <= 0) return [];
+      const p10GBP = usdToGbp(p10USD);
+      if (p10GBP <= rawGBP) return [];
 
-    const p10USD = priceData?.pcPsa10 || card.p10 || 0;
-    if (!p10USD || p10USD <= 0) return [];
-    const p10GBP = usdToGbp(p10USD);
-    if (p10GBP <= rawGBP) return [];
-
-    const psaFeeGBP = getUkGradingFeeGBP(p10USD);
-    const psaProfit = p10GBP - rawGBP - psaFeeGBP;
-    const psaROI    = (psaProfit / (rawGBP + psaFeeGBP)) * 100;
-
-    // ACE: pick the correct tier for this card value; shipping shared per batch (shown as note)
-    const aceTier    = recommendAceTier(rawGBP);
-    const aceFeeBase = getAceFeeGBP(aceTier) + ACE_FEE_LABEL_GBP + ACE_FEE_SHIPPING_GBP;
-    const aceData    = acePricesAll[item.id] || {};
-    const ace10GBP   = aceData['10'] ? usdToGbp(aceData['10']) : p10GBP * 0.75;
-    const aceProfit  = ace10GBP - rawGBP - aceFeeBase;
-    const aceROI     = (aceProfit / (rawGBP + aceFeeBase)) * 100;
-
-    // Grade 9 downside — live PSA 9 price if cached, otherwise estimate from PSA 10 ratio
-    const p9USD      = (priceData?.pcPsa9 && priceData.pcPsa9 > 0) ? priceData.pcPsa9
-                     : estimateGradePrice(card, 9, p10USD);
-    const psa9GBP    = usdToGbp(p9USD);
-    const psa9Profit = psa9GBP - rawGBP - psaFeeGBP;
-    const psa9ROI    = (psa9Profit / (rawGBP + psaFeeGBP)) * 100;
-    // ACE 9 ≈ 75% of PSA 9 (same ratio as ACE 10 vs PSA 10)
-    const ace9GBP    = aceData['9'] ? usdToGbp(aceData['9']) : psa9GBP * 0.75;
-    const ace9Profit = ace9GBP - rawGBP - aceFeeBase;
-    const ace9ROI    = (ace9Profit / (rawGBP + aceFeeBase)) * 100;
-
-    return [{ card, item, rawGBP, p10GBP, psaFeeGBP, psaProfit, psaROI,
-              ace10GBP, aceFeeBase, aceProfit, aceROI, aceTier,
-              psa9GBP, psa9Profit, psa9ROI, ace9GBP, ace9Profit, ace9ROI }];
-  });
-
-  gradeItems.sort((a, b) => Math.max(b.psaROI, b.aceROI) - Math.max(a.psaROI, a.aceROI));
-
-  if (countEl) countEl.textContent = gradeItems.length;
-
-  if (gradeItems.length === 0) {
-    list.innerHTML = '<div class="home-empty">No cards with PSA 10 data yet.<br>Add cards to your wishlist and sync prices.</div>';
-    return;
+      const psaFeeGBP  = getUkGradingFeeGBP(p10USD);
+      const psaProfit  = p10GBP - rawGBP - psaFeeGBP;
+      const psaROI     = (psaProfit / (rawGBP + psaFeeGBP)) * 100;
+      const aceTier    = recommendAceTier(rawGBP);
+      const aceFeeBase = getAceFeeGBP(aceTier) + ACE_FEE_LABEL_GBP + ACE_FEE_SHIPPING_GBP;
+      const aceData    = acePricesAll[item.id] || {};
+      const ace10GBP   = aceData['10'] ? usdToGbp(aceData['10']) : p10GBP * 0.75;
+      const aceProfit  = ace10GBP - rawGBP - aceFeeBase;
+      const aceROI     = (aceProfit / (rawGBP + aceFeeBase)) * 100;
+      const p9USD      = (priceData?.pcPsa9 && priceData.pcPsa9 > 0) ? priceData.pcPsa9 : estimateGradePrice(card, 9, p10USD);
+      const psa9GBP    = usdToGbp(p9USD);
+      const psa9Profit = psa9GBP - rawGBP - psaFeeGBP;
+      const psa9ROI    = (psa9Profit / (rawGBP + psaFeeGBP)) * 100;
+      const ace9GBP    = aceData['9'] ? usdToGbp(aceData['9']) : psa9GBP * 0.75;
+      const ace9Profit = ace9GBP - rawGBP - aceFeeBase;
+      const ace9ROI    = (ace9Profit / (rawGBP + aceFeeBase)) * 100;
+      // Fall back to card DB for name/img if the stored item is missing them
+      const name = item.name || card.n || '';
+      const img  = item.img  || getCardImg(card) || '';
+      return [{ card, item, name, img, rawGBP, p10GBP, psaFeeGBP, psaProfit, psaROI,
+                ace10GBP, aceFeeBase, aceProfit, aceROI, psa9GBP, psa9Profit, psa9ROI,
+                ace9GBP, ace9Profit, ace9ROI }];
+    }).sort((a, b) => Math.max(b.psaROI, b.aceROI) - Math.max(a.psaROI, a.aceROI));
   }
 
-  list.innerHTML = gradeItems.map(({ card, item, rawGBP, p10GBP, psaFeeGBP, psaProfit, psaROI,
-      ace10GBP, aceFeeBase, aceProfit, aceROI, aceTier,
-      psa9GBP, psa9Profit, psa9ROI, ace9GBP, ace9Profit, ace9ROI }) => {
+  function renderGradeItem({ card, name, img, rawGBP, p10GBP, psaFeeGBP, psaProfit, psaROI,
+      ace10GBP, aceFeeBase, aceProfit, aceROI, psa9GBP, psa9Profit, psa9ROI, ace9GBP, ace9Profit, ace9ROI }) {
     const bestROI   = Math.max(psaROI, aceROI);
     const psaBetter = psaROI >= aceROI;
     const margin    = Math.abs(psaROI - aceROI);
     const feeDelta  = psaFeeGBP - aceFeeBase;
     const winnerCls = psaBetter ? 'groi-winner-psa' : 'groi-winner-ace';
 
-    // Verdict badge: winner + always surface the fee delta
     let verdictText, verdictCls;
     if (margin < 5) {
-      verdictText = `Similar ROI · ACE saves £${feeDelta.toFixed(0)} in fees`;
-      verdictCls  = 'groi-verdict-ace';
+      verdictText = `Similar ROI · ACE saves £${feeDelta.toFixed(0)} in fees`; verdictCls = 'groi-verdict-ace';
     } else if (psaBetter) {
-      verdictText = `PSA ${margin.toFixed(0)}pp better ROI · ACE saves £${feeDelta.toFixed(0)} in fees`;
-      verdictCls  = 'groi-verdict-psa';
+      verdictText = `PSA ${margin.toFixed(0)}pp better ROI · ACE saves £${feeDelta.toFixed(0)} in fees`; verdictCls = 'groi-verdict-psa';
     } else {
-      verdictText = `ACE ${margin.toFixed(0)}pp better ROI · saves £${feeDelta.toFixed(0)} vs PSA`;
-      verdictCls  = 'groi-verdict-ace';
+      verdictText = `ACE ${margin.toFixed(0)}pp better ROI · saves £${feeDelta.toFixed(0)} vs PSA`; verdictCls = 'groi-verdict-ace';
     }
 
-    // Which service is the practical winner (ACE wins unless PSA beats it by ≥15pp)
     const aceIsPracticalWinner = !psaBetter || margin < 15;
-
-    // "Worth it" single line — service recommendation only (grade grid shows the detail)
     let worthIt, worthCls;
     if (bestROI < 0) {
       worthIt = 'Not worth grading at current raw price — hold raw.'; worthCls = 'groi-worth-no';
@@ -16707,14 +16683,11 @@ function _renderHomeConsiderGrading() {
       worthIt = `PSA is the call — ${margin.toFixed(0)}pp ROI advantage outweighs the £${feeDelta.toFixed(0)} ACE fee saving.`;
       worthCls = bestROI >= 30 ? 'groi-worth-yes' : 'groi-worth-maybe';
     } else if (aceIsPracticalWinner && aceROI >= 25) {
-      worthIt = `ACE is the play — saves £${feeDelta.toFixed(0)} in fees, solid return, faster turnaround.`;
-      worthCls = 'groi-worth-yes';
+      worthIt = `ACE is the play — saves £${feeDelta.toFixed(0)} in fees, solid return, faster turnaround.`; worthCls = 'groi-worth-yes';
     } else if (aceIsPracticalWinner && aceROI >= 0) {
-      worthIt = `ACE makes more sense — £${feeDelta.toFixed(0)} fee saving reduces downside vs PSA.`;
-      worthCls = 'groi-worth-maybe';
+      worthIt = `ACE makes more sense — £${feeDelta.toFixed(0)} fee saving reduces downside vs PSA.`; worthCls = 'groi-worth-maybe';
     } else {
-      worthIt = `Borderline — only grade if confident on condition; ACE's lower fees limit the downside.`;
-      worthCls = 'groi-worth-maybe';
+      worthIt = `Borderline — only grade if confident on condition; ACE's lower fees limit the downside.`; worthCls = 'groi-worth-maybe';
     }
 
     const fmt = (profit, cost) => {
@@ -16722,28 +16695,26 @@ function _renderHomeConsiderGrading() {
       const cls = roi >= 40 ? 'groi-good' : roi >= 0 ? 'groi-ok' : 'groi-bad';
       return `<span class="${cls}">${profit >= 0 ? '+' : ''}£${profit.toFixed(0)} (${roi.toFixed(0)}%)</span>`;
     };
-    const psaCostBase  = rawGBP + psaFeeGBP;
-    const aceCostBase  = rawGBP + aceFeeBase;
-    const img = item.img ? `<img class="home-card-art" src="${esc(item.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="home-card-art"></div>';
+    const imgEl = img ? `<img class="home-card-art" src="${esc(img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="home-card-art"></div>';
     return `<div class="home-grading-item" data-id="${esc(card.i)}">
-      ${img}
+      ${imgEl}
       <div class="home-grading-info">
-        <div class="home-card-name">${esc(item.name)}</div>
-        <div class="home-grading-raw">Buy raw £${rawGBP.toFixed(2)} · PSA 10 £${p10GBP.toFixed(2)} · PSA 9 £${psa9GBP.toFixed(2)}</div>
+        <div class="home-card-name">${esc(name)}</div>
+        <div class="home-grading-raw">Raw £${rawGBP.toFixed(2)} · PSA 10 £${p10GBP.toFixed(2)} · PSA 9 £${psa9GBP.toFixed(2)}</div>
         <div class="home-grading-compare-grid">
           <div class="groi-svc-row">
             <span class="groi-svc-label ${psaBetter && margin >= 5 ? winnerCls : ''}">PSA</span>
             <span class="groi-grade-pair">
-              <span class="groi-grade-col"><span class="groi-grade-num">10</span>${fmt(psaProfit, psaCostBase)}</span>
-              <span class="groi-grade-col"><span class="groi-grade-num">9</span>${fmt(psa9Profit, psaCostBase)}</span>
+              <span class="groi-grade-col"><span class="groi-grade-num">10</span>${fmt(psaProfit, rawGBP + psaFeeGBP)}</span>
+              <span class="groi-grade-col"><span class="groi-grade-num">9</span>${fmt(psa9Profit, rawGBP + psaFeeGBP)}</span>
             </span>
             <span class="groi-fee">£${psaFeeGBP} fee</span>
           </div>
           <div class="groi-svc-row">
             <span class="groi-svc-label ${!psaBetter && margin >= 5 ? winnerCls : ''}">ACE</span>
             <span class="groi-grade-pair">
-              <span class="groi-grade-col"><span class="groi-grade-num">10</span>${fmt(aceProfit, aceCostBase)}</span>
-              <span class="groi-grade-col"><span class="groi-grade-num">9</span>${fmt(ace9Profit, aceCostBase)}</span>
+              <span class="groi-grade-col"><span class="groi-grade-num">10</span>${fmt(aceProfit, rawGBP + aceFeeBase)}</span>
+              <span class="groi-grade-col"><span class="groi-grade-num">9</span>${fmt(ace9Profit, rawGBP + aceFeeBase)}</span>
             </span>
             <span class="groi-fee">£${aceFeeBase.toFixed(0)} fee</span>
           </div>
@@ -16752,15 +16723,50 @@ function _renderHomeConsiderGrading() {
         <div class="home-grading-worthit ${worthCls}">${worthIt}</div>
       </div>
     </div>`;
-  }).join('');
+  }
 
-  if (!list._gradingListenerAdded) {
-    list._gradingListenerAdded = true;
-    list.addEventListener('click', e => {
-      const item = e.target.closest('.home-grading-item[data-id]');
-      if (item) { go('predict'); setTimeout(() => { try { selectCard(item.dataset.id); } catch {} }, 80); }
+  const collItems = buildGradeItems(portfolio);
+  const wishItems = buildGradeItems(wishlist);
+
+  const hash = portfolio.map(p => p.id).join('|') + '~' + wishlist.map(w => w.id).join('|');
+  if (hash === _homeGradingHash && collList.querySelector('.home-grading-item')) return;
+  _homeGradingHash = hash;
+
+  collList.innerHTML = collItems.length
+    ? collItems.map(renderGradeItem).join('')
+    : '<div class="home-empty">No collection cards with PSA 10 data yet.<br>Add cards to your collection and sync prices.</div>';
+
+  wishList.innerHTML = wishItems.length
+    ? wishItems.map(renderGradeItem).join('')
+    : '<div class="home-empty">No wishlist cards with PSA 10 data yet.<br>Add cards to your wishlist and sync prices.</div>';
+
+  if (countEl) countEl.textContent = collList.style.display === 'none' ? wishItems.length : collItems.length;
+
+  // Tab switching
+  const tabBar = document.querySelector('.hg-src-tab-bar');
+  if (tabBar && !tabBar._hgTabListenerAdded) {
+    tabBar._hgTabListenerAdded = true;
+    tabBar.addEventListener('click', e => {
+      const btn = e.target.closest('.hg-src-tab');
+      if (!btn) return;
+      tabBar.querySelectorAll('.hg-src-tab').forEach(b => b.classList.toggle('hg-src-active', b === btn));
+      const src = btn.dataset.hgsrc;
+      collList.style.display = src === 'collection' ? '' : 'none';
+      wishList.style.display = src === 'wishlist'   ? '' : 'none';
+      if (countEl) countEl.textContent = src === 'collection' ? collItems.length : wishItems.length;
     });
   }
+
+  // Click a card → open in Predict
+  [collList, wishList].forEach(container => {
+    if (!container._gradingClickAdded) {
+      container._gradingClickAdded = true;
+      container.addEventListener('click', e => {
+        const row = e.target.closest('.home-grading-item[data-id]');
+        if (row) { go('predict'); setTimeout(() => { try { selectCard(row.dataset.id); } catch {} }, 80); }
+      });
+    }
+  });
 }
 
 function setupPageNav() {
