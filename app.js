@@ -15388,12 +15388,14 @@ function _renderHomeReco(forceRebuild) {
       _recoCached = { ...all, ts: Date.now() };
       _renderHomeRecoResults(all.general, list, $('homeRecoCount'));
       _STRAT_SECTIONS.forEach(s => _renderHomeRecoStratResults(all[s.key], $(s.listId), $(s.countId), s.key));
+      _renderRecoConsiderGrading(all.general);
       // Fetch live prices for top reco cards so PSA10 tiles don't show stale static prices
       _homeRecoPrefetch(all);
     });
   } else {
     _renderHomeRecoResults(_recoCached.general, list, $('homeRecoCount'));
     _STRAT_SECTIONS.forEach(s => _renderHomeRecoStratResults(_recoCached[s.key], $(s.listId), $(s.countId), s.key));
+    _renderRecoConsiderGrading(_recoCached.general);
   }
 }
 
@@ -16611,55 +16613,48 @@ function _renderHomeCombinedWishlist() {
 }
 
 // ── Consider Grading: PSA vs ACE ROI for wishlist / watchlist cards ─────────
-let _homeGradingHash = '';
-function _renderHomeConsiderGrading() {
-  const collList  = $('homeGradingListCollection');
-  const wishList  = $('homeGradingListWishlist');
-  const countEl   = $('homeGradingCount');
-  if (!collList || !wishList) return;
+// ---- Shared grading-analysis helpers (used by Consider Grading + Reco Consider Grading) ----
 
+function _buildGradeItems(sourceItems) {
   const acePricesAll = (() => { try { return JSON.parse(localStorage.getItem('pkm-ace-prices-v1') || '{}'); } catch { return {}; } })();
+  return sourceItems.flatMap(item => {
+    const card = getCardById(item.id);
+    if (!card) return [];
+    const priceData = getCachedPrice(item.id) || getLastKnownPrice(item.id);
+    const rawUSD = priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || card.p) : card.p;
+    const rawGBP = usdToGbp(rawUSD || 0);
+    if (rawGBP < 8) return [];
+    const p10USD = priceData?.pcPsa10 || card.p10 || 0;
+    if (!p10USD || p10USD <= 0) return [];
+    const p10GBP = usdToGbp(p10USD);
+    if (p10GBP <= rawGBP) return [];
 
-  function buildGradeItems(sourceItems) {
-    return sourceItems.flatMap(item => {
-      const card = getCardById(item.id);
-      if (!card) return [];
-      const priceData = getCachedPrice(item.id) || getLastKnownPrice(item.id);
-      const rawUSD = priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || card.p) : card.p;
-      const rawGBP = usdToGbp(rawUSD || 0);
-      if (rawGBP < 8) return [];
-      const p10USD = priceData?.pcPsa10 || card.p10 || 0;
-      if (!p10USD || p10USD <= 0) return [];
-      const p10GBP = usdToGbp(p10USD);
-      if (p10GBP <= rawGBP) return [];
+    const psaFeeGBP  = getUkGradingFeeGBP(p10USD);
+    const psaProfit  = p10GBP - rawGBP - psaFeeGBP;
+    const psaROI     = (psaProfit / (rawGBP + psaFeeGBP)) * 100;
+    const aceTier    = recommendAceTier(rawGBP);
+    const aceFeeBase = getAceFeeGBP(aceTier) + ACE_FEE_LABEL_GBP + ACE_FEE_SHIPPING_GBP;
+    const aceData    = acePricesAll[item.id] || {};
+    const ace10GBP   = aceData['10'] ? usdToGbp(aceData['10']) : p10GBP * 0.75;
+    const aceProfit  = ace10GBP - rawGBP - aceFeeBase;
+    const aceROI     = (aceProfit / (rawGBP + aceFeeBase)) * 100;
+    const p9USD      = (priceData?.pcPsa9 && priceData.pcPsa9 > 0) ? priceData.pcPsa9 : estimateGradePrice(card, 9, p10USD);
+    const psa9GBP    = usdToGbp(p9USD);
+    const psa9Profit = psa9GBP - rawGBP - psaFeeGBP;
+    const psa9ROI    = (psa9Profit / (rawGBP + psaFeeGBP)) * 100;
+    const ace9GBP    = aceData['9'] ? usdToGbp(aceData['9']) : psa9GBP * 0.75;
+    const ace9Profit = ace9GBP - rawGBP - aceFeeBase;
+    const ace9ROI    = (ace9Profit / (rawGBP + aceFeeBase)) * 100;
+    const name = item.name || card.n || '';
+    const img  = item.img  || getCardImg(card) || '';
+    return [{ card, item, name, img, rawGBP, p10GBP, psaFeeGBP, psaProfit, psaROI,
+              ace10GBP, aceFeeBase, aceProfit, aceROI, psa9GBP, psa9Profit, psa9ROI,
+              ace9GBP, ace9Profit, ace9ROI }];
+  }).sort((a, b) => Math.max(b.psaROI, b.aceROI) - Math.max(a.psaROI, a.aceROI));
+}
 
-      const psaFeeGBP  = getUkGradingFeeGBP(p10USD);
-      const psaProfit  = p10GBP - rawGBP - psaFeeGBP;
-      const psaROI     = (psaProfit / (rawGBP + psaFeeGBP)) * 100;
-      const aceTier    = recommendAceTier(rawGBP);
-      const aceFeeBase = getAceFeeGBP(aceTier) + ACE_FEE_LABEL_GBP + ACE_FEE_SHIPPING_GBP;
-      const aceData    = acePricesAll[item.id] || {};
-      const ace10GBP   = aceData['10'] ? usdToGbp(aceData['10']) : p10GBP * 0.75;
-      const aceProfit  = ace10GBP - rawGBP - aceFeeBase;
-      const aceROI     = (aceProfit / (rawGBP + aceFeeBase)) * 100;
-      const p9USD      = (priceData?.pcPsa9 && priceData.pcPsa9 > 0) ? priceData.pcPsa9 : estimateGradePrice(card, 9, p10USD);
-      const psa9GBP    = usdToGbp(p9USD);
-      const psa9Profit = psa9GBP - rawGBP - psaFeeGBP;
-      const psa9ROI    = (psa9Profit / (rawGBP + psaFeeGBP)) * 100;
-      const ace9GBP    = aceData['9'] ? usdToGbp(aceData['9']) : psa9GBP * 0.75;
-      const ace9Profit = ace9GBP - rawGBP - aceFeeBase;
-      const ace9ROI    = (ace9Profit / (rawGBP + aceFeeBase)) * 100;
-      // Fall back to card DB for name/img if the stored item is missing them
-      const name = item.name || card.n || '';
-      const img  = item.img  || getCardImg(card) || '';
-      return [{ card, item, name, img, rawGBP, p10GBP, psaFeeGBP, psaProfit, psaROI,
-                ace10GBP, aceFeeBase, aceProfit, aceROI, psa9GBP, psa9Profit, psa9ROI,
-                ace9GBP, ace9Profit, ace9ROI }];
-    }).sort((a, b) => Math.max(b.psaROI, b.aceROI) - Math.max(a.psaROI, a.aceROI));
-  }
-
-  function renderGradeItem({ card, name, img, rawGBP, p10GBP, psaFeeGBP, psaProfit, psaROI,
-      ace10GBP, aceFeeBase, aceProfit, aceROI, psa9GBP, psa9Profit, psa9ROI, ace9GBP, ace9Profit, ace9ROI }) {
+function _renderGradeItemHTML({ card, name, img, rawGBP, p10GBP, psaFeeGBP, psaProfit, psaROI,
+    ace10GBP, aceFeeBase, aceProfit, aceROI, psa9GBP, psa9Profit, psa9ROI, ace9GBP, ace9Profit, ace9ROI }) {
     const bestROI   = Math.max(psaROI, aceROI);
     const psaBetter = psaROI >= aceROI;
     const margin    = Math.abs(psaROI - aceROI);
@@ -16723,26 +16718,32 @@ function _renderHomeConsiderGrading() {
         <div class="home-grading-worthit ${worthCls}">${worthIt}</div>
       </div>
     </div>`;
-  }
+}
 
-  const collItems = buildGradeItems(portfolio);
-  const wishItems = buildGradeItems(wishlist);
+let _homeGradingHash = '';
+function _renderHomeConsiderGrading() {
+  const collList  = $('homeGradingListCollection');
+  const wishList  = $('homeGradingListWishlist');
+  const countEl   = $('homeGradingCount');
+  if (!collList || !wishList) return;
+
+  const collItems = _buildGradeItems(portfolio);
+  const wishItems = _buildGradeItems(wishlist);
 
   const hash = portfolio.map(p => p.id).join('|') + '~' + wishlist.map(w => w.id).join('|');
   if (hash === _homeGradingHash && collList.querySelector('.home-grading-item')) return;
   _homeGradingHash = hash;
 
   collList.innerHTML = collItems.length
-    ? collItems.map(renderGradeItem).join('')
+    ? collItems.map(_renderGradeItemHTML).join('')
     : '<div class="home-empty">No collection cards with PSA 10 data yet.<br>Add cards to your collection and sync prices.</div>';
 
   wishList.innerHTML = wishItems.length
-    ? wishItems.map(renderGradeItem).join('')
+    ? wishItems.map(_renderGradeItemHTML).join('')
     : '<div class="home-empty">No wishlist cards with PSA 10 data yet.<br>Add cards to your wishlist and sync prices.</div>';
 
   if (countEl) countEl.textContent = collList.style.display === 'none' ? wishItems.length : collItems.length;
 
-  // Tab switching
   const tabBar = document.querySelector('.hg-src-tab-bar');
   if (tabBar && !tabBar._hgTabListenerAdded) {
     tabBar._hgTabListenerAdded = true;
@@ -16757,7 +16758,6 @@ function _renderHomeConsiderGrading() {
     });
   }
 
-  // Click a card → open in Predict
   [collList, wishList].forEach(container => {
     if (!container._gradingClickAdded) {
       container._gradingClickAdded = true;
@@ -16767,6 +16767,34 @@ function _renderHomeConsiderGrading() {
       });
     }
   });
+}
+
+function _renderRecoConsiderGrading(recoItems) {
+  const list    = $('homeRecoGradingList');
+  const countEl = $('homeRecoGradingCount');
+  if (!list) return;
+
+  // Convert reco items (have card + marketUSD) to the {id,name,img} format _buildGradeItems expects
+  const normalized = (recoItems || []).map(r => ({
+    id:   r.card.i,
+    name: r.card.n,
+    img:  getCardImg(r.card),
+  }));
+
+  const items = _buildGradeItems(normalized).slice(0, 50);
+  if (countEl) countEl.textContent = items.length;
+
+  list.innerHTML = items.length
+    ? items.map(_renderGradeItemHTML).join('')
+    : '<div class="home-empty">No recommended cards with grading ROI data yet — sync prices to populate.</div>';
+
+  if (!list._gradingClickAdded) {
+    list._gradingClickAdded = true;
+    list.addEventListener('click', e => {
+      const row = e.target.closest('.home-grading-item[data-id]');
+      if (row) { go('predict'); setTimeout(() => { try { selectCard(row.dataset.id); } catch {} }, 80); }
+    });
+  }
 }
 
 function setupPageNav() {

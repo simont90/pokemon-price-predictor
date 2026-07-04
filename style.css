@@ -10382,7 +10382,8 @@ html { scroll-behavior: smooth; }
 
 #homeGradingList,
 #homeGradingListCollection,
-#homeGradingListWishlist { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+#homeGradingListWishlist,
+#homeRecoGradingList { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
 
 /* Collection / Wishlist source toggle inside Consider Grading */
 .hg-src-tab-bar {
