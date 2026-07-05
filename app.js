@@ -2692,9 +2692,40 @@ function recalcWithLivePrice(card) {
 // ================================================================
 // ---- Card Selection ----
 // ================================================================
+// Synthesise a minimal card object from portfolio/wishlist/watchlist data when
+// a card ID is no longer in the static DB (e.g. tcgc-* or usr-* entries that
+// haven't been re-injected from pkm-user-cards-v1 yet after a sync).
+function _synthCardFromCollections(id) {
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const keys = ['pkm-portfolio', 'pkm-wishlist'];
+  for (const key of keys) {
+    try {
+      const list = JSON.parse(localStorage.getItem(key) || '[]');
+      const item = list.find(x => (x.id || x.i) === id);
+      if (!item) continue;
+      return {
+        i: id,
+        n: item.name || id,
+        s: item.set || '',
+        sc: '',
+        rc: '',
+        cn: '',
+        r: '',
+        p: item.addedPriceGBP > 0 ? item.addedPriceGBP / fx : (item.price || 0),
+        p10: 0,
+        img: item.img || '',
+        lang: id.includes('-jp-') ? 'JP' : 'EN',
+        _userAdded: true,
+        _fromPortfolioFallback: true,
+      };
+    } catch {}
+  }
+  return null;
+}
+
 function selectCard(id) {
   if (!cardData) return;
-  const card = getCardById(id);
+  const card = getCardById(id) || _synthCardFromCollections(id);
   if (!card) return;
   selectedCard = card;
   _holdWinnerKey = null;  // reset until renderHoldStrategy runs for this card
