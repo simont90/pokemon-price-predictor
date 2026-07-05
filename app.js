@@ -19045,20 +19045,32 @@ function _gbp(n) {
   return '£' + (n || 0).toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-// Returns { '2026-08': { target: N, rollover: N }, ... } — effective target per month after rolling surplus forward.
+// Returns { '2026-08': { target: N, rollover: N }, ... } — effective target per
+// month after rolling the previous month's balance forward. Surplus increases
+// next month's target; overspend decreases it (rollover < 0). The displayed
+// target is clamped at £0 — a deficit bigger than one month's budget keeps
+// carrying via the unclamped balance.
 function _computeEffectiveTargets(data) {
   const base = data.target || 0;
   const result = {};
   let rollover = 0;
   BUDGET_MONTHS.forEach(m => {
-    const eff = base + rollover;
-    result[m.key] = { target: eff, rollover };
+    const rawEff = base + rollover;
+    result[m.key] = { target: Math.max(0, rawEff), rollover };
     const md = _budgetMonth(data, m.key);
     const net = (md.packs || 0) + (md.singles || 0) - (md.sold || 0);
-    const surplus = eff - net;
-    rollover = surplus > 0 ? surplus : 0;
+    const surplus = rawEff - net;
+    // Deficits only carry when a target is actually set; with no budget
+    // configured (base 0) only surplus from sales rolls, as before.
+    rollover = base > 0 ? surplus : Math.max(0, surplus);
   });
   return result;
+}
+
+function _bdgRolloverText(rollover, effTarget) {
+  if (rollover > 0) return `↪ ${_gbp(rollover)} rolled over · effective target ${_gbp(effTarget)}`;
+  if (rollover < 0) return `↪ ${_gbp(-rollover)} overspend deducted · effective target ${_gbp(effTarget)}`;
+  return '';
 }
 
 function _budgetChartHTML(data) {
@@ -19151,12 +19163,12 @@ function _budgetChartHTML(data) {
   </div>`;
 }
 
-function _budgetMonthNetHTML(md, target) {
+function _budgetMonthNetHTML(md, target, budgetOn) {
   const gross = (md.packs || 0) + (md.singles || 0);
   const net   = gross - (md.sold || 0);
   if (!gross && !md.sold) return '<span class="bdg-net-empty">No entries yet</span>';
-  const under = target > 0 ? net <= target : true;
-  const diff  = target > 0 ? target - net : null;
+  const under = budgetOn ? net <= target : true;
+  const diff  = budgetOn ? target - net : null;
   return `
     <div class="bdg-net-breakdown">
       ${_gbp(md.packs)} packs
@@ -19171,13 +19183,19 @@ function _budgetMonthNetHTML(md, target) {
   `;
 }
 
+function _budgetMonthPct(net, effTarget) {
+  if (effTarget > 0) return Math.min(100, (net / effTarget) * 100);
+  return net > 0 ? 100 : 0; // £0 effective target: any spend maxes the bar
+}
+
 function _budgetMonthHTML(data, m, effInfo) {
   const { target: effTarget, rollover } = effInfo || { target: data.target || 0, rollover: 0 };
+  const budgetOn = (data.target || 0) > 0;
   const md      = _budgetMonth(data, m.key);
   const gross   = (md.packs || 0) + (md.singles || 0);
   const net     = gross - (md.sold || 0);
-  const under   = effTarget === 0 || net <= effTarget;
-  const pct     = effTarget > 0 ? Math.min(100, (net / effTarget) * 100) : 0;
+  const under   = !budgetOn || net <= effTarget;
+  const pct     = _budgetMonthPct(net, effTarget);
   const fillCls = pct >= 100 ? 'bdg-fill-over' : pct >= 80 ? 'bdg-fill-warn' : 'bdg-fill-ok';
   const hasData = gross > 0 || md.sold > 0;
 
@@ -19187,9 +19205,9 @@ function _budgetMonthHTML(data, m, effInfo) {
         <span class="bdg-month-name">${m.label}</span>
         ${hasData ? `<span class="bdg-status ${under ? 'bdg-status-ok' : 'bdg-status-over'}">${under ? '✓ Under' : '✗ Over'}</span>` : '<span class="bdg-status bdg-status-none">—</span>'}
       </div>
-      <div class="bdg-rollover-info" data-rollover-row="${m.key}"${rollover > 0 ? '' : ' style="display:none"'}>↪ ${_gbp(rollover)} rolled over · effective target ${_gbp(effTarget)}</div>
+      <div class="bdg-rollover-info${rollover < 0 ? ' bdg-rollover-neg' : ''}" data-rollover-row="${m.key}"${rollover !== 0 ? '' : ' style="display:none"'}>${_bdgRolloverText(rollover, effTarget)}</div>
 
-      ${effTarget > 0 ? `
+      ${budgetOn ? `
       <div class="bdg-progress-wrap">
         <div class="bdg-progress-track">
           <div class="bdg-progress-fill ${fillCls}" style="width:${pct}%"></div>
@@ -19234,7 +19252,7 @@ function _budgetMonthHTML(data, m, effInfo) {
       </div>
 
       <div class="bdg-net-row" data-net-row="${m.key}">
-        ${_budgetMonthNetHTML(md, effTarget)}
+        ${_budgetMonthNetHTML(md, effTarget, budgetOn)}
       </div>
     </div>
   `;
@@ -19254,11 +19272,11 @@ function _budgetAnalyticsHTML(data) {
   const totalTarget = target * BUDGET_MONTHS.length;
   const remaining   = totalTarget - net;
   const effs = _computeEffectiveTargets(data);
+  const budgetOn = target > 0;
   const monthsOver  = BUDGET_MONTHS.filter(m => {
     const md = _budgetMonth(data, m.key);
     const mn = (md.packs || 0) + (md.singles || 0) - (md.sold || 0);
-    const eff = effs[m.key].target;
-    return eff > 0 && mn > eff;
+    return budgetOn && mn > effs[m.key].target;
   }).length;
 
   return `
@@ -19344,11 +19362,12 @@ function renderBudgetPage() {
 
 function _bdgRefreshMonth(el, key, effInfo) {
   const { target: effTarget, rollover } = effInfo || { target: _bdgData.target || 0, rollover: 0 };
+  const budgetOn = (_bdgData.target || 0) > 0;
   const md      = _budgetMonth(_bdgData, key);
   const gross   = (md.packs || 0) + (md.singles || 0);
   const net     = gross - (md.sold || 0);
-  const under   = effTarget === 0 || net <= effTarget;
-  const pct     = effTarget > 0 ? Math.min(100, (net / effTarget) * 100) : 0;
+  const under   = !budgetOn || net <= effTarget;
+  const pct     = _budgetMonthPct(net, effTarget);
   const hasData = gross > 0 || md.sold > 0;
   const card    = el.querySelector(`[data-month-card="${key}"]`);
   if (!card) return;
@@ -19356,8 +19375,9 @@ function _bdgRefreshMonth(el, key, effInfo) {
   // Rollover indicator
   const rolloverRow = card.querySelector(`[data-rollover-row="${key}"]`);
   if (rolloverRow) {
-    if (rollover > 0) {
-      rolloverRow.textContent = `↪ ${_gbp(rollover)} rolled over · effective target ${_gbp(effTarget)}`;
+    if (rollover !== 0) {
+      rolloverRow.textContent = _bdgRolloverText(rollover, effTarget);
+      rolloverRow.classList.toggle('bdg-rollover-neg', rollover < 0);
       rolloverRow.style.display = '';
     } else {
       rolloverRow.style.display = 'none';
@@ -19366,7 +19386,7 @@ function _bdgRefreshMonth(el, key, effInfo) {
 
   // Net row
   const netRow = card.querySelector(`[data-net-row="${key}"]`);
-  if (netRow) netRow.innerHTML = _budgetMonthNetHTML(md, effTarget);
+  if (netRow) netRow.innerHTML = _budgetMonthNetHTML(md, effTarget, budgetOn);
 
   // Status badge
   const status = card.querySelector('.bdg-status');

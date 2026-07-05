@@ -11215,6 +11215,7 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
   margin: -2px 0 6px;
   letter-spacing: 0.01em;
 }
+.bdg-rollover-info.bdg-rollover-neg { color: var(--red); }
 
 /* ── Responsive: 2-col fields on wider screens ── */
 @media (min-width: 600px) {
