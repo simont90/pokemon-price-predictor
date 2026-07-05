@@ -11992,9 +11992,15 @@ function renderHoldStrategy(card) {
     : rawShipGBP > 0
       ? `Hold ungraded for 5 yrs \u2014 incl. ~\u00a3${rawShipGBP} UK shipping`
       : 'Hold ungraded for 5 yrs';
+  const _gemPct = (gemRate * 100).toFixed(0);
+  const _gemNote = gemRate < 0.12
+    ? `low gem rate (${_gemPct}%) \u2014 buying pre-graded likely better`
+    : gemRate < 0.22
+    ? `${_gemPct}% gem rate \u2014 most copies grade PSA 7\u20139`
+    : `${(goodOutcomeProb*100).toFixed(0)}% chance PSA 9 or 10`;
   const gambleDesc = usingAcqCost
-    ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${gradingFeeGBP} PSA grading \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance PSA 9+`
-    : `EV across PSA outcomes \u2014 ${(goodOutcomeProb*100).toFixed(0)}% chance of PSA 9 or 10`;
+    ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${gradingFeeGBP} PSA grading \u2014 ${_gemNote}`
+    : `EV across PSA outcomes \u2014 ${_gemNote}`;
   const gambleLabel = usingAcqCost ? 'Grade My Card (PSA)' : 'Buy Raw + Grade (PSA)';
 
   const aceDesc_r = usingAcqCost
@@ -12093,8 +12099,11 @@ function renderHoldStrategy(card) {
 
   const rawSide = strategies.filter(s => !s.na && (s.key === 'raw' || s.key === 'gamble' || s.key === 'ace') && s.roi > 0);
   const gradedSide = strategies.filter(s => !s.na && s.key.startsWith('psa') && s.roi > 0);
+  const allGradedSide = strategies.filter(s => !s.na && s.key.startsWith('psa'));
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
-  const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
+  // Always pick a slab recommendation — fall back to best by riskAdjusted even if ROI is negative
+  const _bgPool = gradedSide.length ? gradedSide : allGradedSide;
+  const bestGraded = _bgPool.length ? _bgPool.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
   // BEST LONG-TERM PICK badge: never high-risk (gamble), ROI must beat opportunity
   // cost (≥35% over 5 yrs ≈ 6.2% annual). Threshold recalibrated for post-bubble rates.
@@ -12190,10 +12199,13 @@ function renderHoldStrategy(card) {
       }
     }
 
-    // Best PSA tier to buy pre-graded
+    // Best PSA tier to buy pre-graded — always shown, even if ROI is below threshold
+    const _bgRoiNote = bestGraded && bestGraded.roi < 0
+      ? `${bestGraded.roi.toFixed(0)}% ROI — not profitable at current prices`
+      : bestGraded ? `+${bestGraded.roi.toFixed(0)}% ROI, ${bestGraded.risk === 'low' ? 'low' : 'medium'} risk` : '';
     const gradedLine = bestGraded
-      ? `Best PSA tier to buy pre-graded: <strong>PSA ${bestGraded.grade}</strong> · ${fmtGBP(bestGraded.today)} → ${fmtGBP(bestGraded.yr5)} in 5yrs (+${bestGraded.roi.toFixed(0)}% ROI, ${bestGraded.risk === 'low' ? 'low' : 'medium'} risk).`
-      : `No PSA graded tier projects positive 5yr ROI — every pre-graded copy is overpriced vs the model.`;
+      ? `Best PSA slab to buy: <strong>PSA ${bestGraded.grade}</strong> · ${fmtGBP(bestGraded.today)} → ${fmtGBP(bestGraded.yr5)} in 5yrs (${_bgRoiNote}).`
+      : `No PSA graded data available for this card.`;
 
     // Card scan advice specific to this copy's condition
     let scanLine = '';
@@ -12253,10 +12265,19 @@ function renderHoldStrategy(card) {
   // Render the comparison grid.
   const grid = $('holdGrid');
   const _maxBudgetGBP = getMaxBudgetGBP();
+  // Collapse PSA grades below the recommended grade to keep the grid clean.
+  // If bestLongTermPick is PSA N, hide PSA 1…N-1. Otherwise hide PSA 1–6 (show 7–10).
+  const _ltpGradeNum = (bestLongTermPick && bestLongTermPick.key.startsWith('psa'))
+    ? parseInt(bestLongTermPick.key.replace('psa', ''))
+    : 7;
+  const _hiddenGradeNums = new Set([1, 2, 3, 4, 5, 6].filter(g => g < _ltpGradeNum));
+
   grid.innerHTML = strategies.filter(s => !s.na).map(s => {
     const todayGBP_tile = s.today * fx;
     const isOverBudget = _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
     const isWinner = bestLongTermPick && s.key === bestLongTermPick.key && !isOverBudget;
+    const gradeNum = s.key.startsWith('psa') ? parseInt(s.key.replace('psa', '')) : null;
+    const isCollapsed = gradeNum !== null && _hiddenGradeNums.has(gradeNum);
     const verdict = s.roi >= 80 ? { c: 'hold-v-strong', t: 'Strong hold' }
                   : s.roi >= 40 ? { c: 'hold-v-good',   t: 'Worth holding' }
                   : s.roi >= 15 ? { c: 'hold-v-fair',   t: 'Fair' }
@@ -12265,7 +12286,7 @@ function renderHoldStrategy(card) {
     const riskLabel = s.risk === 'low' ? 'Low risk' : s.risk === 'med' ? 'Medium risk' : 'High risk';
     const profitSign = s.profit >= 0 ? '+' : '−';
     return `
-      <div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${verdict.c} ${s.overridden ? 'hold-tile-overridden' : ''}">
+      <div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${verdict.c} ${s.overridden ? 'hold-tile-overridden' : ''} ${isCollapsed ? 'hold-tile-collapsed' : ''}"${isCollapsed ? ' style="display:none"' : ''}>
         ${isOverBudget ? '<div class="hold-over-budget-tag">Above budget</div>' : (isWinner ? '<div class="hold-winner-tag">\u2605 Best long-term pick</div>' : '')}
         ${s.overridden ? `<div class="hold-tile-override-tag" title="${s.marketOverrideGBP != null ? 'Current market price — ROI uses your acquisition cost' : 'Using your manual market price'}">${s.marketOverrideGBP != null ? 'Mkt' : 'Override'} £${(+s.overrideGBP).toFixed(2)}</div>` : ''}
         <div class="hold-tile-head">
@@ -12323,7 +12344,20 @@ function renderHoldStrategy(card) {
         </div>
       </div>
     `;
-  }).join('');
+  }).join('') + (_hiddenGradeNums.size > 0
+    ? `<button class="hold-grade-toggle-btn" id="holdGradeToggleBtn" data-ltp="${_ltpGradeNum}" data-expanded="0">Show PSA 1–${_ltpGradeNum - 1} ▾</button>`
+    : '');
+
+  const _toggleBtn = document.getElementById('holdGradeToggleBtn');
+  if (_toggleBtn) {
+    _toggleBtn.addEventListener('click', () => {
+      const expanded = _toggleBtn.dataset.expanded === '1';
+      grid.querySelectorAll('.hold-tile-collapsed').forEach(el => { el.style.display = expanded ? 'none' : ''; });
+      const ltp = parseInt(_toggleBtn.dataset.ltp);
+      _toggleBtn.textContent = expanded ? `Show PSA 1–${ltp - 1} ▾` : `Hide PSA 1–${ltp - 1} ▴`;
+      _toggleBtn.dataset.expanded = expanded ? '0' : '1';
+    });
+  }
 
   // ---------- PSA grading outcome distribution ----------
   // Probability bar + P&L for each PSA grade outcome — always shown since

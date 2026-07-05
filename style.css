@@ -4916,6 +4916,15 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   font-family: var(--font); font-size: 10px; font-weight: 800;
   letter-spacing: 0.04em; text-transform: uppercase;
 }
+.hold-grade-toggle-btn {
+  display: block; width: 100%; margin-top: 8px;
+  padding: 10px; border-radius: 10px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  color: var(--text-muted); font-family: var(--font); font-size: 13px;
+  cursor: pointer; text-align: center;
+  transition: background 0.15s, color 0.15s;
+}
+.hold-grade-toggle-btn:hover { background: var(--bg-card); color: var(--text); }
 .hold-tile-head { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .hold-tile-title { font-family: var(--font); font-weight: 700; font-size: 14px; color: var(--text); }
 .hold-tile-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
