@@ -10246,7 +10246,8 @@ html { scroll-behavior: smooth; }
 }
 .binder-species-group[open] .binder-chevron { transform: rotate(180deg); }
 
-.binder-species-name { font-size: 15px; font-weight: 700; flex: 1; }
+.binder-species-name { font-size: 15px; font-weight: 700; flex: 1; white-space: nowrap; }
+.binder-species-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .binder-species-dex {
   font-family: var(--mono);
   font-size: 11px;
@@ -10381,6 +10382,49 @@ html { scroll-behavior: smooth; }
   color: var(--green, #4caf7d);
   background: var(--green-dim, rgba(76,175,125,0.12));
 }
+
+/* Upgrade state: has a placeholder copy, hunting a better one */
+.binder-owned-toggle.binder-st-upgrade {
+  border-color: rgba(232,182,52,0.55);
+  color: var(--accent, #e8b634);
+  background: rgba(232,182,52,0.10);
+}
+.binder-pg-upgrade-tag {
+  font-size: 10px;
+  color: var(--accent, #e8b634);
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+/* Card complete: final copy secured — clears the slot from the project */
+.binder-pg-complete {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(76,175,125,0.5);
+  background: var(--green-dim, rgba(76,175,125,0.12));
+  color: var(--green, #4caf7d);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.binder-pg-complete:hover { background: rgba(76,175,125,0.22); }
+
+/* Priority badge on species groups (Priority sort mode) */
+.binder-species-prio {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+  margin-right: 8px;
+}
+.binder-prio-0 { color: #e57373; background: rgba(229,115,115,0.12); border: 1px solid rgba(229,115,115,0.35); }
+.binder-prio-1 { color: var(--accent, #e8b634); background: rgba(232,182,52,0.10); border: 1px solid rgba(232,182,52,0.35); }
+.binder-prio-2 { color: var(--green, #4caf7d); background: var(--green-dim, rgba(76,175,125,0.12)); border: 1px solid rgba(76,175,125,0.35); }
 .binder-pg-remove {
   font-size: 11px;
   padding: 2px 6px;

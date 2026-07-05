@@ -5440,7 +5440,7 @@ function setupFullArtBinder() {
         e.stopPropagation();
         const id = e.target.closest('.binder-owned-toggle').dataset.id;
         const item = fullArtBinder.find(b => b.id === id);
-        if (item) { item.owned = !item.owned; saveFullArtBinder(); renderFullArtBinder(); renderBinderPage(); }
+        if (item) { binderCycleStatus(item); saveFullArtBinder(); renderFullArtBinder(); renderBinderPage(); }
         return;
       }
       const item = e.target.closest('.binder-item');
@@ -5453,12 +5453,20 @@ function setupFullArtBinder() {
   if (pageContent && !pageContent._listenerAdded) {
     pageContent._listenerAdded = true;
     pageContent.addEventListener('click', e => {
+      const completeBtn = e.target.closest('.binder-pg-complete');
+      if (completeBtn) {
+        e.stopPropagation();
+        const id = completeBtn.dataset.id;
+        fullArtBinder = fullArtBinder.filter(b => b.id !== id);
+        saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
+        return;
+      }
       const ownedBtn = e.target.closest('.binder-pg-owned');
       if (ownedBtn) {
         e.stopPropagation();
         const id = ownedBtn.dataset.id;
         const it = fullArtBinder.find(b => b.id === id);
-        if (it) { it.owned = !it.owned; saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); }
+        if (it) { binderCycleStatus(it); saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); }
         return;
       }
       const removeBtn = e.target.closest('.binder-pg-remove');
@@ -5519,10 +5527,35 @@ function saveFullArtBinder() {
   localStorage.setItem('pkm-fullart-binder-v1', JSON.stringify(fullArtBinder));
 }
 
-// ── Binder sort order (Pokédex number vs A–Z) ──────────────────────────
+// ── Binder slot status ─────────────────────────────────────────────────
+// Each slot is one of three states, cycled by the Got it / Need it button:
+//   'need'    — empty slot, no copy at all (highest priority)
+//   'upgrade' — holds a placeholder copy, hunting a better one (lower priority)
+//   'owned'   — final copy in the slot, done
+// Stored as two booleans so older clients that only read `owned` degrade
+// gracefully (an upgrade slot just shows as Need it there).
+function binderStatusOf(b) {
+  return b.owned ? 'owned' : (b.upgrade ? 'upgrade' : 'need');
+}
+function binderCycleStatus(b) {
+  if (b.owned)        { b.owned = false; b.upgrade = false; } // Got it → Need it
+  else if (b.upgrade) { b.upgrade = false; b.owned = true;  } // Upgrading → Got it
+  else                { b.upgrade = true; }                   // Need it → Upgrading
+}
+function binderStatusBtn(b, extraCls) {
+  const st = binderStatusOf(b);
+  const label = st === 'owned' ? 'Got it' : st === 'upgrade' ? 'Upgrading' : 'Need it';
+  return `<button class="${extraCls} binder-owned-toggle binder-st-${st}" data-id="${b.id}"
+    title="Tap to cycle: Need it → Upgrading → Got it">${label}</button>`;
+}
+
+// ── Binder sort order (Pokédex number / priority / A–Z) ────────────────
 const BINDER_SORT_KEY = 'pkm-binder-sort-v1';
 function binderGetSort() {
-  try { if (localStorage.getItem(BINDER_SORT_KEY) === 'az') return 'az'; } catch (e) {}
+  try {
+    const v = localStorage.getItem(BINDER_SORT_KEY);
+    if (v === 'az' || v === 'prio') return v;
+  } catch (e) {}
   return 'dex';
 }
 
@@ -5573,8 +5606,10 @@ function renderFullArtBinder() {
   }
 
   const ownedCount = fullArtBinder.filter(b => b.owned).length;
+  const upgradingCount = fullArtBinder.filter(b => !b.owned && b.upgrade).length;
   if (countEl) { countEl.textContent = fullArtBinder.length; countEl.style.display = 'flex'; }
-  if (totalEl) totalEl.textContent = `${ownedCount}/${fullArtBinder.length} owned`;
+  if (totalEl) totalEl.textContent =
+    `${ownedCount}/${fullArtBinder.length} owned` + (upgradingCount ? ` · ${upgradingCount} upgrading` : '');
 
   const items = fullArtBinder.map(b => {
     const currentCard = getCardById(b.id);
@@ -5592,7 +5627,7 @@ function renderFullArtBinder() {
         </div>
         <div class="binder-right">
           <div class="wishlist-current">£${currentGBP.toFixed(2)}</div>
-          <button class="binder-owned-toggle" data-id="${b.id}" title="${b.owned ? 'Mark as needed' : 'Mark as owned'}">${b.owned ? 'Got it' : 'Need it'}</button>
+          ${binderStatusBtn(b, '')}
         </div>
         <button class="wishlist-remove binder-remove" data-id="${b.id}" title="Remove">✕</button>
       </div>
@@ -5607,8 +5642,10 @@ function renderBinderPage() {
 
   // Update owned count in header
   const owned = fullArtBinder.filter(b => b.owned).length;
+  const upgrading = fullArtBinder.filter(b => !b.owned && b.upgrade).length;
   const pageOwnedEl = $('binderPageOwned');
-  if (pageOwnedEl) pageOwnedEl.textContent = `${owned}/${fullArtBinder.length} owned`;
+  if (pageOwnedEl) pageOwnedEl.textContent =
+    `${owned}/${fullArtBinder.length} owned` + (upgrading ? ` · ${upgrading} upgrading` : '');
 
   const sortMode = binderGetSort();
   const sortSel = $('binderSortSel');
@@ -5689,6 +5726,11 @@ function renderBinderPage() {
     const langPill = b.lang === 'JP'
       ? '<span class="binder-pg-lang jp">JP</span>'
       : '<span class="binder-pg-lang en">EN</span>';
+    const st = binderStatusOf(b);
+    const upgradeTag = st === 'upgrade'
+      ? '<div class="binder-pg-upgrade-tag">Have one — hunting an upgrade</div>' : '';
+    const completeBtn = st === 'owned'
+      ? `<button class="binder-pg-complete" data-id="${b.id}" title="Slot done — remove from the binder project">✓ Card complete</button>` : '';
     return `
       <div class="binder-pg-card${b.owned ? ' binder-pg-owned-card' : ''}" data-id="${b.id}">
         <div class="binder-pg-img-wrap">
@@ -5699,10 +5741,12 @@ function renderBinderPage() {
           <div class="binder-pg-card-name">${esc(b.name)}</div>
           <div class="binder-pg-card-set">${esc(b.set)}</div>
           <div class="binder-pg-card-price">${priceStr}</div>
+          ${upgradeTag}
           <div class="binder-pg-card-actions">
-            <button class="binder-pg-owned binder-owned-toggle" data-id="${b.id}">${b.owned ? 'Got it' : 'Need it'}</button>
+            ${binderStatusBtn(b, 'binder-pg-owned')}
             <button class="binder-pg-remove" data-id="${b.id}" title="Remove from binder">✕</button>
           </div>
+          ${completeBtn}
         </div>
       </div>`;
   }
@@ -5720,14 +5764,28 @@ function renderBinderPage() {
     }
     groupDex[sp] = min;
   }
+  // Priority tier per group: 0 = has an empty slot (need — highest priority),
+  // 1 = only placeholder copies awaiting upgrade, 2 = everything owned.
+  const groupTier = {};
+  for (const sp of Object.keys(groups)) {
+    let tier = 2;
+    for (const b of groups[sp]) {
+      const st = binderStatusOf(b);
+      if (st === 'need') { tier = 0; break; }
+      if (st === 'upgrade') tier = 1;
+    }
+    groupTier[sp] = tier;
+  }
+  const byDex = (a, b) => (groupDex[a] - groupDex[b]) || a.localeCompare(b);
   const sortedSpecies = Object.keys(groups).sort((a, b) =>
-    sortMode === 'dex'
-      ? (groupDex[a] - groupDex[b]) || a.localeCompare(b)
-      : a.localeCompare(b));
+    sortMode === 'az'   ? a.localeCompare(b) :
+    sortMode === 'prio' ? (groupTier[a] - groupTier[b]) || byDex(a, b) :
+                          byDex(a, b));
 
   for (const species of sortedSpecies) {
     const items = groups[species];
     const ownedInGroup = items.filter(b => b.owned).length;
+    const upgradingInGroup = items.filter(b => !b.owned && b.upgrade).length;
     const pairs = pairItems(items);
     let bodyHtml = '';
 
@@ -5793,15 +5851,18 @@ function renderBinderPage() {
       }
     }
 
-    const dexBadge = sortMode === 'dex' && isFinite(groupDex[species])
+    const dexBadge = sortMode !== 'az' && isFinite(groupDex[species])
       ? `<span class="binder-species-dex">#${String(groupDex[species]).padStart(4, '0')}</span>`
+      : '';
+    const prioBadge = sortMode === 'prio'
+      ? `<span class="binder-species-prio binder-prio-${groupTier[species]}">${['Need it', 'Upgrade', 'Done'][groupTier[species]]}</span>`
       : '';
     html += `
       <details class="binder-species-group" open>
         <summary class="binder-species-summary">
           <svg class="binder-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           ${dexBadge}<span class="binder-species-name">${esc(species)}</span>
-          <span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${ownedInGroup}/${items.length} owned</span>
+          ${prioBadge}<span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${ownedInGroup}/${items.length} owned${upgradingInGroup ? ` · ${upgradingInGroup} upgrading` : ''}</span>
         </summary>
         <div class="binder-species-body">${bodyHtml}</div>
       </details>`;
