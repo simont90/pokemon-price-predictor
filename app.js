@@ -5419,6 +5419,12 @@ function setupFullArtBinder() {
   // "Find a card" button on binder page → jump to Predict search
   $('binderPageAddBtn')?.addEventListener('click', () => go('predict'));
 
+  // Sort order selector (Pokédex number vs A–Z), synced across devices
+  $('binderSortSel')?.addEventListener('change', function() {
+    localStorage.setItem(BINDER_SORT_KEY, this.value);
+    renderBinderPage();
+  });
+
   // Side panel list interactions
   const list = $('binderList');
   if (list) {
@@ -5513,6 +5519,46 @@ function saveFullArtBinder() {
   localStorage.setItem('pkm-fullart-binder-v1', JSON.stringify(fullArtBinder));
 }
 
+// ── Binder sort order (Pokédex number vs A–Z) ──────────────────────────
+const BINDER_SORT_KEY = 'pkm-binder-sort-v1';
+function binderGetSort() {
+  try { if (localStorage.getItem(BINDER_SORT_KEY) === 'az') return 'az'; } catch (e) {}
+  return 'dex';
+}
+
+// Normalise a species name for POKEDEX_NUM lookup. Must stay identical to
+// the normaliser used to generate data/pokedex-db.js.
+function pkdxNorm(s) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').normalize('NFC')
+    .toLowerCase().replace(/[.'’ʻ`: -]/g, '');
+}
+
+const _dexNumCache = new Map();
+// National Pokédex number for a card name ("Erika's Venusaur ex" → 3), or
+// null if no species matches. Slides a 1–3 word window across the name so
+// owner/regional prefixes ("Galarian", "Erika's", "Dark") don't block the
+// species match, preferring the longest match at the earliest position.
+function dexNumOf(cardName) {
+  if (typeof POKEDEX_NUM === 'undefined' || !cardName) return null;
+  if (_dexNumCache.has(cardName)) return _dexNumCache.get(cardName);
+  function scan(words) {
+    for (let start = 0; start < words.length; start++) {
+      for (let len = Math.min(3, words.length - start); len >= 1; len--) {
+        const n = POKEDEX_NUM[pkdxNorm(words.slice(start, start + len).join(' '))];
+        if (n) return n;
+      }
+    }
+    return null;
+  }
+  const base = cardName.replace(/\(JP\)/gi, ' ');
+  // Hyphenated species (Ho-Oh, Porygon-Z) match whole in the first pass;
+  // the hyphen-split retry only runs for stuck suffixes like "Charizard-EX".
+  const num = scan(base.split(/\s+/).filter(Boolean))
+           ?? scan(base.split(/[\s-]+/).filter(Boolean));
+  _dexNumCache.set(cardName, num);
+  return num;
+}
+
 function renderFullArtBinder() {
   const list = $('binderList');
   const countEl = $('binderCount');
@@ -5563,6 +5609,10 @@ function renderBinderPage() {
   const owned = fullArtBinder.filter(b => b.owned).length;
   const pageOwnedEl = $('binderPageOwned');
   if (pageOwnedEl) pageOwnedEl.textContent = `${owned}/${fullArtBinder.length} owned`;
+
+  const sortMode = binderGetSort();
+  const sortSel = $('binderSortSel');
+  if (sortSel) sortSel.value = sortMode;
 
   if (fullArtBinder.length === 0) {
     container.innerHTML = `<div class="binder-page-empty"><p>Nothing in the binder yet.</p><p class="binder-page-empty-sub">Open any card in Predict and tap "Add to Full Art Binder" to start your Gen 1 &amp; Gen 2 project.</p></div>`;
@@ -5658,7 +5708,22 @@ function renderBinderPage() {
   }
 
   let html = '';
-  const sortedSpecies = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+
+  // Lowest dex number among a group's cards decides its Pokédex position;
+  // groups with no species match (trainers etc.) sort after, A–Z.
+  const groupDex = {};
+  for (const sp of Object.keys(groups)) {
+    let min = Infinity;
+    for (const b of groups[sp]) {
+      const d = dexNumOf(b.name);
+      if (d && d < min) min = d;
+    }
+    groupDex[sp] = min;
+  }
+  const sortedSpecies = Object.keys(groups).sort((a, b) =>
+    sortMode === 'dex'
+      ? (groupDex[a] - groupDex[b]) || a.localeCompare(b)
+      : a.localeCompare(b));
 
   for (const species of sortedSpecies) {
     const items = groups[species];
@@ -5728,11 +5793,14 @@ function renderBinderPage() {
       }
     }
 
+    const dexBadge = sortMode === 'dex' && isFinite(groupDex[species])
+      ? `<span class="binder-species-dex">#${String(groupDex[species]).padStart(4, '0')}</span>`
+      : '';
     html += `
       <details class="binder-species-group" open>
         <summary class="binder-species-summary">
           <svg class="binder-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          <span class="binder-species-name">${esc(species)}</span>
+          ${dexBadge}<span class="binder-species-name">${esc(species)}</span>
           <span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${ownedInGroup}/${items.length} owned</span>
         </summary>
         <div class="binder-species-body">${bodyHtml}</div>

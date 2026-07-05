@@ -43,6 +43,7 @@ app.js                  # 10k+ lines, monolithic. All app logic, sync, MCP-irrel
 style.css               # Single stylesheet, ~5k lines.
 data/cards-db.js        # 26k+ Pokémon cards (EN + JP), static.
 data/sets-db.js         # Set metadata (release date, pack counts, etc.).
+data/pokedex-db.js      # National Pokédex: normalised species name (EN + JP) → dex number.
 worker-paste-this.js    # Latest Cloudflare Worker source — paste this into the dashboard.
 CLAUDE.md               # This file.
 ```
@@ -164,6 +165,7 @@ Known synced keys:
 - `pkm-acquisitions-v1` — how each card was obtained (pack pull vs single buy, cost basis).
 - `pkm-budget-max-gbp` — max per card budget slider value (GBP, or 99999 = no limit).
 - `pkm-ace-prices-v1` — per-card ACE Grading sold prices by grade (10/9/8/7), keyed by card ID.
+- `pkm-binder-sort-v1` — binder page sort order (`dex` = National Pokédex, `az` = alphabetical).
 
 Excluded from sync (device-local):
 - `pkm-sync-prefs-v1`, `pkm-sync-pair-code`, `pkm-sync-endpoint`, `pkm-sync-meta`,

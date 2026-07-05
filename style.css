@@ -10174,6 +10174,26 @@ html { scroll-behavior: smooth; }
 }
 .binder-pg-add-btn:hover { background: rgba(124,108,214,0.22); }
 
+.binder-sort-sel {
+  font-size: 12px;
+  font-family: inherit;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+[data-theme="dark"] .binder-sort-sel {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text-primary);
+}
+[data-theme="light"] .binder-sort-sel {
+  background: rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.12);
+  color: var(--text-primary);
+}
+
 /* Empty state */
 .binder-page-empty {
   text-align: center;
@@ -10227,6 +10247,13 @@ html { scroll-behavior: smooth; }
 .binder-species-group[open] .binder-chevron { transform: rotate(180deg); }
 
 .binder-species-name { font-size: 15px; font-weight: 700; flex: 1; }
+.binder-species-dex {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  opacity: 0.85;
+  margin-right: 6px;
+}
 .binder-species-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
 .binder-species-body { padding: 12px 12px 14px; display: flex; flex-direction: column; gap: 10px; }
