@@ -166,6 +166,7 @@ Known synced keys:
 - `pkm-budget-max-gbp` — max per card budget slider value (GBP, or 99999 = no limit).
 - `pkm-ace-prices-v1` — per-card ACE Grading sold prices by grade (10/9/8/7), keyed by card ID.
 - `pkm-binder-sort-v1` — binder page sort order (`dex` = National Pokédex, `prio` = priority, `az` = alphabetical).
+- `pkm-vintage-v1` — Vintage page targets: `{ targets: { cardId: { grade, owned } } }` (WOTC-era PSA hunt list).
 
 Excluded from sync (device-local):
 - `pkm-sync-prefs-v1`, `pkm-sync-pair-code`, `pkm-sync-endpoint`, `pkm-sync-meta`,

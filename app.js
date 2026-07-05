@@ -17068,6 +17068,7 @@ function setupPageNav() {
     tools: document.getElementById('pageTools'),
     binder: document.getElementById('pageBinder'),
     budget: document.getElementById('pageBudget'),
+    vintage: document.getElementById('pageVintage'),
   };
 
   function go(page) {
@@ -17097,6 +17098,7 @@ function setupPageNav() {
     if (page === 'binder') { try { renderBinderPage(); } catch(e) {} }
     if (page === 'tools') { try { updateToolsDupeBadge(); } catch(e) {} }
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
+    if (page === 'vintage') { try { renderVintagePage(); } catch(e) {} }
     // URL + title: cards get their own address (#cardId); other pages reset to page hash
     if (page === 'predict' && selectedCard) {
       try { history.replaceState({ cardId: selectedCard.i }, '', '#' + selectedCard.i); } catch(e) {}
@@ -17204,7 +17206,7 @@ function setupPageNav() {
   //   #<cardId>   — set by selectCard() / pwaPushCard, works as a bookmark
   const _deepCard = new URLSearchParams(location.search).get('card');
   const initial = (location.hash || '#home').replace('#', '');
-  const isKnownPage = ['home', 'predict', 'discover', 'tools'].includes(initial);
+  const isKnownPage = ['home', 'predict', 'discover', 'tools', 'binder', 'budget', 'vintage'].includes(initial);
   const _hashCard = !isKnownPage && initial ? initial : null;
   const cardToOpen = _deepCard || _hashCard;
   if (cardToOpen) {
@@ -19587,4 +19589,340 @@ function _bdgRefreshAll(el) {
   if (aw) aw.innerHTML = _budgetAnalyticsHTML(_bdgData);
   const cc = el.querySelector('#bdgChartContainer');
   if (cc) cc.innerHTML = _budgetChartHTML(_bdgData);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VINTAGE — WOTC-era (1999–2003) PSA-first collecting
+// Browse the old sets in the database, read each card's PSA price ladder and
+// find the grade that offers the best solution: gem chase, value sweet spot,
+// or a budget slab that guarantees authenticity.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const VINTAGE_KEY = 'pkm-vintage-v1';
+const VINTAGE_CUTOFF = '2003/07';       // everything before EX Ruby & Sapphire
+const VINTAGE_GRADES = [10, 9, 8, 7, 6, 5];
+
+let _vgSelectedSet = 'base1';
+let _vgSort = 'num';
+
+function _vintageSets() {
+  if (typeof setsData === 'undefined' || !setsData) return [];
+  return Object.entries(setsData)
+    .filter(([, s]) => (s.releaseDate || '9999') < VINTAGE_CUTOFF)
+    .sort((a, b) => (a[1].releaseDate || '').localeCompare(b[1].releaseDate || ''))
+    .map(([code, s]) => ({ code, name: s.name, releaseDate: s.releaseDate || '', total: s.total || 0 }));
+}
+
+function _vgLoad() {
+  try {
+    const d = JSON.parse(localStorage.getItem(VINTAGE_KEY) || '{}');
+    if (!d.targets) d.targets = {};
+    return d;
+  } catch { return { targets: {} }; }
+}
+function _vgSave(d) { localStorage.setItem(VINTAGE_KEY, JSON.stringify(d)); }
+
+function _vgSetCards(setCode) {
+  if (!searchIndex || !searchIndex.length) return [];
+  return searchIndex.filter(c => c.sc === setCode);
+}
+
+// PSA price ladder for one card, in GBP. Sources in preference order:
+// live PriceCharting per-grade data (cached) → static DB PSA 10 → ratio
+// estimate from the raw price (~9× raw for a 10, flagged as estimated).
+function _vgLadder(card) {
+  const pd = getCachedPrice(card.i) || getLastKnownPrice(card.i);
+  const rawUSD  = pd ? (pd.pcUngraded || pd.market || pd.mid || card.p || 0) : (card.p || 0);
+  const pc10    = pd?.pcPsa10 > 0 ? pd.pcPsa10 : 0;
+  const base10  = pc10 || card.p10 || 0;
+  const est10   = base10 > 0 ? base10 : rawUSD * 9;
+  const liveByG = { 9: pd?.pcPsa9 || pd?.pcGrade9 || 0, 8: pd?.pcPsa8 || 0, 7: pd?.pcPsa7 || 0 };
+  const ladder = VINTAGE_GRADES.map(g => {
+    let usd, src;
+    if (g === 10) {
+      usd = est10; src = pc10 ? 'pc' : (card.p10 ? 'db' : 'est');
+    } else if (liveByG[g] > 0) {
+      usd = liveByG[g]; src = 'pc';
+    } else {
+      usd = est10 * _gemRateGradeRatio(card, g); src = 'est';
+    }
+    return { g, gbp: usdToGbp(usd || 0), src };
+  });
+  return { rawGBP: usdToGbp(rawUSD || 0), ladder, hasLive: !!pd };
+}
+
+// The "best solution" picks. Sweet spot = the grade sitting just below the
+// steepest price jump in the ladder — the most eye appeal the market gives
+// you before it starts charging gem money. Authenticity pick = the cheapest
+// slabbed grade: real, graded, and holds the childhood slot for the least £.
+function _vgPicks(ladder) {
+  let sweet = 9, biggest = 0;
+  for (let i = ladder.length - 1; i > 0; i--) {
+    const lower = ladder[i], upper = ladder[i - 1];
+    if (lower.gbp > 0 && upper.gbp > 0) {
+      const jump = upper.gbp / lower.gbp;
+      if (jump >= biggest) { biggest = jump; sweet = lower.g; }
+    }
+  }
+  return { gem: 10, sweet, budget: ladder[ladder.length - 1].g };
+}
+
+function _vgGradeGBP(card, grade) {
+  const { ladder } = _vgLadder(card);
+  return ladder.find(l => l.g === grade)?.gbp || 0;
+}
+
+function _vgLadderHTML(card) {
+  const { rawGBP, ladder, hasLive } = _vgLadder(card);
+  const picks = _vgPicks(ladder);
+  const data = _vgLoad();
+  const target = data.targets[card.i];
+  const srcBadge = s => s === 'pc' ? '<span class="vg-src vg-src-pc" title="PriceCharting recent sales">PC</span>'
+    : s === 'db' ? '' : '<span class="vg-src vg-src-est" title="Estimated from raw price via grade ratios">~est</span>';
+  const rows = ladder.map(({ g, gbp, src }) => {
+    const tags = [];
+    if (g === picks.gem)    tags.push('<span class="vg-tag vg-tag-gem">Gem</span>');
+    if (g === picks.sweet)  tags.push('<span class="vg-tag vg-tag-sweet">Sweet spot</span>');
+    if (g === picks.budget) tags.push('<span class="vg-tag vg-tag-budget">Authenticity pick</span>');
+    const isTarget = target && target.grade === g;
+    return `<div class="vg-ladder-row ${isTarget ? 'vg-ladder-target' : ''}">
+      <span class="vg-ladder-grade">PSA ${g}</span>
+      <span class="vg-ladder-price">${gbp > 0 ? fmtGBPDirect(gbp) : '—'}${srcBadge(src)}</span>
+      <span class="vg-ladder-tags">${tags.join('')}</span>
+      <button class="vg-target-btn ${isTarget ? 'vg-target-on' : ''}" data-vg-target="${esc(card.i)}" data-grade="${g}">${isTarget ? '★ Target' : 'Target'}</button>
+    </div>`;
+  }).join('');
+  const rawRow = `<div class="vg-ladder-row vg-ladder-raw">
+    <span class="vg-ladder-grade">Raw</span>
+    <span class="vg-ladder-price">${rawGBP > 0 ? fmtGBPDirect(rawGBP) : '—'}</span>
+    <span class="vg-ladder-tags"><span class="vg-tag vg-tag-raw">Ungraded ref</span></span>
+    <span></span>
+  </div>`;
+  const liveNote = hasLive
+    ? ''
+    : `<div class="vg-ladder-note">Static estimates — <button class="vg-fetch-btn" data-vg-fetch="${esc(card.i)}">fetch live prices</button> for real sold data</div>`;
+  return rawRow + rows + liveNote;
+}
+
+function _vgCardRowHTML(card, data) {
+  const target = data.targets[card.i];
+  const cached = getCachedPrice(card.i) || getLastKnownPrice(card.i);
+  const rawUSD = cached ? (cached.pcUngraded || cached.market || cached.mid || card.p || 0) : (card.p || 0);
+  const rawGBP = usdToGbp(rawUSD || 0);
+  const targetBadge = target
+    ? `<span class="vg-row-target ${target.owned ? 'vg-row-owned' : ''}">${target.owned ? '✓' : '★'} PSA ${target.grade}</span>`
+    : '';
+  return `<details class="vg-card" data-vg-card="${esc(card.i)}">
+    <summary class="vg-card-summary">
+      <img class="vg-card-img" src="${esc(getCardImg(card) || '')}" alt="" loading="lazy" onerror="this.style.opacity='0'">
+      <span class="vg-card-num">${card.cn ? '#' + esc(String(card.cn)) : ''}</span>
+      <span class="vg-card-name">${esc(card.n)}</span>
+      <span class="vg-card-meta">${esc(card.r || '')}</span>
+      ${targetBadge}
+      <span class="vg-card-raw">${rawGBP > 0 ? fmtGBPDirect(rawGBP) : '—'}</span>
+      <button class="vg-open-btn" data-vg-open="${esc(card.i)}" title="Open in Predict">↗</button>
+    </summary>
+    <div class="vg-ladder" data-vg-ladder="${esc(card.i)}"></div>
+  </details>`;
+}
+
+function _vgTargetsHTML(data) {
+  const entries = Object.entries(data.targets);
+  if (!entries.length) return '';
+  let totalGBP = 0, ownedCount = 0, ownedGBP = 0;
+  const rows = entries.map(([id, t]) => {
+    const card = getCardById(id);
+    if (!card) return '';
+    const gbp = _vgGradeGBP(card, t.grade);
+    if (t.owned) { ownedCount++; ownedGBP += gbp; } else totalGBP += gbp;
+    const gradeOpts = VINTAGE_GRADES.map(g =>
+      `<option value="${g}" ${g === t.grade ? 'selected' : ''}>PSA ${g}</option>`).join('');
+    return `<div class="vg-tgt-row ${t.owned ? 'vg-tgt-owned' : ''}" data-id="${esc(id)}">
+      <img class="vg-tgt-img" src="${esc(getCardImg(card) || '')}" alt="" loading="lazy" onerror="this.style.opacity='0'">
+      <div class="vg-tgt-info">
+        <span class="vg-tgt-name">${esc(card.n)}</span>
+        <span class="vg-tgt-set">${esc(card.s)}${card.cn ? ' · #' + esc(String(card.cn)) : ''}</span>
+      </div>
+      <select class="vg-tgt-grade" data-vg-grade="${esc(id)}">${gradeOpts}</select>
+      <span class="vg-tgt-price">${gbp > 0 ? fmtGBPDirect(gbp) : '—'}</span>
+      <button class="vg-tgt-own" data-vg-own="${esc(id)}">${t.owned ? 'Got it' : 'Need it'}</button>
+      <button class="vg-tgt-rm" data-vg-rm="${esc(id)}" title="Remove">✕</button>
+    </div>`;
+  }).join('');
+  return `<div class="vg-targets card">
+    <div class="vg-targets-hd">
+      <span class="vg-targets-title">My Vintage Targets</span>
+      <span class="vg-targets-meta">${entries.length} card${entries.length !== 1 ? 's' : ''} · ${ownedCount} owned${totalGBP > 0 ? ` · est ${fmtGBPDirect(totalGBP)} to complete` : ''}${ownedGBP > 0 ? ` · ${fmtGBPDirect(ownedGBP)} secured` : ''}</span>
+    </div>
+    <div class="vg-targets-list">${rows}</div>
+  </div>`;
+}
+
+function renderVintagePage() {
+  const el = document.getElementById('pageVintage');
+  if (!el) return;
+  const sets = _vintageSets();
+  // Deep links can land here before the async card DB decode finishes —
+  // show a loading state and retry while the page is still visible.
+  if (!sets.length || !searchIndex || !searchIndex.length) {
+    el.innerHTML = '<div class="app"><p style="padding:40px;text-align:center;color:var(--text-muted)">Loading card database…</p></div>';
+    setTimeout(() => { if (el.style.display !== 'none') renderVintagePage(); }, 400);
+    return;
+  }
+  if (!sets.some(s => s.code === _vgSelectedSet)) _vgSelectedSet = sets[0].code;
+
+  const data = _vgLoad();
+  const targetsBySet = {};
+  for (const [id, t] of Object.entries(data.targets)) {
+    const c = getCardById(id);
+    if (c) {
+      if (!targetsBySet[c.sc]) targetsBySet[c.sc] = { total: 0, owned: 0 };
+      targetsBySet[c.sc].total++;
+      if (t.owned) targetsBySet[c.sc].owned++;
+    }
+  }
+
+  const chips = sets.map(s => {
+    const year = s.releaseDate.slice(0, 4);
+    const tg = targetsBySet[s.code];
+    const prog = tg ? `<span class="vg-chip-prog">${tg.owned}/${tg.total}</span>` : '';
+    return `<button class="vg-set-chip ${s.code === _vgSelectedSet ? 'vg-chip-active' : ''}" data-vg-set="${esc(s.code)}">
+      <span class="vg-chip-name">${esc(s.name)}</span>
+      <span class="vg-chip-year">${year}</span>${prog}
+    </button>`;
+  }).join('');
+
+  let cards = _vgSetCards(_vgSelectedSet);
+  if (_vgSort === 'price')     cards = [...cards].sort((a, b) => (b.p || 0) - (a.p || 0));
+  else if (_vgSort === 'name') cards = [...cards].sort((a, b) => a.n.localeCompare(b.n));
+  else cards = [...cards].sort((a, b) => (parseInt(a.cn) || 9999) - (parseInt(b.cn) || 9999) || a.n.localeCompare(b.n));
+
+  const setInfo = sets.find(s => s.code === _vgSelectedSet);
+  const rows = cards.map(c => _vgCardRowHTML(c, data)).join('');
+
+  el.innerHTML = `
+    <div class="app vg-page">
+      <div class="vg-page-hd">
+        <div class="vg-page-title">Vintage</div>
+        <div class="vg-page-sub">WOTC era 1999 – 2003 · PSA-first collecting · tap a card for its grade ladder</div>
+      </div>
+      ${_vgTargetsHTML(data)}
+      <div class="vg-set-chips">${chips}</div>
+      <div class="vg-set-bar">
+        <span class="vg-set-title">${esc(setInfo?.name || '')} <span class="vg-set-count">${cards.length} cards</span></span>
+        <select id="vgSortSel" class="binder-sort-sel">
+          <option value="num" ${_vgSort === 'num' ? 'selected' : ''}>Set number</option>
+          <option value="price" ${_vgSort === 'price' ? 'selected' : ''}>Price high–low</option>
+          <option value="name" ${_vgSort === 'name' ? 'selected' : ''}>A–Z</option>
+        </select>
+      </div>
+      <div class="vg-card-list" id="vgCardList">${rows || '<p class="vg-empty">No cards in the database for this set.</p>'}</div>
+    </div>`;
+
+  _vgWire(el);
+}
+
+async function _vgFetchPrices(cardId, el) {
+  const card = getCardById(cardId);
+  if (!card) return;
+  const ladderEl = el.querySelector(`[data-vg-ladder="${CSS.escape(cardId)}"]`);
+  if (ladderEl) ladderEl.innerHTML = '<div class="vg-ladder-note">Fetching live sold prices…</div>';
+  try {
+    const fresh = await fetchFreshPriceData(card);
+    if (fresh) setCachedPrice(card.i, fresh);
+  } catch (e) {}
+  if (ladderEl) ladderEl.innerHTML = _vgLadderHTML(card);
+}
+
+function _vgWire(el) {
+  if (el._vgWired) return;
+  el._vgWired = true;
+
+  el.addEventListener('click', e => {
+    // Set chip
+    const chip = e.target.closest('[data-vg-set]');
+    if (chip) { _vgSelectedSet = chip.dataset.vgSet; renderVintagePage(); return; }
+
+    // Open in Predict
+    const openBtn = e.target.closest('[data-vg-open]');
+    if (openBtn) {
+      e.preventDefault(); e.stopPropagation();
+      const id = openBtn.dataset.vgOpen;
+      go('predict');
+      setTimeout(() => { try { selectCard(id); } catch (err) {} }, 80);
+      return;
+    }
+
+    // Fetch live prices for one card
+    const fetchBtn = e.target.closest('[data-vg-fetch]');
+    if (fetchBtn) { e.preventDefault(); _vgFetchPrices(fetchBtn.dataset.vgFetch, el); return; }
+
+    // Target a grade from the ladder
+    const tgtBtn = e.target.closest('[data-vg-target]');
+    if (tgtBtn) {
+      e.preventDefault();
+      const id = tgtBtn.dataset.vgTarget, grade = parseInt(tgtBtn.dataset.grade);
+      const data = _vgLoad();
+      const cur = data.targets[id];
+      if (cur && cur.grade === grade) delete data.targets[id];      // toggle off
+      else data.targets[id] = { grade, owned: cur?.owned || false };
+      _vgSave(data);
+      _vgRefresh(el, id);
+      return;
+    }
+
+    // Targets panel: owned toggle / remove
+    const ownBtn = e.target.closest('[data-vg-own]');
+    if (ownBtn) {
+      const data = _vgLoad();
+      const t = data.targets[ownBtn.dataset.vgOwn];
+      if (t) { t.owned = !t.owned; _vgSave(data); _vgRefresh(el, ownBtn.dataset.vgOwn); }
+      return;
+    }
+    const rmBtn = e.target.closest('[data-vg-rm]');
+    if (rmBtn) {
+      const data = _vgLoad();
+      delete data.targets[rmBtn.dataset.vgRm];
+      _vgSave(data);
+      _vgRefresh(el, rmBtn.dataset.vgRm);
+      return;
+    }
+  });
+
+  el.addEventListener('change', e => {
+    if (e.target.id === 'vgSortSel') { _vgSort = e.target.value; renderVintagePage(); return; }
+    const gradeSel = e.target.closest('[data-vg-grade]');
+    if (gradeSel) {
+      const data = _vgLoad();
+      const t = data.targets[gradeSel.dataset.vgGrade];
+      if (t) { t.grade = parseInt(gradeSel.value); _vgSave(data); _vgRefresh(el, gradeSel.dataset.vgGrade); }
+    }
+  });
+
+  // Lazily render (and once cached, live-populate) the ladder on expand
+  el.addEventListener('toggle', e => {
+    const det = e.target.closest?.('.vg-card');
+    if (!det || !det.open) return;
+    const id = det.dataset.vgCard;
+    const card = getCardById(id);
+    const ladderEl = det.querySelector('.vg-ladder');
+    if (card && ladderEl) ladderEl.innerHTML = _vgLadderHTML(card);
+  }, true);
+}
+
+// Re-render while preserving open ladders and scroll position.
+function _vgRefresh(el, changedId) {
+  const openIds = Array.from(el.querySelectorAll('.vg-card[open]')).map(d => d.dataset.vgCard);
+  const y = window.scrollY;
+  renderVintagePage();
+  for (const id of openIds) {
+    const det = el.querySelector(`[data-vg-card="${CSS.escape(id)}"]`);
+    if (det) {
+      det.open = true;
+      const card = getCardById(id);
+      const ladderEl = det.querySelector('.vg-ladder');
+      if (card && ladderEl) ladderEl.innerHTML = _vgLadderHTML(card);
+    }
+  }
+  window.scrollTo(0, y);
 }
