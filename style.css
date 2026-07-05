@@ -6294,16 +6294,16 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   .nav-pill { width: 58px; }
 }
 
-/* Desktop: nav pill should be compact and content-sized, not full-viewport-width */
-@media (min-width: 821px) {
+/* Tablet+desktop: nav pill should be compact and content-sized, not full-viewport-width */
+@media (min-width: 561px) {
   .page-nav {
     width: max-content;
     max-width: min(720px, calc(100vw - 32px));
   }
   .page-nav-btn {
     flex: none;
-    padding: 10px 16px;
-    min-width: 78px;
+    padding: 10px 14px;
+    min-width: 72px;
   }
 }
 
