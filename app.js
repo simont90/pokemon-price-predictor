@@ -11473,8 +11473,8 @@ function computeHoldCore(card) {
   const gradeProfit = gradeSell5EV - gradeCost;
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
 
-  // Strategies 3-6 — Buy graded at each tier
-  const gradedStrategies = [7, 8, 9, 10].map(g => {
+  // Strategies 3-12 — Buy graded at each PSA tier (1–10)
+  const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
     const baseUSD = estimateGradePrice(card, g, psa10Price);
     const slabShipUSD = estimateUkSlabShipping(baseUSD * fx) / fx;
     const today = baseUSD + slabShipUSD;
@@ -11490,7 +11490,7 @@ function computeHoldCore(card) {
     { label: 'Buy Raw + Grade', key: 'gamble', today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, variance: 0.85, risk: 'high' },
     ...gradedStrategies.map(s => ({
       ...s,
-      variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : 0.32,
+      variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : s.grade === 7 ? 0.32 : s.grade === 6 ? 0.38 : s.grade === 5 ? 0.42 : s.grade === 4 ? 0.45 : s.grade === 3 ? 0.48 : s.grade === 2 ? 0.50 : 0.52,
       risk: s.grade === 10 ? 'low' : 'med',
     })),
   ];
@@ -11787,7 +11787,7 @@ function renderHoldStrategy(card) {
     titleEl.innerHTML = 'Hold Strategy \u00b7 All Options ' + badgeHtml;
   }
   if (descEl) {
-    descEl.textContent = 'Which version of this card is the best 5-year hold? Compares raw hold, PSA grading, ACE slabbing, and buying already-graded PSA 7\u201310 \u2014 one recommendation across all options.';
+    descEl.textContent = 'Which version of this card is the best 5-year hold? Compares raw hold, PSA grading, ACE slabbing, and buying already-graded PSA 1\u201310 \u2014 one recommendation across all options.';
   }
 
   // EN ↔ JP side-by-side: only rendered if the selected card has a
@@ -11969,8 +11969,8 @@ function renderHoldStrategy(card) {
   });
 
   // ----- Strategies 3-6: Buy (or Keep) graded at each PSA tier -----
-  // Always computed — PSA 7/8/9/10 tiles appear alongside ACE and raw.
-  const gradedStrategies = [7, 8, 9, 10].map(g => {
+  // Always computed — PSA 1–10 tiles appear alongside ACE and raw.
+  const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
     const isOwnedSlab = slabAcq && slabAcq.grade === g;
     const baseUSD = estimateGradePrice(card, g, psa10Price);
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
@@ -12008,12 +12008,18 @@ function renderHoldStrategy(card) {
     { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',    desc: rawDesc,    today: rawEntryUSD, yr5: rawSell5USD,  profit: rawProfitUSD, roi: rawRoi,    risk: 'low',      variance: 0.20,       acqCost: usingAcqCost },
     { label: gambleLabel,  key: 'gamble', desc: gambleDesc, today: gradeCost,  yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: gradingWaitMonths, waitDisplay: gradingWaitDisplay, lossProb, lossEV, acqCost: usingAcqCost },
     { label: aceLabel_r,   key: 'ace',    desc: aceDesc_r,  today: aceCost_r,  yr5: aceSell5EV_r, profit: aceProfit_r, roi: aceRoi_r, risk: aceRisk_r, variance: aceVariance_r, waitMonths: aceWaitMonths_r, waitDisplay: aceWaitDisplay_r, lossProb: 0, lossEV: 0, acqCost: usingAcqCost, aceMode: true },
-    ...gradedStrategies.map((s, i) => ({
+    ...gradedStrategies.map(s => ({
       ...s,
-      desc: i === 0 ? 'Graded floor entry' : i === 1 ? 'Mid-grade graded copy' : i === 2 ? 'Near-mint graded copy' : 'Gem mint — best ceiling',
-      // Variance falls as grade rises (less subjective re-grade risk).
-      risk: s.grade === 10 ? 'low' : s.grade === 9 ? 'med' : 'med',
-      variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : 0.32,
+      desc: s.grade === 10 ? 'Gem mint — best ceiling'
+          : s.grade === 9  ? 'Near-mint graded copy'
+          : s.grade === 8  ? 'Mid-grade graded copy'
+          : s.grade === 7  ? 'Graded floor entry'
+          : s.grade === 6  ? 'Light play — visible wear'
+          : s.grade === 5  ? 'Played condition'
+          : s.grade === 4  ? 'Heavily played'
+          : 'Poor — completion only',
+      risk: s.grade === 10 ? 'low' : 'med',
+      variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : s.grade === 7 ? 0.32 : s.grade === 6 ? 0.38 : s.grade === 5 ? 0.42 : s.grade === 4 ? 0.45 : s.grade === 3 ? 0.48 : s.grade === 2 ? 0.50 : 0.52,
     })),
   ];
 
