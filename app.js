@@ -17139,6 +17139,7 @@ function setupPageNav() {
     }
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   }
+  window.go = go;
 
   // Wire "View all" / "Refresh" buttons on the home page
   document.getElementById('homeOpenCollection')?.addEventListener('click', () => openHomeViewAll('My Collection', _buildCollectionItems()));
