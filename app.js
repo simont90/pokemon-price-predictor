@@ -4234,6 +4234,15 @@ function renderGradingROI(apiData) {
   const netProfit = valueGain - gradingFee;
   const multiplier = psa10Price / rawPrice;
 
+  // Grade-9 downside: what the card returns if it misses the gem. Negative
+  // means a 9 is worth less than keeping it raw once fees are in.
+  const pcPsa9 = livePrice && livePrice.pcPsa9 > 0 ? livePrice.pcPsa9 : 0;
+  const psa9Price = pcPsa9 || estimateGradePrice(card, 9, psa10Price);
+  const net9 = psa9Price > 0 ? psa9Price - rawPrice - gradingFee : null;
+  const nineCaveat = net9 === null ? '' : net9 < 0
+    ? ` · a 9 loses ${fmtGBP(-net9)} — raw keeps more value unless it gems`
+    : ` · even a 9 clears +${fmtGBP(net9)}`;
+
   // If scan gives an expected grade, compute that grade's realistic EV
   let scanRow = '';
   if (expectedGrade) {
@@ -4257,21 +4266,29 @@ function renderGradingROI(apiData) {
   if (roi > 100 && (gemPct === null || gemPct > 0.3)) {
     verdictClass = 'grade-worth';
     verdictTitle = 'Worth Grading';
-    verdictDetail = `${multiplier.toFixed(1)}× raw-to-PSA 10 multiplier${netProfit > 0 ? ` · ${fmtGBP(netProfit)} potential profit` : ''}`;
+    verdictDetail = `${multiplier.toFixed(1)}× raw-to-PSA 10 multiplier${netProfit > 0 ? ` · ${fmtGBP(netProfit)} potential profit` : ''}${nineCaveat}`;
+  } else if (roi > 30 && net9 !== null && net9 < 0) {
+    verdictClass = 'grade-maybe';
+    verdictTitle = 'Gem-or-Bust — Raw Holds Value';
+    verdictDetail = `Pays only at a PSA 10 — a 9 loses ${fmtGBP(-net9)}, so keeping it raw is the better option unless the card is flawless`;
   } else if (roi > 30) {
     verdictClass = 'grade-maybe';
     verdictTitle = 'Consider Grading';
-    verdictDetail = gemRateDisplay ? `${gemRateDisplay}% gem rate — profitable if it hits PSA 10` : `${multiplier.toFixed(1)}× multiplier — check gem rate first`;
+    verdictDetail = (gemRateDisplay ? `${gemRateDisplay}% gem rate — profitable if it hits PSA 10` : `${multiplier.toFixed(1)}× multiplier — check gem rate first`) + nineCaveat;
   } else {
     verdictClass = 'grade-skip';
     verdictTitle = 'Skip Grading';
     verdictDetail = `Only ${multiplier.toFixed(1)}× multiplier — not enough margin after fees`;
   }
 
+  const nineRow = net9 === null ? '' :
+    `<div class="grade-row"><span class="grade-label">Net profit (if PSA 9)</span><span class="grade-val ${net9 > 0 ? 'grade-gain' : 'grade-loss'}">${net9 > 0 ? '+' : ''}${fmtGBP(net9)}</span></div>`;
+
   $('gradeContent').innerHTML = `
     <div class="grade-row"><span class="grade-label">Raw price</span><span class="grade-val">${fmtGBP(rawPrice)}</span></div>
     <div class="grade-row"><span class="grade-label">PSA 10 price</span><span class="grade-val grade-gain">${fmtGBP(psa10Price)}</span></div>
     <div class="grade-row"><span class="grade-label">Net profit (if PSA 10)</span><span class="grade-val ${netProfit > 0 ? 'grade-gain' : 'grade-loss'}">${netProfit > 0 ? '+' : ''}${fmtGBP(netProfit)} (${multiplier.toFixed(1)}×)</span></div>
+    ${nineRow}
     ${scanRow}
     ${evNote}
     <div class="grade-verdict ${verdictClass}">
@@ -4475,16 +4492,28 @@ function renderAceGradingSection() {
     ? fmtOption('PSA 10', psa10, psaProfit, psaRoi, winner.name === 'PSA')
     : '';
 
+  // Grade-9 downside per service: if a 9 comes back under the raw value plus
+  // fees, the winning service only pays at a 10 — raw keeps more value.
+  const ace9val    = saved[9] > 0 ? saved[9] : (pcAceByGrade[9] || 0);
+  const psa9val    = psaByGrade[9] || 0;
+  const ace9Profit = ace9val > 0 ? ace9val - rawGBP - aceFeeTotal : null;
+  const psa9Profit = psa9val > 0 ? psa9val - rawGBP - psaFeeGBP  : null;
+  const nine3Note = p => p === null ? '' : p < 0
+    ? ` · but a 9 loses ${fmtGBPDirect(-p)} — keep raw unless confident of a 10`
+    : ` · even a 9 clears +${fmtGBPDirect(p)}`;
+
   // Overall verdict
   let verdict3cls, verdict3title, verdict3detail;
   if (winner.name === 'ACE' && aceProfit >= 0) {
-    verdict3cls   = 'ace-worth';
-    verdict3title = 'Grade with ACE';
-    verdict3detail = `ACE 10 is the best exit: +${fmtGBPDirect(aceProfit)} (${aceRoi}% ROI) · Total fees £${aceFeeTotal.toFixed(2)} · PSA would need £${(rawGBP + psaFeeGBP).toFixed(0)} to break even`;
+    const gemOnly = ace9Profit !== null && ace9Profit < 0;
+    verdict3cls   = gemOnly ? 'ace-maybe' : 'ace-worth';
+    verdict3title = gemOnly ? 'ACE pays only at a 10 — raw holds value' : 'Grade with ACE';
+    verdict3detail = `ACE 10 is the best exit: +${fmtGBPDirect(aceProfit)} (${aceRoi}% ROI) · Total fees £${aceFeeTotal.toFixed(2)} · PSA would need £${(rawGBP + psaFeeGBP).toFixed(0)} to break even${nine3Note(ace9Profit)}`;
   } else if (winner.name === 'PSA' && psaProfit >= 0) {
-    verdict3cls   = 'ace-worth';
-    verdict3title = 'Grade with PSA';
-    verdict3detail = `PSA 10 outperforms ACE on this card: +${fmtGBPDirect(psaProfit)} (${psaRoi}% ROI) · Worth the higher £${psaFeeGBP} fee`;
+    const gemOnly = psa9Profit !== null && psa9Profit < 0;
+    verdict3cls   = gemOnly ? 'ace-maybe' : 'ace-worth';
+    verdict3title = gemOnly ? 'PSA pays only at a 10 — raw holds value' : 'Grade with PSA';
+    verdict3detail = `PSA 10 outperforms ACE on this card: +${fmtGBPDirect(psaProfit)} (${psaRoi}% ROI) · Worth the higher £${psaFeeGBP} fee${nine3Note(psa9Profit)}`;
   } else if ((aceProfit !== null && aceProfit > 0) || (psaProfit !== null && psaProfit > 0)) {
     verdict3cls   = 'ace-maybe';
     verdict3title = 'Marginal — grade only if mint';
@@ -16824,16 +16853,33 @@ function _renderGradeItemHTML({ card, name, img, rawGBP, p10GBP, psaFeeGBP, psaP
     }
 
     const aceIsPracticalWinner = !psaBetter || margin < 15;
+    // Grade-9 downside: if a 9 comes back worth less than the raw card plus
+    // fees, grading only pays at a 10 — keeping raw preserves more value.
+    const best9Profit = Math.max(psa9Profit, ace9Profit);
+    const nineNote = p => p >= 0
+      ? ` Even a 9 clears +£${p.toFixed(0)}.`
+      : ` A 9 loses £${(-p).toFixed(0)} — only send if gem-confident.`;
     let worthIt, worthCls;
     if (bestROI < 0) {
       worthIt = 'Not worth grading at current raw price — hold raw.'; worthCls = 'groi-worth-no';
+    } else if (best9Profit < 0) {
+      // A 9 from either service is worth less than keeping the card raw.
+      if (bestROI >= 100) {
+        const svc  = psaBetter ? 'a PSA' : 'an ACE';
+        const loss = -(psaBetter ? psa9Profit : ace9Profit);
+        worthIt = `Gem-or-bust — a 10 pays well but ${svc} 9 loses £${loss.toFixed(0)}. Keep raw unless the card is flawless.`;
+        worthCls = 'groi-worth-maybe';
+      } else {
+        worthIt = `Keep raw — a 9 loses £${(-psa9Profit).toFixed(0)} (PSA) / £${(-ace9Profit).toFixed(0)} (ACE), so raw holds more value unless it's a certain 10.`;
+        worthCls = 'groi-worth-no';
+      }
     } else if (psaBetter && margin >= 15) {
-      worthIt = `PSA is the call — ${margin.toFixed(0)}pp ROI advantage outweighs the £${feeDelta.toFixed(0)} ACE fee saving.`;
+      worthIt = `PSA is the call — ${margin.toFixed(0)}pp ROI advantage outweighs the £${feeDelta.toFixed(0)} ACE fee saving.${nineNote(psa9Profit)}`;
       worthCls = bestROI >= 30 ? 'groi-worth-yes' : 'groi-worth-maybe';
     } else if (aceIsPracticalWinner && aceROI >= 25) {
-      worthIt = `ACE is the play — saves £${feeDelta.toFixed(0)} in fees, solid return, faster turnaround.`; worthCls = 'groi-worth-yes';
+      worthIt = `ACE is the play — saves £${feeDelta.toFixed(0)} in fees, solid return, faster turnaround.${nineNote(ace9Profit)}`; worthCls = 'groi-worth-yes';
     } else if (aceIsPracticalWinner && aceROI >= 0) {
-      worthIt = `ACE makes more sense — £${feeDelta.toFixed(0)} fee saving reduces downside vs PSA.`; worthCls = 'groi-worth-maybe';
+      worthIt = `ACE makes more sense — £${feeDelta.toFixed(0)} fee saving reduces downside vs PSA.${nineNote(ace9Profit)}`; worthCls = 'groi-worth-maybe';
     } else {
       worthIt = `Borderline — only grade if confident on condition; ACE's lower fees limit the downside.`; worthCls = 'groi-worth-maybe';
     }
