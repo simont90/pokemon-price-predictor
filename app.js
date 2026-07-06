@@ -5661,7 +5661,8 @@ function setupFullArtBinder() {
       }
     });
 
-    // Drag-to-compare: drag a card tile onto another to load both into compare slots.
+    // ── Desktop drag-to-compare (HTML5 drag API) ────────────────────────
+    // Works on Mac. iOS/iPadOS does not fire these events — see touch section below.
     let _binderDragId = null;
     pageContent.addEventListener('dragstart', e => {
       const card = e.target.closest('.binder-pg-card[data-id]');
@@ -5707,6 +5708,91 @@ function setupFullArtBinder() {
       pageContent.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
         .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
     });
+
+    // ── Touch drag-to-compare (iOS/iPadOS) ──────────────────────────────
+    // HTML5 drag events don't fire on iOS — this reimplements the same
+    // behaviour using touchstart/touchmove/touchend + elementFromPoint.
+    let _tDragId = null, _tGhost = null, _tStarted = false;
+    let _tStartX = 0, _tStartY = 0;
+    const DRAG_THRESHOLD = 10; // px movement before drag is confirmed
+
+    function _triggerBinderCompare(idA, idB) {
+      const cardA = getCardById(idA), cardB = getCardById(idB);
+      if (!cardA || !cardB) return;
+      compareSlots[0] = snapshotCardForCompare(cardA);
+      compareSlots[1] = snapshotCardForCompare(cardB);
+      saveCompare(); renderCompare(); updateCompareButton(); renderBinderPage(); openComparePanel();
+    }
+    function _cleanupTouchDrag() {
+      if (_tGhost) { _tGhost.remove(); _tGhost = null; }
+      pageContent.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
+        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
+      _tDragId = null; _tStarted = false;
+    }
+
+    pageContent.addEventListener('touchstart', e => {
+      const card = e.target.closest('.binder-pg-card[data-id]');
+      if (!card || e.target.closest('button')) return;
+      _tDragId = card.dataset.id;
+      _tStarted = false;
+      _tStartX = e.touches[0].clientX;
+      _tStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    pageContent.addEventListener('touchmove', e => {
+      if (!_tDragId) return;
+      const t = e.touches[0];
+      const dx = t.clientX - _tStartX, dy = t.clientY - _tStartY;
+
+      if (!_tStarted) {
+        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+        _tStarted = true;
+        const src = pageContent.querySelector(`.binder-pg-card[data-id="${CSS.escape(_tDragId)}"]`);
+        if (src) {
+          src.classList.add('binder-pg-dragging');
+          // Build a scaled-down ghost that follows the finger
+          _tGhost = src.cloneNode(true);
+          const rect = src.getBoundingClientRect();
+          _tGhost.style.cssText = `position:fixed;z-index:9999;pointer-events:none;`
+            + `width:${rect.width}px;border-radius:8px;`
+            + `box-shadow:0 8px 24px rgba(0,0,0,0.5);opacity:0.88;`
+            + `transform:scale(1.04) rotate(-1.5deg);transition:none;`;
+          document.body.appendChild(_tGhost);
+        }
+      }
+
+      e.preventDefault(); // suppress scroll only once drag confirmed
+
+      if (_tGhost) {
+        _tGhost.style.left = (t.clientX - (_tGhost.offsetWidth / 2)) + 'px';
+        _tGhost.style.top  = (t.clientY - 40) + 'px';
+      }
+
+      // Find the card under the finger (hide ghost first so it doesn't intercept)
+      if (_tGhost) _tGhost.style.visibility = 'hidden';
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      if (_tGhost) _tGhost.style.visibility = '';
+
+      const dropCard = el?.closest('.binder-pg-card[data-id]');
+      pageContent.querySelectorAll('.binder-pg-drop-target')
+        .forEach(x => x.classList.remove('binder-pg-drop-target'));
+      if (dropCard && dropCard.dataset.id !== _tDragId) {
+        dropCard.classList.add('binder-pg-drop-target');
+      }
+    }, { passive: false });
+
+    const _onTouchEnd = e => {
+      if (!_tDragId || !_tStarted) { _tDragId = null; return; }
+      const dragId = _tDragId; // capture before _cleanupTouchDrag nulls it
+      const t = e.changedTouches[0];
+      if (_tGhost) _tGhost.style.visibility = 'hidden';
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      const dropId = el?.closest('.binder-pg-card[data-id]')?.dataset.id;
+      _cleanupTouchDrag();
+      if (dropId && dropId !== dragId) _triggerBinderCompare(dragId, dropId);
+    };
+    pageContent.addEventListener('touchend',    _onTouchEnd);
+    pageContent.addEventListener('touchcancel', _cleanupTouchDrag);
   }
 
   renderFullArtBinder();
