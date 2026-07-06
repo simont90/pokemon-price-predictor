@@ -10202,6 +10202,7 @@ html { scroll-behavior: smooth; }
 .binder-page-meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;   /* Refresh / Find buttons drop to a second row on phones */
   gap: 10px;
   font-size: 13px;
   color: var(--text-muted);
@@ -12237,17 +12238,83 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
 }
 
 @media (max-width: 600px) {
-  .binder-detail-header { padding: 16px 60px 16px 16px; }
-  .binder-detail-close { top: 14px; right: 14px; }
-  .binder-detail-sprite { width: 80px; height: 80px; }
-  .binder-detail-name { font-size: 24px; }
-  .binder-detail-sub { margin-bottom: 10px; }
-  .binder-detail-body .binder-species-body { padding: 16px 16px 32px; }
+  /* Bottom sheet: slides up from the bottom, clears the iOS status bar /
+     Dynamic Island, grab handle on top, swipe-down or overlay tap to close. */
+  .binder-detail-panel {
+    top: auto;
+    bottom: 0;
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - 26px);
+    border-radius: 22px 22px 0 0;
+    transform: translateY(100%);
+    box-shadow: 0 -12px 40px rgba(0,0,0,0.5);
+  }
+  .binder-detail-panel.open { transform: translateY(0); }
+  .binder-detail-panel::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 42px;
+    height: 4.5px;
+    border-radius: 3px;
+    background: rgba(128,128,128,0.5);
+    z-index: 2;
+  }
+  .binder-detail-header { padding: 24px 60px 14px 16px; touch-action: pan-y; }
+  .binder-detail-close { top: 18px; right: 14px; width: 38px; height: 38px; }
+  .binder-detail-identity { gap: 14px; }
+  .binder-detail-sprite { width: 64px; height: 64px; }
+  .binder-detail-name { font-size: 21px; }
+  .binder-detail-sub { margin-bottom: 8px; }
+  .binder-detail-btns .binder-species-edit { font-size: 11px; padding: 4px 10px; }
+  .binder-detail-actions-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .binder-detail-body { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
+  .binder-detail-body .binder-species-body { padding: 14px 12px 32px; }
   .binder-detail-body .binder-pg-img-wrap { width: 76px; height: 106px; }
   .binder-detail-body .binder-pg-img,
   .binder-detail-body .binder-pg-img-ph { width: 95px; height: 133px; }
   .binder-detail-body .binder-pg-card-price { font-size: 15px; }
+  .binder-detail-body .binder-pair-side { padding: 12px 8px; }
+  .binder-detail-body .binder-pg-card { gap: 10px; padding: 8px 6px; }
 }
+
+/* ── Flat all-cards list (sort: All cards · £) ──────────────────────────── */
+.binder-flat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 110px);
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+}
+.binder-flat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+[data-theme="dark"] .binder-flat-row { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
+[data-theme="light"] .binder-flat-row { background: rgba(0,0,0,0.02); border: 1px solid rgba(0,0,0,0.06); }
+.binder-flat-row:active { transform: scale(0.985); }
+.binder-flat-img {
+  width: 34px;
+  height: 47px;
+  object-fit: contain;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: rgba(128,128,128,0.08);
+}
+.binder-flat-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.binder-flat-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.binder-flat-set  { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.binder-flat-st { font-size: 9.5px; font-weight: 600; padding: 2px 7px; border-radius: 9px; white-space: nowrap; }
+.binder-flat-st-need { color: #e57373; background: rgba(229,115,115,0.12); }
+.binder-flat-st-have { color: var(--green, #4caf7d); background: var(--green-dim, rgba(76,175,125,0.12)); }
+.binder-flat-price { font-family: var(--mono); font-size: 13px; min-width: 64px; text-align: right; }
 
 /* ── Rename modal ─────────────────────────────────────────────────────────── */
 .binder-rename-modal {

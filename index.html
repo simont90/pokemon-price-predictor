@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260706ae">
+  <link rel="stylesheet" href="style.css?v=20260706af">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2048,8 +2048,10 @@
           <select id="binderSortSel" class="binder-sort-sel" title="Sort order">
             <option value="dex">Pokédex order</option>
             <option value="prio">Priority</option>
-            <option value="price">Price: low → high</option>
+            <option value="price">Groups · £ low → high</option>
             <option value="az">A–Z</option>
+            <option value="all-asc">All cards · £ low → high</option>
+            <option value="all-desc">All cards · £ high → low</option>
           </select>
           <button class="binder-pg-refresh-btn" id="binderRefreshPricesBtn" type="button">Refresh prices</button>
           <button class="binder-pg-add-btn" id="binderPageAddBtn" type="button">+ Find a card</button>
@@ -2522,7 +2524,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260706ae"></script>
+  <script src="app.js?v=20260706af"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

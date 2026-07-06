@@ -5691,8 +5691,8 @@ function setupFullArtBinder() {
   // Binder page event delegation (set up once)
   // Shared handler used by both the page grid and the detail panel.
   function _handleBinderClick(e) {
-    // Dex cell — open the detail panel
-    const dexCell = e.target.closest('.binder-dex-cell[data-species]');
+    // Dex cell or flat-list row — open the detail panel
+    const dexCell = e.target.closest('.binder-dex-cell[data-species], .binder-flat-row[data-species]');
     if (dexCell) {
       openBinderDetail(dexCell.dataset.species);
       return;
@@ -5967,6 +5967,32 @@ function setupFullArtBinder() {
     // All card action buttons inside the detail panel use the same handler
     detailPanel.addEventListener('click', _handleBinderClick);
 
+    // Swipe down on the header to dismiss (mobile bottom sheet)
+    {
+      const hdr = detailPanel.querySelector('.binder-detail-header');
+      let sy = 0, dy = 0, dragging = false;
+      if (hdr) {
+        hdr.addEventListener('touchstart', e => {
+          sy = e.touches[0].clientY; dy = 0; dragging = true;
+          detailPanel.style.transition = 'none';
+        }, { passive: true });
+        hdr.addEventListener('touchmove', e => {
+          if (!dragging) return;
+          dy = Math.max(0, e.touches[0].clientY - sy);
+          detailPanel.style.transform = dy > 0 ? `translateY(${dy}px)` : '';
+        }, { passive: true });
+        const end = () => {
+          if (!dragging) return;
+          dragging = false;
+          detailPanel.style.transition = '';
+          detailPanel.style.transform = '';
+          if (dy > 90) closeBinderDetail();
+        };
+        hdr.addEventListener('touchend', end);
+        hdr.addEventListener('touchcancel', end);
+      }
+    }
+
     // Desktop drag-to-pair inside the detail panel
     let _detailDragId = null;
     detailPanel.addEventListener('dragstart', e => {
@@ -6157,7 +6183,7 @@ const BINDER_SORT_KEY = 'pkm-binder-sort-v1';
 function binderGetSort() {
   try {
     const v = localStorage.getItem(BINDER_SORT_KEY);
-    if (v === 'az' || v === 'prio' || v === 'price') return v;
+    if (v === 'az' || v === 'prio' || v === 'price' || v === 'all-asc' || v === 'all-desc') return v;
   } catch (e) {}
   return 'dex';
 }
@@ -6570,7 +6596,37 @@ function renderBinderPage() {
     </div>`;
   }
 
-  container.innerHTML = '<div class="binder-dex-grid">' + html + '</div>';
+  // Flat all-cards view: every binder card in one list, sorted by price.
+  // Species grouping still ran above so the detail panel cache stays warm —
+  // tapping a row opens the same species panel as the grid cells.
+  if (sortMode === 'all-asc' || sortMode === 'all-desc') {
+    const flat = [];
+    for (const species of sortedSpecies) {
+      for (const b of groups[species]) flat.push({ b, species, gbp: itemGBP(b) });
+    }
+    flat.sort((x, y) => {
+      if ((x.gbp > 0) !== (y.gbp > 0)) return x.gbp > 0 ? -1 : 1; // unpriced last
+      return sortMode === 'all-asc' ? x.gbp - y.gbp : y.gbp - x.gbp;
+    });
+    const flatHtml = flat.map(({ b, species, gbp }) => {
+      const st = binderStatusOf(b); // 'have' | 'need'
+      const stLabel = st === 'have' ? 'Have one' : 'Need it';
+      return `<div class="binder-flat-row" data-species="${esc(species)}" role="button" tabindex="0">
+        ${b.img ? `<img class="binder-flat-img" src="${esc(b.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="binder-flat-img"></div>'}
+        <div class="binder-flat-info">
+          <span class="binder-flat-name">${esc(b.name)}</span>
+          <span class="binder-flat-set">${esc(b.set)}</span>
+        </div>
+        <span class="binder-pg-lang ${b.lang === 'JP' ? 'jp' : 'en'}">${b.lang === 'JP' ? 'JP' : 'EN'}</span>
+        <span class="binder-flat-st binder-flat-st-${st}">${stLabel}</span>
+        <span class="binder-flat-price">${gbp > 0 ? fmtGBPDirect(gbp) : '—'}</span>
+      </div>`;
+    }).join('');
+    container.innerHTML = '<div class="binder-flat-list">' +
+      (flatHtml || '<p class="binder-page-empty-sub" style="text-align:center;padding:24px">No cards match this filter.</p>') + '</div>';
+  } else {
+    container.innerHTML = '<div class="binder-dex-grid">' + html + '</div>';
+  }
   _renderReorgBar();
 
   // If the detail panel is open, refresh it with the latest rendered data
@@ -6589,7 +6645,12 @@ function openBinderDetail(species) {
   const overlay = $('binderDetailOverlay');
   if (panel) panel.classList.add('open');
   if (overlay) overlay.classList.add('open');
-  if (panel) panel.scrollTop = 0;
+  if (panel) {
+    panel.scrollTop = 0;
+    const body = panel.querySelector('.binder-detail-body');
+    if (body) body.scrollTop = 0;
+  }
+  document.body.style.overflow = 'hidden'; // lock background scroll (iOS)
 }
 
 function _openBinderDetailRender(species) {
@@ -6608,9 +6669,10 @@ function _openBinderDetailRender(species) {
   }
   const sprite = el('binderDetailSprite');
   if (sprite) {
+    sprite.onerror = () => { sprite.style.display = 'none'; };
     if (isFinite(dexNum)) {
-      sprite.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dexNum}.png`;
       sprite.style.display = '';
+      sprite.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dexNum}.png`;
     } else {
       sprite.style.display = 'none';
     }
@@ -6626,6 +6688,7 @@ function closeBinderDetail() {
   _binderDetailSpecies = null;
   $('binderDetailPanel')?.classList.remove('open');
   $('binderDetailOverlay')?.classList.remove('open');
+  document.body.style.overflow = '';
 }
 
 // ── Fetches fresh market prices for all binder cards using 3 concurrent workers.
