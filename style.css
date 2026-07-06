@@ -12144,3 +12144,88 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
   .binder-detail-sprite { width: 72px; height: 72px; }
   .binder-detail-name { font-size: 20px; }
 }
+
+/* ── Rename modal ─────────────────────────────────────────────────────────── */
+.binder-rename-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.binder-rename-box {
+  background: var(--card-bg, #1c1e2e);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  padding: 24px 24px 20px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.binder-rename-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.binder-rename-input {
+  width: 100%;
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-family: var(--font, inherit);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+.binder-rename-input:focus { border-color: var(--accent, #e8b634); }
+
+.binder-rename-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: -4px;
+}
+
+.binder-rename-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.binder-rename-cancel {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+.binder-rename-cancel:hover { background: rgba(255,255,255,0.09); color: var(--text); }
+
+.binder-rename-confirm {
+  padding: 9px 20px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent, #e8b634);
+  color: #000;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  transition: opacity 0.15s;
+}
+.binder-rename-confirm:hover { opacity: 0.88; }

@@ -5479,6 +5479,51 @@ function saveBinderSpeciesOverrides() {
   localStorage.setItem('pkm-binder-species-overrides-v1', JSON.stringify(binderSpeciesOverrides));
 }
 
+function _showBinderRenameModal(currentSpecies, ids) {
+  const modal = $('binderRenameModal');
+  const input = $('binderRenameInput');
+  if (!modal || !input) return;
+
+  input.value = currentSpecies;
+  modal.style.display = '';
+  input.focus();
+  input.select();
+
+  function _apply() {
+    const trimmed = input.value.trim();
+    _closeBinderRenameModal();
+    if (trimmed === '') {
+      ids.forEach(id => delete binderSpeciesOverrides[id]);
+    } else if (trimmed !== currentSpecies) {
+      ids.forEach(id => { binderSpeciesOverrides[id] = trimmed; });
+    }
+    saveBinderSpeciesOverrides();
+    renderBinderPage();
+    // If detail panel is open, refresh it with the new species name
+    if (_binderDetailSpecies === currentSpecies && trimmed && trimmed !== currentSpecies) {
+      _binderDetailSpecies = trimmed;
+    }
+    if (_binderDetailSpecies && $('binderDetailPanel')?.classList.contains('open')) {
+      _openBinderDetailRender(_binderDetailSpecies);
+    }
+  }
+
+  function _onKey(e) {
+    if (e.key === 'Enter') { e.preventDefault(); _apply(); }
+    if (e.key === 'Escape') { e.preventDefault(); _closeBinderRenameModal(); }
+  }
+
+  $('binderRenameConfirm').onclick = _apply;
+  $('binderRenameCancel').onclick  = _closeBinderRenameModal;
+  modal.addEventListener('keydown', _onKey, { once: true });
+  modal.addEventListener('click', e => { if (e.target === modal) _closeBinderRenameModal(); }, { once: true });
+}
+
+function _closeBinderRenameModal() {
+  const modal = $('binderRenameModal');
+  if (modal) modal.style.display = 'none';
+}
+
 // Manual EN/JP pairings within a binder group — keyed by card ID, value is its paired card ID.
 // Both directions are stored: { idA: idB, idB: idA }.
 let binderPairings = JSON.parse(localStorage.getItem('pkm-binder-pairings-v1') || '{}');
@@ -5673,19 +5718,7 @@ function setupFullArtBinder() {
       const ids = fullArtBinder
         .filter(b => (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === currentSpecies)
         .map(b => b.id);
-      const newName = prompt(
-        `Rename "${currentSpecies}" to:\n(Leave blank to reset to auto-detect)`,
-        currentSpecies
-      );
-      if (newName === null) return; // cancelled
-      const trimmed = newName.trim();
-      if (trimmed === '') {
-        ids.forEach(id => delete binderSpeciesOverrides[id]);
-      } else if (trimmed !== currentSpecies) {
-        ids.forEach(id => { binderSpeciesOverrides[id] = trimmed; });
-      }
-      saveBinderSpeciesOverrides();
-      renderBinderPage();
+      _showBinderRenameModal(currentSpecies, ids);
       return;
     }
 

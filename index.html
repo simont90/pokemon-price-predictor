@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260706z">
+  <link rel="stylesheet" href="style.css?v=20260706aa">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2058,6 +2058,19 @@
       <div id="binderPageContent" class="binder-page-content"></div>
     </div><!-- /#pageBinder -->
 
+    <!-- Binder rename modal -->
+    <div id="binderRenameModal" class="binder-rename-modal" style="display:none" role="dialog" aria-modal="true" aria-label="Rename species group">
+      <div class="binder-rename-box">
+        <div class="binder-rename-title">Rename group</div>
+        <input class="binder-rename-input" id="binderRenameInput" type="text" autocomplete="off" spellcheck="false" placeholder="Species name">
+        <div class="binder-rename-hint">Leave blank to reset to auto-detect</div>
+        <div class="binder-rename-actions">
+          <button class="binder-rename-cancel" id="binderRenameCancel">Cancel</button>
+          <button class="binder-rename-confirm" id="binderRenameConfirm">Rename</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Binder detail panel -->
     <div id="binderDetailOverlay" class="binder-detail-overlay"></div>
     <div id="binderDetailPanel" class="binder-detail-panel">
@@ -2497,7 +2510,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260706z"></script>
+  <script src="app.js?v=20260706aa"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
