@@ -6097,6 +6097,22 @@ function renderBinderPage() {
     groups[sp].push(b);
   }
 
+  // Pull cross-group manual pairs into the same group (move the partner card, not the whole group)
+  const _movedByPair = new Set();
+  for (const [idA, idB] of Object.entries(binderPairings)) {
+    if (_movedByPair.has(idA) || _movedByPair.has(idB)) continue;
+    const grpA = Object.keys(groups).find(sp => groups[sp].some(b => b.id === idA));
+    const grpB = Object.keys(groups).find(sp => groups[sp].some(b => b.id === idB));
+    if (!grpA || !grpB || grpA === grpB) continue;
+    const bItem = groups[grpB].find(b => b.id === idB);
+    if (bItem) {
+      groups[grpB] = groups[grpB].filter(b => b.id !== idB);
+      if (groups[grpB].length === 0) delete groups[grpB];
+      groups[grpA].push(bItem);
+      _movedByPair.add(idA); _movedByPair.add(idB);
+    }
+  }
+
   // Set-level multi-buy detection: how many binder cards per set
   const setBuckets = {};
   for (const b of fullArtBinder) {
@@ -6106,34 +6122,27 @@ function renderBinderPage() {
 
   // Pair EN and JP items within a species group using the counterpart index
   function pairItems(items) {
-    const enItems = items.filter(b => (b.lang || 'EN') !== 'JP');
-    const jpItems = items.filter(b => b.lang === 'JP');
     const pairs = [];
+    const used = new Set();
+
+    // First pass: honour manual pairings (any language combination).
+    for (const a of items) {
+      if (used.has(a.id)) continue;
+      const manualId = binderPairings[a.id];
+      if (!manualId) continue;
+      const b = items.find(x => x.id === manualId && !used.has(x.id));
+      if (!b) continue;
+      const aIsEN = (a.lang || 'EN') !== 'JP';
+      pairs.push({ en: aIsEN ? a : b, jp: aIsEN ? b : a, manual: true });
+      used.add(a.id); used.add(b.id);
+    }
+
+    // Second pass: auto-pair remaining EN and JP cards by counterpart key.
+    const enItems = items.filter(b => !used.has(b.id) && (b.lang || 'EN') !== 'JP');
+    const jpItems = items.filter(b => !used.has(b.id) && b.lang === 'JP');
     const usedEN = new Set(), usedJP = new Set();
 
-    // First pass: honour manual pairings set by the user via drag-to-pair.
     for (const en of enItems) {
-      const manualId = binderPairings[en.id];
-      if (!manualId) continue;
-      const jp = jpItems.find(j => j.id === manualId && !usedJP.has(j.id));
-      if (!jp) continue;
-      pairs.push({ en, jp, manual: true });
-      usedEN.add(en.id); usedJP.add(jp.id);
-    }
-    // Also check JP→EN direction (pairing is symmetric but may have been set from the JP side)
-    for (const jp of jpItems) {
-      if (usedJP.has(jp.id)) continue;
-      const manualId = binderPairings[jp.id];
-      if (!manualId) continue;
-      const en = enItems.find(e => e.id === manualId && !usedEN.has(e.id));
-      if (!en) continue;
-      pairs.push({ en, jp, manual: true });
-      usedEN.add(en.id); usedJP.add(jp.id);
-    }
-
-    // Second pass: auto-pair remaining cards by counterpart key.
-    for (const en of enItems) {
-      if (usedEN.has(en.id)) continue;
       const enKey = counterpartByCard.get(en.id);
       let jp = null;
       if (enKey) {
