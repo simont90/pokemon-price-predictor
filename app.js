@@ -5632,12 +5632,80 @@ function setupFullArtBinder() {
         return;
       }
 
+      const compareBtn = e.target.closest('.binder-pg-compare-btn');
+      if (compareBtn) {
+        e.stopPropagation();
+        const id = compareBtn.dataset.id;
+        const card = getCardById(id);
+        if (!card) return;
+        const slot = compareSlots.findIndex(s => s && s.id === id);
+        if (slot >= 0) {
+          compareSlots[slot] = null;
+        } else {
+          const empty = compareSlots.findIndex(s => !s);
+          compareSlots[empty >= 0 ? empty : 1] = snapshotCardForCompare(card);
+        }
+        saveCompare();
+        renderCompare();
+        updateCompareButton();
+        renderBinderPage();
+        if (compareSlots[0] && compareSlots[1]) openComparePanel();
+        return;
+      }
+
       const card = e.target.closest('.binder-pg-card[data-id]');
       if (card && !e.target.closest('button')) {
         const id = card.dataset.id;
         go('predict');
         setTimeout(() => { try { selectCard(id); } catch(err) {} }, 80);
       }
+    });
+
+    // Drag-to-compare: drag a card tile onto another to load both into compare slots.
+    let _binderDragId = null;
+    pageContent.addEventListener('dragstart', e => {
+      const card = e.target.closest('.binder-pg-card[data-id]');
+      if (!card) return;
+      _binderDragId = card.dataset.id;
+      e.dataTransfer.effectAllowed = 'link';
+      card.classList.add('binder-pg-dragging');
+    });
+    pageContent.addEventListener('dragend', () => {
+      _binderDragId = null;
+      pageContent.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
+        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
+    });
+    pageContent.addEventListener('dragover', e => {
+      const card = e.target.closest('.binder-pg-card[data-id]');
+      if (!card || !_binderDragId || card.dataset.id === _binderDragId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'link';
+      pageContent.querySelectorAll('.binder-pg-drop-target')
+        .forEach(el => el.classList.remove('binder-pg-drop-target'));
+      card.classList.add('binder-pg-drop-target');
+    });
+    pageContent.addEventListener('dragleave', e => {
+      const card = e.target.closest('.binder-pg-card[data-id]');
+      if (card) card.classList.remove('binder-pg-drop-target');
+    });
+    pageContent.addEventListener('drop', e => {
+      const dropCard = e.target.closest('.binder-pg-card[data-id]');
+      if (!dropCard || !_binderDragId || dropCard.dataset.id === _binderDragId) return;
+      e.preventDefault();
+      const cardA = getCardById(_binderDragId);
+      const cardB = getCardById(dropCard.dataset.id);
+      if (cardA && cardB) {
+        compareSlots[0] = snapshotCardForCompare(cardA);
+        compareSlots[1] = snapshotCardForCompare(cardB);
+        saveCompare();
+        renderCompare();
+        updateCompareButton();
+        renderBinderPage();
+        openComparePanel();
+      }
+      _binderDragId = null;
+      pageContent.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
+        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
     });
   }
 
@@ -5880,6 +5948,10 @@ function renderBinderPage() {
 
   // Render a single card tile
   function cardTile(b, gbp) {
+    // Live-resolve image so artwork overrides applied after the card was added
+    // to the binder are immediately visible (b.img is snapshot-at-add-time).
+    const liveCard = cardData?.cards?.find(c => c.i === b.id);
+    const imgSrc = liveCard ? _hiresUrl(getCardImg(liveCard)) : (b.img ? _hiresUrl(b.img) : null);
     const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
     const langPill = b.lang === 'JP'
       ? '<span class="binder-pg-lang jp">JP</span>'
@@ -5889,11 +5961,13 @@ function renderBinderPage() {
       ? '<div class="binder-pg-upgrade-tag">Have one — hunting an upgrade</div>' : '';
     const completeBtn = st === 'owned'
       ? `<button class="binder-pg-complete" data-id="${b.id}" title="Slot done — remove from the binder project">✓ Card complete</button>` : '';
+    const inCompare = compareSlots.some(s => s && s.id === b.id);
     return `
-      <div class="binder-pg-card${b.owned ? ' binder-pg-owned-card' : ''}" data-id="${b.id}">
+      <div class="binder-pg-card${b.owned ? ' binder-pg-owned-card' : ''}${inCompare ? ' binder-pg-in-compare' : ''}" data-id="${b.id}" draggable="true">
         <div class="binder-pg-img-wrap">
-          ${b.img ? `<img class="binder-pg-img" src="${_hiresUrl(b.img)}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
+          ${imgSrc ? `<img class="binder-pg-img" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
           ${langPill}
+          <button class="binder-pg-compare-btn${inCompare ? ' active' : ''}" data-id="${b.id}" title="Compare">⇄</button>
         </div>
         <div class="binder-pg-card-info">
           <div class="binder-pg-card-name">${esc(b.name)}</div>
@@ -8268,8 +8342,8 @@ function openEditCard() {
   const sub = $('ecSub');
   const hasOverride = !!loadCardOverrides()[c.i];
   sub.innerHTML = hasOverride
-    ? `Editing <code>${escapeHtml(orig.n)}</code> — <strong>currently overridden</strong>. Saved on this device only.`
-    : `Editing <code>${escapeHtml(c.n)}</code>. Changes are saved on this device only.`;
+    ? `Editing <code>${escapeHtml(orig.n)}</code> — <strong>currently overridden</strong>. Synced across devices.`
+    : `Editing <code>${escapeHtml(c.n)}</code>. Changes sync across devices.`;
   $('ecStatus').textContent = '';
   $('ecStatus').className = 'ql-status';
   $('ecOverlay').style.display = '';
