@@ -5782,10 +5782,7 @@ function setupFullArtBinder() {
     pageContent.addEventListener('dragover', e => {
       const card = e.target.closest('.binder-pg-card[data-id]');
       if (!card || !_binderDragId || card.dataset.id === _binderDragId) return;
-      // Only accept as a drop target if this would be a valid EN/JP pairing
-      const validTarget = _sameGroup(_binderDragId, card.dataset.id) &&
-                          _binderLang(_binderDragId) !== _binderLang(card.dataset.id);
-      if (!validTarget) return;
+      if (card.dataset.id === _binderDragId) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'link';
       pageContent.querySelectorAll('.binder-pg-drop-target')
@@ -5825,8 +5822,6 @@ function setupFullArtBinder() {
              (binderSpeciesOverrides[idB] || speciesOf(bB.name));
     }
     function _triggerBinderPair(idA, idB) {
-      if (!_sameGroup(idA, idB)) return;
-      if (_binderLang(idA) === _binderLang(idB)) return; // can't pair EN with EN
       setBinderPairing(idA, idB);
       renderBinderPage();
     }
@@ -5883,9 +5878,7 @@ function setupFullArtBinder() {
       const dropCard = el?.closest('.binder-pg-card[data-id]');
       pageContent.querySelectorAll('.binder-pg-drop-target')
         .forEach(x => x.classList.remove('binder-pg-drop-target'));
-      if (dropCard && dropCard.dataset.id !== _tDragId &&
-          _sameGroup(_tDragId, dropCard.dataset.id) &&
-          _binderLang(_tDragId) !== _binderLang(dropCard.dataset.id)) {
+      if (dropCard && dropCard.dataset.id !== _tDragId) {
         dropCard.classList.add('binder-pg-drop-target');
       }
     }, { passive: false });
