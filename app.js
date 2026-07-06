@@ -243,6 +243,18 @@ function _hiresUrl(url) {
   return url;
 }
 
+// onerror handler for card <img> elements: if _hires.png 404s, fall back to
+// the standard .png before hiding. Called as onerror="_onImgError(this)".
+function _onImgError(el) {
+  if (el.src && el.src.includes('_hires')) {
+    el.src = el.src.replace('_hires.png', '.png');
+    el.onerror = function() { el.style.display = 'none'; el.onerror = null; };
+  } else {
+    el.style.display = 'none';
+    el.onerror = null;
+  }
+}
+
 // Background resolver for legacy bad img values (TCGC card-page URLs).
 // Resolves to the real CDN image, persists the new value into both the
 // user-cards bucket and the per-card override, then re-renders.
@@ -1516,7 +1528,7 @@ function doSearch(query) {
         ${isLive ? '<span class="live-dot" title="Live price"></span>' : ''}` : '<span class="no-price">No price data</span>';
     return `
     <div class="search-result-item${isJP ? ' jp-card' : ''}" data-id="${c.i}">
-      ${`<img class="search-result-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="this.style.display='none'">`}
+      ${`<img class="search-result-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="_onImgError(this)">`}
       <div class="search-result-info">
         <div class="search-result-name">${langBadge}${esc(c.n)}${cpFlag}${jpNameLabel}</div>
         <div class="search-result-meta">
@@ -2783,18 +2795,22 @@ function selectCard(id) {
 
   // Card images — click to open the full-resolution lightbox
   if (isJP) {
-    $('cardImageJp').src = getCardImg(card);
-    $('cardImageJp').style.display = 'block';
-    $('cardImageJp').title = 'Click to view full resolution';
-    $('cardImageJp').style.cursor = 'zoom-in';
-    $('cardImageJp').onclick = () => openImageLightbox(getCardImg(card), card.n + ' (Japanese)');
+    const jpImg = $('cardImageJp');
+    jpImg.onerror = function() { _onImgError(this); };
+    jpImg.src = getCardImg(card);
+    jpImg.style.display = 'block';
+    jpImg.title = 'Click to view full resolution';
+    jpImg.style.cursor = 'zoom-in';
+    jpImg.onclick = () => openImageLightbox(getCardImg(card), card.n + ' (Japanese)');
     $('cardImage').style.display = 'none';
   } else {
-    $('cardImage').src = getCardImg(card);
-    $('cardImage').style.display = 'block';
-    $('cardImage').title = 'Click to view full resolution';
-    $('cardImage').style.cursor = 'zoom-in';
-    $('cardImage').onclick = () => openImageLightbox(getCardImg(card), card.n);
+    const enImg = $('cardImage');
+    enImg.onerror = function() { _onImgError(this); };
+    enImg.src = getCardImg(card);
+    enImg.style.display = 'block';
+    enImg.title = 'Click to view full resolution';
+    enImg.style.cursor = 'zoom-in';
+    enImg.onclick = () => openImageLightbox(getCardImg(card), card.n);
     $('cardImageJp').style.display = 'none';
   }
   const _heroBg = $('cardHeroBg');
@@ -5249,7 +5265,7 @@ function renderPortfolio() {
     return `
       <div class="portfolio-item-card" data-id="${p.id}">
         <div class="portfolio-item" data-id="${p.id}">
-          ${p.img ? `<img class="portfolio-item-img" src="${_hiresUrl(p.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="portfolio-item-img"></div>'}
+          ${p.img ? `<img class="portfolio-item-img" src="${_hiresUrl(p.img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="portfolio-item-img"></div>'}
           <div class="portfolio-item-info">
             <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}</div>
             <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}${isStale ? ' · <span class="stale-price-tag" title="Cached price (>1h old) — tap Refresh prices to update">cached</span>' : ''}</div>
@@ -5759,7 +5775,7 @@ function renderFullArtBinder() {
     const currentGBP = usdToGbp(currentUSD);
     return `
       <div class="binder-item ${b.owned ? 'binder-owned' : ''}" data-id="${b.id}">
-        ${b.img ? `<img class="wishlist-item-img" src="${_hiresUrl(b.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
+        ${b.img ? `<img class="wishlist-item-img" src="${_hiresUrl(b.img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="wishlist-item-img"></div>'}
         <div class="wishlist-item-info">
           <div class="wishlist-item-name">${esc(b.name)}</div>
           <div class="wishlist-item-meta"><span>${esc(b.set)}</span> <span class="lang-pill">${b.lang === 'JP' ? '\u{1F1EF}\u{1F1F5} JP' : '\u{1F1EC}\u{1F1E7} EN'}</span></div>
@@ -5876,7 +5892,7 @@ function renderBinderPage() {
     return `
       <div class="binder-pg-card${b.owned ? ' binder-pg-owned-card' : ''}" data-id="${b.id}">
         <div class="binder-pg-img-wrap">
-          ${b.img ? `<img class="binder-pg-img" src="${_hiresUrl(b.img)}" alt="" loading="lazy" onerror="this.style.display='none'">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
+          ${b.img ? `<img class="binder-pg-img" src="${_hiresUrl(b.img)}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
           ${langPill}
         </div>
         <div class="binder-pg-card-info">
@@ -6257,7 +6273,7 @@ function renderWishlist() {
     return `
       <div class="wishlist-item-card ${rowClass}" data-id="${w.id}">
         <div class="wishlist-item ${rowClass}" data-id="${w.id}">
-          ${w.img ? `<img class="wishlist-item-img" src="${_hiresUrl(w.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
+          ${w.img ? `<img class="wishlist-item-img" src="${_hiresUrl(w.img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="wishlist-item-img"></div>'}
           <div class="wishlist-item-info">
             <div class="wishlist-item-name">${esc(w.name)}</div>
             <div class="wishlist-item-meta">
@@ -6476,7 +6492,7 @@ function renderCompareSlot(idx, slot, other, verdict) {
       <button class="compare-slot-remove" data-slot="${idx}" title="Remove">✕</button>
       <div class="compare-slot-label">Slot ${slotLabel} · ${slot.lang === 'JP' ? '🇯🇵 Japanese' : '🇬🇧 English'}</div>
       <div class="compare-card-row">
-        ${slot.img ? `<img class="compare-card-img" src="${_hiresUrl(slot.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="compare-card-img"></div>'}
+        ${slot.img ? `<img class="compare-card-img" src="${_hiresUrl(slot.img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="compare-card-img"></div>'}
         <div class="compare-card-info">
           <div class="compare-card-name">${esc(slot.name)}</div>
           <div class="compare-card-meta">${esc(slot.set)}${slot.cn ? ` · #${slot.cn}` : ''}${slot.rc ? ` · ${slot.rc}` : ''}</div>
@@ -7016,7 +7032,7 @@ function renderValuePicks(filter) {
     return `
       <div class="vp-item" data-id="${c.i}">
         <div class="vp-rank ${rankClass}">${i + 1}</div>
-        <img class="vp-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="this.style.display='none'">
+        <img class="vp-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="_onImgError(this)">
         <div class="vp-info">
           <div class="vp-name">${esc(c.n)}${hasCounterpart(c) ? `<span class="search-result-cp-flag" title="${isJP ? 'English' : 'Japanese'} counterpart available">⇄ ${isJP ? 'EN' : 'JP'}</span>` : ''}</div>
           <div class="vp-meta">${langBadge}${esc(c.s)} · ${p.rarity}</div>
@@ -7926,7 +7942,7 @@ function renderManualAddCard(r) {
   const langGuess = /\b(japan|japanese)\b/i.test(r.setName) ? 'JP' : 'EN';
   const langBadge = langGuess === 'JP' ? '<span class="lang-jp">JP</span>' : '<span class="lang-en">EN</span>';
   const safe = JSON.stringify(r).replace(/'/g, '&#39;');
-  const img = r.imgUrl ? `<img class="ma-thumb" src="${escapeHtml(r.imgUrl)}" alt="" loading="lazy" onerror="this.style.display='none'">` : '';
+  const img = r.imgUrl ? `<img class="ma-thumb" src="${escapeHtml(r.imgUrl)}" alt="" loading="lazy" onerror="_onImgError(this)">` : '';
   return `
     <div class="ql-card ma-card">
       <div class="ql-card-head">
@@ -8743,7 +8759,7 @@ function _openSnapshot() {
   content.innerHTML = `
     <div class="snapshot-card-layout">
       <div class="snapshot-img-wrap">
-        <img src="${esc(imgUrl)}" alt="" class="snapshot-img" loading="lazy" onerror="this.style.display='none'">
+        <img src="${esc(imgUrl)}" alt="" class="snapshot-img" loading="lazy" onerror="_onImgError(this)">
       </div>
       <div class="snapshot-details">
         <div class="snapshot-card-name">${esc(card.n)}</div>
@@ -9328,7 +9344,7 @@ function renderDealHistory() {
     const fairStr  = entry.fairValueGBP ? `£${entry.fairValueGBP.toFixed(2)}` : '';
     return `
       <div class="deal-history-item">
-        ${entry.cardImg ? `<img class="alert-item-img" src="${esc(entry.cardImg)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="alert-item-img"></div>'}
+        ${entry.cardImg ? `<img class="alert-item-img" src="${esc(entry.cardImg)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="alert-item-img"></div>'}
         <div class="deal-history-info">
           <div class="deal-history-name">${esc(entry.cardName)}</div>
           <div class="deal-history-price">
@@ -9605,7 +9621,7 @@ function renderAlertsList() {
     const reasons = a.reasons.length ? `<div class="alert-reasons">${a.reasons.map(r => `<span>${esc(r)}</span>`).join(' · ')}</div>` : '';
     return `
       <div class="alert-item" data-id="${a.id}">
-        ${a.img ? `<img class="alert-item-img" src="${_hiresUrl(a.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="alert-item-img"></div>'}
+        ${a.img ? `<img class="alert-item-img" src="${_hiresUrl(a.img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="alert-item-img"></div>'}
         <div class="alert-item-info">
           <div class="alert-item-name">${esc(a.name)} ${a.lang === 'JP' ? '<span class="lang-pill">🇯🇵 JP</span>' : ''}</div>
           <div class="alert-item-meta"><span>${esc(a.set)}</span> ${dropStr}</div>
@@ -10169,7 +10185,7 @@ function openReassignModal(payload) {
   const prev = $('mraPreview');
   if (prev) {
     const img = payload.image
-      ? `<img src="${esc(payload.image)}" alt="" onerror="this.style.display='none'">`
+      ? `<img src="${esc(payload.image)}" alt="" onerror="_onImgError(this)">`
       : '<div class="mra-prev-img-empty"></div>';
     prev.innerHTML = `
       ${img}
@@ -10289,7 +10305,7 @@ function renderReassignSuggestions(fromCardId) {
     const imgSrc = typeof getCardImg === 'function' ? getCardImg(c) : '';
     return `
       <button type="button" class="mra-result mra-suggested" data-card-id="${esc(c.i)}">
-        ${imgSrc ? `<img class="mra-result-img" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
+        ${imgSrc ? `<img class="mra-result-img" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : ''}
         <div class="mra-result-main">
           <div class="mra-result-name">${esc(c.n)} ${langBadge}<span class="mra-suggest-pill">★ Suggested</span></div>
           <div class="mra-result-sub">${esc(c.s || '')} · ${numLabel}${c.r ? ' · ' + esc(c.r) : ''}</div>
@@ -10366,7 +10382,7 @@ function runReassignSearch() {
     const imgSrc = typeof getCardImg === 'function' ? getCardImg(c) : '';
     return `
       <button type="button" class="mra-result" data-card-id="${esc(c.i)}">
-        ${imgSrc ? `<img class="mra-result-img" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
+        ${imgSrc ? `<img class="mra-result-img" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : ''}
         <div class="mra-result-main">
           <div class="mra-result-name">${esc(c.n)} ${langBadge}</div>
           <div class="mra-result-sub">${esc(c.s || '')} · ${numLabel}${c.r ? ' · ' + esc(c.r) : ''}</div>
@@ -10913,7 +10929,7 @@ function mktRenderDealCard(d, meta) {
   const sourceCls = (d.source || '').includes('UK') ? 'src-uk'
                   : (d.source || '').includes('US') ? 'src-us' : 'src-cm';
   const img = d.image
-    ? `<img class="mkt-deal-img" src="${esc(d.image)}" alt="" onerror="this.style.display='none'">`
+    ? `<img class="mkt-deal-img" src="${esc(d.image)}" alt="" onerror="_onImgError(this)">`
     : '<div class="mkt-deal-img"></div>';
   const claimedChip = meta.claimed
     ? `<span class="mkt-claimed-chip" title="Reassigned to this card">⇄ Reassigned here</span>`

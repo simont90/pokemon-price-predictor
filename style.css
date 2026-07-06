@@ -10110,18 +10110,25 @@ html { scroll-behavior: smooth; }
 /* ── Promoted compositor layers for panels that animate in ── */
 .home-pip-sheet { will-change: transform; }
 
-/* ── Card image: GPU compositing + sharp rendering on HiDPI/iOS ── */
+/* ── Card image: GPU compositing on HiDPI/iOS ── */
 .card-thumb {
   transform: translateZ(0);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  image-rendering: -webkit-optimize-contrast;
 }
 .home-card-art {
   transform: translateZ(0);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  image-rendering: -webkit-optimize-contrast;
+}
+
+/* On 2× Retina screens (iPad, iPhone, Mac Retina), the pokemontcg.io
+   _hires.png source is 1024 px tall. Cap the display at 512 CSS px
+   (= 1024 physical px — a 1:1 source mapping) so the card is never
+   upscaled beyond its source resolution. The media-query height overrides
+   above this go up to 880 px, which causes significant blur on Retina. */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 2dppx) {
+  .card-thumb { max-height: 512px !important; }
 }
 .portfolio-item-img,
 .wishlist-item-img,
