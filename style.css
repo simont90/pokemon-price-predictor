@@ -10202,6 +10202,46 @@ html { scroll-behavior: smooth; }
 }
 .binder-pg-refresh-btn:hover  { background: rgba(232,182,52,0.17); }
 .binder-pg-refresh-btn:disabled { opacity: 0.55; cursor: default; }
+
+/* Species group checkbox indicator */
+.binder-species-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-right: 5px;
+}
+.binder-check-done {
+  color: #4caf82;
+  background: rgba(76,175,130,0.12);
+  border: 1px solid rgba(76,175,130,0.35);
+}
+.binder-check-upgrade {
+  color: var(--accent, #e8b634);
+  background: rgba(232,182,52,0.10);
+  border: 1px solid rgba(232,182,52,0.30);
+}
+.binder-check-need {
+  background: transparent;
+  border: 1.5px solid rgba(128,128,128,0.35);
+}
+
+/* Species groups with no card in place */
+.binder-needs-card > .binder-species-summary {
+  background: rgba(76,175,130,0.06);
+  border-radius: 8px;
+}
+
+/* Yellow ring on the smarter buy side in an EN/JP pair */
+.binder-smart-pick {
+  box-shadow: inset 0 0 0 2.5px var(--accent, #e8b634);
+  border-radius: 12px;
+}
 .binder-pg-add-btn {
   font-size: 12px;
   padding: 5px 12px;

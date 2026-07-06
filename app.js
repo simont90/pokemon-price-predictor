@@ -5861,8 +5861,8 @@ function renderBinderPage() {
       const enGBP = enB ? itemGBP(enB) : 0;
       const jpGBP = jpB ? itemGBP(jpB) : 0;
 
-      // Build comparison verdict
-      let verdictHtml = '';
+      // Build comparison verdict + identify the smarter buy
+      let verdictHtml = '', smartSide = null;
       if (enB && jpB && enGBP > 0 && jpGBP > 0) {
         // diff > 0 → JP costs more than EN; diff < 0 → JP cheaper
         const diff = ((jpGBP - enGBP) / enGBP) * 100;
@@ -5885,6 +5885,7 @@ function renderBinderPage() {
           cls = 'verdict-neutral';
         }
         verdictHtml = `<div class="binder-verdict ${cls}"><span class="binder-verdict-dot"></span>${msg}</div>`;
+        smartSide = cls.includes('-jp') ? 'jp' : cls.includes('-en') ? 'en' : null;
       }
 
       // Multi-buy hint: does this card's set contain other binder cards?
@@ -5905,9 +5906,9 @@ function renderBinderPage() {
         bodyHtml += `
           <div class="binder-pair">
             <div class="binder-pair-cards">
-              <div class="binder-pair-side">${cardTile(enB, enGBP)}</div>
+              <div class="binder-pair-side${smartSide === 'en' ? ' binder-smart-pick' : ''}">${cardTile(enB, enGBP)}</div>
               <div class="binder-pair-divider"><span class="binder-pair-vs">vs</span></div>
-              <div class="binder-pair-side">${cardTile(jpB, jpGBP)}</div>
+              <div class="binder-pair-side${smartSide === 'jp' ? ' binder-smart-pick' : ''}">${cardTile(jpB, jpGBP)}</div>
             </div>
             ${verdictHtml}${multiBuyHtml}
           </div>`;
@@ -5918,17 +5919,23 @@ function renderBinderPage() {
       }
     }
 
+    const tier = groupTier[species];
     const dexBadge = sortMode !== 'az' && isFinite(groupDex[species])
       ? `<span class="binder-species-dex">#${String(groupDex[species]).padStart(4, '0')}</span>`
       : '';
     const prioBadge = sortMode === 'prio'
-      ? `<span class="binder-species-prio binder-prio-${groupTier[species]}">${['Need it', 'Upgrade', 'Done'][groupTier[species]]}</span>`
+      ? `<span class="binder-species-prio binder-prio-${tier}">${['Need it', 'Upgrade', 'Done'][tier]}</span>`
       : '';
+    const checkIcon = tier === 2
+      ? '<span class="binder-species-check binder-check-done" title="Card in place">✓</span>'
+      : tier === 1
+      ? '<span class="binder-species-check binder-check-upgrade" title="Have one — hunting upgrade">◑</span>'
+      : '<span class="binder-species-check binder-check-need" title="No card in place"></span>';
     html += `
-      <details class="binder-species-group" open>
+      <details class="binder-species-group${tier === 0 ? ' binder-needs-card' : ''}" open>
         <summary class="binder-species-summary">
           <svg class="binder-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          ${dexBadge}<span class="binder-species-name">${esc(species)}</span>
+          ${checkIcon}${dexBadge}<span class="binder-species-name">${esc(species)}</span>
           ${prioBadge}<span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${ownedInGroup}/${items.length} owned${upgradingInGroup ? ` · ${upgradingInGroup} upgrading` : ''}</span>
         </summary>
         <div class="binder-species-body">${bodyHtml}</div>
@@ -5989,11 +5996,37 @@ async function binderFetchAllPrices(btn, { silent = false } = {}) {
   renderBinderPage();
 }
 
-// Auto-trigger a silent background refresh when the binder page opens,
-// but only for cards that have zero cached data (fresh or stale).
+// Returns the timestamp (ms) for 7AM today in local time.
+function _last7AM() {
+  const now = new Date();
+  const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 7, 0, 0, 0);
+  // If it's before 7AM today, the last 7AM was yesterday.
+  if (now < t) t.setDate(t.getDate() - 1);
+  return t.getTime();
+}
+
+const BINDER_REFRESH_KEY = 'pkm-binder-refresh-ts'; // device-local, not synced
+
+function _binderShouldAutoRefresh() {
+  const last = parseInt(localStorage.getItem(BINDER_REFRESH_KEY) || '0', 10);
+  return last < _last7AM();
+}
+
+function _binderMarkRefreshed() {
+  localStorage.setItem(BINDER_REFRESH_KEY, String(Date.now()));
+}
+
+// Auto-trigger a silent background refresh when the binder page opens.
+// - If it's past 7AM and no refresh has happened since this morning's 7AM, do a full refresh.
+// - Otherwise only fetch for cards that have never been cached at all.
 function _binderAutoRefresh() {
   const btn = $('binderRefreshPricesBtn');
   if (!btn || btn.dataset.running === 'true') return;
+  if (_binderShouldAutoRefresh()) {
+    _binderMarkRefreshed();
+    binderFetchAllPrices(btn, { silent: true });
+    return;
+  }
   const hasUncached = fullArtBinder.some(b => !getLastKnownPrice(b.id));
   if (!hasUncached) return;
   binderFetchAllPrices(btn, { silent: true });
