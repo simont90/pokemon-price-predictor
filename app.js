@@ -533,7 +533,18 @@ async function init() {
   // Kick off background price prefetch 2.5 s after init so cached prices are
   // ready before the user opens the collection panel.
   setTimeout(() => { try { _homeAutoRefresh(); } catch {} }, 2500);
+  // Global 7AM refresh: runs 5 s after init (after home refresh is underway)
+  // so the two don't compete for the same fetch slots on startup.
+  setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 5000);
 }
+
+// Re-check the 7AM boundary whenever the tab regains focus — handles the case
+// where a browser tab stays open overnight and crosses the 7AM boundary.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    try { _globalRefreshIfDue(); } catch {}
+  }
+});
 
 // ---- Currency ----
 function usdToGbp(usd) { return usd * fxRate; }
@@ -2608,14 +2619,22 @@ function renderLivePrice(data) {
     crRow.style.display = 'none';
   }
 
-  // Cache timestamp
+  // Cache timestamp — show "as of [date] [time]" so the user knows exactly
+  // when this price was fetched (7AM auto-refresh vs manual refresh).
   const cacheTs = $('livePriceCache');
   if (data._ts) {
-    const ago = Math.round((Date.now() - data._ts) / 60000);
-    cacheTs.textContent = ago < 1 ? 'just now' : ago < 60 ? `${ago}m ago` : `${Math.round(ago/60)}h ago`;
+    const d   = new Date(data._ts);
+    const now = new Date();
+    const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const sameDay = d.toDateString() === now.toDateString();
+    const prevDay = new Date(now - 86400000).toDateString() === d.toDateString();
+    const dateLabel = sameDay  ? 'today'
+                    : prevDay  ? 'yesterday'
+                    : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    cacheTs.textContent = `as of ${dateLabel} ${timeStr}`;
     cacheTs.style.display = '';
   } else {
-    cacheTs.textContent = 'just now';
+    cacheTs.textContent = 'as of just now';
     cacheTs.style.display = '';
   }
 }
@@ -6038,28 +6057,71 @@ function _last7AM() {
   return t.getTime();
 }
 
-const BINDER_REFRESH_KEY = 'pkm-binder-refresh-ts'; // device-local, not synced
+// ── Global 7AM price refresh ───────────────────────────────────────────────
+// Every morning at 7AM the entire price cache is re-fetched in the background.
+// This means every card price site-wide reflects the live 7AM market price.
+// If the user opens an individual card and refreshes manually, that card's
+// timestamp updates immediately and is shown on the live price panel.
 
-function _binderShouldAutoRefresh() {
-  const last = parseInt(localStorage.getItem(BINDER_REFRESH_KEY) || '0', 10);
+const GLOBAL_REFRESH_KEY = 'pkm-global-refresh-ts'; // device-local, not synced
+
+function _shouldGlobalRefresh() {
+  const last = parseInt(localStorage.getItem(GLOBAL_REFRESH_KEY) || '0', 10);
   return last < _last7AM();
 }
 
-function _binderMarkRefreshed() {
-  localStorage.setItem(BINDER_REFRESH_KEY, String(Date.now()));
+function _markGlobalRefreshed() {
+  localStorage.setItem(GLOBAL_REFRESH_KEY, String(Date.now()));
 }
 
-// Auto-trigger a silent background refresh when the binder page opens.
-// - If it's past 7AM and no refresh has happened since this morning's 7AM, do a full refresh.
-// - Otherwise only fetch for cards that have never been cached at all.
+// All card IDs worth refreshing: tracked (portfolio/wishlist/watchlist) + binder + anything
+// already in the price cache so previously-browsed cards stay current too.
+function _allRefreshIds() {
+  const ids = new Set();
+  try { (portfolio  || []).forEach(p => p && p.id && ids.add(p.id)); } catch {}
+  try { (wishlist   || []).forEach(w => w && w.id && ids.add(w.id)); } catch {}
+  try { (watchlist  || []).forEach(w => w && w.id && ids.add(w.id)); } catch {}
+  try { (fullArtBinder || []).forEach(b => b && b.id && ids.add(b.id)); } catch {}
+  try { Object.keys(getPriceCache()).forEach(id => ids.add(id)); } catch {}
+  return [...ids].filter(Boolean);
+}
+
+let _globalRefreshRunning = false;
+
+async function _globalSilentRefresh() {
+  if (_globalRefreshRunning || !cardData) return;
+  const ids = _allRefreshIds();
+  if (!ids.length) return;
+  _globalRefreshRunning = true;
+  const queue = [...ids];
+  const CONCURRENCY = 4;
+  async function worker() {
+    while (queue.length > 0) {
+      const id = queue.shift();
+      if (!id) break;
+      try { await psRefreshOne(id); } catch {}
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  _globalRefreshRunning = false;
+}
+
+// Auto-trigger if 7AM boundary has passed since last global refresh.
+// Called once at app start; also triggered on page focus so an open tab
+// that crosses 7AM picks it up on next interaction.
+function _globalRefreshIfDue() {
+  if (!_shouldGlobalRefresh()) return;
+  _markGlobalRefreshed();
+  _globalSilentRefresh();
+}
+
+// ── Binder page auto-fill ──────────────────────────────────────────────────
+// Only fetches cards that have *never* been cached. The 7AM global refresh
+// above handles keeping all prices current; this just fills gaps for
+// newly-added binder cards before the next 7AM cycle.
 function _binderAutoRefresh() {
   const btn = $('binderRefreshPricesBtn');
   if (!btn || btn.dataset.running === 'true') return;
-  if (_binderShouldAutoRefresh()) {
-    _binderMarkRefreshed();
-    binderFetchAllPrices(btn, { silent: true });
-    return;
-  }
   const hasUncached = fullArtBinder.some(b => !getLastKnownPrice(b.id));
   if (!hasUncached) return;
   binderFetchAllPrices(btn, { silent: true });
