@@ -10199,35 +10199,60 @@ html { scroll-behavior: smooth; }
 .binder-pg-refresh-btn:hover  { background: rgba(232,182,52,0.17); }
 .binder-pg-refresh-btn:disabled { opacity: 0.55; cursor: default; }
 
-/* Species group checkbox indicator */
-.binder-species-check {
+/* Clickable group status pill (Card Owned / Upgrading / Mark owned) */
+.binder-group-status-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: .02em;
+  cursor: pointer;
   flex-shrink: 0;
-  margin-right: 5px;
+  border: 1px solid transparent;
+  transition: opacity 0.15s, background 0.15s;
+  white-space: nowrap;
 }
-.binder-check-done {
+.binder-gst-owned {
   color: #4caf82;
   background: rgba(76,175,130,0.12);
-  border: 1px solid rgba(76,175,130,0.35);
+  border-color: rgba(76,175,130,0.35);
 }
-.binder-check-upgrade {
+.binder-gst-owned:hover {
+  background: rgba(76,175,130,0.22);
+}
+.binder-gst-upgrade {
   color: var(--accent, #e8b634);
   background: rgba(232,182,52,0.10);
-  border: 1px solid rgba(232,182,52,0.30);
+  border-color: rgba(232,182,52,0.30);
 }
-.binder-check-need {
+.binder-gst-upgrade:hover {
+  background: rgba(232,182,52,0.20);
+}
+.binder-gst-need {
+  color: var(--text-muted);
   background: transparent;
-  border: 1.5px solid rgba(128,128,128,0.35);
+  border-color: rgba(128,128,128,0.25);
+  opacity: 0.55;
+}
+.binder-gst-need:hover {
+  opacity: 1;
+  background: rgba(128,128,128,0.10);
 }
 
-/* Species groups with no card in place */
+/* Price badge shown in price sort mode */
+.binder-species-price-badge {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--accent, #e8b634);
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+/* Species groups with no card in place — subtle green tint on summary */
 .binder-needs-card > .binder-species-summary {
   background: rgba(76,175,130,0.06);
   border-radius: 8px;

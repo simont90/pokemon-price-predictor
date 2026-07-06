@@ -5578,6 +5578,21 @@ function setupFullArtBinder() {
         saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
         return;
       }
+      const statusBtn = e.target.closest('.binder-group-status-btn');
+      if (statusBtn) {
+        e.stopPropagation();
+        const sp = statusBtn.dataset.species;
+        const groupCards = fullArtBinder.filter(b =>
+          (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === sp
+        );
+        const allOwned = groupCards.every(b => b.owned);
+        groupCards.forEach(b => { b.owned = !allOwned; b.upgrade = false; });
+        saveFullArtBinder();
+        renderBinderPage();
+        renderFullArtBinder();
+        return;
+      }
+
       const editBtn = e.target.closest('.binder-species-edit');
       if (editBtn) {
         e.stopPropagation();
@@ -5678,7 +5693,7 @@ const BINDER_SORT_KEY = 'pkm-binder-sort-v1';
 function binderGetSort() {
   try {
     const v = localStorage.getItem(BINDER_SORT_KEY);
-    if (v === 'az' || v === 'prio') return v;
+    if (v === 'az' || v === 'prio' || v === 'price') return v;
   } catch (e) {}
   return 'dex';
 }
@@ -5903,11 +5918,34 @@ function renderBinderPage() {
     }
     groupTier[sp] = tier;
   }
+  // Price per group: smart-pick card price (cheaper side of EN/JP pair, or solo).
+  // Used for "price" sort — groups with no cached price go to the end.
+  const groupPrice = {};
+  for (const sp of Object.keys(groups)) {
+    const pairs = pairItems(groups[sp]);
+    let best = Infinity;
+    for (const { en, jp } of pairs) {
+      const enGBP = en ? itemGBP(en) : 0;
+      const jpGBP = jp ? itemGBP(jp) : 0;
+      let pick = 0;
+      if (en && jp && enGBP > 0 && jpGBP > 0) {
+        // Mirror the verdict logic: JP cheaper by >10% → use JP price, else EN
+        const diff = ((jpGBP - enGBP) / enGBP) * 100;
+        pick = diff < -10 ? jpGBP : diff > 10 ? enGBP : Math.min(enGBP, jpGBP);
+      } else {
+        pick = (en && enGBP > 0) ? enGBP : (jp && jpGBP > 0) ? jpGBP : 0;
+      }
+      if (pick > 0) best = Math.min(best, pick);
+    }
+    groupPrice[sp] = isFinite(best) ? best : Infinity;
+  }
+
   const byDex = (a, b) => (groupDex[a] - groupDex[b]) || a.localeCompare(b);
   const sortedSpecies = Object.keys(groups).sort((a, b) =>
-    sortMode === 'az'   ? a.localeCompare(b) :
-    sortMode === 'prio' ? (groupTier[a] - groupTier[b]) || byDex(a, b) :
-                          byDex(a, b));
+    sortMode === 'az'    ? a.localeCompare(b) :
+    sortMode === 'prio'  ? (groupTier[a] - groupTier[b]) || byDex(a, b) :
+    sortMode === 'price' ? (groupPrice[a] - groupPrice[b]) || byDex(a, b) :
+                           byDex(a, b));
 
   for (const species of sortedSpecies) {
     const items = groups[species];
@@ -5983,22 +6021,21 @@ function renderBinderPage() {
     const dexBadge = sortMode !== 'az' && isFinite(groupDex[species])
       ? `<span class="binder-species-dex">#${String(groupDex[species]).padStart(4, '0')}</span>`
       : '';
-    const prioBadge = sortMode === 'prio'
-      ? `<span class="binder-species-prio binder-prio-${tier}">${['Need it', 'Upgrade', 'Done'][tier]}</span>`
+    // Clickable status pill — single click toggles the whole group owned ↔ need.
+    const statusLabel = tier === 2 ? 'Card Owned' : tier === 1 ? 'Upgrading' : 'Mark owned';
+    const statusBtn = `<button class="binder-group-status-btn binder-gst-${tier === 2 ? 'owned' : tier === 1 ? 'upgrade' : 'need'}" data-species="${esc(species)}" title="${tier === 2 ? 'Unmark — set back to needed' : 'Mark all as owned'}">${statusLabel}</button>`;
+    // Show price badge in price sort mode
+    const priceBadge = sortMode === 'price' && isFinite(groupPrice[species])
+      ? `<span class="binder-species-price-badge">£${groupPrice[species].toFixed(2)}</span>`
       : '';
-    const checkIcon = tier === 2
-      ? '<span class="binder-species-check binder-check-done" title="Card in place">✓</span>'
-      : tier === 1
-      ? '<span class="binder-species-check binder-check-upgrade" title="Have one — hunting upgrade">◑</span>'
-      : '<span class="binder-species-check binder-check-need" title="No card in place"></span>';
     const hasOverride = items.some(b => binderSpeciesOverrides[b.id]);
     html += `
       <details class="binder-species-group${tier === 0 ? ' binder-needs-card' : ''}" data-species="${esc(species)}" open>
         <summary class="binder-species-summary">
           <svg class="binder-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          ${checkIcon}${dexBadge}<span class="binder-species-name">${esc(species)}</span>${hasOverride ? '<span class="binder-species-override-dot" title="Name overridden">·</span>' : ''}
+          ${dexBadge}<span class="binder-species-name">${esc(species)}</span>${hasOverride ? '<span class="binder-species-override-dot" title="Name overridden">·</span>' : ''}
           <button class="binder-species-edit" data-species="${esc(species)}" title="Rename species group">✎</button>
-          ${prioBadge}<span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${ownedInGroup}/${items.length} owned${upgradingInGroup ? ` · ${upgradingInGroup} upgrading` : ''}</span>
+          ${statusBtn}${priceBadge}<span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${ownedInGroup}/${items.length} owned${upgradingInGroup ? ` · ${upgradingInGroup} upgrading` : ''}</span>
         </summary>
         <div class="binder-species-body">${bodyHtml}</div>
       </details>`;
