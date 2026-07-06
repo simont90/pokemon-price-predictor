@@ -18900,6 +18900,11 @@ const SYNC_KEYS = [
   'pkm-grading-service-v1',       // Grading service pref: PSA or ACE
   'pkm-ace-tier-v1',              // ACE grading tier pref
   'pkm-fullart-binder-v1',        // Full Art Binder Project Wishlist
+  'pkm-binder-species-overrides-v1', // Binder species name overrides (rename "Mega" → "Charizard" etc.)
+  'pkm-binder-pairings-v1',      // Manual EN/JP card pairings within binder groups
+  'pkm-binder-sort-v1',          // Binder page sort order preference
+  'pkm-ace-prices-v1',           // ACE Grading sold prices by grade per card
+  'pkm-vintage-v1',              // Vintage page targets (WOTC-era PSA hunt list)
   'pkm-dupe-dismissed-v1',        // Dismissed duplicate / counterpart pairs
 ];
 
