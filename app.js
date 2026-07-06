@@ -5601,8 +5601,8 @@ function setupFullArtBinder() {
         const groupCards = fullArtBinder.filter(b =>
           (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === sp
         );
-        const allOwned = groupCards.every(b => b.owned);
-        groupCards.forEach(b => { b.owned = !allOwned; b.upgrade = false; });
+        const allHave = groupCards.every(b => b.owned || b.upgrade);
+        groupCards.forEach(b => { b.owned = !allHave; b.upgrade = false; });
         saveFullArtBinder();
         renderBinderPage();
         renderFullArtBinder();
@@ -5758,18 +5758,20 @@ function saveFullArtBinder() {
 // Stored as two booleans so older clients that only read `owned` degrade
 // gracefully (an upgrade slot just shows as Need it there).
 function binderStatusOf(b) {
-  return b.owned ? 'owned' : (b.upgrade ? 'upgrade' : 'need');
+  // Merge the old 'owned' and 'upgrade' states — both mean "have an existing
+  // copy, targeting this listed card as the upgrade." 'need' means no copy yet.
+  return (b.owned || b.upgrade) ? 'have' : 'need';
 }
 function binderCycleStatus(b) {
-  if (b.owned)        { b.owned = false; b.upgrade = false; } // Got it → Need it
-  else if (b.upgrade) { b.upgrade = false; b.owned = true;  } // Upgrading → Got it
-  else                { b.upgrade = true; }                   // Need it → Upgrading
+  const has = b.owned || b.upgrade;
+  b.owned = !has;
+  b.upgrade = false;
 }
 function binderStatusBtn(b, extraCls) {
-  const st = binderStatusOf(b);
-  const label = st === 'owned' ? 'Got it' : st === 'upgrade' ? 'Upgrading' : 'Need it';
-  return `<button class="${extraCls} binder-owned-toggle binder-st-${st}" data-id="${b.id}"
-    title="Tap to cycle: Need it → Upgrading → Got it">${label}</button>`;
+  const has = binderStatusOf(b) === 'have';
+  const label = has ? 'Have one' : 'Need it';
+  return `<button class="${extraCls} binder-owned-toggle binder-st-${has ? 'have' : 'need'}" data-id="${b.id}"
+    title="${has ? 'I have an existing copy — targeting this for upgrade' : 'Not yet acquired — tap to mark as owned'}">${label}</button>`;
 }
 
 // ── Binder sort order (Pokédex number / priority / A–Z) ────────────────
@@ -5828,11 +5830,9 @@ function renderFullArtBinder() {
     return;
   }
 
-  const ownedCount = fullArtBinder.filter(b => b.owned).length;
-  const upgradingCount = fullArtBinder.filter(b => !b.owned && b.upgrade).length;
+  const haveOneCount = fullArtBinder.filter(b => b.owned || b.upgrade).length;
   if (countEl) { countEl.textContent = fullArtBinder.length; countEl.style.display = 'flex'; }
-  if (totalEl) totalEl.textContent =
-    `${ownedCount}/${fullArtBinder.length} owned` + (upgradingCount ? ` · ${upgradingCount} upgrading` : '');
+  if (totalEl) totalEl.textContent = `${haveOneCount}/${fullArtBinder.length} have one`;
 
   const items = fullArtBinder.map(b => {
     const currentCard = getCardById(b.id);
@@ -5876,11 +5876,9 @@ function renderBinderPage() {
   if (!container) return;
 
   // Update owned count in header
-  const owned = fullArtBinder.filter(b => b.owned).length;
-  const upgrading = fullArtBinder.filter(b => !b.owned && b.upgrade).length;
+  const haveCount = fullArtBinder.filter(b => b.owned || b.upgrade).length;
   const pageOwnedEl = $('binderPageOwned');
-  if (pageOwnedEl) pageOwnedEl.textContent =
-    `${owned}/${fullArtBinder.length} owned` + (upgrading ? ` · ${upgrading} upgrading` : '');
+  if (pageOwnedEl) pageOwnedEl.textContent = `${haveCount}/${fullArtBinder.length} have one`;
 
   const sortMode = binderGetSort();
   const sortSel = $('binderSortSel');
@@ -5957,13 +5955,13 @@ function renderBinderPage() {
       ? '<span class="binder-pg-lang jp">JP</span>'
       : '<span class="binder-pg-lang en">EN</span>';
     const st = binderStatusOf(b);
-    const upgradeTag = st === 'upgrade'
-      ? '<div class="binder-pg-upgrade-tag">Have one — hunting an upgrade</div>' : '';
-    const completeBtn = st === 'owned'
-      ? `<button class="binder-pg-complete" data-id="${b.id}" title="Slot done — remove from the binder project">✓ Card complete</button>` : '';
+    const upgradeTag = st === 'have'
+      ? '<div class="binder-pg-upgrade-tag">Have one — targeting this for upgrade</div>' : '';
+    const completeBtn = st === 'have'
+      ? `<button class="binder-pg-complete" data-id="${b.id}" title="Got the upgrade — remove from binder project">✓ Got the upgrade</button>` : '';
     const inCompare = compareSlots.some(s => s && s.id === b.id);
     return `
-      <div class="binder-pg-card${b.owned ? ' binder-pg-owned-card' : ''}${inCompare ? ' binder-pg-in-compare' : ''}" data-id="${b.id}" draggable="true">
+      <div class="binder-pg-card${(b.owned || b.upgrade) ? ' binder-pg-owned-card' : ''}${inCompare ? ' binder-pg-in-compare' : ''}" data-id="${b.id}" draggable="true">
         <div class="binder-pg-img-wrap">
           ${imgSrc ? `<img class="binder-pg-img" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
           ${langPill}
@@ -5996,17 +5994,12 @@ function renderBinderPage() {
     }
     groupDex[sp] = min;
   }
-  // Priority tier per group: 0 = has an empty slot (need — highest priority),
-  // 1 = only placeholder copies awaiting upgrade, 2 = everything owned.
+  // Priority tier per group: 0 = at least one card not yet owned (highest priority),
+  // 1 = all cards have an existing copy (lower priority — hunting upgrades).
   const groupTier = {};
   for (const sp of Object.keys(groups)) {
-    let tier = 2;
-    for (const b of groups[sp]) {
-      const st = binderStatusOf(b);
-      if (st === 'need') { tier = 0; break; }
-      if (st === 'upgrade') tier = 1;
-    }
-    groupTier[sp] = tier;
+    const hasNeed = groups[sp].some(b => binderStatusOf(b) === 'need');
+    groupTier[sp] = hasNeed ? 0 : 1;
   }
   // Price per group: smart-pick card price (cheaper side of EN/JP pair, or solo).
   // Used for "price" sort — groups with no cached price go to the end.
@@ -6039,8 +6032,7 @@ function renderBinderPage() {
 
   for (const species of sortedSpecies) {
     const items = groups[species];
-    const ownedInGroup = items.filter(b => b.owned).length;
-    const upgradingInGroup = items.filter(b => !b.owned && b.upgrade).length;
+    const haveInGroup = items.filter(b => b.owned || b.upgrade).length;
     const pairs = pairItems(items);
     let bodyHtml = '';
 
@@ -6111,9 +6103,9 @@ function renderBinderPage() {
     const dexBadge = sortMode !== 'az' && isFinite(groupDex[species])
       ? `<span class="binder-species-dex">#${String(groupDex[species]).padStart(4, '0')}</span>`
       : '';
-    // Clickable status pill — single click toggles the whole group owned ↔ need.
-    const statusLabel = tier === 2 ? 'Card Owned' : tier === 1 ? 'Upgrading' : 'Mark owned';
-    const statusBtn = `<button class="binder-group-status-btn binder-gst-${tier === 2 ? 'owned' : tier === 1 ? 'upgrade' : 'need'}" data-species="${esc(species)}" title="${tier === 2 ? 'Unmark — set back to needed' : 'Mark all as owned'}">${statusLabel}</button>`;
+    // Clickable status pill — toggles the whole group between "have one" and "need".
+    const statusLabel = tier === 1 ? 'Have one' : 'Mark as have one';
+    const statusBtn = `<button class="binder-group-status-btn binder-gst-${tier === 1 ? 'owned' : 'need'}" data-species="${esc(species)}" title="${tier === 1 ? 'Unmark — set back to needed' : 'Mark all: I have an existing copy, targeting upgrade'}">${statusLabel}</button>`;
     // Show price badge in price sort mode
     const priceBadge = sortMode === 'price' && isFinite(groupPrice[species])
       ? `<span class="binder-species-price-badge">£${groupPrice[species].toFixed(2)}</span>`
@@ -6125,7 +6117,7 @@ function renderBinderPage() {
           <svg class="binder-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           ${dexBadge}<span class="binder-species-name">${esc(species)}</span>${hasOverride ? '<span class="binder-species-override-dot" title="Name overridden">·</span>' : ''}
           <button class="binder-species-edit" data-species="${esc(species)}" title="Rename species group">✎</button>
-          ${statusBtn}${priceBadge}<span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${ownedInGroup}/${items.length} owned${upgradingInGroup ? ` · ${upgradingInGroup} upgrading` : ''}</span>
+          ${statusBtn}${priceBadge}<span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${haveInGroup}/${items.length} have one</span>
         </summary>
         <div class="binder-species-body">${bodyHtml}</div>
       </details>`;

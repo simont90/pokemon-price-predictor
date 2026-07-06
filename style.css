@@ -10571,8 +10571,8 @@ html { scroll-behavior: smooth; }
   background: var(--green-dim, rgba(76,175,125,0.12));
 }
 
-/* Upgrade state: has a placeholder copy, hunting a better one */
-.binder-owned-toggle.binder-st-upgrade {
+/* "Have one" state: own an existing copy, targeting this card as upgrade */
+.binder-owned-toggle.binder-st-have {
   border-color: rgba(232,182,52,0.55);
   color: var(--accent, #e8b634);
   background: rgba(232,182,52,0.10);
