@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260706aa">
+  <link rel="stylesheet" href="style.css?v=20260706ad">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2075,22 +2075,22 @@
     <div id="binderDetailOverlay" class="binder-detail-overlay"></div>
     <div id="binderDetailPanel" class="binder-detail-panel">
       <div class="binder-detail-header">
+        <button class="binder-detail-close" id="binderDetailClose" title="Close">&#x2715;</button>
         <div class="binder-detail-identity">
           <img class="binder-detail-sprite" id="binderDetailSprite" alt="">
           <div class="binder-detail-meta">
             <div class="binder-detail-top">
               <span class="binder-detail-num" id="binderDetailNum"></span>
               <span class="binder-detail-status need" id="binderDetailStatus">Need</span>
-              <button class="binder-species-edit binder-detail-rename" id="binderDetailRename" data-species="" title="Rename species group">&#x270E;</button>
             </div>
             <div class="binder-detail-name" id="binderDetailName"></div>
             <div class="binder-detail-sub" id="binderDetailSub"></div>
+            <div class="binder-detail-btns">
+              <button class="binder-species-edit binder-detail-rename" id="binderDetailRename" data-species="" title="Rename species group">&#x270E; Rename</button>
+            </div>
           </div>
         </div>
-        <div class="binder-detail-header-right">
-          <div id="binderDetailActions"></div>
-          <button class="binder-detail-close" id="binderDetailClose" title="Close">&#x2715;</button>
-        </div>
+        <div id="binderDetailActions" class="binder-detail-actions-bar"></div>
       </div>
       <div class="binder-detail-body" id="binderDetailBody"></div>
     </div>
@@ -2510,7 +2510,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260706aa"></script>
+  <script src="app.js?v=20260706ad"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

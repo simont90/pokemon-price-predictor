@@ -12042,77 +12042,21 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
   pointer-events: auto;
 }
 
+/* Header: close top-right, identity fills width */
 .binder-detail-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.binder-detail-identity {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex: 1;
-  min-width: 0;
-}
-
-.binder-detail-sprite {
-  width: 96px;
-  height: 96px;
-  object-fit: contain;
-  image-rendering: pixelated;
-  flex-shrink: 0;
-}
-
-.binder-detail-meta { min-width: 0; }
-.binder-detail-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-  flex-wrap: wrap;
-}
-.binder-detail-num { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
-.binder-detail-name { font-size: 24px; font-weight: 700; color: var(--text); line-height: 1.2; }
-.binder-detail-sub { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
-
-.binder-detail-status {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 9px;
-  border-radius: 20px;
-  letter-spacing: 0.04em;
-  flex-shrink: 0;
-}
-.binder-detail-status.need { background: rgba(232,182,52,0.18); color: var(--accent, #e8b634); }
-.binder-detail-status.have { background: rgba(76,175,110,0.15); color: #4caf6e; }
-
-.binder-detail-rename {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 3px 6px;
-  border-radius: 4px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-.binder-detail-rename:hover { color: var(--text); background: rgba(255,255,255,0.07); }
-
-.binder-detail-header-right {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+  gap: 0;
+  padding: 24px 100px 20px 40px; /* right pad clears close button */
+  border-bottom: 1px solid rgba(255,255,255,0.07);
   flex-shrink: 0;
 }
 
 .binder-detail-close {
+  position: absolute;
+  top: 20px;
+  right: 24px;
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -12129,20 +12073,180 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
 }
 .binder-detail-close:hover { background: rgba(255,255,255,0.13); border-color: rgba(255,255,255,0.25); }
 
+.binder-detail-identity {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+}
+
+.binder-detail-sprite {
+  width: 130px;
+  height: 130px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.binder-detail-meta { min-width: 0; flex: 1; }
+
+.binder-detail-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.binder-detail-num {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.binder-detail-name {
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.1;
+  margin-bottom: 6px;
+}
+
+.binder-detail-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.binder-detail-status {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.binder-detail-status.need { background: rgba(232,182,52,0.18); color: var(--accent, #e8b634); }
+.binder-detail-status.have { background: rgba(76,175,110,0.15); color: #4caf6e; }
+
+.binder-detail-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Override the grid's hover-hide rule — always visible in the detail panel */
+.binder-detail-btns .binder-species-edit {
+  opacity: 1;
+  width: auto;
+  height: auto;
+  margin-left: 0;
+  padding: 7px 14px;
+}
+
+.binder-detail-rename {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.07);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.binder-detail-rename:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.22);
+  color: var(--text);
+}
+[data-theme="light"] .binder-detail-rename {
+  background: rgba(0,0,0,0.05);
+  border-color: rgba(0,0,0,0.14);
+}
+[data-theme="light"] .binder-detail-rename:hover {
+  background: rgba(0,0,0,0.09);
+  border-color: rgba(0,0,0,0.22);
+}
+
+.binder-detail-actions-bar {
+  margin-top: 10px;
+  min-height: 0;
+}
+
+/* Body: centred, ample padding, cards scale up */
 .binder-detail-body {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 8px 0 env(safe-area-inset-bottom, 0px);
-  max-width: 1200px;
-  align-self: center;
-  width: 100%;
+  padding: 0 0 env(safe-area-inset-bottom, 0px);
+}
+
+.binder-detail-body .binder-species-body {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 40px 40px;
+  gap: 20px;
+}
+
+.binder-detail-body .binder-pair {
+  border-radius: 14px;
+}
+
+.binder-detail-body .binder-pair-side {
+  padding: 24px 20px;
+}
+
+.binder-detail-body .binder-pair-solo {
+  padding: 20px 24px;
+}
+
+.binder-detail-body .binder-pair-solo .binder-pg-card {
+  max-width: none;
+}
+
+.binder-detail-body .binder-pg-card {
+  gap: 16px;
+  padding: 12px 10px;
+}
+
+.binder-detail-body .binder-pg-img-wrap {
+  width: 138px;
+  height: 193px;
+}
+
+.binder-detail-body .binder-pg-img,
+.binder-detail-body .binder-pg-img-ph {
+  width: 138px;
+  height: 193px;
+  border-radius: 7px;
+}
+
+.binder-detail-body .binder-pg-card-name { font-size: 15px; }
+.binder-detail-body .binder-pg-card-set  { font-size: 12px; }
+.binder-detail-body .binder-pg-card-price { font-size: 18px; }
+
+.binder-detail-body .binder-pg-card-actions {
+  margin-top: 8px;
+  gap: 8px;
 }
 
 @media (max-width: 600px) {
-  .binder-detail-header { padding: 16px 16px 12px; gap: 12px; }
-  .binder-detail-sprite { width: 72px; height: 72px; }
-  .binder-detail-name { font-size: 20px; }
+  .binder-detail-header { padding: 16px 60px 16px 16px; }
+  .binder-detail-close { top: 14px; right: 14px; }
+  .binder-detail-sprite { width: 80px; height: 80px; }
+  .binder-detail-name { font-size: 24px; }
+  .binder-detail-sub { margin-bottom: 10px; }
+  .binder-detail-body .binder-species-body { padding: 16px 16px 32px; }
+  .binder-detail-body .binder-pg-img-wrap { width: 76px; height: 106px; }
+  .binder-detail-body .binder-pg-img,
+  .binder-detail-body .binder-pg-img-ph { width: 95px; height: 133px; }
+  .binder-detail-body .binder-pg-card-price { font-size: 15px; }
 }
 
 /* ── Rename modal ─────────────────────────────────────────────────────────── */
