@@ -10187,6 +10187,21 @@ html { scroll-behavior: smooth; }
   color: var(--text-muted);
   margin-top: 4px;
 }
+.binder-pg-refresh-btn {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(232,182,52,0.40);
+  background: rgba(232,182,52,0.09);
+  color: var(--accent, #e8b634);
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  white-space: nowrap;
+  font-family: var(--mono);
+  letter-spacing: 0;
+}
+.binder-pg-refresh-btn:hover  { background: rgba(232,182,52,0.17); }
+.binder-pg-refresh-btn:disabled { opacity: 0.55; cursor: default; }
 .binder-pg-add-btn {
   font-size: 12px;
   padding: 5px 12px;
@@ -10799,7 +10814,7 @@ html { scroll-behavior: smooth; }
   [data-theme="dark"] .binder-pair-divider { border: none; border-top: 1px solid rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.06); }
   [data-theme="light"] .binder-pair-divider { border: none; border-top: 1px solid rgba(0,0,0,0.06); border-bottom: 1px solid rgba(0,0,0,0.06); }
   .binder-page-content { padding: 0 8px; }
-  .binder-pg-add-btn { font-size: 11px; padding: 4px 10px; }
+  .binder-pg-add-btn, .binder-pg-refresh-btn { font-size: 11px; padding: 4px 10px; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════

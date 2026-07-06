@@ -5479,6 +5479,9 @@ function setupFullArtBinder() {
   // "Find a card" button on binder page → jump to Predict search
   $('binderPageAddBtn')?.addEventListener('click', () => go('predict'));
 
+  // Background price refresh for all binder cards
+  $('binderRefreshPricesBtn')?.addEventListener('click', function() { binderFetchAllPrices(this); });
+
   // Sort order selector (Pokédex number vs A–Z), synced across devices
   $('binderSortSel')?.addEventListener('change', function() {
     localStorage.setItem(BINDER_SORT_KEY, this.value);
@@ -5929,6 +5932,43 @@ function renderBinderPage() {
   }
 
   container.innerHTML = html;
+}
+
+// Fetches fresh market prices for every card in the binder, one at a time,
+// updating the price cells in-place as each one arrives. Full re-render at the end.
+async function binderFetchAllPrices(btn) {
+  if (btn.dataset.running === 'true') return;
+  const ids = [...new Set(fullArtBinder.map(b => b.id))];
+  const cards = ids.map(id => getCardById(id)).filter(Boolean);
+  if (!cards.length) return;
+
+  btn.dataset.running = 'true';
+  btn.disabled = true;
+  const total = cards.length;
+  let done = 0;
+
+  for (const card of cards) {
+    if (document.getElementById('pageBinder')?.style.display === 'none') break;
+    btn.textContent = `${done}/${total} fetched…`;
+    try {
+      const data = await fetchFreshPriceData(card);
+      if (data) {
+        setCachedPrice(card.i, data);
+        const usd = data.pcUngraded || data.market || data.mid || card.p || 0;
+        const gbp = usdToGbp(usd);
+        const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
+        document.querySelectorAll(`.binder-pg-card[data-id="${CSS.escape(card.i)}"] .binder-pg-card-price`)
+          .forEach(el => { el.textContent = priceStr; });
+      }
+    } catch (_) {}
+    done++;
+    await new Promise(r => setTimeout(r, 220));
+  }
+
+  btn.textContent = 'Refresh prices';
+  btn.disabled = false;
+  delete btn.dataset.running;
+  renderBinderPage();
 }
 
 function toggleCardInWishlist(id) {
