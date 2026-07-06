@@ -12333,3 +12333,59 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
   transition: opacity 0.15s;
 }
 .binder-rename-confirm:hover { opacity: 0.88; }
+
+/* ── Generation filter ────────────────────────────────────────────────────── */
+.binder-gen-filter {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  flex-wrap: nowrap;
+}
+.binder-gen-filter::-webkit-scrollbar { display: none; }
+
+.bgf-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1.5px solid transparent;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .bgf-btn {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+  border-color: rgba(255,255,255,0.08);
+}
+[data-theme="dark"] .bgf-btn:hover {
+  background: rgba(255,255,255,0.1);
+  color: var(--text);
+}
+[data-theme="dark"] .bgf-btn.active {
+  background: var(--accent, #e8b634);
+  color: #000;
+  border-color: var(--accent, #e8b634);
+}
+
+[data-theme="light"] .bgf-btn {
+  background: rgba(0,0,0,0.05);
+  color: var(--text-muted);
+  border-color: rgba(0,0,0,0.1);
+}
+[data-theme="light"] .bgf-btn:hover {
+  background: rgba(0,0,0,0.09);
+  color: var(--text);
+}
+[data-theme="light"] .bgf-btn.active {
+  background: var(--accent, #e8b634);
+  color: #000;
+  border-color: var(--accent, #e8b634);
+}

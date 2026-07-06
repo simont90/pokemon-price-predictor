@@ -5475,6 +5475,21 @@ let binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species
 let _binderBodyCache = {};       // species → { bodyHtml, inlineActions, dexNum, tier, haveInGroup, total, hasEN, hasJP }
 let _binderDetailSpecies = null; // currently-open species in the detail panel
 
+// Generation filter (0 = All, 1–9 = specific gen)
+let _binderGenFilter = 0;
+const BINDER_GEN_RANGES = [
+  [0, Infinity],  // 0 = All
+  [1,   151],     // Gen 1
+  [152, 251],     // Gen 2
+  [252, 386],     // Gen 3
+  [387, 493],     // Gen 4
+  [494, 649],     // Gen 5
+  [650, 721],     // Gen 6
+  [722, 809],     // Gen 7
+  [810, 905],     // Gen 8
+  [906, 1025],    // Gen 9
+];
+
 function saveBinderSpeciesOverrides() {
   localStorage.setItem('pkm-binder-species-overrides-v1', JSON.stringify(binderSpeciesOverrides));
 }
@@ -5636,6 +5651,17 @@ function setupFullArtBinder() {
   // Sort order selector (Pokédex number vs A–Z), synced across devices
   $('binderSortSel')?.addEventListener('change', function() {
     localStorage.setItem(BINDER_SORT_KEY, this.value);
+    renderBinderPage();
+  });
+
+  // Generation filter buttons
+  $('binderGenFilter')?.addEventListener('click', e => {
+    const btn = e.target.closest('.bgf-btn[data-gen]');
+    if (!btn) return;
+    _binderGenFilter = parseInt(btn.dataset.gen, 10);
+    document.querySelectorAll('#binderGenFilter .bgf-btn').forEach(b =>
+      b.classList.toggle('active', b === btn)
+    );
     renderBinderPage();
   });
 
@@ -6411,11 +6437,20 @@ function renderBinderPage() {
   }
 
   const byDex = (a, b) => (groupDex[a] - groupDex[b]) || a.localeCompare(b);
-  const sortedSpecies = Object.keys(groups).sort((a, b) =>
+  let sortedSpecies = Object.keys(groups).sort((a, b) =>
     sortMode === 'az'    ? a.localeCompare(b) :
     sortMode === 'prio'  ? (groupTier[a] - groupTier[b]) || byDex(a, b) :
     sortMode === 'price' ? (groupPrice[a] - groupPrice[b]) || byDex(a, b) :
                            byDex(a, b));
+
+  // Apply generation filter
+  if (_binderGenFilter > 0) {
+    const [genMin, genMax] = BINDER_GEN_RANGES[_binderGenFilter];
+    sortedSpecies = sortedSpecies.filter(sp => {
+      const d = groupDex[sp];
+      return isFinite(d) && d >= genMin && d <= genMax;
+    });
+  }
 
   for (const species of sortedSpecies) {
     const items = groups[species];
