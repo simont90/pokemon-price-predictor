@@ -10429,8 +10429,10 @@ html { scroll-behavior: smooth; }
 
 .binder-pair-divider {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   padding: 0 4px;
   flex-shrink: 0;
 }
@@ -10444,6 +10446,21 @@ html { scroll-behavior: smooth; }
   color: var(--text-muted);
   text-transform: uppercase;
 }
+
+/* Unlink button — shown when a pair was manually set by drag-to-pair */
+.binder-pg-unpair {
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(232,182,52,0.4);
+  background: rgba(232,182,52,0.08);
+  color: var(--accent, #e8b634);
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
+  transition: background 0.15s;
+}
+.binder-pg-unpair:hover { background: rgba(232,182,52,0.2); }
 
 /* Solo card (no counterpart) */
 .binder-pair-solo { padding: 12px; }

@@ -5476,6 +5476,29 @@ function saveBinderSpeciesOverrides() {
   localStorage.setItem('pkm-binder-species-overrides-v1', JSON.stringify(binderSpeciesOverrides));
 }
 
+// Manual EN/JP pairings within a binder group — keyed by card ID, value is its paired card ID.
+// Both directions are stored: { idA: idB, idB: idA }.
+let binderPairings = JSON.parse(localStorage.getItem('pkm-binder-pairings-v1') || '{}');
+
+function saveBinderPairings() {
+  localStorage.setItem('pkm-binder-pairings-v1', JSON.stringify(binderPairings));
+}
+function setBinderPairing(idA, idB) {
+  // Dissolve any existing pairings for either card before creating the new one
+  const oldA = binderPairings[idA], oldB = binderPairings[idB];
+  if (oldA) delete binderPairings[oldA];
+  if (oldB) delete binderPairings[oldB];
+  binderPairings[idA] = idB;
+  binderPairings[idB] = idA;
+  saveBinderPairings();
+}
+function clearBinderPairing(id) {
+  const partner = binderPairings[id];
+  if (partner) delete binderPairings[partner];
+  delete binderPairings[id];
+  saveBinderPairings();
+}
+
 function setupWishlist() {
   $('wishlistToggle').addEventListener('click', () => toggleSidePanel('wishlistPanel'));
   $('wishlistClose').addEventListener('click', () => { $('wishlistPanel').style.display = 'none'; });
@@ -5632,6 +5655,14 @@ function setupFullArtBinder() {
         return;
       }
 
+      const unpairBtn = e.target.closest('.binder-pg-unpair');
+      if (unpairBtn) {
+        e.stopPropagation();
+        clearBinderPairing(unpairBtn.dataset.idA);
+        renderBinderPage();
+        return;
+      }
+
       const compareBtn = e.target.closest('.binder-pg-compare-btn');
       if (compareBtn) {
         e.stopPropagation();
@@ -5679,6 +5710,10 @@ function setupFullArtBinder() {
     pageContent.addEventListener('dragover', e => {
       const card = e.target.closest('.binder-pg-card[data-id]');
       if (!card || !_binderDragId || card.dataset.id === _binderDragId) return;
+      // Only accept as a drop target if this would be a valid EN/JP pairing
+      const validTarget = _sameGroup(_binderDragId, card.dataset.id) &&
+                          _binderLang(_binderDragId) !== _binderLang(card.dataset.id);
+      if (!validTarget) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'link';
       pageContent.querySelectorAll('.binder-pg-drop-target')
@@ -5693,35 +5728,35 @@ function setupFullArtBinder() {
       const dropCard = e.target.closest('.binder-pg-card[data-id]');
       if (!dropCard || !_binderDragId || dropCard.dataset.id === _binderDragId) return;
       e.preventDefault();
-      const cardA = getCardById(_binderDragId);
-      const cardB = getCardById(dropCard.dataset.id);
-      if (cardA && cardB) {
-        compareSlots[0] = snapshotCardForCompare(cardA);
-        compareSlots[1] = snapshotCardForCompare(cardB);
-        saveCompare();
-        renderCompare();
-        updateCompareButton();
-        renderBinderPage();
-        openComparePanel();
-      }
+      const dragId = _binderDragId;
       _binderDragId = null;
       pageContent.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
         .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
+      _triggerBinderPair(dragId, dropCard.dataset.id);
     });
 
-    // ── Touch drag-to-compare (iOS/iPadOS) ──────────────────────────────
+    // ── Touch drag-to-pair (iOS/iPadOS) ──────────────────────────────
     // HTML5 drag events don't fire on iOS — this reimplements the same
     // behaviour using touchstart/touchmove/touchend + elementFromPoint.
     let _tDragId = null, _tGhost = null, _tStarted = false;
     let _tStartX = 0, _tStartY = 0;
     const DRAG_THRESHOLD = 10; // px movement before drag is confirmed
 
-    function _triggerBinderCompare(idA, idB) {
-      const cardA = getCardById(idA), cardB = getCardById(idB);
-      if (!cardA || !cardB) return;
-      compareSlots[0] = snapshotCardForCompare(cardA);
-      compareSlots[1] = snapshotCardForCompare(cardB);
-      saveCompare(); renderCompare(); updateCompareButton(); renderBinderPage(); openComparePanel();
+    function _binderLang(id) {
+      return (fullArtBinder.find(b => b.id === id)?.lang || 'EN');
+    }
+    function _sameGroup(idA, idB) {
+      const bA = fullArtBinder.find(b => b.id === idA);
+      const bB = fullArtBinder.find(b => b.id === idB);
+      if (!bA || !bB) return false;
+      return (binderSpeciesOverrides[idA] || speciesOf(bA.name)) ===
+             (binderSpeciesOverrides[idB] || speciesOf(bB.name));
+    }
+    function _triggerBinderPair(idA, idB) {
+      if (!_sameGroup(idA, idB)) return;
+      if (_binderLang(idA) === _binderLang(idB)) return; // can't pair EN with EN
+      setBinderPairing(idA, idB);
+      renderBinderPage();
     }
     function _cleanupTouchDrag() {
       if (_tGhost) { _tGhost.remove(); _tGhost = null; }
@@ -5776,7 +5811,9 @@ function setupFullArtBinder() {
       const dropCard = el?.closest('.binder-pg-card[data-id]');
       pageContent.querySelectorAll('.binder-pg-drop-target')
         .forEach(x => x.classList.remove('binder-pg-drop-target'));
-      if (dropCard && dropCard.dataset.id !== _tDragId) {
+      if (dropCard && dropCard.dataset.id !== _tDragId &&
+          _sameGroup(_tDragId, dropCard.dataset.id) &&
+          _binderLang(_tDragId) !== _binderLang(dropCard.dataset.id)) {
         dropCard.classList.add('binder-pg-drop-target');
       }
     }, { passive: false });
@@ -5789,7 +5826,7 @@ function setupFullArtBinder() {
       const el = document.elementFromPoint(t.clientX, t.clientY);
       const dropId = el?.closest('.binder-pg-card[data-id]')?.dataset.id;
       _cleanupTouchDrag();
-      if (dropId && dropId !== dragId) _triggerBinderCompare(dragId, dropId);
+      if (dropId && dropId !== dragId) _triggerBinderPair(dragId, dropId);
     };
     pageContent.addEventListener('touchend',    _onTouchEnd);
     pageContent.addEventListener('touchcancel', _cleanupTouchDrag);
@@ -6007,9 +6044,31 @@ function renderBinderPage() {
     const enItems = items.filter(b => (b.lang || 'EN') !== 'JP');
     const jpItems = items.filter(b => b.lang === 'JP');
     const pairs = [];
-    const usedJP = new Set();
+    const usedEN = new Set(), usedJP = new Set();
 
+    // First pass: honour manual pairings set by the user via drag-to-pair.
     for (const en of enItems) {
+      const manualId = binderPairings[en.id];
+      if (!manualId) continue;
+      const jp = jpItems.find(j => j.id === manualId && !usedJP.has(j.id));
+      if (!jp) continue;
+      pairs.push({ en, jp, manual: true });
+      usedEN.add(en.id); usedJP.add(jp.id);
+    }
+    // Also check JP→EN direction (pairing is symmetric but may have been set from the JP side)
+    for (const jp of jpItems) {
+      if (usedJP.has(jp.id)) continue;
+      const manualId = binderPairings[jp.id];
+      if (!manualId) continue;
+      const en = enItems.find(e => e.id === manualId && !usedEN.has(e.id));
+      if (!en) continue;
+      pairs.push({ en, jp, manual: true });
+      usedEN.add(en.id); usedJP.add(jp.id);
+    }
+
+    // Second pass: auto-pair remaining cards by counterpart key.
+    for (const en of enItems) {
+      if (usedEN.has(en.id)) continue;
       const enKey = counterpartByCard.get(en.id);
       let jp = null;
       if (enKey) {
@@ -6018,11 +6077,11 @@ function renderBinderPage() {
           if (counterpartByCard.get(j.id) === enKey) { jp = j; usedJP.add(j.id); break; }
         }
       }
-      // If only one JP card and no key match found, pair them (works for older sets)
       if (!jp && jpItems.length === 1 && !usedJP.has(jpItems[0].id) && enItems.length === 1) {
         jp = jpItems[0]; usedJP.add(jpItems[0].id);
       }
       pairs.push({ en, jp });
+      usedEN.add(en.id);
     }
     for (const j of jpItems) {
       if (!usedJP.has(j.id)) pairs.push({ en: null, jp: j });
@@ -6169,11 +6228,14 @@ function renderBinderPage() {
       }
 
       if (enB && jpB) {
+        const unpairBtn = pair.manual
+          ? `<button class="binder-pg-unpair" data-id-a="${esc(enB.id)}" data-id-b="${esc(jpB.id)}" title="Remove manual pairing — revert to auto-match">⛓ Unlink</button>`
+          : '';
         bodyHtml += `
           <div class="binder-pair">
             <div class="binder-pair-cards">
               <div class="binder-pair-side${smartSide === 'en' ? ' binder-smart-pick' : ''}">${cardTile(enB, enGBP)}</div>
-              <div class="binder-pair-divider"><span class="binder-pair-vs">vs</span></div>
+              <div class="binder-pair-divider">${unpairBtn}<span class="binder-pair-vs">vs</span></div>
               <div class="binder-pair-side${smartSide === 'jp' ? ' binder-smart-pick' : ''}">${cardTile(jpB, jpGBP)}</div>
             </div>
             ${verdictHtml}${multiBuyHtml}
