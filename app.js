@@ -6706,7 +6706,7 @@ function renderBinderPage() {
   if (sortMode === 'all-asc' || sortMode === 'all-desc') {
     const flat = [];
     for (const species of sortedSpecies) {
-      for (const b of groups[species]) flat.push({ b, species, gbp: itemGBP(b) });
+      for (const b of groups[species]) flat.push({ b, species, gbp: _binderItemGBP(b) });
     }
     flat.sort((x, y) => {
       if ((x.gbp > 0) !== (y.gbp > 0)) return x.gbp > 0 ? -1 : 1; // unpriced last
