@@ -19773,7 +19773,16 @@ function _vgLadder(card) {
 // steepest price jump in the ladder — the most eye appeal the market gives
 // you before it starts charging gem money. Authenticity pick = the cheapest
 // slabbed grade: real, graded, and holds the childhood slot for the least £.
-function _vgPicks(ladder) {
+function _vgIsGoldStar(card) {
+  const r = (card.r || '').toLowerCase();
+  const n = card.n || '';
+  return r.includes('holo star') || n.endsWith(' ★') || n.toLowerCase().includes('gold star');
+}
+
+// Picks the grade tiers for label display.
+// Collector range: 7–8 for regular vintage (all legitimately desirable unlike modern);
+// extended to include 6 for Gold Stars where scarcity beats condition.
+function _vgPicks(ladder, card) {
   let sweet = 9, biggest = 0;
   for (let i = ladder.length - 1; i > 0; i--) {
     const lower = ladder[i], upper = ladder[i - 1];
@@ -19782,7 +19791,11 @@ function _vgPicks(ladder) {
       if (jump >= biggest) { biggest = jump; sweet = lower.g; }
     }
   }
-  return { gem: 10, sweet, budget: ladder[ladder.length - 1].g };
+  const budget = ladder[ladder.length - 1].g;
+  const isGS = card && _vgIsGoldStar(card);
+  const collectorBase = isGS ? [8, 7, 6] : [8, 7];
+  const collector = new Set(collectorBase.filter(g => g !== sweet && g !== budget && g !== 10));
+  return { gem: 10, sweet, budget, collector };
 }
 
 function _vgGradeGBP(card, grade) {
@@ -19792,16 +19805,18 @@ function _vgGradeGBP(card, grade) {
 
 function _vgLadderHTML(card) {
   const { rawGBP, ladder, hasLive } = _vgLadder(card);
-  const picks = _vgPicks(ladder);
+  const isGS = _vgIsGoldStar(card);
+  const picks = _vgPicks(ladder, card);
   const data = _vgLoad();
   const target = data.targets[card.i];
   const srcBadge = s => s === 'pc' ? '<span class="vg-src vg-src-pc" title="PriceCharting recent sales">PC</span>'
     : s === 'db' ? '' : '<span class="vg-src vg-src-est" title="Estimated from raw price via grade ratios">~est</span>';
   const rows = ladder.map(({ g, gbp, src }) => {
     const tags = [];
-    if (g === picks.gem)    tags.push('<span class="vg-tag vg-tag-gem">Gem</span>');
-    if (g === picks.sweet)  tags.push('<span class="vg-tag vg-tag-sweet">Sweet spot</span>');
-    if (g === picks.budget) tags.push('<span class="vg-tag vg-tag-budget">Authenticity pick</span>');
+    if (g === picks.gem)          tags.push('<span class="vg-tag vg-tag-gem">Gem</span>');
+    if (g === picks.sweet)        tags.push('<span class="vg-tag vg-tag-sweet">Sweet spot</span>');
+    if (picks.collector.has(g))   tags.push('<span class="vg-tag vg-tag-collector">Collector grade</span>');
+    if (g === picks.budget)       tags.push('<span class="vg-tag vg-tag-budget">Authenticity pick</span>');
     const isTarget = target && target.grade === g;
     return `<div class="vg-ladder-row ${isTarget ? 'vg-ladder-target' : ''}">
       <span class="vg-ladder-grade">PSA ${g}</span>
@@ -19819,7 +19834,12 @@ function _vgLadderHTML(card) {
   const liveNote = hasLive
     ? ''
     : `<div class="vg-ladder-note">Static estimates — <button class="vg-fetch-btn" data-vg-fetch="${esc(card.i)}">fetch live prices</button> for real sold data</div>`;
-  return rawRow + rows + liveNote;
+  const vintageCtx = `<div class="vg-vintage-ctx">${
+    isGS
+      ? 'Gold Star — scarcity drives value more than condition. PSA 6+ trades actively; lower grades still attract serious collectors.'
+      : 'Unlike modern, PSA 7–8 retain genuine collector demand for vintage. PSA 10 is genuinely rare — most serious collections hold PSA 7–9.'
+  }</div>`;
+  return vintageCtx + rawRow + rows + liveNote;
 }
 
 function _vgCardRowHTML(card, data) {
@@ -19836,6 +19856,7 @@ function _vgCardRowHTML(card, data) {
       <span class="vg-card-num">${card.cn ? '#' + esc(String(card.cn)) : ''}</span>
       <span class="vg-card-name">${esc(card.n)}</span>
       <span class="vg-card-meta">${esc(card.r || '')}</span>
+      ${_vgIsGoldStar(card) ? '<span class="vg-gs-badge">★ Gold Star</span>' : ''}
       ${targetBadge}
       <span class="vg-card-raw">${rawGBP > 0 ? fmtGBPDirect(rawGBP) : '—'}</span>
       <button class="vg-open-btn" data-vg-open="${esc(card.i)}" title="Open in Predict">↗</button>

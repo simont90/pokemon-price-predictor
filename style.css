@@ -11525,10 +11525,33 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
 .vg-src-est { color: var(--text-muted); background: rgba(128,128,128,0.12); }
 .vg-ladder-tags { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
 .vg-tag { font-size: 9.5px; font-weight: 600; padding: 2px 7px; border-radius: 9px; white-space: nowrap; }
-.vg-tag-gem    { color: #b48be0; background: rgba(180,139,224,0.12); border: 1px solid rgba(180,139,224,0.35); }
-.vg-tag-sweet  { color: var(--accent, #e8b634); background: rgba(232,182,52,0.10); border: 1px solid rgba(232,182,52,0.35); }
-.vg-tag-budget { color: var(--green, #4caf7d); background: var(--green-dim, rgba(76,175,125,0.12)); border: 1px solid rgba(76,175,125,0.35); }
-.vg-tag-raw    { color: var(--text-muted); background: rgba(128,128,128,0.10); border: 1px solid rgba(128,128,128,0.25); }
+.vg-tag-gem       { color: #b48be0; background: rgba(180,139,224,0.12); border: 1px solid rgba(180,139,224,0.35); }
+.vg-tag-sweet     { color: var(--accent, #e8b634); background: rgba(232,182,52,0.10); border: 1px solid rgba(232,182,52,0.35); }
+.vg-tag-collector { color: #5bb8d4; background: rgba(91,184,212,0.10); border: 1px solid rgba(91,184,212,0.30); }
+.vg-tag-budget    { color: var(--green, #4caf7d); background: var(--green-dim, rgba(76,175,125,0.12)); border: 1px solid rgba(76,175,125,0.35); }
+.vg-tag-raw       { color: var(--text-muted); background: rgba(128,128,128,0.10); border: 1px solid rgba(128,128,128,0.25); }
+
+/* Vintage context note — appears at top of each expanded ladder */
+.vg-vintage-ctx {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 0 8px;
+  border-bottom: 1px solid rgba(128,128,128,0.08);
+  margin-bottom: 4px;
+}
+
+/* Gold Star inline badge in card summary row */
+.vg-gs-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 8px;
+  color: #e8c84a;
+  background: rgba(232,200,74,0.12);
+  border: 1px solid rgba(232,200,74,0.35);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .vg-target-btn {
   font-size: 11px;
   padding: 3px 10px;
