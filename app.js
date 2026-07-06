@@ -5471,6 +5471,10 @@ let fullArtBinder = JSON.parse(localStorage.getItem('pkm-fullart-binder-v1') || 
 // Synced (pkm- prefix), so corrections carry across devices.
 let binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species-overrides-v1') || '{}');
 
+// Pokédex grid detail panel state
+let _binderBodyCache = {};       // species → { bodyHtml, inlineActions, dexNum, tier, haveInGroup, total, hasEN, hasJP }
+let _binderDetailSpecies = null; // currently-open species in the detail panel
+
 function saveBinderSpeciesOverrides() {
   localStorage.setItem('pkm-binder-species-overrides-v1', JSON.stringify(binderSpeciesOverrides));
 }
@@ -5614,142 +5618,154 @@ function setupFullArtBinder() {
   }
 
   // Binder page event delegation (set up once)
+  // Shared handler used by both the page grid and the detail panel.
+  function _handleBinderClick(e) {
+    // Dex cell — open the detail panel
+    const dexCell = e.target.closest('.binder-dex-cell[data-species]');
+    if (dexCell) {
+      openBinderDetail(dexCell.dataset.species);
+      return;
+    }
+
+    const completeBtn = e.target.closest('.binder-pg-complete');
+    if (completeBtn) {
+      e.stopPropagation();
+      const id = completeBtn.dataset.id;
+      fullArtBinder = fullArtBinder.filter(b => b.id !== id);
+      saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
+      return;
+    }
+    const ownedBtn = e.target.closest('.binder-pg-owned');
+    if (ownedBtn) {
+      e.stopPropagation();
+      const id = ownedBtn.dataset.id;
+      const it = fullArtBinder.find(b => b.id === id);
+      if (it) { binderCycleStatus(it); saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); }
+      return;
+    }
+    const removeBtn = e.target.closest('.binder-pg-remove');
+    if (removeBtn) {
+      e.stopPropagation();
+      const id = removeBtn.dataset.id;
+      fullArtBinder = fullArtBinder.filter(b => b.id !== id);
+      saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
+      return;
+    }
+    const statusBtn = e.target.closest('.binder-group-status-btn');
+    if (statusBtn) {
+      e.stopPropagation();
+      const sp = statusBtn.dataset.species;
+      const groupCards = fullArtBinder.filter(b =>
+        (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === sp
+      );
+      const allHave = groupCards.every(b => b.owned || b.upgrade);
+      groupCards.forEach(b => { b.owned = !allHave; b.upgrade = false; });
+      saveFullArtBinder();
+      renderBinderPage();
+      renderFullArtBinder();
+      return;
+    }
+
+    const editBtn = e.target.closest('.binder-species-edit');
+    if (editBtn) {
+      e.stopPropagation();
+      const currentSpecies = editBtn.dataset.species;
+      const ids = fullArtBinder
+        .filter(b => (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === currentSpecies)
+        .map(b => b.id);
+      const newName = prompt(
+        `Rename "${currentSpecies}" to:\n(Leave blank to reset to auto-detect)`,
+        currentSpecies
+      );
+      if (newName === null) return; // cancelled
+      const trimmed = newName.trim();
+      if (trimmed === '') {
+        ids.forEach(id => delete binderSpeciesOverrides[id]);
+      } else if (trimmed !== currentSpecies) {
+        ids.forEach(id => { binderSpeciesOverrides[id] = trimmed; });
+      }
+      saveBinderSpeciesOverrides();
+      renderBinderPage();
+      return;
+    }
+
+    // Checkbox — select card for move/link actions
+    const reorgCb = e.target.closest('.breorg-cb');
+    if (reorgCb) {
+      e.stopPropagation();
+      const id = reorgCb.dataset.id;
+      if (_binderReorgSelected.has(id)) _binderReorgSelected.delete(id);
+      else _binderReorgSelected.add(id);
+      renderBinderPage();
+      return;
+    }
+
+    // Inline Move button — move selected cards from this group to chosen group
+    const inlineMoveBtn = e.target.closest('.breorg-inline-move');
+    if (inlineMoveBtn) {
+      e.stopPropagation();
+      const species = inlineMoveBtn.dataset.species;
+      // Works both in the old details element (now removed) and in the detail panel
+      const detailsEl = inlineMoveBtn.closest('.binder-species-group')
+        || document.getElementById('binderDetailActions');
+      const sel = detailsEl?.querySelector('.breorg-inline-select');
+      let target = sel?.value;
+      if (!target) return;
+      if (target === '__new__') {
+        target = prompt('New group name:')?.trim();
+        if (!target) return;
+      }
+      for (const id of [..._binderReorgSelected]) {
+        const b = fullArtBinder.find(x => x.id === id);
+        if (!b) continue;
+        const bSp = binderSpeciesOverrides[b.id] || speciesOf(b.name);
+        if (bSp === species) { binderSpeciesOverrides[id] = target; _binderReorgSelected.delete(id); }
+      }
+      saveBinderSpeciesOverrides();
+      renderBinderPage();
+      return;
+    }
+
+    // Inline Link button — force-pair exactly 2 selected cards
+    const inlineLinkBtn = e.target.closest('.breorg-inline-link');
+    if (inlineLinkBtn) {
+      e.stopPropagation();
+      const ids = [..._binderReorgSelected];
+      if (ids.length !== 2) return;
+      _binderReorgSelected.clear();
+      _triggerBinderPair(ids[0], ids[1]);
+      return;
+    }
+
+    // Inline Clear button — deselect all
+    const inlineClearBtn = e.target.closest('.breorg-inline-clear');
+    if (inlineClearBtn) {
+      e.stopPropagation();
+      _binderReorgSelected.clear();
+      renderBinderPage();
+      return;
+    }
+
+    const unpairBtn = e.target.closest('.binder-pg-unpair');
+    if (unpairBtn) {
+      e.stopPropagation();
+      clearBinderPairing(unpairBtn.dataset.idA);
+      renderBinderPage();
+      return;
+    }
+
+    const card = e.target.closest('.binder-pg-card[data-id]');
+    if (card && !e.target.closest('button')) {
+      const id = card.dataset.id;
+      go('predict');
+      setTimeout(() => { try { selectCard(id); } catch(err) {} }, 80);
+    }
+  }
+
   const pageContent = $('binderPageContent');
   if (pageContent && !pageContent._listenerAdded) {
     pageContent._listenerAdded = true;
-    pageContent.addEventListener('click', e => {
-      const completeBtn = e.target.closest('.binder-pg-complete');
-      if (completeBtn) {
-        e.stopPropagation();
-        const id = completeBtn.dataset.id;
-        fullArtBinder = fullArtBinder.filter(b => b.id !== id);
-        saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
-        return;
-      }
-      const ownedBtn = e.target.closest('.binder-pg-owned');
-      if (ownedBtn) {
-        e.stopPropagation();
-        const id = ownedBtn.dataset.id;
-        const it = fullArtBinder.find(b => b.id === id);
-        if (it) { binderCycleStatus(it); saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); }
-        return;
-      }
-      const removeBtn = e.target.closest('.binder-pg-remove');
-      if (removeBtn) {
-        e.stopPropagation();
-        const id = removeBtn.dataset.id;
-        fullArtBinder = fullArtBinder.filter(b => b.id !== id);
-        saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
-        return;
-      }
-      const statusBtn = e.target.closest('.binder-group-status-btn');
-      if (statusBtn) {
-        e.stopPropagation();
-        const sp = statusBtn.dataset.species;
-        const groupCards = fullArtBinder.filter(b =>
-          (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === sp
-        );
-        const allHave = groupCards.every(b => b.owned || b.upgrade);
-        groupCards.forEach(b => { b.owned = !allHave; b.upgrade = false; });
-        saveFullArtBinder();
-        renderBinderPage();
-        renderFullArtBinder();
-        return;
-      }
-
-      const editBtn = e.target.closest('.binder-species-edit');
-      if (editBtn) {
-        e.stopPropagation();
-        const currentSpecies = editBtn.dataset.species;
-        const ids = fullArtBinder
-          .filter(b => (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === currentSpecies)
-          .map(b => b.id);
-        const newName = prompt(
-          `Rename "${currentSpecies}" to:\n(Leave blank to reset to auto-detect)`,
-          currentSpecies
-        );
-        if (newName === null) return; // cancelled
-        const trimmed = newName.trim();
-        if (trimmed === '') {
-          ids.forEach(id => delete binderSpeciesOverrides[id]);
-        } else if (trimmed !== currentSpecies) {
-          ids.forEach(id => { binderSpeciesOverrides[id] = trimmed; });
-        }
-        saveBinderSpeciesOverrides();
-        renderBinderPage();
-        return;
-      }
-
-      // Checkbox — select card for move/link actions
-      const reorgCb = e.target.closest('.breorg-cb');
-      if (reorgCb) {
-        e.stopPropagation();
-        const id = reorgCb.dataset.id;
-        if (_binderReorgSelected.has(id)) _binderReorgSelected.delete(id);
-        else _binderReorgSelected.add(id);
-        renderBinderPage();
-        return;
-      }
-
-      // Inline Move button — move selected cards from this group to chosen group
-      const inlineMoveBtn = e.target.closest('.breorg-inline-move');
-      if (inlineMoveBtn) {
-        e.stopPropagation();
-        const species = inlineMoveBtn.dataset.species;
-        const detailsEl = inlineMoveBtn.closest('.binder-species-group');
-        const sel = detailsEl?.querySelector('.breorg-inline-select');
-        let target = sel?.value;
-        if (!target) return;
-        if (target === '__new__') {
-          target = prompt('New group name:')?.trim();
-          if (!target) return;
-        }
-        for (const id of [..._binderReorgSelected]) {
-          const b = fullArtBinder.find(x => x.id === id);
-          if (!b) continue;
-          const bSp = binderSpeciesOverrides[b.id] || speciesOf(b.name);
-          if (bSp === species) { binderSpeciesOverrides[id] = target; _binderReorgSelected.delete(id); }
-        }
-        saveBinderSpeciesOverrides();
-        renderBinderPage();
-        return;
-      }
-
-      // Inline Link button — force-pair exactly 2 selected cards
-      const inlineLinkBtn = e.target.closest('.breorg-inline-link');
-      if (inlineLinkBtn) {
-        e.stopPropagation();
-        const ids = [..._binderReorgSelected];
-        if (ids.length !== 2) return;
-        _binderReorgSelected.clear();
-        _triggerBinderPair(ids[0], ids[1]);
-        return;
-      }
-
-      // Inline Clear button — deselect all
-      const inlineClearBtn = e.target.closest('.breorg-inline-clear');
-      if (inlineClearBtn) {
-        e.stopPropagation();
-        _binderReorgSelected.clear();
-        renderBinderPage();
-        return;
-      }
-
-      const unpairBtn = e.target.closest('.binder-pg-unpair');
-      if (unpairBtn) {
-        e.stopPropagation();
-        clearBinderPairing(unpairBtn.dataset.idA);
-        renderBinderPage();
-        return;
-      }
-
-      const card = e.target.closest('.binder-pg-card[data-id]');
-      if (card && !e.target.closest('button')) {
-        const id = card.dataset.id;
-        go('predict');
-        setTimeout(() => { try { selectCard(id); } catch(err) {} }, 80);
-      }
-    });
+    pageContent.addEventListener('click', _handleBinderClick);
 
     // ── Desktop drag-to-compare (HTML5 drag API) ────────────────────────
     // Works on Mac. iOS/iPadOS does not fire these events — see touch section below.
@@ -5883,6 +5899,134 @@ function setupFullArtBinder() {
     pageContent.addEventListener('touchend',    _onTouchEnd);
     pageContent.addEventListener('touchcancel', _cleanupTouchDrag);
   }
+
+  // ── Detail panel listeners (set up once) ─────────────────────────────
+  const detailPanel = $('binderDetailPanel');
+  if (detailPanel && !detailPanel._listenerAdded) {
+    detailPanel._listenerAdded = true;
+
+    // All card action buttons inside the detail panel use the same handler
+    detailPanel.addEventListener('click', _handleBinderClick);
+
+    // Desktop drag-to-pair inside the detail panel
+    let _detailDragId = null;
+    detailPanel.addEventListener('dragstart', e => {
+      const card = e.target.closest('.binder-pg-card[data-id]');
+      if (!card) return;
+      _detailDragId = card.dataset.id;
+      e.dataTransfer.effectAllowed = 'link';
+      card.classList.add('binder-pg-dragging');
+    });
+    detailPanel.addEventListener('dragend', () => {
+      _detailDragId = null;
+      detailPanel.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
+        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
+    });
+    detailPanel.addEventListener('dragover', e => {
+      const card = e.target.closest('.binder-pg-card[data-id]');
+      if (!card || !_detailDragId || card.dataset.id === _detailDragId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'link';
+      detailPanel.querySelectorAll('.binder-pg-drop-target')
+        .forEach(el => el.classList.remove('binder-pg-drop-target'));
+      card.classList.add('binder-pg-drop-target');
+    });
+    detailPanel.addEventListener('dragleave', e => {
+      const card = e.target.closest('.binder-pg-card[data-id]');
+      if (card) card.classList.remove('binder-pg-drop-target');
+    });
+    detailPanel.addEventListener('drop', e => {
+      const dropCard = e.target.closest('.binder-pg-card[data-id]');
+      if (!dropCard || !_detailDragId || dropCard.dataset.id === _detailDragId) return;
+      e.preventDefault();
+      const dragId = _detailDragId;
+      _detailDragId = null;
+      detailPanel.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
+        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
+      _triggerBinderPair(dragId, dropCard.dataset.id);
+    });
+
+    // Touch drag-to-pair inside the detail panel (iOS/iPadOS)
+    let _dtDragId = null, _dtGhost = null, _dtStarted = false;
+    let _dtStartX = 0, _dtStartY = 0;
+    const DETAIL_DRAG_THRESHOLD = 10;
+    const detailBody = $('binderDetailBody');
+
+    function _cleanupDetailTouchDrag() {
+      if (_dtGhost) { _dtGhost.remove(); _dtGhost = null; }
+      detailPanel.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
+        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
+      _dtDragId = null; _dtStarted = false;
+    }
+
+    detailPanel.addEventListener('touchstart', e => {
+      const card = e.target.closest('.binder-pg-card[data-id]');
+      if (!card || e.target.closest('button')) return;
+      _dtDragId = card.dataset.id;
+      _dtStarted = false;
+      _dtStartX = e.touches[0].clientX;
+      _dtStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    detailPanel.addEventListener('touchmove', e => {
+      if (!_dtDragId) return;
+      const t = e.touches[0];
+      const dx = t.clientX - _dtStartX, dy = t.clientY - _dtStartY;
+      if (!_dtStarted) {
+        if (Math.abs(dx) < DETAIL_DRAG_THRESHOLD && Math.abs(dy) < DETAIL_DRAG_THRESHOLD) return;
+        _dtStarted = true;
+        const src = detailPanel.querySelector(`.binder-pg-card[data-id="${CSS.escape(_dtDragId)}"]`);
+        if (src) {
+          src.classList.add('binder-pg-dragging');
+          _dtGhost = src.cloneNode(true);
+          const rect = src.getBoundingClientRect();
+          _dtGhost.style.cssText = `position:fixed;z-index:9999;pointer-events:none;`
+            + `width:${rect.width}px;border-radius:8px;`
+            + `box-shadow:0 8px 24px rgba(0,0,0,0.5);opacity:0.88;`
+            + `transform:scale(1.04) rotate(-1.5deg);transition:none;`;
+          document.body.appendChild(_dtGhost);
+        }
+      }
+      e.preventDefault();
+      if (_dtGhost) {
+        _dtGhost.style.left = (t.clientX - (_dtGhost.offsetWidth / 2)) + 'px';
+        _dtGhost.style.top  = (t.clientY - 40) + 'px';
+      }
+      if (_dtGhost) _dtGhost.style.visibility = 'hidden';
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      if (_dtGhost) _dtGhost.style.visibility = '';
+      const dropCard = el?.closest('.binder-pg-card[data-id]');
+      detailPanel.querySelectorAll('.binder-pg-drop-target')
+        .forEach(x => x.classList.remove('binder-pg-drop-target'));
+      if (dropCard && dropCard.dataset.id !== _dtDragId) {
+        dropCard.classList.add('binder-pg-drop-target');
+      }
+    }, { passive: false });
+
+    const _onDetailTouchEnd = e => {
+      if (!_dtDragId || !_dtStarted) { _dtDragId = null; return; }
+      const dragId = _dtDragId;
+      const t = e.changedTouches[0];
+      if (_dtGhost) _dtGhost.style.visibility = 'hidden';
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      const dropId = el?.closest('.binder-pg-card[data-id]')?.dataset.id;
+      _cleanupDetailTouchDrag();
+      if (dropId && dropId !== dragId) _triggerBinderPair(dragId, dropId);
+    };
+    detailPanel.addEventListener('touchend',    _onDetailTouchEnd);
+    detailPanel.addEventListener('touchcancel', _cleanupDetailTouchDrag);
+  }
+
+  // Close button and overlay
+  $('binderDetailClose')?.addEventListener('click', closeBinderDetail);
+  $('binderDetailOverlay')?.addEventListener('click', closeBinderDetail);
+
+  // Escape key closes the panel
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('binderDetailPanel')?.classList.contains('open')) {
+      closeBinderDetail();
+    }
+  });
 
   renderFullArtBinder();
 }
@@ -6244,6 +6388,8 @@ function renderBinderPage() {
     const items = groups[species];
     const haveInGroup = items.filter(b => b.owned || b.upgrade).length;
     const pairs = groupPairs[species];
+    const hasEN = items.some(b => (b.lang || 'EN') !== 'JP');
+    const hasJP = items.some(b => b.lang === 'JP');
     let bodyHtml = '';
 
     for (const pair of pairs) {
@@ -6313,19 +6459,9 @@ function renderBinderPage() {
     }
 
     const tier = groupTier[species];
-    const dexBadge = sortMode !== 'az' && isFinite(groupDex[species])
-      ? `<span class="binder-species-dex">#${String(groupDex[species]).padStart(4, '0')}</span>`
-      : '';
-    // Clickable status pill — toggles the whole group between "have one" and "need".
-    const statusLabel = tier === 1 ? 'Have one' : 'Mark as have one';
-    const statusBtn = `<button class="binder-group-status-btn binder-gst-${tier === 1 ? 'owned' : 'need'}" data-species="${esc(species)}" title="${tier === 1 ? 'Unmark — set back to needed' : 'Mark all: I have an existing copy, targeting upgrade'}">${statusLabel}</button>`;
-    // Show price badge in price sort mode
-    const priceBadge = sortMode === 'price' && isFinite(groupPrice[species])
-      ? `<span class="binder-species-price-badge">£${groupPrice[species].toFixed(2)}</span>`
-      : '';
     const hasOverride = items.some(b => binderSpeciesOverrides[b.id]);
 
-    // Inline selection actions — appear next to species name when cards are selected
+    // Inline selection actions — appear in the detail panel header when cards are selected
     const groupSelectedIds = items.map(b => b.id).filter(id => _binderReorgSelected.has(id));
     const totalSelected = _binderReorgSelected.size;
     let inlineActions = '';
@@ -6346,24 +6482,85 @@ function renderBinderPage() {
         </span>`;
     }
 
-    html += `
-      <details class="binder-species-group${tier === 0 ? ' binder-needs-card' : ''}" data-species="${esc(species)}" open>
-        <summary class="binder-species-summary">
-          <svg class="binder-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          ${dexBadge}<span class="binder-species-name">${esc(species)}</span>${hasOverride ? '<span class="binder-species-override-dot" title="Name overridden">·</span>' : ''}
-          <button class="binder-species-edit" data-species="${esc(species)}" title="Rename species group">✎</button>
-          ${statusBtn}${priceBadge}<span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${haveInGroup}/${items.length} have one</span>
-          ${inlineActions}
-        </summary>
-        <div class="binder-species-body">${bodyHtml}</div>
-      </details>`;
+    // Cache per-species data for the detail panel
+    _binderBodyCache[species] = { bodyHtml, inlineActions, dexNum: groupDex[species], tier, haveInGroup, total: items.length, hasEN, hasJP, hasOverride };
+
+    const spriteUrl = isFinite(groupDex[species])
+      ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${groupDex[species]}.png`
+      : null;
+
+    html += `<div class="binder-dex-cell${tier === 0 ? ' binder-dex-need' : ' binder-dex-have'}"
+         data-species="${esc(species)}" role="button" tabindex="0">
+      <span class="binder-dex-num">${isFinite(groupDex[species]) ? '#' + String(groupDex[species]).padStart(4, '0') : '—'}</span>
+      ${spriteUrl ? `<img class="binder-dex-sprite" src="${spriteUrl}" alt="${esc(species)}" loading="lazy">` : '<div class="binder-dex-sprite binder-dex-sprite-ph"></div>'}
+      <span class="binder-dex-name">${esc(species)}${hasOverride ? '<span class="binder-dex-override" title="Name overridden">·</span>' : ''}</span>
+      <div class="binder-dex-langs">
+        ${hasEN ? '<span class="binder-dex-lang en">EN</span>' : ''}
+        ${hasJP ? '<span class="binder-dex-lang jp">JP</span>' : ''}
+      </div>
+      <span class="binder-dex-status ${tier === 0 ? 'need' : 'have'}">${tier === 0 ? 'Need' : 'Have one'}</span>
+    </div>`;
   }
 
-  container.innerHTML = html;
+  container.innerHTML = '<div class="binder-dex-grid">' + html + '</div>';
   _renderReorgBar();
+
+  // If the detail panel is open, refresh it with the latest rendered data
+  if (_binderDetailSpecies && $('binderDetailPanel')?.classList.contains('open')) {
+    _openBinderDetailRender(_binderDetailSpecies);
+  }
 }
 
-// Fetches fresh market prices for all binder cards using 3 concurrent workers.
+// ── Binder detail panel ───────────────────────────────────────────────────
+
+function openBinderDetail(species) {
+  _binderDetailSpecies = species;
+  if (!_binderBodyCache[species]) renderBinderPage();
+  _openBinderDetailRender(species);
+  const panel = $('binderDetailPanel');
+  const overlay = $('binderDetailOverlay');
+  if (panel) panel.classList.add('open');
+  if (overlay) overlay.classList.add('open');
+  if (panel) panel.scrollTop = 0;
+}
+
+function _openBinderDetailRender(species) {
+  const c = _binderBodyCache[species];
+  if (!c) return;
+  const { dexNum, tier, haveInGroup, total, bodyHtml, inlineActions, hasOverride } = c;
+  const numStr = isFinite(dexNum) ? '#' + String(dexNum).padStart(4, '0') : '';
+  const el = id => document.getElementById(id);
+  if (el('binderDetailNum'))    el('binderDetailNum').textContent    = numStr;
+  if (el('binderDetailName'))   el('binderDetailName').textContent   = species;
+  if (el('binderDetailSub'))    el('binderDetailSub').textContent    = `${total} card${total !== 1 ? 's' : ''} · ${haveInGroup}/${total} have one`;
+  const statusEl = el('binderDetailStatus');
+  if (statusEl) {
+    statusEl.className   = `binder-detail-status ${tier === 0 ? 'need' : 'have'}`;
+    statusEl.textContent = tier === 0 ? 'Need' : 'Have one';
+  }
+  const sprite = el('binderDetailSprite');
+  if (sprite) {
+    if (isFinite(dexNum)) {
+      sprite.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dexNum}.png`;
+      sprite.style.display = '';
+    } else {
+      sprite.style.display = 'none';
+    }
+  }
+  if (el('binderDetailActions')) el('binderDetailActions').innerHTML = inlineActions || '';
+  if (el('binderDetailBody'))    el('binderDetailBody').innerHTML    = bodyHtml;
+  // Keep rename button's data-species in sync so _handleBinderClick finds it
+  const renameBtn = el('binderDetailRename');
+  if (renameBtn) renameBtn.dataset.species = species;
+}
+
+function closeBinderDetail() {
+  _binderDetailSpecies = null;
+  $('binderDetailPanel')?.classList.remove('open');
+  $('binderDetailOverlay')?.classList.remove('open');
+}
+
+// ── Fetches fresh market prices for all binder cards using 3 concurrent workers.
 // Price cells update in-place as each card arrives; full re-render fires at the end.
 // Collectrics (grading data) is skipped — only PC + TCGPlayer needed for binder prices.
 async function binderFetchAllPrices(btn, { silent = false } = {}) {
