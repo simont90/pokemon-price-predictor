@@ -10128,10 +10128,6 @@ html { scroll-behavior: smooth; }
 .compare-card-img,
 .alert-item-img,
 .dupe-card-thumb,
-.binder-pg-img {
-  image-rendering: -webkit-optimize-contrast;
-}
-
 /* ── Tabular numerics on all money / stat displays ── */
 .lp-val { font-variant-numeric: tabular-nums; }
 .home-grading-raw { font-variant-numeric: tabular-nums; }

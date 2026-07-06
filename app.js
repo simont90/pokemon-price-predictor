@@ -226,11 +226,21 @@ function getCardImg(card) {
     const num = parts.slice(1).join('-');
     return `https://assets.tcgdex.net/ja/S/${setCode}/${num}/high.png`;
   }
-  // EN cards: pokemontcg.io format — {setCode}-{num} -> /images/{setCode}/{num}.png
-  // If there's no setCode (user-added cards), the constructed URL would be
-  // broken (`/images/pokemontcg.io//003.png`). Show the placeholder instead.
+  // EN cards: pokemontcg.io _hires.png — 734×1024 px, crisp on Retina.
+  // The standard .png (245×342 px) looks blurry at the 440 px display height
+  // on 2× screens; _hires avoids upscaling artifacts.
   if (!card.sc) return CARD_PLACEHOLDER_IMG;
-  return `https://images.pokemontcg.io/${card.sc}/${card.cn || card.ns || ''}.png`;
+  return `https://images.pokemontcg.io/${card.sc}/${card.cn || card.ns || ''}_hires.png`;
+}
+
+// Upgrade a stored pokemontcg.io standard-res URL to the hi-res variant.
+// Used for cards added before this change whose img was saved as .png.
+function _hiresUrl(url) {
+  if (!url) return url;
+  if (/^https?:\/\/images\.pokemontcg\.io\//.test(url) && !/_hires/.test(url)) {
+    return url.replace(/\.png(\?|$)/, '_hires.png$1');
+  }
+  return url;
 }
 
 // Background resolver for legacy bad img values (TCGC card-page URLs).
@@ -5239,7 +5249,7 @@ function renderPortfolio() {
     return `
       <div class="portfolio-item-card" data-id="${p.id}">
         <div class="portfolio-item" data-id="${p.id}">
-          ${p.img ? `<img class="portfolio-item-img" src="${p.img}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="portfolio-item-img"></div>'}
+          ${p.img ? `<img class="portfolio-item-img" src="${_hiresUrl(p.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="portfolio-item-img"></div>'}
           <div class="portfolio-item-info">
             <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}</div>
             <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}${isStale ? ' · <span class="stale-price-tag" title="Cached price (>1h old) — tap Refresh prices to update">cached</span>' : ''}</div>
@@ -5734,7 +5744,7 @@ function renderFullArtBinder() {
     const currentGBP = usdToGbp(currentUSD);
     return `
       <div class="binder-item ${b.owned ? 'binder-owned' : ''}" data-id="${b.id}">
-        ${b.img ? `<img class="wishlist-item-img" src="${b.img}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
+        ${b.img ? `<img class="wishlist-item-img" src="${_hiresUrl(b.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
         <div class="wishlist-item-info">
           <div class="wishlist-item-name">${esc(b.name)}</div>
           <div class="wishlist-item-meta"><span>${esc(b.set)}</span> <span class="lang-pill">${b.lang === 'JP' ? '\u{1F1EF}\u{1F1F5} JP' : '\u{1F1EC}\u{1F1E7} EN'}</span></div>
@@ -5851,7 +5861,7 @@ function renderBinderPage() {
     return `
       <div class="binder-pg-card${b.owned ? ' binder-pg-owned-card' : ''}" data-id="${b.id}">
         <div class="binder-pg-img-wrap">
-          ${b.img ? `<img class="binder-pg-img" src="${b.img}" alt="" loading="lazy" onerror="this.style.display='none'">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
+          ${b.img ? `<img class="binder-pg-img" src="${_hiresUrl(b.img)}" alt="" loading="lazy" onerror="this.style.display='none'">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
           ${langPill}
         </div>
         <div class="binder-pg-card-info">
@@ -6210,7 +6220,7 @@ function renderWishlist() {
     return `
       <div class="wishlist-item-card ${rowClass}" data-id="${w.id}">
         <div class="wishlist-item ${rowClass}" data-id="${w.id}">
-          ${w.img ? `<img class="wishlist-item-img" src="${w.img}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
+          ${w.img ? `<img class="wishlist-item-img" src="${_hiresUrl(w.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="wishlist-item-img"></div>'}
           <div class="wishlist-item-info">
             <div class="wishlist-item-name">${esc(w.name)}</div>
             <div class="wishlist-item-meta">
@@ -6429,7 +6439,7 @@ function renderCompareSlot(idx, slot, other, verdict) {
       <button class="compare-slot-remove" data-slot="${idx}" title="Remove">✕</button>
       <div class="compare-slot-label">Slot ${slotLabel} · ${slot.lang === 'JP' ? '🇯🇵 Japanese' : '🇬🇧 English'}</div>
       <div class="compare-card-row">
-        ${slot.img ? `<img class="compare-card-img" src="${slot.img}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="compare-card-img"></div>'}
+        ${slot.img ? `<img class="compare-card-img" src="${_hiresUrl(slot.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="compare-card-img"></div>'}
         <div class="compare-card-info">
           <div class="compare-card-name">${esc(slot.name)}</div>
           <div class="compare-card-meta">${esc(slot.set)}${slot.cn ? ` · #${slot.cn}` : ''}${slot.rc ? ` · ${slot.rc}` : ''}</div>
@@ -9558,7 +9568,7 @@ function renderAlertsList() {
     const reasons = a.reasons.length ? `<div class="alert-reasons">${a.reasons.map(r => `<span>${esc(r)}</span>`).join(' · ')}</div>` : '';
     return `
       <div class="alert-item" data-id="${a.id}">
-        ${a.img ? `<img class="alert-item-img" src="${a.img}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="alert-item-img"></div>'}
+        ${a.img ? `<img class="alert-item-img" src="${_hiresUrl(a.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : '<div class="alert-item-img"></div>'}
         <div class="alert-item-info">
           <div class="alert-item-name">${esc(a.name)} ${a.lang === 'JP' ? '<span class="lang-pill">🇯🇵 JP</span>' : ''}</div>
           <div class="alert-item-meta"><span>${esc(a.set)}</span> ${dropStr}</div>
@@ -16496,8 +16506,9 @@ function _setupHomePip() {
 }
 
 function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass, subText, opts = {}) {
-  const img = imgUrl
-    ? `<img class="home-card-art" src="${imgUrl}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+  const hiresImgUrl = _hiresUrl(imgUrl);
+  const img = hiresImgUrl
+    ? `<img class="home-card-art" src="${hiresImgUrl}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
     : `<div class="home-card-art"></div>`;
   const signal = signalClass && signalLabel
     ? `<span class="home-card-signal ${signalClass}">${signalLabel}</span>`
@@ -16509,7 +16520,7 @@ function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass
   // PiP + new-tab buttons only for real card IDs (not listing URLs)
   const isRealCard = !opts.dealUrl && id && !id.startsWith('http');
   const pipBtn = isRealCard
-    ? `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgUrl || '')}" aria-label="Quick view" title="Quick view">⤢</button>`
+    ? `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(hiresImgUrl || '')}" aria-label="Quick view" title="Quick view">⤢</button>`
     : '';
   const newTabBtn = isRealCard
     ? `<a class="home-card-newtab" href="?card=${esc(id)}" target="_blank" rel="noopener" title="Open in new tab">↗</a>`
