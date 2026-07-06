@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260706r">
+  <link rel="stylesheet" href="style.css?v=20260706s">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2052,9 +2052,11 @@
             <option value="az">A–Z</option>
           </select>
           <button class="binder-pg-refresh-btn" id="binderRefreshPricesBtn" type="button">Refresh prices</button>
+          <button class="binder-pg-reorg-btn" id="binderReorgBtn" type="button">Move cards</button>
           <button class="binder-pg-add-btn" id="binderPageAddBtn" type="button">+ Find a card</button>
         </div>
       </div>
+      <div id="binderReorgBar" class="binder-reorg-bar" style="display:none"></div>
       <div id="binderPageContent" class="binder-page-content"></div>
     </div><!-- /#pageBinder -->
 
@@ -2473,7 +2475,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260706r"></script>
+  <script src="app.js?v=20260706s"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

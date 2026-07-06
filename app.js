@@ -5499,6 +5499,64 @@ function clearBinderPairing(id) {
   saveBinderPairings();
 }
 
+// Reorganise mode — multi-select cards to move them into a different species group.
+let _binderReorgMode = false;
+const _binderReorgSelected = new Set();
+
+function _binderReorgGroups() {
+  const groups = {};
+  for (const b of fullArtBinder) {
+    const sp = binderSpeciesOverrides[b.id] || speciesOf(b.name);
+    if (!groups[sp]) groups[sp] = true;
+  }
+  return Object.keys(groups).sort((a, b) => a.localeCompare(b));
+}
+
+function _moveSelectedToGroup(targetGroup) {
+  if (!targetGroup || !_binderReorgSelected.size) return;
+  for (const id of _binderReorgSelected) {
+    binderSpeciesOverrides[id] = targetGroup;
+  }
+  saveBinderSpeciesOverrides();
+  _binderReorgSelected.clear();
+  _binderReorgMode = false;
+  renderBinderPage();
+}
+
+function _renderReorgBar() {
+  const bar = document.getElementById('binderReorgBar');
+  if (!bar) return;
+  if (!_binderReorgMode) { bar.style.display = 'none'; return; }
+  const groups = _binderReorgGroups();
+  const count = _binderReorgSelected.size;
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <span class="breorg-count">${count} card${count !== 1 ? 's' : ''} selected</span>
+    <select class="breorg-select" id="breorgTarget">
+      <option value="">— Move to group —</option>
+      ${groups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
+      <option value="__new__">+ New group…</option>
+    </select>
+    <button class="breorg-move" id="breorgMoveBtn">Move</button>
+    <button class="breorg-cancel" id="breorgCancelBtn">Cancel</button>
+  `;
+  document.getElementById('breorgMoveBtn').onclick = () => {
+    const sel = document.getElementById('breorgTarget');
+    let target = sel.value;
+    if (!target) return;
+    if (target === '__new__') {
+      target = prompt('New group name:')?.trim();
+      if (!target) return;
+    }
+    _moveSelectedToGroup(target);
+  };
+  document.getElementById('breorgCancelBtn').onclick = () => {
+    _binderReorgSelected.clear();
+    _binderReorgMode = false;
+    renderBinderPage();
+  };
+}
+
 function setupWishlist() {
   $('wishlistToggle').addEventListener('click', () => toggleSidePanel('wishlistPanel'));
   $('wishlistClose').addEventListener('click', () => { $('wishlistPanel').style.display = 'none'; });
@@ -5555,6 +5613,15 @@ function setupFullArtBinder() {
 
   // "Find a card" button on binder page → jump to Predict search
   $('binderPageAddBtn')?.addEventListener('click', () => go('predict'));
+
+  // "Move cards" button — toggle reorganise mode
+  $('binderReorgBtn')?.addEventListener('click', () => {
+    _binderReorgMode = !_binderReorgMode;
+    _binderReorgSelected.clear();
+    const btn = $('binderReorgBtn');
+    if (btn) btn.classList.toggle('active', _binderReorgMode);
+    renderBinderPage();
+  });
 
   // Background price refresh for all binder cards
   $('binderRefreshPricesBtn')?.addEventListener('click', function() { binderFetchAllPrices(this); });
@@ -5652,6 +5719,32 @@ function setupFullArtBinder() {
         }
         saveBinderSpeciesOverrides();
         renderBinderPage();
+        return;
+      }
+
+      // Reorganise mode — checkbox toggle
+      if (_binderReorgMode) {
+        const card = e.target.closest('.binder-pg-card[data-id]');
+        if (card && !e.target.closest('.breorg-cb')) {
+          // clicking the card tile (not the checkbox itself) also toggles selection
+          const id = card.dataset.id;
+          if (_binderReorgSelected.has(id)) _binderReorgSelected.delete(id);
+          else _binderReorgSelected.add(id);
+          card.classList.toggle('breorg-selected', _binderReorgSelected.has(id));
+          _renderReorgBar();
+          return;
+        }
+      }
+      const reorgCb = e.target.closest('.breorg-cb');
+      if (reorgCb) {
+        e.stopPropagation();
+        const id = reorgCb.dataset.id;
+        if (_binderReorgSelected.has(id)) _binderReorgSelected.delete(id);
+        else _binderReorgSelected.add(id);
+        reorgCb.classList.toggle('checked', _binderReorgSelected.has(id));
+        const card = pageContent.querySelector(`.binder-pg-card[data-id="${CSS.escape(id)}"]`);
+        if (card) card.classList.toggle('breorg-selected', _binderReorgSelected.has(id));
+        _renderReorgBar();
         return;
       }
 
@@ -6083,11 +6176,15 @@ function renderBinderPage() {
       ? '<div class="binder-pg-upgrade-tag">Have one — targeting this for upgrade</div>' : '';
     const completeBtn = st === 'have'
       ? `<button class="binder-pg-complete" data-id="${b.id}" title="Got the upgrade — remove from binder project">✓ Got the upgrade</button>` : '';
+    const isSelected = _binderReorgSelected.has(b.id);
+    const reorgCb = _binderReorgMode
+      ? `<span class="breorg-cb${isSelected ? ' checked' : ''}" data-id="${b.id}" title="Select to move"></span>`
+      : '';
     return `
-      <div class="binder-pg-card${(b.owned || b.upgrade) ? ' binder-pg-owned-card' : ''}" data-id="${b.id}" draggable="true">
+      <div class="binder-pg-card${(b.owned || b.upgrade) ? ' binder-pg-owned-card' : ''}${isSelected ? ' breorg-selected' : ''}" data-id="${b.id}" draggable="${!_binderReorgMode}">
         <div class="binder-pg-img-wrap">
           ${imgSrc ? `<img class="binder-pg-img" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
-          ${langPill}
+          ${langPill}${reorgCb}
         </div>
         <div class="binder-pg-card-info">
           <div class="binder-pg-card-name">${esc(b.name)}</div>
@@ -6249,6 +6346,7 @@ function renderBinderPage() {
   }
 
   container.innerHTML = html;
+  _renderReorgBar();
 }
 
 // Fetches fresh market prices for all binder cards using 3 concurrent workers.
@@ -18906,6 +19004,8 @@ function syncApplyPayload(payload, mode) {
     if (typeof compareSlots !== 'undefined') compareSlots = JSON.parse(localStorage.getItem('pkm-compare') || '[null, null]');
     if (typeof watchlist !== 'undefined') watchlist = JSON.parse(localStorage.getItem('pkm-watchlist-v1') || '[]');
     if (typeof acquisitions !== 'undefined') acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}');
+    if (typeof binderSpeciesOverrides !== 'undefined') binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species-overrides-v1') || '{}');
+    if (typeof binderPairings !== 'undefined') binderPairings = JSON.parse(localStorage.getItem('pkm-binder-pairings-v1') || '{}');
   } catch {}
   // Re-inject user-added cards that arrived from another device, then rebuild
   // the search index so they appear immediately without a page reload.
@@ -18920,6 +19020,7 @@ function syncApplyPayload(payload, mode) {
   try { typeof renderPortfolio    === 'function' && renderPortfolio();    } catch {}
   try { typeof renderWishlist        === 'function' && renderWishlist();        } catch {}
   try { typeof renderFullArtBinder   === 'function' && renderFullArtBinder();   } catch {}
+  try { typeof renderBinderPage      === 'function' && renderBinderPage();      } catch {}
   try { typeof renderCompare         === 'function' && renderCompare();         } catch {}
   try { typeof renderWatchlist    === 'function' && renderWatchlist();    } catch {}
   try { typeof renderAlerts       === 'function' && renderAlerts();       } catch {}
