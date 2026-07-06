@@ -5423,6 +5423,13 @@ function drawPortfolioGrowthChart() {
 let wishlist = JSON.parse(localStorage.getItem('pkm-wishlist') || '[]');
 
 let fullArtBinder = JSON.parse(localStorage.getItem('pkm-fullart-binder-v1') || '[]');
+// Per-card species overrides — keyed by card ID, value is the override species string.
+// Synced (pkm- prefix), so corrections carry across devices.
+let binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species-overrides-v1') || '{}');
+
+function saveBinderSpeciesOverrides() {
+  localStorage.setItem('pkm-binder-species-overrides-v1', JSON.stringify(binderSpeciesOverrides));
+}
 
 function setupWishlist() {
   $('wishlistToggle').addEventListener('click', () => toggleSidePanel('wishlistPanel'));
@@ -5542,6 +5549,29 @@ function setupFullArtBinder() {
         saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
         return;
       }
+      const editBtn = e.target.closest('.binder-species-edit');
+      if (editBtn) {
+        e.stopPropagation();
+        const currentSpecies = editBtn.dataset.species;
+        const ids = fullArtBinder
+          .filter(b => (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === currentSpecies)
+          .map(b => b.id);
+        const newName = prompt(
+          `Rename "${currentSpecies}" to:\n(Leave blank to reset to auto-detect)`,
+          currentSpecies
+        );
+        if (newName === null) return; // cancelled
+        const trimmed = newName.trim();
+        if (trimmed === '') {
+          ids.forEach(id => delete binderSpeciesOverrides[id]);
+        } else if (trimmed !== currentSpecies) {
+          ids.forEach(id => { binderSpeciesOverrides[id] = trimmed; });
+        }
+        saveBinderSpeciesOverrides();
+        renderBinderPage();
+        return;
+      }
+
       const card = e.target.closest('.binder-pg-card[data-id]');
       if (card && !e.target.closest('button')) {
         const id = card.dataset.id;
@@ -5701,6 +5731,18 @@ function renderFullArtBinder() {
   list.innerHTML = items.join('');
 }
 
+// Extract the species name from a card name (Gen 1/2 edge cases handled).
+// Lives at module level so it can be called from event handlers as well as renderBinderPage.
+function speciesOf(name) {
+  if (!name) return 'Unknown';
+  if (/^mr\.?\s*mime/i.test(name)) return 'Mr. Mime';
+  if (/^farfetch.d/i.test(name)) return "Farfetch'd";
+  if (/^ho.oh/i.test(name)) return 'Ho-Oh';
+  if (/^nidoran[♀♂]/i.test(name)) return 'Nidoran';
+  if (/^mime\s+jr/i.test(name)) return 'Mime Jr.';
+  return name.trim().split(/\s+/)[0];
+}
+
 function renderBinderPage() {
   const container = $('binderPageContent');
   if (!container) return;
@@ -5733,21 +5775,10 @@ function renderBinderPage() {
     return usdToGbp(usd || 0);
   }
 
-  // Extract species name from card name (Gen 1/2 edge cases handled)
-  function speciesOf(name) {
-    if (!name) return 'Unknown';
-    if (/^mr\.?\s*mime/i.test(name)) return 'Mr. Mime';
-    if (/^farfetch.d/i.test(name)) return "Farfetch'd";
-    if (/^ho.oh/i.test(name)) return 'Ho-Oh';
-    if (/^nidoran[♀♂]/i.test(name)) return 'Nidoran';
-    if (/^mime\s+jr/i.test(name)) return 'Mime Jr.';
-    return name.trim().split(/\s+/)[0];
-  }
-
-  // Group by species
+  // Group by species (override wins over auto-detect)
   const groups = {};
   for (const b of fullArtBinder) {
-    const sp = speciesOf(b.name);
+    const sp = binderSpeciesOverrides[b.id] || speciesOf(b.name);
     if (!groups[sp]) groups[sp] = [];
     groups[sp].push(b);
   }
@@ -5931,11 +5962,13 @@ function renderBinderPage() {
       : tier === 1
       ? '<span class="binder-species-check binder-check-upgrade" title="Have one — hunting upgrade">◑</span>'
       : '<span class="binder-species-check binder-check-need" title="No card in place"></span>';
+    const hasOverride = items.some(b => binderSpeciesOverrides[b.id]);
     html += `
-      <details class="binder-species-group${tier === 0 ? ' binder-needs-card' : ''}" open>
+      <details class="binder-species-group${tier === 0 ? ' binder-needs-card' : ''}" data-species="${esc(species)}" open>
         <summary class="binder-species-summary">
           <svg class="binder-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          ${checkIcon}${dexBadge}<span class="binder-species-name">${esc(species)}</span>
+          ${checkIcon}${dexBadge}<span class="binder-species-name">${esc(species)}</span>${hasOverride ? '<span class="binder-species-override-dot" title="Name overridden">·</span>' : ''}
+          <button class="binder-species-edit" data-species="${esc(species)}" title="Rename species group">✎</button>
           ${prioBadge}<span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${ownedInGroup}/${items.length} owned${upgradingInGroup ? ` · ${upgradingInGroup} upgrading` : ''}</span>
         </summary>
         <div class="binder-species-body">${bodyHtml}</div>
