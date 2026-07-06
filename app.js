@@ -5523,39 +5523,7 @@ function _moveSelectedToGroup(targetGroup) {
   renderBinderPage();
 }
 
-function _renderReorgBar() {
-  const bar = document.getElementById('binderReorgBar');
-  if (!bar) return;
-  if (!_binderReorgMode) { bar.style.display = 'none'; return; }
-  const groups = _binderReorgGroups();
-  const count = _binderReorgSelected.size;
-  bar.style.display = 'flex';
-  bar.innerHTML = `
-    <span class="breorg-count">${count} card${count !== 1 ? 's' : ''} selected</span>
-    <select class="breorg-select" id="breorgTarget">
-      <option value="">— Move to group —</option>
-      ${groups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
-      <option value="__new__">+ New group…</option>
-    </select>
-    <button class="breorg-move" id="breorgMoveBtn">Move</button>
-    <button class="breorg-cancel" id="breorgCancelBtn">Cancel</button>
-  `;
-  document.getElementById('breorgMoveBtn').onclick = () => {
-    const sel = document.getElementById('breorgTarget');
-    let target = sel.value;
-    if (!target) return;
-    if (target === '__new__') {
-      target = prompt('New group name:')?.trim();
-      if (!target) return;
-    }
-    _moveSelectedToGroup(target);
-  };
-  document.getElementById('breorgCancelBtn').onclick = () => {
-    _binderReorgSelected.clear();
-    _binderReorgMode = false;
-    renderBinderPage();
-  };
-}
+function _renderReorgBar() { /* no-op — actions now inline in group headers */ }
 
 function setupWishlist() {
   $('wishlistToggle').addEventListener('click', () => toggleSidePanel('wishlistPanel'));
@@ -5613,15 +5581,6 @@ function setupFullArtBinder() {
 
   // "Find a card" button on binder page → jump to Predict search
   $('binderPageAddBtn')?.addEventListener('click', () => go('predict'));
-
-  // "Move cards" button — toggle reorganise mode
-  $('binderReorgBtn')?.addEventListener('click', () => {
-    _binderReorgMode = !_binderReorgMode;
-    _binderReorgSelected.clear();
-    const btn = $('binderReorgBtn');
-    if (btn) btn.classList.toggle('active', _binderReorgMode);
-    renderBinderPage();
-  });
 
   // Background price refresh for all binder cards
   $('binderRefreshPricesBtn')?.addEventListener('click', function() { binderFetchAllPrices(this); });
@@ -5722,29 +5681,58 @@ function setupFullArtBinder() {
         return;
       }
 
-      // Reorganise mode — checkbox toggle
-      if (_binderReorgMode) {
-        const card = e.target.closest('.binder-pg-card[data-id]');
-        if (card && !e.target.closest('.breorg-cb')) {
-          // clicking the card tile (not the checkbox itself) also toggles selection
-          const id = card.dataset.id;
-          if (_binderReorgSelected.has(id)) _binderReorgSelected.delete(id);
-          else _binderReorgSelected.add(id);
-          card.classList.toggle('breorg-selected', _binderReorgSelected.has(id));
-          _renderReorgBar();
-          return;
-        }
-      }
+      // Checkbox — select card for move/link actions
       const reorgCb = e.target.closest('.breorg-cb');
       if (reorgCb) {
         e.stopPropagation();
         const id = reorgCb.dataset.id;
         if (_binderReorgSelected.has(id)) _binderReorgSelected.delete(id);
         else _binderReorgSelected.add(id);
-        reorgCb.classList.toggle('checked', _binderReorgSelected.has(id));
-        const card = pageContent.querySelector(`.binder-pg-card[data-id="${CSS.escape(id)}"]`);
-        if (card) card.classList.toggle('breorg-selected', _binderReorgSelected.has(id));
-        _renderReorgBar();
+        renderBinderPage();
+        return;
+      }
+
+      // Inline Move button — move selected cards from this group to chosen group
+      const inlineMoveBtn = e.target.closest('.breorg-inline-move');
+      if (inlineMoveBtn) {
+        e.stopPropagation();
+        const species = inlineMoveBtn.dataset.species;
+        const detailsEl = inlineMoveBtn.closest('.binder-species-group');
+        const sel = detailsEl?.querySelector('.breorg-inline-select');
+        let target = sel?.value;
+        if (!target) return;
+        if (target === '__new__') {
+          target = prompt('New group name:')?.trim();
+          if (!target) return;
+        }
+        for (const id of [..._binderReorgSelected]) {
+          const b = fullArtBinder.find(x => x.id === id);
+          if (!b) continue;
+          const bSp = binderSpeciesOverrides[b.id] || speciesOf(b.name);
+          if (bSp === species) { binderSpeciesOverrides[id] = target; _binderReorgSelected.delete(id); }
+        }
+        saveBinderSpeciesOverrides();
+        renderBinderPage();
+        return;
+      }
+
+      // Inline Link button — force-pair exactly 2 selected cards
+      const inlineLinkBtn = e.target.closest('.breorg-inline-link');
+      if (inlineLinkBtn) {
+        e.stopPropagation();
+        const ids = [..._binderReorgSelected];
+        if (ids.length !== 2) return;
+        _binderReorgSelected.clear();
+        _triggerBinderPair(ids[0], ids[1]);
+        return;
+      }
+
+      // Inline Clear button — deselect all
+      const inlineClearBtn = e.target.closest('.breorg-inline-clear');
+      if (inlineClearBtn) {
+        e.stopPropagation();
+        _binderReorgSelected.clear();
+        renderBinderPage();
         return;
       }
 
@@ -6179,11 +6167,9 @@ function renderBinderPage() {
     const completeBtn = st === 'have'
       ? `<button class="binder-pg-complete" data-id="${b.id}" title="Got the upgrade — remove from binder project">✓ Got the upgrade</button>` : '';
     const isSelected = _binderReorgSelected.has(b.id);
-    const reorgCb = _binderReorgMode
-      ? `<span class="breorg-cb${isSelected ? ' checked' : ''}" data-id="${b.id}" title="Select to move"></span>`
-      : '';
+    const reorgCb = `<span class="breorg-cb${isSelected ? ' checked' : ''}" data-id="${b.id}" title="Select card"></span>`;
     return `
-      <div class="binder-pg-card${(b.owned || b.upgrade) ? ' binder-pg-owned-card' : ''}${isSelected ? ' breorg-selected' : ''}" data-id="${b.id}" draggable="${!_binderReorgMode}">
+      <div class="binder-pg-card${(b.owned || b.upgrade) ? ' binder-pg-owned-card' : ''}${isSelected ? ' breorg-selected' : ''}" data-id="${b.id}" draggable="true">
         <div class="binder-pg-img-wrap">
           ${imgSrc ? `<img class="binder-pg-img" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
           ${langPill}${reorgCb}
@@ -6335,6 +6321,28 @@ function renderBinderPage() {
       ? `<span class="binder-species-price-badge">£${groupPrice[species].toFixed(2)}</span>`
       : '';
     const hasOverride = items.some(b => binderSpeciesOverrides[b.id]);
+
+    // Inline selection actions — appear next to species name when cards are selected
+    const groupSelectedIds = items.map(b => b.id).filter(id => _binderReorgSelected.has(id));
+    const totalSelected = _binderReorgSelected.size;
+    let inlineActions = '';
+    if (groupSelectedIds.length > 0) {
+      const otherGroups = _binderReorgGroups().filter(g => g !== species);
+      const showLink = totalSelected === 2;
+      inlineActions = `
+        <span class="binder-inline-sel">
+          <span class="breorg-sel-count">${groupSelectedIds.length} selected</span>
+          <select class="breorg-inline-select">
+            <option value="">Move to…</option>
+            ${otherGroups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
+            <option value="__new__">+ New group</option>
+          </select>
+          <button class="breorg-inline-move" data-species="${esc(species)}">Move</button>
+          ${showLink ? `<button class="breorg-inline-link">Link</button>` : ''}
+          <button class="breorg-inline-clear">✕</button>
+        </span>`;
+    }
+
     html += `
       <details class="binder-species-group${tier === 0 ? ' binder-needs-card' : ''}" data-species="${esc(species)}" open>
         <summary class="binder-species-summary">
@@ -6342,6 +6350,7 @@ function renderBinderPage() {
           ${dexBadge}<span class="binder-species-name">${esc(species)}</span>${hasOverride ? '<span class="binder-species-override-dot" title="Name overridden">·</span>' : ''}
           <button class="binder-species-edit" data-species="${esc(species)}" title="Rename species group">✎</button>
           ${statusBtn}${priceBadge}<span class="binder-species-meta">${items.length} card${items.length !== 1 ? 's' : ''} · ${haveInGroup}/${items.length} have one</span>
+          ${inlineActions}
         </summary>
         <div class="binder-species-body">${bodyHtml}</div>
       </details>`;
