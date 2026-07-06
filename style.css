@@ -11364,8 +11364,43 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
    ══════════════════════════════════════════════════════════════════════ */
 
 .vg-page-hd { margin: 6px 0 16px; }
+.vg-page-hd-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .vg-page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
 .vg-page-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+/* EN / JP language toggle */
+.vg-lang-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  border: 1px solid rgba(128,128,128,.2);
+  background: rgba(128,128,128,.06);
+  flex-shrink: 0;
+}
+.vg-lang-btn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: 700 12px/1 var(--font-ui, 'Space Grotesk', sans-serif);
+  letter-spacing: .04em;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.vg-lang-btn.vg-lang-active { background: var(--accent, #e8b634); color: #000; }
+
+/* JP no-price notice */
+.vg-jp-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px solid rgba(232,182,52,.25);
+  background: rgba(232,182,52,.06);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
 
 /* Set chips */
 .vg-set-chips {

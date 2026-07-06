@@ -19675,6 +19675,8 @@ const VINTAGE_CUTOFF = '2003/07';       // everything before EX Ruby & Sapphire
 const VINTAGE_GRADES = [10, 9, 8, 7, 6, 5];
 
 let _vgSelectedSet = 'base1';
+let _vgSelectedSetJP = 'neo1';
+let _vgLang = 'en';
 let _vgSort = 'num';
 
 function _vintageSets() {
@@ -19683,6 +19685,37 @@ function _vintageSets() {
     .filter(([, s]) => (s.releaseDate || '9999') < VINTAGE_CUTOFF)
     .sort((a, b) => (a[1].releaseDate || '').localeCompare(b[1].releaseDate || ''))
     .map(([code, s]) => ({ code, name: s.name, releaseDate: s.releaseDate || '', total: s.total || 0 }));
+}
+
+// JP vintage sets listed in release order with approximate JP release dates.
+// Names are derived at runtime from the first card found for each set code.
+const VINTAGE_JP_SET_ORDER = [
+  { code: 'neo1',  date: '2000/04' },
+  { code: 'VS1',   date: '2000/11' },
+  { code: 'neo2',  date: '2001/03' },
+  { code: 'neo3',  date: '2001/07' },
+  { code: 'web1',  date: '2001/08' },
+  { code: 'E1',    date: '2001/12' },
+  { code: 'E2',    date: '2002/03' },
+  { code: 'neo4',  date: '2002/04' },
+  { code: 'E3',    date: '2002/06' },
+  { code: 'M1S',   date: '2002/07' },
+  { code: 'E4',    date: '2002/09' },
+  { code: 'E5',    date: '2002/12' },
+  { code: 'M3',    date: '2003/03' },
+  { code: 'PCG1',  date: '2003/09' },
+  { code: 'PCG2',  date: '2003/11' },
+];
+
+function _vintageJPSets() {
+  if (!searchIndex || !searchIndex.length) return [];
+  const firstCard = new Map();
+  for (const c of searchIndex) {
+    if (c.lang === 'JP' && !firstCard.has(c.sc)) firstCard.set(c.sc, c);
+  }
+  return VINTAGE_JP_SET_ORDER
+    .filter(({ code }) => firstCard.has(code))
+    .map(({ code, date }) => ({ code, name: firstCard.get(code).s || code, releaseDate: date, total: 0 }));
 }
 
 function _vgLoad() {
@@ -19696,7 +19729,8 @@ function _vgSave(d) { localStorage.setItem(VINTAGE_KEY, JSON.stringify(d)); }
 
 function _vgSetCards(setCode) {
   if (!searchIndex || !searchIndex.length) return [];
-  return searchIndex.filter(c => c.sc === setCode);
+  const wantJP = _vgLang === 'jp';
+  return searchIndex.filter(c => c.sc === setCode && (wantJP ? c.lang === 'JP' : c.lang !== 'JP'));
 }
 
 // PSA price ladder for one card, in GBP. Sources in preference order:
@@ -19845,7 +19879,8 @@ function _vgTargetsHTML(data) {
 function renderVintagePage() {
   const el = document.getElementById('pageVintage');
   if (!el) return;
-  const sets = _vintageSets();
+  const isJP = _vgLang === 'jp';
+  const sets = isJP ? _vintageJPSets() : _vintageSets();
   // Deep links can land here before the async card DB decode finishes —
   // show a loading state and retry while the page is still visible.
   if (!sets.length || !searchIndex || !searchIndex.length) {
@@ -19853,13 +19888,19 @@ function renderVintagePage() {
     setTimeout(() => { if (el.style.display !== 'none') renderVintagePage(); }, 400);
     return;
   }
-  if (!sets.some(s => s.code === _vgSelectedSet)) _vgSelectedSet = sets[0].code;
+  const selectedSet = isJP ? _vgSelectedSetJP : _vgSelectedSet;
+  if (!sets.some(s => s.code === selectedSet)) {
+    if (isJP) _vgSelectedSetJP = sets[0].code; else _vgSelectedSet = sets[0].code;
+  }
+  const activeSet = isJP ? _vgSelectedSetJP : _vgSelectedSet;
 
   const data = _vgLoad();
   const targetsBySet = {};
   for (const [id, t] of Object.entries(data.targets)) {
     const c = getCardById(id);
     if (c) {
+      const cIsJP = c.lang === 'JP';
+      if (cIsJP !== isJP) continue;
       if (!targetsBySet[c.sc]) targetsBySet[c.sc] = { total: 0, owned: 0 };
       targetsBySet[c.sc].total++;
       if (t.owned) targetsBySet[c.sc].owned++;
@@ -19870,33 +19911,46 @@ function renderVintagePage() {
     const year = s.releaseDate.slice(0, 4);
     const tg = targetsBySet[s.code];
     const prog = tg ? `<span class="vg-chip-prog">${tg.owned}/${tg.total}</span>` : '';
-    return `<button class="vg-set-chip ${s.code === _vgSelectedSet ? 'vg-chip-active' : ''}" data-vg-set="${esc(s.code)}">
+    return `<button class="vg-set-chip ${s.code === activeSet ? 'vg-chip-active' : ''}" data-vg-set="${esc(s.code)}">
       <span class="vg-chip-name">${esc(s.name)}</span>
       <span class="vg-chip-year">${year}</span>${prog}
     </button>`;
   }).join('');
 
-  let cards = _vgSetCards(_vgSelectedSet);
-  if (_vgSort === 'price')     cards = [...cards].sort((a, b) => (b.p || 0) - (a.p || 0));
-  else if (_vgSort === 'name') cards = [...cards].sort((a, b) => a.n.localeCompare(b.n));
+  let cards = _vgSetCards(activeSet);
+  if (_vgSort === 'price' && !isJP) cards = [...cards].sort((a, b) => (b.p || 0) - (a.p || 0));
+  else if (_vgSort === 'name')      cards = [...cards].sort((a, b) => a.n.localeCompare(b.n));
   else cards = [...cards].sort((a, b) => (parseInt(a.cn) || 9999) - (parseInt(b.cn) || 9999) || a.n.localeCompare(b.n));
 
-  const setInfo = sets.find(s => s.code === _vgSelectedSet);
+  const setInfo = sets.find(s => s.code === activeSet);
   const rows = cards.map(c => _vgCardRowHTML(c, data)).join('');
+  const subLine = isJP
+    ? 'Japanese WOTC-era sets · 2000 – 2003 · tap a card for its grade ladder'
+    : 'WOTC era 1999 – 2003 · PSA-first collecting · tap a card for its grade ladder';
+  const jpNote = isJP
+    ? '<div class="vg-jp-note">No price data in the DB for JP vintage. Expand a card and fetch live prices for estimates.</div>'
+    : '';
 
   el.innerHTML = `
     <div class="app vg-page">
       <div class="vg-page-hd">
-        <div class="vg-page-title">Vintage</div>
-        <div class="vg-page-sub">WOTC era 1999 – 2003 · PSA-first collecting · tap a card for its grade ladder</div>
+        <div class="vg-page-hd-top">
+          <div class="vg-page-title">Vintage</div>
+          <div class="vg-lang-toggle">
+            <button class="vg-lang-btn ${!isJP ? 'vg-lang-active' : ''}" data-vg-lang="en">EN</button>
+            <button class="vg-lang-btn ${isJP ? 'vg-lang-active' : ''}" data-vg-lang="jp">JP</button>
+          </div>
+        </div>
+        <div class="vg-page-sub">${subLine}</div>
       </div>
+      ${jpNote}
       ${_vgTargetsHTML(data)}
       <div class="vg-set-chips">${chips}</div>
       <div class="vg-set-bar">
         <span class="vg-set-title">${esc(setInfo?.name || '')} <span class="vg-set-count">${cards.length} cards</span></span>
         <select id="vgSortSel" class="binder-sort-sel">
           <option value="num" ${_vgSort === 'num' ? 'selected' : ''}>Set number</option>
-          <option value="price" ${_vgSort === 'price' ? 'selected' : ''}>Price high–low</option>
+          ${!isJP ? `<option value="price" ${_vgSort === 'price' ? 'selected' : ''}>Price high–low</option>` : ''}
           <option value="name" ${_vgSort === 'name' ? 'selected' : ''}>A–Z</option>
         </select>
       </div>
@@ -19923,9 +19977,17 @@ function _vgWire(el) {
   el._vgWired = true;
 
   el.addEventListener('click', e => {
+    // EN/JP language toggle
+    const langBtn = e.target.closest('[data-vg-lang]');
+    if (langBtn) { _vgLang = langBtn.dataset.vgLang; renderVintagePage(); return; }
+
     // Set chip
     const chip = e.target.closest('[data-vg-set]');
-    if (chip) { _vgSelectedSet = chip.dataset.vgSet; renderVintagePage(); return; }
+    if (chip) {
+      if (_vgLang === 'jp') _vgSelectedSetJP = chip.dataset.vgSet;
+      else _vgSelectedSet = chip.dataset.vgSet;
+      renderVintagePage(); return;
+    }
 
     // Open in Predict
     const openBtn = e.target.closest('[data-vg-open]');
