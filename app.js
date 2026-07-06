@@ -281,7 +281,7 @@ async function _resolveLegacyTCGCImage(card) {
 }
 
 // ---- Live Pricing Cache (localStorage with TTL) ----
-const PRICE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const PRICE_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 const PRICE_CACHE_KEY = 'pkm-live-prices-v5'; // v5: adds ACE/CGC/BGS/TAG/SGC 10 anchors from PC full-grade table
 let _priceCache = null; // in-memory mirror; avoids JSON.parse on every getCachedPrice call
 // Computation caches — per-card, invalidated when that card's price data changes
@@ -2194,7 +2194,7 @@ async function fetchLivePrice(card) {
 }
 
 // Unified fetch: PriceCharting primary, TCGPlayer secondary for EN cards
-async function fetchFreshPriceData(card) {
+async function fetchFreshPriceData(card, { skipCollectrics = false } = {}) {
   let priceData = {
     source: 'pricecharting',
     market: 0, low: 0, mid: 0, high: 0, directLow: 0,
@@ -2291,12 +2291,14 @@ async function fetchFreshPriceData(card) {
     }
   }
 
-  // 3. Collectrics — additional grading data source for all cards
-  try {
-    const cr = await fetchCollectricsSearchData(card);
-    if (cr) Object.assign(priceData, cr);
-  } catch (e) {
-    // Silent — Collectrics is supplementary
+  // 3. Collectrics — additional grading data source (skipped in bulk refresh paths)
+  if (!skipCollectrics) {
+    try {
+      const cr = await fetchCollectricsSearchData(card);
+      if (cr) Object.assign(priceData, cr);
+    } catch (e) {
+      // Silent — Collectrics is supplementary
+    }
   }
 
   // 4. Manual TCGPlayer market price override — fills gap when no live data at all
@@ -5719,10 +5721,12 @@ function renderBinderPage() {
     return;
   }
 
-  // Get live or cached price in GBP for a binder item
+  // Get live or cached price in GBP for a binder item.
+  // Falls back to stale cache rather than static DB price — stale is almost always
+  // more accurate than card.p (which is 0 for most JP cards).
   function itemGBP(b) {
     const card = getCardById(b.id);
-    const cached = getCachedPrice(b.id);
+    const cached = getCachedPrice(b.id) || getLastKnownPrice(b.id);
     const usd = cached
       ? (cached.pcUngraded || cached.market || cached.mid || (card ? card.p : 0))
       : (card ? card.p : 0);
@@ -5934,41 +5938,65 @@ function renderBinderPage() {
   container.innerHTML = html;
 }
 
-// Fetches fresh market prices for every card in the binder, one at a time,
-// updating the price cells in-place as each one arrives. Full re-render at the end.
-async function binderFetchAllPrices(btn) {
+// Fetches fresh market prices for all binder cards using 3 concurrent workers.
+// Price cells update in-place as each card arrives; full re-render fires at the end.
+// Collectrics (grading data) is skipped — only PC + TCGPlayer needed for binder prices.
+async function binderFetchAllPrices(btn, { silent = false } = {}) {
   if (btn.dataset.running === 'true') return;
   const ids = [...new Set(fullArtBinder.map(b => b.id))];
   const cards = ids.map(id => getCardById(id)).filter(Boolean);
   if (!cards.length) return;
 
   btn.dataset.running = 'true';
-  btn.disabled = true;
+  if (!silent) btn.disabled = true;
   const total = cards.length;
   let done = 0;
+  const queue = [...cards];
+  const binderEl = document.getElementById('pageBinder');
 
-  for (const card of cards) {
-    if (document.getElementById('pageBinder')?.style.display === 'none') break;
-    btn.textContent = `${done}/${total} fetched…`;
-    try {
-      const data = await fetchFreshPriceData(card);
-      if (data) {
-        setCachedPrice(card.i, data);
-        const usd = data.pcUngraded || data.market || data.mid || card.p || 0;
-        const gbp = usdToGbp(usd);
-        const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
-        document.querySelectorAll(`.binder-pg-card[data-id="${CSS.escape(card.i)}"] .binder-pg-card-price`)
-          .forEach(el => { el.textContent = priceStr; });
-      }
-    } catch (_) {}
-    done++;
-    await new Promise(r => setTimeout(r, 220));
+  function applyPrice(card, data) {
+    if (!data) return;
+    setCachedPrice(card.i, data);
+    const usd = data.pcUngraded || data.market || data.mid || card.p || 0;
+    const gbp = usdToGbp(usd);
+    const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
+    document.querySelectorAll(`.binder-pg-card[data-id="${CSS.escape(card.i)}"] .binder-pg-card-price`)
+      .forEach(el => { el.textContent = priceStr; });
   }
 
-  btn.textContent = 'Refresh prices';
-  btn.disabled = false;
+  async function worker() {
+    while (queue.length > 0) {
+      if (binderEl?.style.display === 'none') break;
+      const card = queue.shift();
+      if (!card) break;
+      if (!silent) btn.textContent = `${done}/${total} fetched…`;
+      try {
+        const data = await fetchFreshPriceData(card, { skipCollectrics: true });
+        applyPrice(card, data);
+      } catch (_) {}
+      done++;
+    }
+  }
+
+  // 3 concurrent workers — natural fetch latency (~1–2 s each) provides spacing
+  await Promise.all([worker(), worker(), worker()]);
+
+  if (!silent) {
+    btn.textContent = 'Refresh prices';
+    btn.disabled = false;
+  }
   delete btn.dataset.running;
   renderBinderPage();
+}
+
+// Auto-trigger a silent background refresh when the binder page opens,
+// but only for cards that have zero cached data (fresh or stale).
+function _binderAutoRefresh() {
+  const btn = $('binderRefreshPricesBtn');
+  if (!btn || btn.dataset.running === 'true') return;
+  const hasUncached = fullArtBinder.some(b => !getLastKnownPrice(b.id));
+  if (!hasUncached) return;
+  binderFetchAllPrices(btn, { silent: true });
 }
 
 function toggleCardInWishlist(id) {
@@ -17206,7 +17234,7 @@ function setupPageNav() {
       setTimeout(() => { try { urRunScan(); } catch (e) {} }, 100);
     }
     if (page === 'home') { renderHomeDashboard(); _homeAutoRefresh(); _syncOnHomeNav(); }
-    if (page === 'binder') { try { renderBinderPage(); } catch(e) {} }
+    if (page === 'binder') { try { renderBinderPage(); } catch(e) {} _binderAutoRefresh(); }
     if (page === 'tools') { try { updateToolsDupeBadge(); } catch(e) {} }
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
     if (page === 'vintage') { try { renderVintagePage(); } catch(e) {} }
