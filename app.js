@@ -552,12 +552,11 @@ async function init() {
   }
   updateAll();
   _setupHomePip();
-  // Kick off background price prefetch 2.5 s after init so cached prices are
-  // ready before the user opens the collection panel.
-  setTimeout(() => { try { _homeAutoRefresh(); } catch {} }, 2500);
-  // Global 7AM refresh: runs 5 s after init (after home refresh is underway)
-  // so the two don't compete for the same fetch slots on startup.
-  setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 5000);
+  // Kick off background price prefetch 800 ms after init — covers all tracked
+  // cards (portfolio + wishlist + watchlist + binder + previously cached).
+  setTimeout(() => { try { _homeAutoRefresh(); } catch {} }, 800);
+  // Global 7AM refresh: runs 3 s after init, after home refresh is underway.
+  setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 3000);
 }
 
 // Re-check the 7AM boundary whenever the tab regains focus — handles the case
@@ -6208,11 +6207,15 @@ function renderBinderPage() {
     const hasNeed = groups[sp].some(b => binderStatusOf(b) === 'need');
     groupTier[sp] = hasNeed ? 0 : 1;
   }
+  // Pre-compute pairs once per group — reused for price sort and rendering.
+  const groupPairs = {};
+  for (const sp of Object.keys(groups)) groupPairs[sp] = pairItems(groups[sp]);
+
   // Price per group: smart-pick card price (cheaper side of EN/JP pair, or solo).
   // Used for "price" sort — groups with no cached price go to the end.
   const groupPrice = {};
   for (const sp of Object.keys(groups)) {
-    const pairs = pairItems(groups[sp]);
+    const pairs = groupPairs[sp];
     let best = Infinity;
     for (const { en, jp } of pairs) {
       const enGBP = en ? itemGBP(en) : 0;
@@ -6240,7 +6243,7 @@ function renderBinderPage() {
   for (const species of sortedSpecies) {
     const items = groups[species];
     const haveInGroup = items.filter(b => b.owned || b.upgrade).length;
-    const pairs = pairItems(items);
+    const pairs = groupPairs[species];
     let bodyHtml = '';
 
     for (const pair of pairs) {
@@ -13092,7 +13095,7 @@ function renderHoldStrategy(card) {
 // refreshes run with a small concurrency limit so we don't hammer
 // PriceCharting / pokemontcg.io.
 
-const PRICE_SYNC_CONCURRENCY = 5;
+const PRICE_SYNC_CONCURRENCY = 8;
 const PRICE_SYNC_LAST_KEY = 'pkm-price-sync-last-v1';
 let _psState = { running: false, cancel: false, done: 0, total: 0 };
 
@@ -16635,7 +16638,7 @@ async function _homeAutoRefresh() {
   if (_psState.running || !cardData) return;
   const cache = getPriceCache();
   const now = Date.now();
-  const staleIds = psTrackedIds().filter(id => {
+  const staleIds = _allRefreshIds().filter(id => {
     const e = cache[id];
     return !e || (now - (e._ts || 0)) > PRICE_CACHE_TTL;
   });

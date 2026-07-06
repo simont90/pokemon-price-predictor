@@ -10127,8 +10127,25 @@ html { scroll-behavior: smooth; }
    (= 1024 physical px — a 1:1 source mapping) so the card is never
    upscaled beyond its source resolution. The media-query height overrides
    above this go up to 880 px, which causes significant blur on Retina. */
+/* On Retina / HiDPI: cap images at native resolution (1024px source ÷ 2 = 512px CSS)
+   so they never upscale past their source pixel count — keeps 5K and iPad crisp. */
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 2dppx) {
-  .card-thumb { max-height: 512px !important; }
+  .card-thumb        { max-height: 512px !important; }
+  .home-card-art     { max-height: 512px !important; }
+  .compare-card-img  { max-height: 512px !important; }
+}
+
+/* High-quality interpolation for all card images. Prevents pixelation on
+   any device where a slight upscale is unavoidable (e.g. non-standard DPR). */
+.card-thumb,
+.home-card-art,
+.compare-card-img,
+.binder-pg-img,
+.portfolio-item-img,
+.wishlist-item-img,
+.alert-item-img,
+.search-result-img {
+  image-rendering: auto;
 }
 .portfolio-item-img,
 .wishlist-item-img,
@@ -10211,15 +10228,19 @@ html { scroll-behavior: smooth; }
 .binder-inline-sel {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-left: 8px;
-  flex-wrap: wrap;
+  gap: 5px;
+  margin-left: 10px;
+  flex-wrap: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 .breorg-sel-count {
   font-size: 11px;
   color: var(--accent, #e8b634);
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .breorg-inline-select {
   font-size: 11px;
@@ -10229,14 +10250,17 @@ html { scroll-behavior: smooth; }
   background: var(--surface, #1e1e2e);
   color: var(--text);
   cursor: pointer;
-  max-width: 160px;
+  max-width: 140px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 .breorg-inline-move, .breorg-inline-link, .breorg-inline-clear {
   font-size: 11px;
-  padding: 3px 10px;
+  padding: 3px 9px;
   border-radius: 5px;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: background 0.15s;
 }
 .breorg-inline-move {
@@ -10255,8 +10279,13 @@ html { scroll-behavior: smooth; }
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
+  padding: 3px 6px;
 }
 .breorg-inline-clear:hover { color: var(--text); }
+@media (max-width: 480px) {
+  .binder-inline-sel { flex-wrap: wrap; margin-left: 0; margin-top: 4px; }
+  .breorg-inline-select { max-width: 100%; }
+}
 
 /* Checkbox overlay on card image in reorganise mode */
 .breorg-cb {
@@ -10266,15 +10295,22 @@ html { scroll-behavior: smooth; }
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  border: 2px solid rgba(255,255,255,0.6);
-  background: rgba(0,0,0,0.5);
+  border: 2px solid rgba(255,255,255,0.45);
+  background: rgba(0,0,0,0.45);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s, background 0.15s;
+  transition: opacity 0.15s, border-color 0.15s, background 0.15s;
+  opacity: 0;
 }
+/* Show on hover over the parent card */
+.binder-pg-card:hover .breorg-cb,
+.binder-pg-card.breorg-selected .breorg-cb { opacity: 1; }
+/* Always visible on touch devices */
+@media (hover: none) { .breorg-cb { opacity: 0.7; } }
 .breorg-cb.checked {
+  opacity: 1;
   border-color: var(--accent, #e8b634);
   background: var(--accent, #e8b634);
 }
@@ -10457,12 +10493,14 @@ html { scroll-behavior: smooth; }
 .binder-species-summary {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 8px;
+  padding: 12px 16px;
   cursor: pointer;
   list-style: none;
   user-select: none;
   border-radius: 14px;
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 .binder-species-summary::-webkit-details-marker { display: none; }
 [data-theme="dark"] .binder-species-summary { border-bottom: 1px solid rgba(255,255,255,0.06); }
@@ -10575,15 +10613,16 @@ html { scroll-behavior: smooth; }
   height: 84px;
 }
 .binder-pg-img {
-  width: 60px;
-  height: 84px;
-  object-fit: cover;
+  width: 76px;
+  height: 106px;
+  object-fit: contain;
   border-radius: 5px;
   display: block;
+  background: rgba(255,255,255,0.03);
 }
 .binder-pg-img-ph {
-  width: 60px;
-  height: 84px;
+  width: 76px;
+  height: 106px;
   border-radius: 5px;
   background: rgba(255,255,255,0.06);
 }
