@@ -6700,34 +6700,76 @@ function renderBinderPage() {
     </div>`;
   }
 
-  // Flat all-cards view: every binder card in one list, sorted by price.
-  // Species grouping still ran above so the detail panel cache stays warm —
-  // tapping a row opens the same species panel as the grid cells.
+  // Flat all-cards view: all EN/JP pairs across all species, sorted by price.
+  // Reuses bdl-pair/bdl-row CSS so pairs display identically to the detail panel.
   if (sortMode === 'all-asc' || sortMode === 'all-desc') {
-    const flat = [];
+    // Collect pairs from every species in the filtered+sorted species list
+    const allPairs = [];
     for (const species of sortedSpecies) {
-      for (const b of groups[species]) flat.push({ b, species, gbp: _binderItemGBP(b) });
+      for (const pair of groupPairs[species]) {
+        const enGBP = pair.en ? _binderItemGBP(pair.en) : 0;
+        const jpGBP = pair.jp ? _binderItemGBP(pair.jp) : 0;
+        // Representative sort price: min of EN/JP if both present, else whichever exists
+        let price = 0;
+        if (enGBP > 0 && jpGBP > 0) price = Math.min(enGBP, jpGBP);
+        else price = enGBP || jpGBP;
+        allPairs.push({ pair, species, price, enGBP, jpGBP });
+      }
     }
-    flat.sort((x, y) => {
-      if ((x.gbp > 0) !== (y.gbp > 0)) return x.gbp > 0 ? -1 : 1; // unpriced last
-      return sortMode === 'all-asc' ? x.gbp - y.gbp : y.gbp - x.gbp;
+    allPairs.sort((a, b) => {
+      if ((a.price > 0) !== (b.price > 0)) return a.price > 0 ? -1 : 1; // unpriced last
+      return sortMode === 'all-asc' ? a.price - b.price : b.price - a.price;
     });
-    const flatHtml = flat.map(({ b, species, gbp }) => {
-      const st = binderStatusOf(b); // 'have' | 'need'
-      const stLabel = st === 'have' ? 'Have one' : 'Need it';
-      return `<div class="binder-flat-row" data-species="${esc(species)}" role="button" tabindex="0">
-        ${b.img ? `<img class="binder-flat-img" src="${esc(b.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="binder-flat-img"></div>'}
-        <div class="binder-flat-info">
-          <span class="binder-flat-name">${esc(b.name)}</span>
-          <span class="binder-flat-set">${esc(b.set)}</span>
-        </div>
-        <span class="binder-pg-lang ${b.lang === 'JP' ? 'jp' : 'en'}">${b.lang === 'JP' ? 'JP' : 'EN'}</span>
-        <span class="binder-flat-st binder-flat-st-${st}">${stLabel}</span>
-        <span class="binder-flat-price">${gbp > 0 ? fmtGBPDirect(gbp) : '—'}</span>
-      </div>`;
+
+    function flatCardRow(b, gbp, lang) {
+      if (!b) return '';
+      const liveCard = cardData?.cards?.find(c => c.i === b.id);
+      const imgSrc = liveCard ? _hiresUrl(getCardImg(liveCard)) : (b.img ? _hiresUrl(b.img) : null);
+      const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
+      const st = binderStatusOf(b);
+      const completeBtn = st === 'have'
+        ? `<button class="binder-pg-complete bdl-complete-btn" data-id="${b.id}" title="Got the upgrade — remove from binder">✓ Got the upgrade</button>` : '';
+      return `
+        <div class="bdl-row bdl-row-${lang}" data-id="${b.id}">
+          <span class="bdl-lang ${lang}">${lang.toUpperCase()}</span>
+          ${imgSrc ? `<img class="bdl-thumb" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="bdl-thumb bdl-thumb-ph"></div>'}
+          <div class="bdl-info">
+            <div class="bdl-name">${esc(b.name)}</div>
+            <div class="bdl-set">${esc(b.set)}</div>
+          </div>
+          <div class="bdl-price-col">
+            <div class="bdl-price">${priceStr}</div>
+          </div>
+          <div class="bdl-acts">
+            ${binderStatusBtn(b, 'binder-pg-owned bdl-status-btn')}
+            <button class="binder-pg-remove bdl-remove-btn" data-id="${b.id}" title="Remove from binder">✕</button>
+            <button class="bdl-view-btn" data-id="${b.id}" title="View card analysis">↗</button>
+          </div>
+          ${completeBtn}
+        </div>`;
+    }
+
+    const flatHtml = allPairs.map(({ pair, species, enGBP, jpGBP }) => {
+      const { en: enB, jp: jpB } = pair;
+      const enPriceStr = enGBP > 0 ? `£${enGBP.toFixed(2)}` : '—';
+      const jpPriceStr = jpGBP > 0 ? `£${jpGBP.toFixed(2)}` : '—';
+      const sumPrices = (enB ? `<span class="bdl-sp en">${enPriceStr}</span>` : '') +
+                        (jpB ? `<span class="bdl-sp jp">${jpPriceStr}</span>` : '');
+      return `
+        <details class="bdl-pair" open data-species="${esc(species)}">
+          <summary class="bdl-sum">
+            <svg class="bdl-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            <span class="bdl-sum-label">${esc(species)}</span>
+            <div class="bdl-sum-prices">${sumPrices}</div>
+          </summary>
+          <div class="bdl-body">
+            ${flatCardRow(enB, enGBP, 'en')}
+            ${flatCardRow(jpB, jpGBP, 'jp')}
+          </div>
+        </details>`;
     }).join('');
     container.innerHTML = '<div class="binder-flat-list">' +
-      (flatHtml || '<p class="binder-page-empty-sub" style="text-align:center;padding:24px">No cards match this filter.</p>') + '</div>';
+      (flatHtml || '<p class="bdl-empty" style="text-align:center;padding:24px">No cards match this filter.</p>') + '</div>';
   } else {
     container.innerHTML = '<div class="binder-dex-grid">' + html + '</div>';
   }
