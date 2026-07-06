@@ -19709,6 +19709,9 @@ function _vgLadder(card) {
   const base10  = pc10 || card.p10 || 0;
   const est10   = base10 > 0 ? base10 : rawUSD * 9;
   const liveByG = { 9: pd?.pcPsa9 || pd?.pcGrade9 || 0, 8: pd?.pcPsa8 || 0, 7: pd?.pcPsa7 || 0 };
+  // WOTC cards rarely have gem rate data — assume low-moderate (8%) so ratio estimates
+  // are more conservative: PSA 9 ~30% of 10, PSA 8 ~16% (rather than 35%/18%).
+  const vgCard = card.g != null ? card : { ...card, g: 0.08 };
   const ladder = VINTAGE_GRADES.map(g => {
     let usd, src;
     if (g === 10) {
@@ -19716,10 +19719,19 @@ function _vgLadder(card) {
     } else if (liveByG[g] > 0) {
       usd = liveByG[g]; src = 'pc';
     } else {
-      usd = est10 * _gemRateGradeRatio(card, g); src = 'est';
+      usd = est10 * _gemRateGradeRatio(vgCard, g); src = 'est';
     }
     return { g, gbp: usdToGbp(usd || 0), src };
   });
+  // Enforce monotonicity: estimated grades must not exceed the grade above them.
+  // Mixed live/estimated data can otherwise produce inversions (e.g. PSA 8 est > PSA 9 live).
+  for (let i = 1; i < ladder.length; i++) {
+    const upper = ladder[i - 1];
+    const lower = ladder[i];
+    if (lower.src !== 'pc' && upper.gbp > 0 && lower.gbp > upper.gbp * 0.92) {
+      lower.gbp = upper.gbp * 0.85;
+    }
+  }
   return { rawGBP: usdToGbp(rawUSD || 0), ladder, hasLive: !!pd };
 }
 
