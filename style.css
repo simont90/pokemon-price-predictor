@@ -6294,16 +6294,33 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   .nav-pill { width: 58px; }
 }
 
-/* Tablet+desktop: nav pill should be compact and content-sized, not full-viewport-width */
-@media (min-width: 561px) {
+/* Tablet: icon-only pill capped at 480px so it floats rather than spanning full-width */
+@media (min-width: 561px) and (max-width: 820px) {
+  .page-nav {
+    max-width: min(480px, calc(100vw - 32px));
+  }
+  .page-nav-btn {
+    flex: 1;
+    min-width: 0;
+    padding: 14px 8px;
+    gap: 0;
+    min-height: 52px;
+    overflow: hidden;
+  }
+  .page-nav-btn > span:not(.page-nav-sub) { display: none; }
+  .page-nav-btn svg { width: 22px; height: 22px; }
+}
+
+/* Desktop: labeled compact pill */
+@media (min-width: 821px) {
   .page-nav {
     width: max-content;
     max-width: min(720px, calc(100vw - 32px));
   }
   .page-nav-btn {
     flex: none;
-    padding: 10px 14px;
-    min-width: 72px;
+    padding: 10px 16px;
+    min-width: 78px;
   }
 }
 
