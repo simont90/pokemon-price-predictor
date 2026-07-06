@@ -5663,27 +5663,6 @@ function setupFullArtBinder() {
         return;
       }
 
-      const compareBtn = e.target.closest('.binder-pg-compare-btn');
-      if (compareBtn) {
-        e.stopPropagation();
-        const id = compareBtn.dataset.id;
-        const card = getCardById(id);
-        if (!card) return;
-        const slot = compareSlots.findIndex(s => s && s.id === id);
-        if (slot >= 0) {
-          compareSlots[slot] = null;
-        } else {
-          const empty = compareSlots.findIndex(s => !s);
-          compareSlots[empty >= 0 ? empty : 1] = snapshotCardForCompare(card);
-        }
-        saveCompare();
-        renderCompare();
-        updateCompareButton();
-        renderBinderPage();
-        if (compareSlots[0] && compareSlots[1]) openComparePanel();
-        return;
-      }
-
       const card = e.target.closest('.binder-pg-card[data-id]');
       if (card && !e.target.closest('button')) {
         const id = card.dataset.id;
@@ -6104,13 +6083,11 @@ function renderBinderPage() {
       ? '<div class="binder-pg-upgrade-tag">Have one — targeting this for upgrade</div>' : '';
     const completeBtn = st === 'have'
       ? `<button class="binder-pg-complete" data-id="${b.id}" title="Got the upgrade — remove from binder project">✓ Got the upgrade</button>` : '';
-    const inCompare = compareSlots.some(s => s && s.id === b.id);
     return `
-      <div class="binder-pg-card${(b.owned || b.upgrade) ? ' binder-pg-owned-card' : ''}${inCompare ? ' binder-pg-in-compare' : ''}" data-id="${b.id}" draggable="true">
+      <div class="binder-pg-card${(b.owned || b.upgrade) ? ' binder-pg-owned-card' : ''}" data-id="${b.id}" draggable="true">
         <div class="binder-pg-img-wrap">
           ${imgSrc ? `<img class="binder-pg-img" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
           ${langPill}
-          <button class="binder-pg-compare-btn${inCompare ? ' active' : ''}" data-id="${b.id}" title="Compare">⇄</button>
         </div>
         <div class="binder-pg-card-info">
           <div class="binder-pg-card-name">${esc(b.name)}</div>
