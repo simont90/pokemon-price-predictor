@@ -5698,6 +5698,15 @@ function setupFullArtBinder() {
       return;
     }
 
+    const viewBtn = e.target.closest('.bdl-view-btn[data-id]');
+    if (viewBtn) {
+      const id = viewBtn.dataset.id;
+      closeBinderDetail();
+      go('predict');
+      setTimeout(() => { try { selectCard(id); } catch(err) {} }, 80);
+      return;
+    }
+
     const completeBtn = e.target.closest('.binder-pg-complete');
     if (completeBtn) {
       e.stopPropagation();
@@ -6275,6 +6284,156 @@ function speciesOf(name) {
   return name.trim().split(/\s+/)[0];
 }
 
+// ── Module-level binder helpers (used by both renderBinderPage and detail panel) ──
+
+function _binderItemGBP(b) {
+  const card = getCardById(b.id);
+  const cached = getCachedPrice(b.id) || getLastKnownPrice(b.id);
+  const usd = cached
+    ? (cached.pcUngraded || cached.market || cached.mid || (card ? card.p : 0))
+    : (card ? card.p : 0);
+  return usdToGbp(usd || 0);
+}
+
+function _binderPairItems(items) {
+  const pairs = [];
+  const used = new Set();
+  for (const a of items) {
+    if (used.has(a.id)) continue;
+    const manualId = binderPairings[a.id];
+    if (!manualId) continue;
+    const b = items.find(x => x.id === manualId && !used.has(x.id));
+    if (!b) continue;
+    const aIsEN = (a.lang || 'EN') !== 'JP';
+    pairs.push({ en: aIsEN ? a : b, jp: aIsEN ? b : a, manual: true });
+    used.add(a.id); used.add(b.id);
+  }
+  const enItems = items.filter(b => !used.has(b.id) && (b.lang || 'EN') !== 'JP');
+  const jpItems = items.filter(b => !used.has(b.id) && b.lang === 'JP');
+  const usedEN = new Set(), usedJP = new Set();
+  for (const en of enItems) {
+    const enKey = counterpartByCard.get(en.id);
+    let jp = null;
+    if (enKey) {
+      for (const j of jpItems) {
+        if (usedJP.has(j.id)) continue;
+        if (counterpartByCard.get(j.id) === enKey) { jp = j; usedJP.add(j.id); break; }
+      }
+    }
+    if (!jp && jpItems.length === 1 && !usedJP.has(jpItems[0].id) && enItems.length === 1) {
+      jp = jpItems[0]; usedJP.add(jpItems[0].id);
+    }
+    pairs.push({ en, jp });
+    usedEN.add(en.id);
+  }
+  for (const j of jpItems) {
+    if (!usedJP.has(j.id)) pairs.push({ en: null, jp: j });
+  }
+  return pairs;
+}
+
+// Build the simple list-view body HTML shown inside the detail panel.
+// One <details> per pair/solo, with EN and JP as labeled rows.
+function _buildBinderPanelBody(items, setBuckets) {
+  const pairs = _binderPairItems(items);
+  let html = '';
+
+  for (const pair of pairs) {
+    const enB = pair.en, jpB = pair.jp;
+    const enGBP = enB ? _binderItemGBP(enB) : 0;
+    const jpGBP = jpB ? _binderItemGBP(jpB) : 0;
+
+    // Summary label: card name + set (from first card)
+    const first = enB || jpB;
+    const setLabel = esc(first.set);
+    const cardLabel = esc(first.name.split(' ').slice(0, 3).join(' '));
+
+    // EN/JP price labels in the summary
+    const enPriceStr = enGBP > 0 ? `£${enGBP.toFixed(2)}` : '—';
+    const jpPriceStr = jpGBP > 0 ? `£${jpGBP.toFixed(2)}` : '—';
+    const sumPrices = (enB ? `<span class="bdl-sp en">EN ${enPriceStr}</span>` : '') +
+                      (jpB ? `<span class="bdl-sp jp">JP ${jpPriceStr}</span>` : '');
+
+    // Verdict
+    let verdictHtml = '';
+    if (enB && jpB && enGBP > 0 && jpGBP > 0) {
+      const diff = ((jpGBP - enGBP) / enGBP) * 100;
+      const abs = Math.abs(diff).toFixed(0);
+      let msg, cls;
+      if (diff < -25)       { msg = `JP is ${abs}% cheaper — strong case for Japanese`; cls = 'verdict-jp-strong'; }
+      else if (diff < -10)  { msg = `JP is ${abs}% cheaper — worth considering`; cls = 'verdict-jp-mild'; }
+      else if (diff > 25)   { msg = `EN is ${abs}% cheaper — considerably better value`; cls = 'verdict-en-strong'; }
+      else if (diff > 10)   { msg = `EN is ${abs}% cheaper — slight advantage`; cls = 'verdict-en-mild'; }
+      else                  { msg = `Within ${abs}% of each other`; cls = 'verdict-neutral'; }
+      verdictHtml = `<div class="binder-verdict ${cls} bdl-verdict"><span class="binder-verdict-dot"></span>${msg}</div>`;
+    }
+
+    // Unlink button
+    const unpairBtn = (pair.manual && enB && jpB)
+      ? `<button class="binder-pg-unpair bdl-unpair" data-id-a="${esc(enB.id)}" data-id-b="${esc(jpB.id)}">⛓ Unlink</button>`
+      : '';
+
+    // Multi-buy hint
+    let multiBuyHtml = '';
+    const checkedSets = new Set();
+    for (const b of [enB, jpB].filter(Boolean)) {
+      if (checkedSets.has(b.set)) continue;
+      checkedSets.add(b.set);
+      const bucket = (setBuckets || {})[b.set] || [];
+      const others = bucket.filter(id => id !== b.id && id !== (b === enB ? jpB?.id : enB?.id));
+      if (others.length >= 1) {
+        multiBuyHtml = `<div class="binder-multibuy bdl-multibuy">📦 ${others.length + 1} cards from <strong>${esc(b.set)}</strong> — ask for multi-buy discount</div>`;
+        break;
+      }
+    }
+
+    // Card rows
+    function cardRow(b, gbp, lang) {
+      if (!b) return '';
+      const liveCard = cardData?.cards?.find(c => c.i === b.id);
+      const imgSrc = liveCard ? _hiresUrl(getCardImg(liveCard)) : (b.img ? _hiresUrl(b.img) : null);
+      const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
+      const st = binderStatusOf(b);
+      const completeBtn = st === 'have'
+        ? `<button class="binder-pg-complete bdl-complete-btn" data-id="${b.id}" title="Got the upgrade — remove from binder">✓ Got the upgrade</button>` : '';
+      return `
+        <div class="bdl-row bdl-row-${lang}" data-id="${b.id}">
+          <span class="bdl-lang ${lang}">${lang.toUpperCase()}</span>
+          ${imgSrc ? `<img class="bdl-thumb" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="bdl-thumb bdl-thumb-ph"></div>'}
+          <div class="bdl-info">
+            <div class="bdl-name">${esc(b.name)}</div>
+            <div class="bdl-set">${esc(b.set)}</div>
+          </div>
+          <div class="bdl-price-col">
+            <div class="bdl-price">${priceStr}</div>
+          </div>
+          <div class="bdl-acts">
+            ${binderStatusBtn(b, 'binder-pg-owned bdl-status-btn')}
+            <button class="binder-pg-remove bdl-remove-btn" data-id="${b.id}" title="Remove from binder">✕</button>
+            <button class="bdl-view-btn" data-id="${b.id}" title="View card analysis">↗</button>
+          </div>
+          ${completeBtn}
+        </div>`;
+    }
+
+    html += `
+      <details class="bdl-pair" open>
+        <summary class="bdl-sum">
+          <svg class="bdl-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          <span class="bdl-sum-label">${cardLabel} · ${setLabel}</span>
+          <div class="bdl-sum-prices">${sumPrices}</div>
+        </summary>
+        <div class="bdl-body">
+          ${cardRow(enB, enGBP, 'en')}
+          ${cardRow(jpB, jpGBP, 'jp')}
+          ${verdictHtml}${unpairBtn}${multiBuyHtml}
+        </div>
+      </details>`;
+  }
+
+  return html || '<p class="bdl-empty">No cards in this group.</p>';
+}
+
 function renderBinderPage() {
   const container = $('binderPageContent');
   if (!container) return;
@@ -6291,18 +6450,6 @@ function renderBinderPage() {
   if (fullArtBinder.length === 0) {
     container.innerHTML = `<div class="binder-page-empty"><p>Nothing in the binder yet.</p><p class="binder-page-empty-sub">Open any card in Predict and tap "Add to Full Art Binder" to start your Gen 1 &amp; Gen 2 project.</p></div>`;
     return;
-  }
-
-  // Get live or cached price in GBP for a binder item.
-  // Falls back to stale cache rather than static DB price — stale is almost always
-  // more accurate than card.p (which is 0 for most JP cards).
-  function itemGBP(b) {
-    const card = getCardById(b.id);
-    const cached = getCachedPrice(b.id) || getLastKnownPrice(b.id);
-    const usd = cached
-      ? (cached.pcUngraded || cached.market || cached.mid || (card ? card.p : 0))
-      : (card ? card.p : 0);
-    return usdToGbp(usd || 0);
   }
 
   // Group by species (override wins over auto-detect)
@@ -6336,50 +6483,7 @@ function renderBinderPage() {
     setBuckets[b.set].push(b.id);
   }
 
-  // Pair EN and JP items within a species group using the counterpart index
-  function pairItems(items) {
-    const pairs = [];
-    const used = new Set();
-
-    // First pass: honour manual pairings (any language combination).
-    for (const a of items) {
-      if (used.has(a.id)) continue;
-      const manualId = binderPairings[a.id];
-      if (!manualId) continue;
-      const b = items.find(x => x.id === manualId && !used.has(x.id));
-      if (!b) continue;
-      const aIsEN = (a.lang || 'EN') !== 'JP';
-      pairs.push({ en: aIsEN ? a : b, jp: aIsEN ? b : a, manual: true });
-      used.add(a.id); used.add(b.id);
-    }
-
-    // Second pass: auto-pair remaining EN and JP cards by counterpart key.
-    const enItems = items.filter(b => !used.has(b.id) && (b.lang || 'EN') !== 'JP');
-    const jpItems = items.filter(b => !used.has(b.id) && b.lang === 'JP');
-    const usedEN = new Set(), usedJP = new Set();
-
-    for (const en of enItems) {
-      const enKey = counterpartByCard.get(en.id);
-      let jp = null;
-      if (enKey) {
-        for (const j of jpItems) {
-          if (usedJP.has(j.id)) continue;
-          if (counterpartByCard.get(j.id) === enKey) { jp = j; usedJP.add(j.id); break; }
-        }
-      }
-      if (!jp && jpItems.length === 1 && !usedJP.has(jpItems[0].id) && enItems.length === 1) {
-        jp = jpItems[0]; usedJP.add(jpItems[0].id);
-      }
-      pairs.push({ en, jp });
-      usedEN.add(en.id);
-    }
-    for (const j of jpItems) {
-      if (!usedJP.has(j.id)) pairs.push({ en: null, jp: j });
-    }
-    return pairs;
-  }
-
-  // Render a single card tile
+  // Render a single card tile (used only for the grid detail cache — not shown in panel anymore)
   function cardTile(b, gbp) {
     // Live-resolve image so artwork overrides applied after the card was added
     // to the binder are immediately visible (b.img is snapshot-at-add-time).
@@ -6438,7 +6542,7 @@ function renderBinderPage() {
   }
   // Pre-compute pairs once per group — reused for price sort and rendering.
   const groupPairs = {};
-  for (const sp of Object.keys(groups)) groupPairs[sp] = pairItems(groups[sp]);
+  for (const sp of Object.keys(groups)) groupPairs[sp] = _binderPairItems(groups[sp]);
 
   // Price per group: smart-pick card price (cheaper side of EN/JP pair, or solo).
   // Used for "price" sort — groups with no cached price go to the end.
@@ -6447,8 +6551,8 @@ function renderBinderPage() {
     const pairs = groupPairs[sp];
     let best = Infinity;
     for (const { en, jp } of pairs) {
-      const enGBP = en ? itemGBP(en) : 0;
-      const jpGBP = jp ? itemGBP(jp) : 0;
+      const enGBP = en ? _binderItemGBP(en) : 0;
+      const jpGBP = jp ? _binderItemGBP(jp) : 0;
       let pick = 0;
       if (en && jp && enGBP > 0 && jpGBP > 0) {
         // Mirror the verdict logic: JP cheaper by >10% → use JP price, else EN
@@ -6488,8 +6592,8 @@ function renderBinderPage() {
 
     for (const pair of pairs) {
       const enB = pair.en, jpB = pair.jp;
-      const enGBP = enB ? itemGBP(enB) : 0;
-      const jpGBP = jpB ? itemGBP(jpB) : 0;
+      const enGBP = enB ? _binderItemGBP(enB) : 0;
+      const jpGBP = jpB ? _binderItemGBP(jpB) : 0;
 
       // Build comparison verdict + identify the smarter buy
       let verdictHtml = '', smartSide = null;
@@ -6577,7 +6681,7 @@ function renderBinderPage() {
     }
 
     // Cache per-species data for the detail panel
-    _binderBodyCache[species] = { bodyHtml, inlineActions, dexNum: groupDex[species], tier, haveInGroup, total: items.length, hasEN, hasJP, hasOverride };
+    _binderBodyCache[species] = { bodyHtml, inlineActions, dexNum: groupDex[species], tier, haveInGroup, total: items.length, hasEN, hasJP, hasOverride, items, setBuckets };
 
     const spriteUrl = isFinite(groupDex[species])
       ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${groupDex[species]}.png`
@@ -6678,7 +6782,7 @@ function _openBinderDetailRender(species) {
     }
   }
   if (el('binderDetailActions')) el('binderDetailActions').innerHTML = inlineActions || '';
-  if (el('binderDetailBody'))    el('binderDetailBody').innerHTML    = bodyHtml;
+  if (el('binderDetailBody'))    el('binderDetailBody').innerHTML    = _buildBinderPanelBody(c.items || [], c.setBuckets);
   // Keep rename button's data-species in sync so _handleBinderClick finds it
   const renameBtn = el('binderDetailRename');
   if (renameBtn) renameBtn.dataset.species = species;
