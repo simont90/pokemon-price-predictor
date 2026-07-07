@@ -563,10 +563,6 @@ async function init() {
   // Kick off background price prefetch 800 ms after init — covers all tracked
   // cards (portfolio + wishlist + watchlist + binder + previously cached).
   setTimeout(() => { try { _homeAutoRefresh(); } catch {} }, 800);
-  // Pre-fetch all binder prices silently at startup so they're ready before
-  // the user opens the binder page. Runs 1.5 s after init to avoid competing
-  // with the home refresh; continues in the background even if binder is hidden.
-  setTimeout(() => { try { _binderAutoRefresh(); } catch {} }, 1500);
   // Global 6AM GMT refresh: runs 3 s after init, after home refresh is underway.
   setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 3000);
 }
@@ -6301,10 +6297,11 @@ function speciesOf(name) {
 
 function _binderItemGBP(b) {
   const card = getCardById(b.id);
-  const cached = getCachedPrice(b.id) || getLastKnownPrice(b.id);
-  const usd = cached
-    ? (cached.pcUngraded || cached.market || cached.mid || (card ? card.p : 0))
-    : (card ? card.p : 0);
+  // Prefer a live price fetched today (since last 6AM GMT); fall back to the
+  // static database price (card.p) which is always present and requires no fetch.
+  const cached = getCachedPrice(b.id);
+  const liveUSD = cached && (cached.pcUngraded || cached.market || cached.mid);
+  const usd = liveUSD || (card ? card.p : 0);
   return usdToGbp(usd || 0);
 }
 
@@ -18228,7 +18225,7 @@ function setupPageNav() {
       setTimeout(() => { try { urRunScan(); } catch (e) {} }, 100);
     }
     if (page === 'home') { renderHomeDashboard(); _homeAutoRefresh(); _syncOnHomeNav(); }
-    if (page === 'binder') { try { renderBinderPage(); } catch(e) {} _binderAutoRefresh(); }
+    if (page === 'binder') { try { renderBinderPage(); } catch(e) {} }
     if (page === 'tools') { try { updateToolsDupeBadge(); } catch(e) {} }
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
     if (page === 'vintage') { try { renderVintagePage(); } catch(e) {} }
