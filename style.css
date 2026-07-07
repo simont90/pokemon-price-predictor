@@ -292,10 +292,12 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   height: calc(100% + 80px);
   object-fit: cover;
   filter: blur(24px) saturate(1.2);
-  opacity: 0.20;
+  opacity: 0;
   z-index: 0;
   pointer-events: none;
+  transition: opacity 0.45s ease;
 }
+.card-hero-bg.hero-loaded { opacity: 0.20; }
 .card-images { position: relative; z-index: 1; }
 .selected-card-info { flex: 1; min-width: 0; position: relative; z-index: 1; }
 .card-name-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -6689,13 +6691,16 @@ section.card .card-collapse-btn {
   color: var(--text-muted);
   cursor: pointer;
   z-index: 3;
-  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  opacity: 0.35;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
 }
 section.card .card-collapse-btn:hover {
   background: rgba(232, 182, 52, 0.08);
   color: var(--accent);
   border-color: var(--accent);
+  opacity: 1;
 }
+section.card.is-collapsed .card-collapse-btn { opacity: 0.7; }
 section.card .card-collapse-btn svg {
   transition: transform 0.22s ease;
 }

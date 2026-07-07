@@ -2853,7 +2853,12 @@ function selectCard(id) {
     $('cardImageJp').style.display = 'none';
   }
   const _heroBg = $('cardHeroBg');
-  if (_heroBg) _heroBg.src = getCardImg(card);
+  if (_heroBg) {
+    _heroBg.classList.remove('hero-loaded');
+    _heroBg.src = getCardImg(card);
+    _heroBg.onload = () => _heroBg.classList.add('hero-loaded');
+    _heroBg.onerror = () => {};
+  }
 
   // Update page title and URL so each card has a bookmarkable address
   document.title = `${card.n}${card.s ? ' · ' + card.s : ''} — Pokémon Price Predictor`;
