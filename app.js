@@ -21116,6 +21116,47 @@ function _vgGradeGBP(card, grade) {
   return ladder.find(l => l.g === grade)?.gbp || 0;
 }
 
+// Card-level composite deal score: -100 (avoid) to +100 (excellent value).
+// Visible on ALL cards, including those without live PC data. Combines buy signal,
+// PSA efficiency vs raw price, data reliability, and card desirability.
+function _vgDealScore(card) {
+  let score = 0;
+  try {
+    const des = autoFillDesirability(card, 7.65);
+    const sig = computeSignal(card, 7.65, des.total);
+    if (sig) {
+      if      (sig.signal === 'STRONG BUY')  score += 45;
+      else if (sig.signal === 'BUY')         score += 30;
+      else if (sig.signal === 'HOLD')        score +=  5;
+      else if (sig.signal === 'SKIP')        score -= 20;
+      else if (sig.signal === 'STRONG SELL') score -= 40;
+    }
+    const d = des.total || 0;
+    if      (d >= 8) score += 10;
+    else if (d >= 6) score +=  5;
+    else if (d <  3) score -=  5;
+  } catch {}
+  try {
+    const { rawGBP, ladder, hasLive } = _vgLadder(card);
+    if (rawGBP > 0) {
+      const picks = _vgPicks(ladder, card);
+      const sweetRow = ladder.find(l => l.g === picks.sweet);
+      if (sweetRow && sweetRow.gbp > 0) {
+        const ratio = sweetRow.gbp / rawGBP;
+        if      (ratio <= 1.5)  score += 30;
+        else if (ratio <= 2.5)  score += 20;
+        else if (ratio <= 4.0)  score += 10;
+        else if (ratio <= 7.0)  score +=  0;
+        else if (ratio <= 12.0) score -= 15;
+        else                    score -= 30;
+      }
+    }
+    if (hasLive) score += 15;
+    else if (!card.p10) score -= 10;
+  } catch {}
+  return Math.max(-100, Math.min(100, Math.round(score)));
+}
+
 function _vgLadderHTML(card) {
   const { rawGBP, ladder, hasLive } = _vgLadder(card);
   const isGS = _vgIsGoldStar(card);
@@ -21162,12 +21203,23 @@ function _vgLadderHTML(card) {
 
 function _vgCardRowHTML(card, data) {
   const target = data.targets[card.i];
-  const { rawGBP, bestScore } = _vgLadder(card);
+  const { rawGBP, ladder, bestScore } = _vgLadder(card);
   const isDeal = bestScore !== null && bestScore >= VG_DEAL_SCORE;
   const targetBadge = target
     ? `<span class="vg-row-target ${target.owned ? 'vg-row-owned' : ''}">${target.owned ? '✓' : '★'} PSA ${target.grade}</span>`
     : '';
-  return `<details class="vg-card${isDeal ? ' vg-card-deal' : ''}" data-vg-card="${esc(card.i)}">
+  const dealScore  = _vgDealScore(card);
+  const scoreCls   = dealScore >= 0 ? 'vg-score-pos' : 'vg-score-neg';
+  const scoreSign  = dealScore > 0 ? '+' : '';
+  const scoreBadge = `<span class="vg-score vg-deal-score ${scoreCls}" title="Deal score ${scoreSign}${dealScore}/100">${scoreSign}${dealScore}</span>`;
+  const isExcellent = dealScore >= 60;
+  const bestGradeRow = isDeal
+    ? ladder.reduce((b, r) => r.score !== null && (b === null || r.score > b.score) ? r : b, null)
+    : null;
+  const buyBtn = bestGradeRow
+    ? `<a class="vg-buy-btn" href="${_vgEbayUrl(card, bestGradeRow.g)}" target="_blank" rel="noopener noreferrer">Buy ↗</a>`
+    : '';
+  return `<details class="vg-card${isExcellent ? ' vg-card--excellent' : isDeal ? ' vg-card-deal' : ''}" data-vg-card="${esc(card.i)}">
     <summary class="vg-card-summary">
       <img class="vg-card-img" src="${esc(getCardImg(card) || '')}" alt="" loading="lazy" onerror="this.style.opacity='0'">
       <span class="vg-card-num">${card.cn ? '#' + esc(String(card.cn)) : ''}</span>
@@ -21175,7 +21227,8 @@ function _vgCardRowHTML(card, data) {
       <span class="vg-card-meta">${esc(card.r || '')}</span>
       ${_vgIsGoldStar(card) ? '<span class="vg-gs-badge">★ Gold Star</span>' : ''}
       ${targetBadge}
-      ${_vgScoreBadge(bestScore)}
+      ${scoreBadge}
+      ${buyBtn}
       <span class="vg-card-raw">${rawGBP > 0 ? fmtGBPDirect(rawGBP) : '—'}</span>
       <button class="vg-open-btn" data-vg-open="${esc(card.i)}" title="Open in Predict">↗</button>
     </summary>
@@ -21257,18 +21310,10 @@ function renderVintagePage() {
   }).join('');
 
   let cards = _vgSetCards(activeSet);
-  if (_vgSort === 'price' && !isJP) cards = [...cards].sort((a, b) => (b.p || 0) - (a.p || 0));
-  else if (_vgSort === 'name')      cards = [...cards].sort((a, b) => a.n.localeCompare(b.n));
-  else if (_vgSort === 'score') {
-    // Best buy rating first; cards with no live data (no score) go last in set order
-    const sc = new Map(cards.map(c => [c.i, _vgLadder(c).bestScore]));
-    cards = [...cards].sort((a, b) => {
-      const sa = sc.get(a.i), sb = sc.get(b.i);
-      if ((sa === null) !== (sb === null)) return sa === null ? 1 : -1;
-      return (sb ?? 0) - (sa ?? 0) || (parseInt(a.cn) || 9999) - (parseInt(b.cn) || 9999);
-    });
-  }
-  else cards = [...cards].sort((a, b) => (parseInt(a.cn) || 9999) - (parseInt(b.cn) || 9999) || a.n.localeCompare(b.n));
+  if      (_vgSort === 'score')          cards = [...cards].sort((a, b) => _vgDealScore(b) - _vgDealScore(a));
+  else if (_vgSort === 'price' && !isJP) cards = [...cards].sort((a, b) => (b.p || 0) - (a.p || 0));
+  else if (_vgSort === 'name')           cards = [...cards].sort((a, b) => a.n.localeCompare(b.n));
+  else                                   cards = [...cards].sort((a, b) => (parseInt(a.cn) || 9999) - (parseInt(b.cn) || 9999) || a.n.localeCompare(b.n));
 
   const setInfo = sets.find(s => s.code === activeSet);
   const rows = cards.map(c => _vgCardRowHTML(c, data)).join('');

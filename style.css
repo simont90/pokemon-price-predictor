@@ -11863,6 +11863,13 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
 .vg-card-deal {
   box-shadow: inset 0 0 0 1.5px rgba(232,182,52,0.55), 0 0 14px rgba(232,182,52,0.10);
 }
+/* Composite deal score ≥ 60 — stronger yellow fill highlight */
+.vg-card--excellent { border-color: rgba(232,182,52,0.60) !important; }
+[data-theme="dark"]  .vg-card--excellent { background: rgba(232,182,52,0.08) !important; }
+[data-theme="light"] .vg-card--excellent { background: rgba(232,182,52,0.10) !important; }
+.vg-card--excellent .vg-card-summary { border-left: 3px solid var(--accent, #e8b634); padding-left: 9px; }
+/* Card-level deal-score badge: slightly larger than the per-grade scores */
+.vg-deal-score { font-size: 11px; min-width: 36px; text-align: center; }
 .vg-buy-btn {
   font-size: 11px;
   font-weight: 700;
