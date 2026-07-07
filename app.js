@@ -560,11 +560,8 @@ async function init() {
   }
   updateAll();
   _setupHomePip();
-  // Kick off background price prefetch 800 ms after init — covers all tracked
-  // cards (portfolio + wishlist + watchlist + binder + previously cached).
-  setTimeout(() => { try { _homeAutoRefresh(); } catch {} }, 800);
-  // Global 6AM GMT refresh: runs 3 s after init, after home refresh is underway.
-  setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 3000);
+  // Global 6AM GMT refresh: fetch live prices for all tracked cards once per day.
+  setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 800);
 }
 
 // Re-check the 7AM boundary whenever the tab regains focus — handles the case
@@ -6963,9 +6960,13 @@ async function _globalSilentRefresh() {
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
   _globalRefreshRunning = false;
+  // Re-render home sections with fresh prices if the user is currently on that page.
+  if (document.getElementById('pageHome')?.style.display !== 'none') {
+    try { _renderHomeCollection(); _renderHomeCombinedWishlist(); _renderHomeWatchlist(); } catch {}
+  }
 }
 
-// Auto-trigger if 7AM boundary has passed since last global refresh.
+// Auto-trigger if 6AM GMT boundary has passed since last global refresh.
 // Called once at app start; also triggered on page focus so an open tab
 // that crosses 7AM picks it up on next interaction.
 function _globalRefreshIfDue() {
@@ -17133,10 +17134,9 @@ function renderHomeDashboard() {
 async function _homeAutoRefresh() {
   if (_psState.running || !cardData) return;
   const cache = getPriceCache();
-  const now = Date.now();
   const staleIds = _allRefreshIds().filter(id => {
     const e = cache[id];
-    return !e || (now - (e._ts || 0)) > PRICE_CACHE_TTL;
+    return !e || !_priceCacheIsValid(e._ts);
   });
   if (!staleIds.length) return;
   _psState = { running: true, cancel: false, done: 0, total: staleIds.length };
@@ -18224,7 +18224,7 @@ function setupPageNav() {
       window._urRanOnce = true;
       setTimeout(() => { try { urRunScan(); } catch (e) {} }, 100);
     }
-    if (page === 'home') { renderHomeDashboard(); _homeAutoRefresh(); _syncOnHomeNav(); }
+    if (page === 'home') { renderHomeDashboard(); _syncOnHomeNav(); }
     if (page === 'binder') { try { renderBinderPage(); } catch(e) {} }
     if (page === 'tools') { try { updateToolsDupeBadge(); } catch(e) {} }
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
