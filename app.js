@@ -17090,18 +17090,21 @@ function _renderHomeRecoStratResults(results, list, countEl, sectionKey) {
 }
 
 // ── Home "View All" modal ─────────────────────────────────────
-let _hvaItems  = [];  // [{id, name, img, price, sub, signal, sigClass}]
-let _hvaTitle  = '';
+let _hvaItems    = [];  // [{id, name, img, price, priceRaw, sub, signal, sigClass, score}]
+let _hvaTitle    = '';
+let _hvaSortMode = 'signal';
 
 function openHomeViewAll(title, items) {
-  _hvaTitle  = title;
-  _hvaItems  = items;
+  _hvaTitle    = title;
+  _hvaItems    = items;
+  _hvaSortMode = 'signal';
   const modal   = $('hvaModal');
   const overlay = $('hvaOverlay');
   const search  = $('hvaSearch');
   const titleEl = $('hvaTitle');
   if (titleEl) titleEl.textContent = title;
   if (search) search.value = '';
+  document.querySelectorAll('.hva-sort-btn').forEach(b => b.classList.toggle('active', b.dataset.hvaSort === 'signal'));
   if (modal)   { modal.style.display   = 'flex'; modal.setAttribute('aria-hidden',   'false'); }
   if (overlay) { overlay.style.display = 'block'; overlay.setAttribute('aria-hidden', 'false'); }
   document.body.style.overflow = 'hidden';
@@ -17190,14 +17193,30 @@ function _openRecoViewAll(title, results) {
 }
 
 // Compact list row for collection / wishlist / watchlist view-all
+function _hvaSortItems(items) {
+  const sigScore = s => s === 'STRONG BUY' ? 4 : s === 'BUY' ? 2 : s === 'SELL' ? -2 : 0;
+  const arr = [...items];
+  if (_hvaSortMode === 'signal') {
+    arr.sort((a, b) => ((b.score ?? sigScore(b.signal)) - (a.score ?? sigScore(a.signal))) || a.name.localeCompare(b.name));
+  } else if (_hvaSortMode === 'price-desc') {
+    arr.sort((a, b) => (b.priceRaw || 0) - (a.priceRaw || 0));
+  } else if (_hvaSortMode === 'price-asc') {
+    arr.sort((a, b) => (a.priceRaw || 0) - (b.priceRaw || 0));
+  } else if (_hvaSortMode === 'name') {
+    arr.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return arr;
+}
+
 function renderHvaGrid(query) {
   const grid    = $('hvaGrid');
   const countEl = $('hvaCount');
   if (!grid) return;
   const q = (query || '').trim().toLowerCase();
-  const filtered = q
+  const matched = q
     ? _hvaItems.filter(it => it.name.toLowerCase().includes(q) || (it.sub || '').toLowerCase().includes(q))
     : _hvaItems;
+  const filtered = _hvaSortItems(matched);
   if (countEl) countEl.textContent = `${filtered.length} card${filtered.length !== 1 ? 's' : ''}`;
   if (!filtered.length) {
     grid.innerHTML = `<div class="hva-empty">${q ? 'No cards match that search.' : 'Nothing here yet.'}</div>`;
@@ -17239,7 +17258,7 @@ function _buildCollectionItems() {
     const cached = getCachedPrice(p.id);
     const priceUSD = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
     const priceGBP = usdToGbp(priceUSD);
-    let signal = null, sigClass = null;
+    let signal = null, sigClass = null, score = 0;
     if (card) {
       let pull = 7.65;
       if (setsData?.[card.sc]) {
@@ -17247,9 +17266,9 @@ function _buildCollectionItems() {
         if (r?.pullRate > 0) pull = Math.round(1 / r.pullRate) * r.count / 100;
       }
       const sig = computeSignal(card, pull, autoFillDesirability(card, pull).total);
-      if (sig) { signal = sig.signal; sigClass = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold'; }
+      if (sig) { signal = sig.signal; sigClass = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold'; score = sig.score; }
     }
-    return { id: p.id, name: p.name, img: p.img, price: fmtGBPDirect(priceGBP), sub: p.set, signal, sigClass };
+    return { id: p.id, name: p.name, img: p.img, price: fmtGBPDirect(priceGBP), priceRaw: priceGBP, sub: p.set, signal, sigClass, score };
   });
 }
 function _buildWishlistItems() {
@@ -17264,13 +17283,18 @@ function _buildWishlistItems() {
     const usd = (budgetPick ? null : cached) ? (cached.pcUngraded || cached.market || cached.mid || card.p) : card.p;
     const displayGBP = budgetPick ? budgetPick.displayGBP : usdToGbp(usd) || 0;
     const target = w.targetGBP || 0;
-    let sigClass = 'alert-far', signal = 'Watching';
-    if (target > 0) {
-      if (displayGBP <= target) { sigClass = 'alert-buy'; signal = 'BUY NOW'; }
-      else if (displayGBP <= target * 1.10) { sigClass = 'alert-watch'; signal = 'Close'; }
+    let pull = 7.65;
+    if (setsData?.[card.sc]) {
+      const r = setsData[card.sc].rarities?.[card.rc];
+      if (r?.pullRate > 0) pull = Math.round(1 / r.pullRate) * r.count / 100;
     }
-    const sub = [target > 0 ? `Target: ${fmtGBPDirect(target)}` : w.set, budgetPick ? budgetPick.stratLabel : ''].filter(Boolean).join(' · ');
-    return [{ id: w.id, name: w.name, img: w.img, price: displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', sub, signal, sigClass }];
+    const sig = computeSignal(card, pull, autoFillDesirability(card, pull).total);
+    let signal = sig?.signal || 'HOLD';
+    let sigClass = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
+    const score = sig?.score ?? 0;
+    const targetPart = target > 0 ? `Target: ${fmtGBPDirect(target)}` : w.set;
+    const sub = [targetPart, budgetPick ? budgetPick.stratLabel : ''].filter(Boolean).join(' · ');
+    return [{ id: w.id, name: w.name, img: w.img, price: displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', priceRaw: displayGBP, sub, signal, sigClass, score }];
   });
 }
 function _buildWatchlistItems() {
@@ -17289,8 +17313,9 @@ function _buildWatchlistItems() {
     const a = alertMap[w.id];
     const signal = a ? a.signal : (w.addedSignal || '—');
     const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
+    const score = a?.score ?? 0;
     const sub = [w.set, budgetPick ? budgetPick.stratLabel : ''].filter(Boolean).join(' · ');
-    return [{ id: w.id, name: w.name, img: w.img, price: displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', sub, signal, sigClass: sc }];
+    return [{ id: w.id, name: w.name, img: w.img, price: displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', priceRaw: displayGBP, sub, signal, sigClass: sc, score }];
   });
 }
 function setupHomeViewAll() {
@@ -17303,6 +17328,13 @@ function setupHomeViewAll() {
   $('hvaSearch')?.addEventListener('input', e => {
     clearTimeout(_hvaSearchTimer);
     _hvaSearchTimer = setTimeout(() => renderHvaGrid(e.target.value), 120);
+  });
+  document.querySelectorAll('.hva-sort-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _hvaSortMode = btn.dataset.hvaSort;
+      document.querySelectorAll('.hva-sort-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderHvaGrid($('hvaSearch')?.value || '');
+    });
   });
 }
 

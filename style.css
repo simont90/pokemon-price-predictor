@@ -1269,6 +1269,11 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   color: #fb923c;
   border: 1px solid rgba(251, 146, 60, 0.3);
 }
+.lang-badge.kr {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
 .jp-name {
   font-size: 11px;
   color: var(--text-faint);
@@ -1279,6 +1284,9 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 }
 .search-result-item.cn-card {
   border-left: 2px solid rgba(251, 146, 60, 0.4);
+}
+.search-result-item.kr-card {
+  border-left: 2px solid rgba(59, 130, 246, 0.4);
 }
 .jp-name-subtitle {
   font-size: 13px;
@@ -3202,6 +3210,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .lang-jp { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
 .lang-en { background: var(--supply-dim); color: var(--supply); border: 1px solid var(--supply-border); }
 .lang-cn { background: rgba(251, 146, 60, 0.15); color: #fb923c; border: 1px solid rgba(251, 146, 60, 0.3); }
+.lang-kr { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
 
 /* ================================================================
    Mobile responsive (≤600px) for new modals & PWA nav
@@ -7596,6 +7605,19 @@ section.card .card-collapse-btn { padding: 10px; }
   transition: background 0.15s;
 }
 .hva-close:hover { background: var(--glass-bg); }
+.hva-sort-bar {
+  display: flex; gap: 6px; padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; flex-wrap: wrap;
+}
+.hva-sort-btn {
+  padding: 5px 13px; border-radius: 20px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  color: var(--text-muted); font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.hva-sort-btn.active { background: var(--accent); border-color: var(--accent); color: #000; }
+.hva-sort-btn:hover:not(.active) { border-color: var(--accent); color: var(--text); }
 /* ── View-All list (replaces card-grid) ── */
 .hva-grid {
   overflow-y: auto;

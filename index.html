@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260708a">
+  <link rel="stylesheet" href="style.css?v=20260708b">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -996,6 +996,12 @@
         </div>
         <input type="search" id="hvaSearch" class="hva-search" placeholder="Search by name…" autocomplete="off" spellcheck="false">
         <button class="hva-close" id="hvaClose">✕ Close</button>
+      </div>
+      <div class="hva-sort-bar" id="hvaSortBar">
+        <button class="hva-sort-btn active" data-hva-sort="signal">Signal</button>
+        <button class="hva-sort-btn" data-hva-sort="price-desc">Price ↓</button>
+        <button class="hva-sort-btn" data-hva-sort="price-asc">Price ↑</button>
+        <button class="hva-sort-btn" data-hva-sort="name">Name</button>
       </div>
       <div class="hva-grid" id="hvaGrid"></div>
     </section>
@@ -2549,7 +2555,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260708a"></script>
+  <script src="app.js?v=20260708b"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
