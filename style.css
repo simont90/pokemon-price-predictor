@@ -12731,3 +12731,37 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   color: #000;
   border-color: var(--accent, #e8b634);
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   TASTE ENGINE — likelihood badges + For-you recommendations
+   ══════════════════════════════════════════════════════════════════════ */
+
+.taste-badge {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1.5px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  line-height: 1.5;
+  vertical-align: middle;
+}
+.taste-hi  { color: #eafff3; background: rgba(52,168,110,0.92); }
+.taste-mid { color: #14130b; background: rgba(232,182,52,0.85); }
+.taste-lo  { color: var(--text-muted); background: rgba(128,128,128,0.16); }
+
+.reco-foryou-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1.5px 6px;
+  border-radius: 6px;
+  margin-left: 4px;
+  white-space: nowrap;
+  color: var(--accent, #e8b634);
+  background: rgba(232,182,52,0.12);
+  border: 1px solid rgba(232,182,52,0.4);
+}
+.reco-tile-foryou { box-shadow: inset 0 0 0 1.5px rgba(232,182,52,0.45); }
+
+.home-card-sub .taste-badge { margin-left: 5px; }
+.search-result-meta .taste-badge { flex-shrink: 0; }

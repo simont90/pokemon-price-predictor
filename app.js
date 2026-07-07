@@ -1534,6 +1534,19 @@ function doSearch(query) {
         <span class="gbp">${fmtGBP(displayPrice)}</span>
         <span class="usd">${fmtUSD(displayPrice)}</span>
         ${isLive ? '<span class="live-dot" title="Live price"></span>' : ''}` : '<span class="no-price">No price data</span>';
+    // Taste score: likelihood the owner wants this card, from their collection
+    // habits + the model's view. Uses the light taste-only path (no model run
+    // per keystroke); the full blended score lands when the card is opened.
+    let tasteChip = '';
+    try {
+      const tp = tasteGetProfile();
+      if (tp.items >= TASTE_MIN_ITEMS) {
+        const tm = _tasteMatch(c, tp);
+        const pct = Math.round((tm.taste * 0.65 + 0.5 * 0.35) * 100);
+        const tCls = pct >= TASTE_AUTO_ADD ? 'taste-hi' : pct >= 45 ? 'taste-mid' : 'taste-lo';
+        tasteChip = `<span class="taste-badge ${tCls}" title="Likelihood you'd want this${tm.reasons.length ? ' — ' + tm.reasons.join(', ') : ''}">◆ ${pct}%</span>`;
+      }
+    } catch (e) {}
     return `
     <div class="search-result-item${isJP ? ' jp-card' : ''}" data-id="${c.i}">
       ${`<img class="search-result-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="_onImgError(this)">`}
@@ -1544,6 +1557,7 @@ function doSearch(query) {
           ${numLabel ? `<span class="meta-num">${numLabel}</span>` : ''}
           ${c.r ? `<span style="color:var(--accent)">${esc(c.r)}</span>` : ''}
           ${seriesLabel}
+          ${tasteChip}
         </div>
       </div>
       <div class="search-result-price">${priceLabel}
@@ -2793,6 +2807,10 @@ function selectCard(id) {
   selectedCard = card;
   _holdWinnerKey = null;  // reset until renderHoldStrategy runs for this card
   _holdWinnerDesc = '';
+
+  // Taste engine: score this searched card; strong matches auto-join the
+  // home recommendations (deferred so it never delays the card render).
+  setTimeout(() => { try { tasteAutoAdd(card); } catch (e) {} }, 400);
 
   // Refresh Price Sync stats so "Refresh selected card" button enables
   if (typeof psUpdateStats === 'function') psUpdateStats();
@@ -16297,6 +16315,13 @@ function _dismissReco(cardId) {
   const s = _getRecoDismissed();
   s.add(cardId);
   try { localStorage.setItem(RECO_DISMISSED_KEY, JSON.stringify([...s])); } catch {}
+  // Evict from the taste auto-adds too — a dismissal must stick, and it also
+  // feeds the taste profile as a negative signal.
+  try {
+    const store = _tasteRecosLoad();
+    if (store[cardId]) { delete store[cardId]; localStorage.setItem(TASTE_RECOS_KEY, JSON.stringify(store)); }
+  } catch {}
+  _tasteProfile = null;
   _recoCached = null;
 }
 
@@ -16396,6 +16421,154 @@ const _TIER_LABEL = {
 
 // Single-pass reco builder. Returns all five curated lists at once so the
 // expensive card-loop + computeHoldCore work is only done once per rebuild.
+// ═══════════════════════════════════════════════════════════════════════════
+// TASTE ENGINE — learns what kinds of cards the owner collects and scores any
+// card 0–100 on how likely they are to want it. The profile is rebuilt from
+// the collection (portfolio ×3), wishlist/binder/vintage targets (×2) and
+// watchlist (×1), with reco dismissals as a negative signal. The final score
+// blends that taste match (65%) with the model's own buy view (35%).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TASTE_RECOS_KEY  = 'pkm-taste-recos-v1';
+const TASTE_MIN_ITEMS  = 5;   // collection items needed before scoring activates
+const TASTE_AUTO_ADD   = 70;  // searched cards scoring ≥ this join the recommendations
+
+let _tasteProfile = null, _tasteProfileTs = 0;
+
+function _tasteEra(card) {
+  const y = parseInt((setsData?.[card.sc]?.releaseDate || '').slice(0, 4)) || 0;
+  if (!y) return 'unknown';
+  if (y <= 2003) return 'wotc';
+  if (y <= 2010) return 'dppt';
+  if (y <= 2016) return 'bwxy';
+  if (y <= 2022) return 'swsh';
+  return 'sv';
+}
+function _tasteBand(usd) {
+  if (!(usd > 0)) return 'unknown';
+  return usd < 10 ? '<10' : usd < 25 ? '10-25' : usd < 50 ? '25-50'
+       : usd < 100 ? '50-100' : usd < 250 ? '100-250' : '250+';
+}
+function _tasteFeatures(card) {
+  return {
+    species: dexNumOf(card.n) || 'unknown',
+    rc:      card.rc || card.r || 'unknown',
+    era:     _tasteEra(card),
+    lang:    card.lang === 'JP' ? 'JP' : 'EN',
+    band:    _tasteBand(card.p),
+    sr:      card.sr || 'unknown',
+  };
+}
+
+function tasteGetProfile() {
+  if (_tasteProfile && Date.now() - _tasteProfileTs < 60_000) return _tasteProfile;
+  const dims = { species: {}, rc: {}, era: {}, lang: {}, band: {}, sr: {} };
+  let items = 0;
+  const feed = (id, w) => {
+    const card = getCardById(id);
+    if (!card) return;
+    const f = _tasteFeatures(card);
+    for (const d of Object.keys(dims)) {
+      if (f[d] === 'unknown') continue;
+      dims[d][f[d]] = (dims[d][f[d]] || 0) + w;
+    }
+    if (w > 0) items++;
+  };
+  (typeof portfolio     !== 'undefined' ? portfolio     : []).forEach(p => feed(p.id, 3));
+  (typeof wishlist      !== 'undefined' ? wishlist      : []).forEach(w => feed(w.id, 2));
+  (typeof fullArtBinder !== 'undefined' ? fullArtBinder : []).forEach(b => feed(b.id, 2));
+  (typeof watchlist     !== 'undefined' ? watchlist     : []).forEach(w => feed(w.id, 1));
+  try { Object.keys(_vgLoad().targets || {}).forEach(id => feed(id, 2)); } catch (e) {}
+  try { _getRecoDismissed().forEach(id => feed(id, -1)); } catch (e) {}
+  const max = {};
+  for (const d of Object.keys(dims)) max[d] = Math.max(0, ...Object.values(dims[d]));
+  _tasteProfile = { dims, max, items };
+  _tasteProfileTs = Date.now();
+  return _tasteProfile;
+}
+
+// Taste-only match (0–1) against the profile, with the habits that drove it.
+function _tasteMatch(card, prof) {
+  const f = _tasteFeatures(card);
+  const aff = d => prof.max[d] ? Math.max(0, prof.dims[d][f[d]] || 0) / prof.max[d] : 0;
+  let taste = 0;
+  for (const [d, w] of [['species', 0.28], ['rc', 0.20], ['era', 0.16],
+                        ['band', 0.14], ['lang', 0.12], ['sr', 0.10]]) {
+    taste += aff(d) * w;
+  }
+  const reasons = [];
+  if (aff('species') >= 0.5) reasons.push('a Pokémon you collect');
+  if (aff('rc')      >= 0.5) reasons.push('your usual rarity');
+  if (aff('era')     >= 0.5) reasons.push('your favourite era');
+  if (aff('band')    >= 0.5) reasons.push('your price range');
+  return { taste, reasons };
+}
+
+function _tasteSystemWeight(signal) {
+  return signal === 'STRONG BUY' ? 1 : signal === 'BUY' ? 0.8
+       : signal === 'HOLD' ? 0.45 : 0.15;
+}
+
+// Likelihood the owner wants this card: { score 0–100, taste, system, reasons }
+// or null while the profile is still learning (fewer than TASTE_MIN_ITEMS).
+// Pass a precomputed signal via `sig` to skip the model run.
+function tasteScoreCard(card, sig) {
+  if (!card) return null;
+  const prof = tasteGetProfile();
+  if (prof.items < TASTE_MIN_ITEMS) return null;
+  const { taste, reasons } = _tasteMatch(card, prof);
+  let system = 0.5;
+  try {
+    if (sig === undefined) {
+      const des = autoFillDesirability(card, 7.65);
+      sig = computeSignal(card, 7.65, des.total);
+    }
+    if (sig) {
+      system = _tasteSystemWeight(sig.signal);
+      if (system >= 0.8) reasons.push('model rates it a buy');
+    }
+  } catch (e) {}
+  return {
+    score:  Math.round((taste * 0.65 + system * 0.35) * 100),
+    taste:  Math.round(taste * 100),
+    system: Math.round(system * 100),
+    reasons: reasons.slice(0, 3),
+  };
+}
+
+function _tasteRecosLoad() {
+  try { return JSON.parse(localStorage.getItem(TASTE_RECOS_KEY) || '{}') || {}; } catch { return {}; }
+}
+
+// Called when the owner opens a card from search: score it, and if it clears
+// the bar (and isn't already tracked anywhere) add it to the recommendations.
+function tasteAutoAdd(card) {
+  if (!card) return null;
+  const s = tasteScoreCard(card);
+  if (!s) return null;
+  const tracked = portfolio.some(p => p.id === card.i)
+    || wishlist.some(w => w.id === card.i)
+    || (typeof watchlist !== 'undefined' && watchlist.some(w => w.id === card.i));
+  if (tracked || s.score < TASTE_AUTO_ADD) return s;
+  const store = _tasteRecosLoad();
+  const already = store[card.i];
+  store[card.i] = { score: s.score, ts: already?.ts || Date.now() };
+  const ids = Object.keys(store);
+  if (ids.length > 60) { // keep the 60 freshest
+    ids.sort((a, b) => (store[a].ts || 0) - (store[b].ts || 0));
+    for (const id of ids.slice(0, ids.length - 60)) delete store[id];
+  }
+  localStorage.setItem(TASTE_RECOS_KEY, JSON.stringify(store));
+  if (!already) _recoCached = null; // resurface home recos with the new pick
+  return s;
+}
+
+function tasteBadgeHTML(s, extraCls) {
+  if (!s) return '';
+  const cls = s.score >= TASTE_AUTO_ADD ? 'taste-hi' : s.score >= 45 ? 'taste-mid' : 'taste-lo';
+  return `<span class="taste-badge ${cls} ${extraCls || ''}" title="Likelihood you'd want this: ${s.taste}% taste match + model view${s.reasons.length ? ' — ' + s.reasons.join(', ') : ''}">◆ ${s.score}%</span>`;
+}
+
 function buildAllHomeRecos() {
   if (!cardData || !cardData.cards) return { general: [], raw: [], psa8: [], psa9: [], psa10: [] };
   const dismissed = _getRecoDismissed();
@@ -16411,6 +16584,9 @@ function buildAllHomeRecos() {
   let allOverrides = {};
   try { allOverrides = JSON.parse(localStorage.getItem(HOLD_OVERRIDE_KEY) || '{}') || {}; } catch {}
   const priceCache = getPriceCache(); // in-memory singleton — no JSON.parse overhead
+  const tasteStore = _tasteRecosLoad(); // searched cards that scored high enough to auto-add
+  const tasteProf  = tasteGetProfile();
+  const tasteOn    = tasteProf.items >= TASTE_MIN_ITEMS;
 
   for (const c of cardData.cards) {
     if (dismissed.has(c.i)) continue;
@@ -16439,7 +16615,10 @@ function buildAllHomeRecos() {
 
     const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(c, pullCost) : { total: 5 };
     const sig = (typeof computeSignal === 'function') ? computeSignal(c, pullCost, des.total) : null;
-    if (!sig || (sig.signal !== 'BUY' && sig.signal !== 'STRONG BUY')) continue;
+    // Taste-added cards (auto-added from search) skip the BUY gate — they are
+    // here because they match what the owner collects, not the model's call.
+    const tasteAdded = tasteOn && !!tasteStore[c.i];
+    if (!tasteAdded && (!sig || (sig.signal !== 'BUY' && sig.signal !== 'STRONG BUY'))) continue;
 
     const modelUSD = (typeof predictPrice === 'function') ? (predictPrice(pullCost, des.total).priceUSD || 0) : 0;
     const upsidePct = modelUSD > marketUSD ? ((modelUSD - marketUSD) / marketUSD * 100) : 0;
@@ -16448,19 +16627,31 @@ function buildAllHomeRecos() {
 
     const convictionTier = _convictionTier(sig.signal, sig.score, upsidePct, gemScore);
 
+    // Generative score: taste match (what you typically own) blended with the
+    // model's own view (what the system rates as good).
+    let tasteScore = null, tasteReasons = [];
+    if (tasteOn) {
+      const tm = _tasteMatch(c, tasteProf);
+      tasteScore = Math.round((tm.taste * 0.65 + _tasteSystemWeight(sig?.signal) * 0.35) * 100);
+      tasteReasons = tm.reasons;
+    }
+
     const base = {
       card: c,
       marketUSD,
       marketGBP: marketUSD * fx,
       manualPrice: !!manualRawGBP,
-      signal: sig.signal,
-      signalCls: sig.signal === 'STRONG BUY' ? 'sig-strong-buy' : 'sig-buy',
-      score: sig.score,
+      signal: sig?.signal || 'HOLD',
+      signalCls: sig?.signal === 'STRONG BUY' ? 'sig-strong-buy' : 'sig-buy',
+      score: sig?.score || 0,
       upsidePct,
       gemScore,
       onWatchlist,
-      reasons: sig.reasons || [],
+      reasons: sig?.reasons || [],
       convictionTier,
+      tasteScore,
+      tasteReasons,
+      tasteAdded,
     };
     general.push(base);
 
@@ -16486,12 +16677,15 @@ function buildAllHomeRecos() {
     }
   }
 
-  // General: conviction tier first, then score + gem weighting within tier
+  // General: taste-added picks first (freshest search finds), then conviction
+  // tier, with the generative score folded into the within-tier ranking.
   general.sort((a, b) => {
+    if (a.tasteAdded !== b.tasteAdded) return a.tasteAdded ? -1 : 1;
+    if (a.tasteAdded && b.tasteAdded) return (b.tasteScore || 0) - (a.tasteScore || 0);
     const tDiff = (_TIER_RANK[b.convictionTier] || 0) - (_TIER_RANK[a.convictionTier] || 0);
     if (tDiff !== 0) return tDiff;
-    const cA = a.score + a.gemScore * 1.5;
-    const cB = b.score + b.gemScore * 1.5;
+    const cA = a.score + a.gemScore * 1.5 + (a.tasteScore || 0) / 20;
+    const cB = b.score + b.gemScore * 1.5 + (b.tasteScore || 0) / 20;
     return cB - cA || b.upsidePct - a.upsidePct;
   });
 
@@ -16534,7 +16728,11 @@ function _recoTileHtml(r) {
       `<span class="reco-grade-pip">P10 ${fmtGBP(p10USD1)}</span>` +
       `</div>`;
   }
-  return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
+  const tasteChip = r.tasteScore != null
+    ? `<span class="taste-badge ${r.tasteScore >= TASTE_AUTO_ADD ? 'taste-hi' : r.tasteScore >= 45 ? 'taste-mid' : 'taste-lo'}" title="Likelihood you'd want this${r.tasteReasons?.length ? ' — ' + r.tasteReasons.join(', ') : ''}">◆ ${r.tasteScore}%</span>`
+    : '';
+  const forYou = r.tasteAdded ? `<span class="reco-foryou-tag">For you</span>` : '';
+  return `<div class="home-card-tile reco-tile${r.tasteAdded ? ' reco-tile-foryou' : ''}" data-id="${esc(id)}">
     ${img}
     <span class="home-card-signal reco-tier reco-tier-${esc(tier)}">${esc(tierLabel)}</span>
     ${pipBtn1}
@@ -16547,7 +16745,7 @@ function _recoTileHtml(r) {
     <div class="home-card-info">
       <div class="home-card-name">${esc(r.card.n)}</div>
       <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}${gem}</div>
-      <div class="home-card-sub">${upside}</div>
+      <div class="home-card-sub">${upside}${tasteChip}${forYou}</div>
       ${gradeLadder1}
     </div>
   </div>`;
