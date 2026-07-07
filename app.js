@@ -508,9 +508,11 @@ async function init() {
     if (cardData) {
       const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
       const cnCount = cardData.cards.filter(c => c.lang === 'CN').length;
-      const enCount = cardData.count - jpCount - cnCount;
+      const krCount = cardData.cards.filter(c => c.lang === 'KR').length;
+      const enCount = cardData.count - jpCount - cnCount - krCount;
       const cnPart = cnCount > 0 ? ` + ${cnCount.toLocaleString()} CN` : '';
-      $('searchCount').textContent = `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart})`;
+      const krPart = krCount > 0 ? ` + ${krCount.toLocaleString()} KR` : '';
+      $('searchCount').textContent = `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart}${krPart})`;
     }
   } catch (e) {
     console.error('Init failed:', e);
@@ -559,12 +561,14 @@ async function init() {
     if (typeof buildCounterpartIndex === 'function') buildCounterpartIndex(cardData.cards);
     const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
     const cnCount = cardData.cards.filter(c => c.lang === 'CN').length;
-    const enCount = cardData.count - jpCount - cnCount;
+    const krCount = cardData.cards.filter(c => c.lang === 'KR').length;
+    const enCount = cardData.count - jpCount - cnCount - krCount;
     const userCount = cardData.cards.filter(c => c._userAdded).length;
     const cnPart = cnCount > 0 ? ` + ${cnCount.toLocaleString()} CN` : '';
+    const krPart = krCount > 0 ? ` + ${krCount.toLocaleString()} KR` : '';
     const userSuffix = userCount > 0 ? ` + ${userCount} added` : '';
     $('searchCount').textContent =
-      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart}${userSuffix})`;
+      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart}${krPart}${userSuffix})`;
   }
   updateAll();
   _setupHomePip();
@@ -1528,9 +1532,10 @@ function doSearch(query) {
     const seriesLabel = c.sr && c.sr !== 'Scarlet & Violet' ? `<span class="meta-series">${esc(c.sr)}</span>` : '';
     const isJP = c.lang === 'JP';
     const isCN = c.lang === 'CN';
-    const langBadge = isJP ? '<span class="lang-badge jp">JP</span>' : isCN ? '<span class="lang-badge cn">CN</span>' : '';
+    const isKR = c.lang === 'KR';
+    const langBadge = isJP ? '<span class="lang-badge jp">JP</span>' : isCN ? '<span class="lang-badge cn">CN</span>' : isKR ? '<span class="lang-badge kr">KR</span>' : '';
     const jpNameLabel = isJP && c.nj ? `<span class="jp-name">${esc(c.nj)}</span>` : '';
-    const cpFlag = hasCounterpart(c) ? `<span class="search-result-cp-flag" title="${isJP ? 'English' : isCN ? 'English' : 'Japanese'} counterpart available">⇄ ${isJP ? 'EN' : isCN ? 'EN' : 'JP'}</span>` : '';
+    const cpFlag = hasCounterpart(c) ? `<span class="search-result-cp-flag" title="${isJP || isCN || isKR ? 'English' : 'Japanese'} counterpart available">⇄ ${isJP || isCN || isKR ? 'EN' : 'JP'}</span>` : '';
     // Show cached live price if available, else static
     const cached = getCachedPrice(c.i);
     const displayPrice = cached ? (cached.market || cached.mid || c.p) : c.p;
@@ -1553,7 +1558,7 @@ function doSearch(query) {
       }
     } catch (e) {}
     return `
-    <div class="search-result-item${isJP ? ' jp-card' : isCN ? ' cn-card' : ''}" data-id="${c.i}">
+    <div class="search-result-item${isJP ? ' jp-card' : isCN ? ' cn-card' : isKR ? ' kr-card' : ''}" data-id="${c.i}">
       ${`<img class="search-result-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="_onImgError(this)">`}
       <div class="search-result-info">
         <div class="search-result-name">${langBadge}${esc(c.n)}${cpFlag}${jpNameLabel}</div>
@@ -8100,6 +8105,8 @@ function buildExternalSearchLinks(query, langOrIsJP) {
     ? `https://www.tcgcollector.com/cards/jp?cardName=${q}`
     : lang === 'CN'
     ? `https://www.tcgcollector.com/cards/cn?cardName=${q}`
+    : lang === 'KR'
+    ? `https://www.tcgcollector.com/cards/kr?cardName=${q}`
     : `https://www.tcgcollector.com/cards/intl?cardName=${q}`;
   return [
     { label: 'TCG Collector',  href: tcgcUrl,                                                                  hint: 'card data + market price' },
@@ -8850,7 +8857,8 @@ function addManualCardFromTCGC(r, lang) {
   if (!cardData) return;
   const langGuess = /\b(japan|japanese)\b/i.test(r.setName) ? 'JP'
     : /\b(chinese|china|cn|zh)\b/i.test(r.setName) ? 'CN'
-    : (lang === 'JP' || lang === 'CN') ? lang : 'EN';
+    : /\b(korean|korea|kr)\b/i.test(r.setName) ? 'KR'
+    : (lang === 'JP' || lang === 'CN' || lang === 'KR') ? lang : 'EN';
   // Build a synthetic card ID that won't collide with the indexed DB.
   // tcgc-{lang}-{tcgcId} keeps it stable across reloads.
   const id = `tcgc-${langGuess.toLowerCase()}-${r.tcgcId}`;
@@ -8889,12 +8897,14 @@ function addManualCardFromTCGC(r, lang) {
   try {
     const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
     const cnCount = cardData.cards.filter(c => c.lang === 'CN').length;
-    const enCount = cardData.count - jpCount - cnCount;
+    const krCount = cardData.cards.filter(c => c.lang === 'KR').length;
+    const enCount = cardData.count - jpCount - cnCount - krCount;
     const userCount = cardData.cards.filter(c => c._userAdded).length;
     const cnPart = cnCount > 0 ? ` + ${cnCount.toLocaleString()} CN` : '';
+    const krPart = krCount > 0 ? ` + ${krCount.toLocaleString()} KR` : '';
     const userSuffix = userCount > 0 ? ` + ${userCount} added` : '';
     $('searchCount').textContent =
-      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart}${userSuffix})`;
+      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart}${krPart}${userSuffix})`;
   } catch {}
   closeManualAdd();
   // Bust price cache for this id (just in case) and select it.
@@ -9093,12 +9103,14 @@ async function saveCustomCard() {
   try {
     const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
     const cnCount = cardData.cards.filter(c => c.lang === 'CN').length;
-    const enCount = cardData.count - jpCount - cnCount;
+    const krCount = cardData.cards.filter(c => c.lang === 'KR').length;
+    const enCount = cardData.count - jpCount - cnCount - krCount;
     const userCount = cardData.cards.filter(c => c._userAdded).length;
     const cnPart = cnCount > 0 ? ` + ${cnCount.toLocaleString()} CN` : '';
+    const krPart = krCount > 0 ? ` + ${krCount.toLocaleString()} KR` : '';
     const userSuffix = userCount > 0 ? ` + ${userCount} added` : '';
     $('searchCount').textContent =
-      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart}${userSuffix})`;
+      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart}${krPart}${userSuffix})`;
   } catch {}
   status.className = 'ql-status success';
   status.textContent = 'Card saved. Opening it now…';
