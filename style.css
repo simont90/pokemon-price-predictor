@@ -292,7 +292,9 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   inset: -40px;
   width: calc(100% + 80px);
   height: calc(100% + 80px);
-  object-fit: cover;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   filter: blur(24px) saturate(1.2);
   opacity: 0;
   z-index: 0;

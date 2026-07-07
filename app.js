@@ -2860,14 +2860,21 @@ function selectCard(id) {
   const _heroBg = $('cardHeroBg');
   if (_heroBg) {
     const _newHeroSrc = getCardImg(card);
+    const _seq = (_heroBg._heroSeq = (_heroBg._heroSeq || 0) + 1);
     _heroBg.classList.remove('hero-loaded');
-    const _heroPreload = new Image();
-    _heroPreload.onload = () => {
-      _heroBg.src = _newHeroSrc;
-      requestAnimationFrame(() => requestAnimationFrame(() => _heroBg.classList.add('hero-loaded')));
-    };
-    _heroPreload.onerror = () => { _heroBg.src = _newHeroSrc; };
-    _heroPreload.src = _newHeroSrc;
+    const _pre = new Image();
+    _pre.src = _newHeroSrc;
+    const _ready = typeof _pre.decode === 'function'
+      ? _pre.decode()
+      : new Promise((ok, no) => { _pre.onload = ok; _pre.onerror = no; });
+    _ready.then(() => {
+      if (_heroBg._heroSeq !== _seq) return;
+      _heroBg.style.backgroundImage = `url('${_newHeroSrc}')`;
+      requestAnimationFrame(() => {
+        if (_heroBg._heroSeq !== _seq) return;
+        _heroBg.classList.add('hero-loaded');
+      });
+    }).catch(() => {});
   }
 
   // Update page title and URL so each card has a bookmarkable address
