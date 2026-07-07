@@ -399,6 +399,10 @@ function setJpPsa10Override(cardId, gbp, dateStr) {
 // ---- Live Price State ----
 let livePrice = null; // Current card's live pricing data
 let livePriceFetchId = 0;
+// Priority lock: background refresh workers await this before each card fetch.
+// fetchLivePrice holds it while a card is open so background work doesn't compete.
+let _priorityFetchDone = Promise.resolve();
+let _priorityFetchRelease = null;
 let lastModelPriceUSD = 0; // Last result from predictPrice — used by inline deal checks
 let _holdWinnerKey = null;  // Winner key from last renderHoldStrategy run — drives owned-card badge
 let _holdWinnerDesc = '';   // One-line summary of the winner — shown in signal section
@@ -2209,7 +2213,13 @@ async function fetchLivePrice(card) {
     return;
   }
 
-  // No cache — fetch fresh (PriceCharting first, then TCGPlayer fallback for EN)
+  // No cache — acquire priority lock so background workers pause while we fetch.
+  // Release immediately if a newer fetchLivePrice call supersedes this one.
+  if (_priorityFetchRelease) _priorityFetchRelease(); // cancel any previous lock
+  let release;
+  _priorityFetchDone = new Promise(r => { release = r; });
+  _priorityFetchRelease = release;
+
   try {
     const priceData = await fetchFreshPriceData(card);
     if (thisId !== livePriceFetchId) return; // stale
@@ -2225,6 +2235,11 @@ async function fetchLivePrice(card) {
     content.style.display = 'none';
     status.textContent = 'Live pricing unavailable — using static data';
     status.style.display = 'block';
+  } finally {
+    if (_priorityFetchRelease === release) {
+      _priorityFetchRelease = null;
+      release();
+    }
   }
 }
 
@@ -6876,6 +6891,7 @@ async function binderFetchAllPrices(btn, { silent = false } = {}) {
 
   async function worker() {
     while (queue.length > 0) {
+      await _priorityFetchDone; // pause while a card's live price is loading
       // Silent pre-fetch continues regardless of which page is shown.
       // Manual (non-silent) refresh stops if the user navigates away.
       if (!silent && binderEl?.style.display === 'none') break;
@@ -6953,6 +6969,7 @@ async function _globalSilentRefresh() {
   const CONCURRENCY = 4;
   async function worker() {
     while (queue.length > 0) {
+      await _priorityFetchDone; // pause while a card's live price is loading
       const id = queue.shift();
       if (!id) break;
       try { await psRefreshOne(id); } catch {}
