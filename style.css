@@ -5937,6 +5937,67 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .ai-chat-icon-btn svg { display: block; }
 .ai-chat-close-btn { font-size: 14px; line-height: 1; }
 
+/* Focus mode bar in Ask panel */
+.ai-focus-bar {
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.ai-focus-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+.ai-focus-heading {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.ai-focus-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.ai-focus-chip {
+  padding: 3px 9px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  letter-spacing: 0.02em;
+}
+.ai-focus-chip:hover { background: var(--bg-card); color: var(--text); border-color: var(--text-muted); }
+.ai-focus-chip.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.ai-focus-clear-btn {
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.1s, border-color 0.1s;
+  flex-shrink: 0;
+}
+.ai-focus-clear-btn:hover { color: var(--text); border-color: var(--text-muted); }
+.ai-focus-sub {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin: 4px 0 0;
+  line-height: 1.3;
+}
+
 .ai-chat-settings {
   padding: 14px 16px;
   border-bottom: 1px solid var(--border);

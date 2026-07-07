@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260707q">
+  <link rel="stylesheet" href="style.css?v=20260707r">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2223,6 +2223,23 @@
       <p class="ai-chat-privacy">Claude uses your Worker's Anthropic key — no setup needed. For other providers, your key never leaves your browser.</p>
     </div>
 
+    <!-- Focus bar — adjusts scoring everywhere + guides AI recommendations -->
+    <div class="ai-focus-bar" id="aiFocusBar">
+      <div class="ai-focus-top">
+        <span class="ai-focus-heading">Focus</span>
+        <button class="ai-focus-clear-btn" id="aiFocusClear" type="button" style="display:none">&#xD7; Clear</button>
+      </div>
+      <div class="ai-focus-chips" id="aiFocusChips">
+        <button class="ai-focus-chip" data-focus-id="art-rares"  data-focus-label="Art Rares"   type="button">Art Rares</button>
+        <button class="ai-focus-chip" data-focus-id="vintage"    data-focus-label="Vintage"      type="button">Vintage</button>
+        <button class="ai-focus-chip" data-focus-id="budget"     data-focus-label="Budget buys"  type="button">Budget</button>
+        <button class="ai-focus-chip" data-focus-id="japanese"   data-focus-label="Japanese"     type="button">Japanese</button>
+        <button class="ai-focus-chip" data-focus-id="five-star"  data-focus-label="5&#x2605; only"  type="button">5&#x2605; only</button>
+        <button class="ai-focus-chip" data-focus-id="s-tier"     data-focus-label="S-tier chars" type="button">S-tier</button>
+      </div>
+      <p class="ai-focus-sub">Scores &amp; AI recs adjust to your goal</p>
+    </div>
+
     <div class="ai-chat-messages" id="aiChatMessages"></div>
 
     <form class="ai-chat-form" id="aiChatForm">
@@ -2531,7 +2548,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260707q"></script>
+  <script src="app.js?v=20260707r"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

@@ -15371,6 +15371,37 @@ function setupPriceInsight() {
 //   - We also pre-rank candidate picks with our existing scanner
 //     so the bot has solid data to reason over when asked.
 
+// ---- Focus mode — collecting goal that tilts scores + AI guidance ----
+const AI_FOCUS_KEY = 'pkm-ai-focus-v1';
+const AI_FOCUS_PRESETS = {
+  'art-rares': { label: 'Art Rares',    desc: 'Full-art premiums: SAR · SIR · IR · AR rarity codes' },
+  'vintage':   { label: 'Vintage',      desc: 'WOTC-era 1999–2003 · PSA-first collecting strategy' },
+  'budget':    { label: 'Budget buys',  desc: 'Best value under £50 · highest score per £ spent' },
+  'japanese':  { label: 'Japanese',     desc: 'JP-exclusive prints · imports · HR/UR/SAR JP cards' },
+  'five-star': { label: '5★ only',      desc: 'S-tier Pokémon in premium rarity — highest long-term hold' },
+  's-tier':    { label: 'S-tier chars', desc: 'Charizard · Pikachu · Mewtwo · Eevee · top-demand Pokémon' },
+};
+
+function getFocus() {
+  try { return JSON.parse(localStorage.getItem(AI_FOCUS_KEY) || 'null'); } catch { return null; }
+}
+function setFocus(id, label) {
+  localStorage.setItem(AI_FOCUS_KEY, JSON.stringify({ id, label }));
+  _renderFocusBar();
+}
+function clearFocus() {
+  localStorage.removeItem(AI_FOCUS_KEY);
+  _renderFocusBar();
+}
+function _renderFocusBar() {
+  const focus = getFocus();
+  document.querySelectorAll('#aiFocusChips .ai-focus-chip').forEach(c => {
+    c.classList.toggle('active', !!focus && c.dataset.focusId === focus.id);
+  });
+  const clearBtn = document.getElementById('aiFocusClear');
+  if (clearBtn) clearBtn.style.display = focus ? '' : 'none';
+}
+
 const AI_KEY_STORAGE   = 'pkm-ai-chat-key-v1';
 const AI_PROV_STORAGE  = 'pkm-ai-chat-provider-v1';
 const AI_HIST_STORAGE  = 'pkm-ai-chat-history-v1';
@@ -15432,6 +15463,14 @@ function aiBuildContext() {
     fx_usd_per_gbp: (typeof fxRate === 'number' ? fxRate : null),
     max_budget_gbp: getMaxBudgetGBP() < 99000 ? getMaxBudgetGBP() : null, // null = no limit set
   };
+  // Active collecting focus — shapes AI recommendations and scoring
+  try {
+    const focus = getFocus();
+    if (focus && focus.id) {
+      const preset = AI_FOCUS_PRESETS[focus.id];
+      ctx.active_focus = { id: focus.id, label: focus.label, desc: preset ? preset.desc : '' };
+    }
+  } catch {}
 
   // Portfolio summary + top 10 cards by current value
   try {
@@ -15616,6 +15655,10 @@ function aiSystemPrompt(ctx) {
     ? `BUDGET CONSTRAINT: The user has set a maximum of £${ctx.max_budget_gbp} per card. Never suggest buying or grading anything whose cost exceeds this — not even as an aside. value_picks is pre-filtered to this budget. If budget is the binding constraint, say so and suggest alternatives within it.`
     : `BUDGET: No per-card limit set.`;
 
+  const focusLine = ctx.active_focus
+    ? `ACTIVE FOCUS: "${ctx.active_focus.label}" — ${ctx.active_focus.desc}. The score badges the user sees throughout the app already reflect this focus (matching cards are boosted, non-matching are penalised). When making recommendations, prioritise cards that fit this theme and say so explicitly. For card_market suggestions, filter or rank by this focus. If the user asks something off-focus, answer it but note how it relates to their goal.`
+    : '';
+
   const cardLine = ctx.selected_card
     ? `ACTIVE CARD: The user has [[card:${ctx.selected_card.id}|${ctx.selected_card.name}]] loaded on screen. Investment stars: ${ctx.selected_card.investment_stars ?? 'n/a'}/5. PSA 10 gem rate: ${ctx.selected_card.psa10_gem_rate_pct != null ? ctx.selected_card.psa10_gem_rate_pct + '%' : 'unknown'}. When asked to analyse it, use signal (${ctx.selected_card.signal || 'n/a'}), signal_reasons, desirability (${ctx.selected_card.desirability}), best_strategy, and forecast fields to give a complete verdict: buy/hold/sell, whether to grade, 5-year trajectory, and risks. Cite the actual numbers — don't be vague.`
     : '';
@@ -15625,6 +15668,7 @@ function aiSystemPrompt(ctx) {
 ROLE: Give crisp, data-driven advice on buying, selling, grading and timing the Pokemon TCG market. Be opinionated but honest about uncertainty. Optimise for actionable signal, not generic advice.
 
 ${budgetLine}
+${focusLine}
 ${cardLine}
 
 USER CONTEXT (always reflects their latest local state — do not ask for it):
@@ -16243,6 +16287,20 @@ function setupAiChat() {
     input.style.height = 'auto';
     aiSubmit(v);
   });
+
+  // Focus chips — toggle on click, click active chip again to clear
+  _renderFocusBar();
+  document.getElementById('aiFocusChips')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.ai-focus-chip');
+    if (!chip) return;
+    const focus = getFocus();
+    if (focus && focus.id === chip.dataset.focusId) {
+      clearFocus();
+    } else {
+      setFocus(chip.dataset.focusId, chip.dataset.focusLabel);
+    }
+  });
+  document.getElementById('aiFocusClear')?.addEventListener('click', clearFocus);
 
   aiSetupQuickPrompts();
 }
@@ -21216,6 +21274,33 @@ function _vgDealScore(card) {
 }
 
 // General (non-vintage) card deal score -100/+100. Uses cached signal so safe in render loops.
+function _focusScoreBonus(card, stars) {
+  const focus = getFocus();
+  if (!focus || !focus.id) return 0;
+  const rc = card.rc || _inferJPRarityRc(card);
+  switch (focus.id) {
+    case 'art-rares':
+      return HIGH_ART_RARITIES.has(rc) ? 15 : -8;
+    case 'vintage': {
+      const era = (typeof _tasteEra === 'function') ? _tasteEra(card) : 'unknown';
+      return era === 'wotc' ? 20 : era === 'dppt' ? 5 : -8;
+    }
+    case 'budget': {
+      const gbp = usdToGbp(card.p || 0);
+      return gbp > 0 && gbp <= 20 ? 20 : gbp <= 50 ? 10 : gbp <= 100 ? 0 : -12;
+    }
+    case 'japanese':
+      return card.lang === 'JP' ? 15 : card.lang === 'CN' ? 5 : -8;
+    case 'five-star':
+      return stars === 5 ? 20 : stars === 4 ? 5 : (stars <= 2 ? -20 : -8);
+    case 's-tier': {
+      const cs = (typeof getCharacterScore === 'function') ? getCharacterScore(card.n) : 5;
+      return cs >= 9.0 ? 20 : cs >= 7.5 ? 5 : -8;
+    }
+  }
+  return 0;
+}
+
 function _cardScoreData(card) {
   let score = 0, reason = '';
   try {
@@ -21253,6 +21338,9 @@ function _cardScoreData(card) {
         }
       }
     } catch {}
+
+    // Focus mode: boost or penalise based on current collecting goal (±20)
+    score += _focusScoreBonus(card, stars);
   } catch {}
   return { score: Math.max(-100, Math.min(100, Math.round(score))), reason };
 }
