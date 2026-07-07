@@ -2862,6 +2862,7 @@ function selectCard(id) {
     const _newHeroSrc = getCardImg(card);
     const _seq = (_heroBg._heroSeq = (_heroBg._heroSeq || 0) + 1);
     _heroBg.classList.remove('hero-loaded');
+    _heroBg.style.backgroundImage = '';
     const _pre = new Image();
     _pre.src = _newHeroSrc;
     const _ready = typeof _pre.decode === 'function'

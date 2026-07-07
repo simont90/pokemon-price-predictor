@@ -295,13 +295,12 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  filter: blur(24px) saturate(1.2);
   opacity: 0;
   z-index: 0;
   pointer-events: none;
-  will-change: opacity;
 }
 .card-hero-bg.hero-loaded {
+  filter: blur(24px) saturate(1.2);
   opacity: 0.20;
   animation: _heroFadeIn 0.5s ease forwards;
 }
@@ -8613,11 +8612,9 @@ section.card .card-collapse-btn { padding: 10px; }
   -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
-[data-theme="light"] .card-hero-bg {
-  filter: blur(36px) saturate(2.0);
-}
 [data-theme="light"] .card-hero-bg.hero-loaded {
   opacity: 0.14;
+  filter: blur(36px) saturate(2.0);
   animation: _heroFadeIn_light 0.5s ease forwards;
 }
 
