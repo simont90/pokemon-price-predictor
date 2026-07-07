@@ -7218,9 +7218,12 @@ section.card .card-collapse-btn { padding: 10px; }
   box-shadow: 0 4px 20px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 [data-theme="light"] .home-budget-bar {
-  background: rgba(255,255,255,0.82);
+  background: rgba(255,255,255,0.55);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(0,0,0,0.07);
-  box-shadow: 0 2px 12px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.95);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05), inset 0 1.5px 0 rgba(255,255,255,0.95);
+  transform: translateZ(0);
 }
 .budget-divider {
   width: 1px;
@@ -7327,9 +7330,12 @@ section.card .card-collapse-btn { padding: 10px; }
   box-shadow: 0 4px 20px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 [data-theme="light"] .home-dashboard > .home-section-wrap {
-  background: rgba(255,255,255,0.82);
+  background: rgba(255,255,255,0.55);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(0,0,0,0.07);
-  box-shadow: 0 2px 12px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.95);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05), inset 0 1.5px 0 rgba(255,255,255,0.95);
+  transform: translateZ(0);
 }
 
 .home-section-hd {
@@ -9326,9 +9332,12 @@ section.card .card-collapse-btn { padding: 10px; }
   box-shadow: 0 4px 20px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 [data-theme="light"] .home-tab-group {
-  background: rgba(255,255,255,0.82);
+  background: rgba(255,255,255,0.55);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(0,0,0,0.07);
-  box-shadow: 0 2px 12px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.95);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05), inset 0 1.5px 0 rgba(255,255,255,0.95);
+  transform: translateZ(0);
 }
 
 /* Override sticky positioning from .predict-tab-bar for home use */
@@ -9896,9 +9905,12 @@ body {
   }
   [data-theme="light"] .home-dashboard > .home-section-wrap,
   [data-theme="light"] .home-tab-group {
-    background: rgba(255,255,255,0.78);
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid rgba(0,0,0,0.07);
-    box-shadow: 0 2px 16px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.95);
+    box-shadow: 0 2px 16px rgba(0,0,0,0.06), inset 0 1.5px 0 rgba(255,255,255,0.95);
+    transform: translateZ(0);
   }
   [data-theme="light"] .home-tab-bar {
     background: rgba(0,0,0,0.04);
@@ -10009,6 +10021,26 @@ body {
 }
 @media (min-width: 1920px) {
   .app { max-width: min(1760px, 96vw); }
+}
+/* Restore 2200px+ rule — must come after the 1920px rule above so it wins in cascade */
+@media (min-width: 2200px) {
+  .app { max-width: min(2000px, 96vw); padding-left: 48px; padding-right: 48px; }
+  .home-card-tile { width: 340px; }
+  .home-scroll-row { gap: 26px; }
+  .home-dashboard { gap: 26px; }
+}
+/* 27" Apple Studio Display — 5120×2880 at 2× = 2560 CSS px */
+@media (min-width: 2560px) {
+  .app { max-width: min(2280px, 96vw); padding-left: 56px; padding-right: 56px; }
+  .home-card-tile { width: 380px; }
+  .home-scroll-row { gap: 32px; }
+  .home-dashboard { gap: 32px; padding: 28px 0 100px; }
+  .card { padding: 32px; }
+  .predicted-price { font-size: 72px; }
+  .max-price { font-size: 54px; }
+  .live-main-price { font-size: 44px; }
+  .card-thumb { height: 980px !important; }
+  .main { gap: 48px; }
 }
 
 /* iPad portrait (768–1023px): unlock home dashboard width cap before grid kicks in */
@@ -11103,6 +11135,13 @@ html { scroll-behavior: smooth; }
     0 2px 14px rgba(0,0,0,0.28),
     0 0 0 0.5px rgba(255,255,255,0.14);
 }
+[data-theme="light"] .ptab.ptab-active {
+  background: rgba(255,255,255,0.90);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255,255,255,0.98),
+    0 1px 6px rgba(0,0,0,0.10),
+    0 0 0 0.5px rgba(0,0,0,0.07);
+}
 
 /* ── Tab bar: backdrop blur so it floats above its panel ── */
 [data-theme="dark"] .home-tab-bar {
@@ -11249,6 +11288,28 @@ html[data-glass="tinted"] .home-tab-group {
     0 8px 40px rgba(0,0,0,0.50),
     inset 0 2px 0 rgba(255,255,255,0.10),
     inset 0 -1px 0 rgba(0,0,0,0.28);
+}
+
+/* ── Liquid Glass tint — light mode overrides (dark rgba makes no sense on light bg) ── */
+html[data-theme="light"][data-glass="clear"] .home-dashboard > .home-section-wrap,
+html[data-theme="light"][data-glass="clear"] .home-tab-group {
+  background: rgba(255,255,255,0.28);
+  backdrop-filter: blur(44px) saturate(240%) brightness(1.04);
+  -webkit-backdrop-filter: blur(44px) saturate(240%) brightness(1.04);
+  box-shadow:
+    0 4px 28px rgba(0,0,0,0.05),
+    inset 0 1.5px 0 rgba(255,255,255,0.98),
+    inset 0 -1px 0 rgba(0,0,0,0.04);
+}
+html[data-theme="light"][data-glass="tinted"] .home-dashboard > .home-section-wrap,
+html[data-theme="light"][data-glass="tinted"] .home-tab-group {
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow:
+    0 4px 20px rgba(0,0,0,0.07),
+    inset 0 1.5px 0 rgba(255,255,255,0.98),
+    inset 0 -1px 0 rgba(0,0,0,0.04);
 }
 
 /* ── Glass tint button style ── */
