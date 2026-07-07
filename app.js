@@ -20830,16 +20830,22 @@ function _vgLadder(card) {
   // WOTC cards rarely have gem rate data — assume low-moderate (8%) so ratio estimates
   // are more conservative: PSA 9 ~30% of 10, PSA 8 ~16% (rather than 35%/18%).
   const vgCard = card.g != null ? card : { ...card, g: 0.08 };
+  let bestScore = null;
   const ladder = VINTAGE_GRADES.map(g => {
-    let usd, src;
+    const fairUSD = g === 10 ? est10 : est10 * _gemRateGradeRatio(vgCard, g);
+    let usd, src, score = null;
     if (g === 10) {
       usd = est10; src = pc10 ? 'pc' : (card.p10 ? 'db' : 'est');
+      // A live 10 can only be judged against the static DB reference price
+      if (pc10 && card.p10 && card.p10 !== pc10) score = _vgScore(card.p10, pc10);
     } else if (liveByG[g] > 0) {
       usd = liveByG[g]; src = 'pc';
+      score = _vgScore(fairUSD, usd);
     } else {
-      usd = est10 * _gemRateGradeRatio(vgCard, g); src = 'est';
+      usd = fairUSD; src = 'est';
     }
-    return { g, gbp: usdToGbp(usd || 0), src };
+    if (score !== null && (bestScore === null || score > bestScore)) bestScore = score;
+    return { g, gbp: usdToGbp(usd || 0), src, score };
   });
   // Enforce monotonicity: estimated grades must not exceed the grade above them.
   // Mixed live/estimated data can otherwise produce inversions (e.g. PSA 8 est > PSA 9 live).
@@ -20850,7 +20856,32 @@ function _vgLadder(card) {
       lower.gbp = upper.gbp * 0.85;
     }
   }
-  return { rawGBP: usdToGbp(rawUSD || 0), ladder, hasLive: !!pd };
+  return { rawGBP: usdToGbp(rawUSD || 0), ladder, hasLive: !!pd, bestScore };
+}
+
+// A live grade priced at or above this score is an "excellent value" deal —
+// highlighted yellow with a Buy link.
+const VG_DEAL_SCORE = 25;
+
+// Buy rating for a live grade price: how far the market price sits under (+)
+// or over (−) the expected value for that grade, clamped to ±100.
+// +100 → half fair value or less; −100 → double fair value or more.
+function _vgScore(fairUSD, actualUSD) {
+  if (!(fairUSD > 0) || !(actualUSD > 0)) return null;
+  return Math.max(-100, Math.min(100, Math.round((fairUSD / actualUSD - 1) * 100)));
+}
+
+function _vgScoreBadge(score) {
+  if (score === null || score === undefined) return '';
+  const cls = score >= 0 ? 'vg-score-pos' : 'vg-score-neg';
+  return `<span class="vg-score ${cls}" title="Buy rating: live price vs expected value for the grade (+100 = deep discount, −100 = heavy premium)">${score > 0 ? '+' : ''}${score}</span>`;
+}
+
+function _vgEbayUrl(card, grade) {
+  const name = (card.n || '').replace(/[™®]/g, '').trim();
+  const num  = card.cn && card.ct ? ` ${card.cn}/${card.ct}` : '';
+  const q = `${name}${num} PSA ${grade}`;
+  return `https://www.ebay.co.uk/sch/i.html?_nkw=${encodeURIComponent(q)}&_sacat=2536`;
 }
 
 // The "best solution" picks. Sweet spot = the grade sitting just below the
@@ -20895,18 +20926,23 @@ function _vgLadderHTML(card) {
   const target = data.targets[card.i];
   const srcBadge = s => s === 'pc' ? '<span class="vg-src vg-src-pc" title="PriceCharting recent sales">PC</span>'
     : s === 'db' ? '' : '<span class="vg-src vg-src-est" title="Estimated from raw price via grade ratios">~est</span>';
-  const rows = ladder.map(({ g, gbp, src }) => {
+  const rows = ladder.map(({ g, gbp, src, score }) => {
     const tags = [];
     if (g === picks.gem)          tags.push('<span class="vg-tag vg-tag-gem">Gem</span>');
     if (g === picks.sweet)        tags.push('<span class="vg-tag vg-tag-sweet">Sweet spot</span>');
     if (picks.collector.has(g))   tags.push('<span class="vg-tag vg-tag-collector">Collector grade</span>');
     if (g === picks.budget)       tags.push('<span class="vg-tag vg-tag-budget">Authenticity pick</span>');
     const isTarget = target && target.grade === g;
-    return `<div class="vg-ladder-row ${isTarget ? 'vg-ladder-target' : ''}">
+    const isDeal   = score !== null && score >= VG_DEAL_SCORE;
+    if (isDeal) tags.unshift('<span class="vg-tag vg-tag-deal">Excellent value</span>');
+    const buyBtn = isDeal
+      ? `<a class="vg-buy-btn" href="${_vgEbayUrl(card, g)}" target="_blank" rel="noopener noreferrer">Buy ↗</a>`
+      : '';
+    return `<div class="vg-ladder-row ${isTarget ? 'vg-ladder-target' : ''}${isDeal ? ' vg-ladder-deal' : ''}">
       <span class="vg-ladder-grade">PSA ${g}</span>
-      <span class="vg-ladder-price">${gbp > 0 ? fmtGBPDirect(gbp) : '—'}${srcBadge(src)}</span>
+      <span class="vg-ladder-price">${gbp > 0 ? fmtGBPDirect(gbp) : '—'}${srcBadge(src)}${_vgScoreBadge(score)}</span>
       <span class="vg-ladder-tags">${tags.join('')}</span>
-      <button class="vg-target-btn ${isTarget ? 'vg-target-on' : ''}" data-vg-target="${esc(card.i)}" data-grade="${g}">${isTarget ? '★ Target' : 'Target'}</button>
+      <span class="vg-ladder-act">${buyBtn}<button class="vg-target-btn ${isTarget ? 'vg-target-on' : ''}" data-vg-target="${esc(card.i)}" data-grade="${g}">${isTarget ? '★ Target' : 'Target'}</button></span>
     </div>`;
   }).join('');
   const rawRow = `<div class="vg-ladder-row vg-ladder-raw">
@@ -20928,13 +20964,12 @@ function _vgLadderHTML(card) {
 
 function _vgCardRowHTML(card, data) {
   const target = data.targets[card.i];
-  const cached = getCachedPrice(card.i) || getLastKnownPrice(card.i);
-  const rawUSD = cached ? (cached.pcUngraded || cached.market || cached.mid || card.p || 0) : (card.p || 0);
-  const rawGBP = usdToGbp(rawUSD || 0);
+  const { rawGBP, bestScore } = _vgLadder(card);
+  const isDeal = bestScore !== null && bestScore >= VG_DEAL_SCORE;
   const targetBadge = target
     ? `<span class="vg-row-target ${target.owned ? 'vg-row-owned' : ''}">${target.owned ? '✓' : '★'} PSA ${target.grade}</span>`
     : '';
-  return `<details class="vg-card" data-vg-card="${esc(card.i)}">
+  return `<details class="vg-card${isDeal ? ' vg-card-deal' : ''}" data-vg-card="${esc(card.i)}">
     <summary class="vg-card-summary">
       <img class="vg-card-img" src="${esc(getCardImg(card) || '')}" alt="" loading="lazy" onerror="this.style.opacity='0'">
       <span class="vg-card-num">${card.cn ? '#' + esc(String(card.cn)) : ''}</span>
@@ -20942,6 +20977,7 @@ function _vgCardRowHTML(card, data) {
       <span class="vg-card-meta">${esc(card.r || '')}</span>
       ${_vgIsGoldStar(card) ? '<span class="vg-gs-badge">★ Gold Star</span>' : ''}
       ${targetBadge}
+      ${_vgScoreBadge(bestScore)}
       <span class="vg-card-raw">${rawGBP > 0 ? fmtGBPDirect(rawGBP) : '—'}</span>
       <button class="vg-open-btn" data-vg-open="${esc(card.i)}" title="Open in Predict">↗</button>
     </summary>
@@ -21025,6 +21061,15 @@ function renderVintagePage() {
   let cards = _vgSetCards(activeSet);
   if (_vgSort === 'price' && !isJP) cards = [...cards].sort((a, b) => (b.p || 0) - (a.p || 0));
   else if (_vgSort === 'name')      cards = [...cards].sort((a, b) => a.n.localeCompare(b.n));
+  else if (_vgSort === 'score') {
+    // Best buy rating first; cards with no live data (no score) go last in set order
+    const sc = new Map(cards.map(c => [c.i, _vgLadder(c).bestScore]));
+    cards = [...cards].sort((a, b) => {
+      const sa = sc.get(a.i), sb = sc.get(b.i);
+      if ((sa === null) !== (sb === null)) return sa === null ? 1 : -1;
+      return (sb ?? 0) - (sa ?? 0) || (parseInt(a.cn) || 9999) - (parseInt(b.cn) || 9999);
+    });
+  }
   else cards = [...cards].sort((a, b) => (parseInt(a.cn) || 9999) - (parseInt(b.cn) || 9999) || a.n.localeCompare(b.n));
 
   const setInfo = sets.find(s => s.code === activeSet);
@@ -21056,6 +21101,7 @@ function renderVintagePage() {
         <select id="vgSortSel" class="binder-sort-sel">
           <option value="num" ${_vgSort === 'num' ? 'selected' : ''}>Set number</option>
           ${!isJP ? `<option value="price" ${_vgSort === 'price' ? 'selected' : ''}>Price high–low</option>` : ''}
+          <option value="score" ${_vgSort === 'score' ? 'selected' : ''}>Buy score</option>
           <option value="name" ${_vgSort === 'name' ? 'selected' : ''}>A–Z</option>
         </select>
       </div>
