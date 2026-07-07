@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260707n">
+  <link rel="stylesheet" href="style.css?v=20260707o">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1089,7 +1089,10 @@
               </div>
               <!-- HOLD / BUY / SELL Signal -->
               <div class="signal-badge-wrap" id="signalWrap" style="display:none">
-                <div class="signal-badge" id="signalBadge"></div>
+                <div class="signal-badge-row">
+                  <div class="signal-badge" id="signalBadge"></div>
+                  <span class="vg-score card-score-badge" id="signalScore" style="display:none"></span>
+                </div>
                 <div class="signal-reason" id="signalReason"></div>
                 <div class="signal-hold-desc" id="signalHoldDesc" style="display:none"></div>
                 <button class="btn-jump-hold" id="signalJumpHold" style="display:none">Jump to Hold Strategy ↓</button>
@@ -2524,7 +2527,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260707n"></script>
+  <script src="app.js?v=20260707o"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

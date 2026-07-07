@@ -1559,6 +1559,7 @@ function doSearch(query) {
           ${seriesLabel}
           ${tasteChip}
         </div>
+        ${c.p > 0 ? _cardScoreBadgeHtml(c) : ''}
       </div>
       <div class="search-result-price">${priceLabel}
       </div>
@@ -3193,6 +3194,17 @@ function updateSignal(card, pullCost, desirability) {
   $('signalBadge').textContent = signal;
   $('signalBadge').className = `signal-badge ${cls}`;
   $('signalReason').textContent = signalSentence(signal, reasons, owned);
+  const scoreEl = $('signalScore');
+  if (scoreEl) {
+    let ns = signal === 'STRONG BUY' ? 55 : signal === 'BUY' ? 30 : signal === 'HOLD' ? 5 : -30;
+    const d = desirability || 0;
+    if (d >= 8) ns += 15; else if (d >= 6) ns += 8; else if (d < 3) ns -= 10;
+    ns = Math.max(-100, Math.min(100, Math.round(ns)));
+    const sign = ns > 0 ? '+' : '';
+    scoreEl.textContent = `${sign}${ns}`;
+    scoreEl.className = `vg-score card-score-badge ${ns >= 0 ? 'vg-score-pos' : 'vg-score-neg'}`;
+    scoreEl.style.display = '';
+  }
 
   const holdDescEl = $('signalHoldDesc');
   const jumpBtnEl  = $('signalJumpHold');
@@ -6540,6 +6552,7 @@ function renderBinderPage() {
       ? `<button class="binder-pg-complete" data-id="${b.id}" title="Got the upgrade — remove from binder project">✓ Got the upgrade</button>` : '';
     const isSelected = _binderReorgSelected.has(b.id);
     const reorgCb = `<span class="breorg-cb${isSelected ? ' checked' : ''}" data-id="${b.id}" title="Select card"></span>`;
+    const binderScoreBadge = liveCard ? _cardScoreBadgeHtml(liveCard) : '';
     return `
       <div class="binder-pg-card${(b.owned || b.upgrade) ? ' binder-pg-owned-card' : ''}${isSelected ? ' breorg-selected' : ''}" data-id="${b.id}" draggable="true">
         <div class="binder-pg-img-wrap">
@@ -6550,6 +6563,7 @@ function renderBinderPage() {
           <div class="binder-pg-card-name">${esc(b.name)}</div>
           <div class="binder-pg-card-set">${esc(b.set)}</div>
           <div class="binder-pg-card-price">${priceStr}</div>
+          ${binderScoreBadge}
           ${upgradeTag}
           <div class="binder-pg-card-actions">
             ${binderStatusBtn(b, 'binder-pg-owned')}
@@ -16746,6 +16760,7 @@ function _recoTileHtml(r) {
       <div class="home-card-name">${esc(r.card.n)}</div>
       <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}${gem}</div>
       <div class="home-card-sub">${upside}${tasteChip}${forYou}</div>
+      ${_cardScoreBadgeHtml(r.card)}
       ${gradeLadder1}
     </div>
   </div>`;
@@ -17581,6 +17596,7 @@ function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass
     ? `<span class="home-card-signal ${signalClass}">${signalLabel}</span>`
     : '';
   const sub = subText ? `<div class="home-card-sub">${esc(subText)}</div>` : '';
+  const scoreBadge = opts.scoreBadgeHtml || '';
   const tileClass = ['home-card-tile', extraClass, opts.urgentBuy ? 'urgent-buy' : ''].filter(Boolean).join(' ');
   const hiddenAttr = opts.hidden ? ' style="display:none"' : '';
   const dealUrlAttr = opts.dealUrl ? ` data-deal-url="${esc(opts.dealUrl)}"` : '';
@@ -17599,6 +17615,7 @@ function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass
       <div class="home-card-name">${esc(name)}</div>
       <div class="home-card-price">${price}</div>
       ${sub}
+      ${scoreBadge}
     </div>
   </div>`;
 }
@@ -17922,7 +17939,8 @@ function _renderHomeCollection() {
       if (sig) signal = sig.signal;
     }
     const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
-    return _homeTile(p.id, p.img, p.name, fmtGBPDirect(priceGBP), signal ? sc : null, signal, '', p.set);
+    return _homeTile(p.id, p.img, p.name, fmtGBPDirect(priceGBP), signal ? sc : null, signal, '', p.set,
+      { scoreBadgeHtml: card ? _cardScoreBadgeHtml(card) : '' });
   });
   list.innerHTML = tiles.join('');
   if (totalEl) totalEl.textContent = `${fmtGBPDirect(totalGBP)} · ${portfolio.length} card${portfolio.length !== 1 ? 's' : ''}`;
@@ -17991,7 +18009,8 @@ function _renderHomeWishlist() {
     else if (w.set) subParts.push(w.set);
     if (stratLabel) subParts.push(stratLabel);
     const urgentBuy = !!budgetPick && budgetPick.pick.roi >= 150;
-    return [_homeTile(w.id, w.img, w.name, displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', alertClass, alertLabel, '', subParts.join(' · '), { hidden: filtered, urgentBuy })];
+    return [_homeTile(w.id, w.img, w.name, displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', alertClass, alertLabel, '', subParts.join(' · '),
+      { hidden: filtered, urgentBuy, scoreBadgeHtml: card ? _cardScoreBadgeHtml(card) : '' })];
   });
   const visibleCount = tiles.filter(t => !t.includes('style="display:none"')).length;
   if (countEl) countEl.textContent = visibleCount;
@@ -18048,7 +18067,7 @@ function _renderHomeWatchlist() {
       displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—',
       sc, signal,
       triggered ? 'alert-tile' : '',
-      subParts.join(' · '), { hidden: filtered, urgentBuy })];
+      subParts.join(' · '), { hidden: filtered, urgentBuy, scoreBadgeHtml: card ? _cardScoreBadgeHtml(card) : '' })];
   });
   const visibleCount = tiles.filter(t => !t.includes('style="display:none"')).length;
   if (countEl) countEl.textContent = visibleCount;
@@ -21155,6 +21174,49 @@ function _vgDealScore(card) {
     else if (!card.p10) score -= 10;
   } catch {}
   return Math.max(-100, Math.min(100, Math.round(score)));
+}
+
+// General (non-vintage) card deal score -100/+100. Uses cached signal so safe in render loops.
+function _cardScoreData(card) {
+  let score = 0, reason = '';
+  try {
+    const pull = 7.65;
+    const des = autoFillDesirability(card, pull);
+    const sig = _getCachedSignal(card, pull, des.total);
+    if (sig) {
+      if      (sig.signal === 'STRONG BUY') score += 55;
+      else if (sig.signal === 'BUY')        score += 30;
+      else if (sig.signal === 'HOLD')       score +=  5;
+      else if (sig.signal === 'SELL')       score -= 30;
+      // Use signalSentence so the reason always aligns with the signal direction
+      if (typeof signalSentence === 'function') reason = signalSentence(sig.signal, sig.reasons, false);
+      else if (sig.reasons && sig.reasons.length) reason = sig.reasons[0];
+    }
+    const d = des.total || 0;
+    if      (d >= 8) score += 15;
+    else if (d >= 6) score +=  8;
+    else if (d <  3) score -= 10;
+    try {
+      const tp = tasteGetProfile();
+      if (tp && tp.items >= TASTE_MIN_ITEMS) {
+        const ts = tasteScoreCard(card, sig);
+        if (ts && ts.score != null) {
+          score += Math.round((ts.score - 50) * 0.5);
+          if (!reason && ts.reasons && ts.reasons.length) reason = ts.reasons[0];
+        }
+      }
+    } catch {}
+  } catch {}
+  return { score: Math.max(-100, Math.min(100, Math.round(score))), reason };
+}
+
+function _cardScoreBadgeHtml(card) {
+  if (!card) return '';
+  const { score, reason } = _cardScoreData(card);
+  const cls = score >= 0 ? 'vg-score-pos' : 'vg-score-neg';
+  const sign = score > 0 ? '+' : '';
+  const reasonHtml = reason ? `<span class="card-score-reason">${esc(reason)}</span>` : '';
+  return `<div class="card-score-wrap"><span class="vg-score card-score-badge ${cls}">${sign}${score}</span>${reasonHtml}</div>`;
 }
 
 function _vgLadderHTML(card) {
