@@ -3115,62 +3115,58 @@ function setupImageLightbox() {
 function computeSignal(card, pullCost, desirability) {
   if (!card) return null;
 
-  const { priceUSD } = predictPrice(pullCost, desirability);
   const marketPrice = getCurrentPrice(card);
-  const modelPrice = priceUSD;
-
+  const { priceUSD: modelPrice } = predictPrice(pullCost, desirability);
   const modelVsMarket = modelPrice / marketPrice;
+
   const fc = forecast(card, pullCost, desirability);
-  const yr1Expected = fc.scenarios.expected[0]?.priceUSD || marketPrice;
-  const yr1Growth = (yr1Expected - marketPrice) / marketPrice;
-  const yr3Expected = fc.scenarios.expected[2]?.priceUSD || marketPrice;
-  const yr3Growth = (yr3Expected - marketPrice) / marketPrice;
+  const { rarityRate, charMult, ageMonths } = fc;
 
   const momentum = getMarketMomentum();
   const isHeating = momentum.mult > 1.1;
   const isCooling = momentum.mult < 0.8;
 
-  const rarityRate = (RARITY_RATES[card.rc] || RARITY_RATES['']).base;
-  const isHighRarity = rarityRate >= 0.15;
-
-  const charMult = getCharacterMultiplier(card.n);
   const isChaseChar = charMult >= 1.3;
+
+  // Primary signal: model's projected annual growth rate (rarityRate × charMult × ageMult)
+  // Benchmarked against ~8% opportunity cost. This is the direct output of the forecast model.
+  const ageMult = getAgeMultiplier(ageMonths, 1);
+  const annualRate = rarityRate * charMult * ageMult;
 
   let score = 0;
   let reasons = [];
 
-  if (modelVsMarket > 1.15) { score += 2; reasons.push('Model sees upside'); }
-  else if (modelVsMarket > 1.05) { score += 1; reasons.push('Slightly undervalued'); }
-  else if (modelVsMarket < 0.85) { score -= 2; reasons.push('Overvalued vs model'); }
-  else if (modelVsMarket < 0.95) { score -= 1; reasons.push('Slightly overvalued'); }
+  // Model growth rate — primary driver
+  if (annualRate > 0.18)      { score += 3; reasons.push(`Model: ${(annualRate*100).toFixed(0)}% annual growth`); }
+  else if (annualRate > 0.12) { score += 2; reasons.push(`Model: ${(annualRate*100).toFixed(0)}% annual growth`); }
+  else if (annualRate > 0.08) { score += 1; reasons.push(`Model: ${(annualRate*100).toFixed(0)}% annual growth`); }
+  else if (annualRate < 0.03) { score -= 2; reasons.push(`Model: only ${(annualRate*100).toFixed(0)}% annual growth`); }
+  else if (annualRate < 0.05) { score -= 1; reasons.push('Thin growth outlook'); }
 
-  if (yr1Growth > 0.20) { score += 1; reasons.push(`+${(yr1Growth*100).toFixed(0)}% expected yr 1`); }
-  else if (yr1Growth < 0.05) { score -= 1; reasons.push('Weak near-term growth'); }
-
-  if (yr3Growth > 0.50) { score += 1; reasons.push('Strong 3yr outlook'); }
+  // Secondary: model fair value vs current market price
+  if (modelVsMarket > 1.15)      { score += 1; reasons.push('Undervalued vs model'); }
+  else if (modelVsMarket < 0.85) { score -= 1; reasons.push('Overvalued vs model'); }
 
   if (isHeating) { score += 1; reasons.push('Market heating'); }
   if (isCooling) { score -= 1; reasons.push('Market cooling'); }
 
-  if (isHighRarity && isChaseChar) { score += 1; reasons.push('Chase card premium'); }
+  // isHighRarity: rarityRate >= 0.07 covers IR, UR, SAR, SIR, SHR, MHR, SHUR, CSR
+  if (rarityRate >= 0.07 && isChaseChar) { score += 1; reasons.push('Chase card premium'); }
 
-  const ageMonths = getSetAgeMonths(card.sc);
-  if (ageMonths < 3)       { score -= 2; reasons.push('Very new — price typically dips first 3 months'); }
-  else if (ageMonths < 6)  { score -= 1; reasons.push('New set — price may still drop'); }
-  else if (ageMonths < 24) { /* neutral — active market, no age adjustment */ }
-  else if (ageMonths < 48) { score += 1; reasons.push('Proven set — demand well established'); }
-  else                     { score += 2; reasons.push('Vintage scarcity premium'); }
+  if (ageMonths < 3)        { score -= 2; reasons.push('Very new — price typically dips first 3 months'); }
+  else if (ageMonths < 6)   { score -= 1; reasons.push('New set — price may still drop'); }
+  else if (ageMonths >= 48) { score += 1; reasons.push('Vintage scarcity premium'); }
 
   // Gem-rate signal: hard-to-grade cards command extra PSA 10 scarcity premium
   const gemRate = card.g != null ? card.g : null;
   if (gemRate !== null) {
-    if (gemRate < 0.05)      { score += 1; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — very hard to grade`); }
+    if (gemRate < 0.05)       { score += 1; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — very hard to grade`); }
     else if (gemRate >= 0.30) { score -= 1; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — easy to grade, many PSA 10s`); }
   }
 
   let signal, cls;
-  if (score >= 3) { signal = 'STRONG BUY'; cls = 'signal-strong-buy'; }
-  else if (score >= 1) { signal = 'BUY'; cls = 'signal-buy'; }
+  if (score >= 4)       { signal = 'STRONG BUY'; cls = 'signal-strong-buy'; }
+  else if (score >= 2)  { signal = 'BUY'; cls = 'signal-buy'; }
   else if (score <= -2) { signal = 'SELL'; cls = 'signal-sell'; }
   else { signal = 'HOLD'; cls = 'signal-hold'; }
 
