@@ -555,7 +555,11 @@ async function init() {
   // Kick off background price prefetch 800 ms after init — covers all tracked
   // cards (portfolio + wishlist + watchlist + binder + previously cached).
   setTimeout(() => { try { _homeAutoRefresh(); } catch {} }, 800);
-  // Global 7AM refresh: runs 3 s after init, after home refresh is underway.
+  // Pre-fetch all binder prices silently at startup so they're ready before
+  // the user opens the binder page. Runs 1.5 s after init to avoid competing
+  // with the home refresh; continues in the background even if binder is hidden.
+  setTimeout(() => { try { _binderAutoRefresh(); } catch {} }, 1500);
+  // Global 6AM GMT refresh: runs 3 s after init, after home refresh is underway.
   setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 3000);
 }
 
@@ -6872,7 +6876,9 @@ async function binderFetchAllPrices(btn, { silent = false } = {}) {
 
   async function worker() {
     while (queue.length > 0) {
-      if (binderEl?.style.display === 'none') break;
+      // Silent pre-fetch continues regardless of which page is shown.
+      // Manual (non-silent) refresh stops if the user navigates away.
+      if (!silent && binderEl?.style.display === 'none') break;
       const card = queue.shift();
       if (!card) break;
       if (!silent) btn.textContent = `${done}/${total} fetched…`;
@@ -6893,15 +6899,17 @@ async function binderFetchAllPrices(btn, { silent = false } = {}) {
     btn.disabled = false;
   }
   delete btn.dataset.running;
+  localStorage.setItem(BINDER_REFRESH_KEY, String(Date.now()));
   renderBinderPage();
 }
 
-// Returns the timestamp (ms) for 7AM today in local time.
-function _last7AM() {
+const BINDER_REFRESH_KEY = 'pkm-binder-refresh-ts'; // device-local, not synced
+
+// Returns the timestamp (ms) for 6AM UTC today (= 6AM GMT).
+function _last6AMGMT() {
   const now = new Date();
-  const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 7, 0, 0, 0);
-  // If it's before 7AM today, the last 7AM was yesterday.
-  if (now < t) t.setDate(t.getDate() - 1);
+  const t = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 6, 0, 0, 0));
+  if (now < t) t.setUTCDate(t.getUTCDate() - 1);
   return t.getTime();
 }
 
@@ -6915,7 +6923,7 @@ const GLOBAL_REFRESH_KEY = 'pkm-global-refresh-ts'; // device-local, not synced
 
 function _shouldGlobalRefresh() {
   const last = parseInt(localStorage.getItem(GLOBAL_REFRESH_KEY) || '0', 10);
-  return last < _last7AM();
+  return last < _last6AMGMT();
 }
 
 function _markGlobalRefreshed() {
@@ -6963,15 +6971,18 @@ function _globalRefreshIfDue() {
   _globalSilentRefresh();
 }
 
-// ── Binder page auto-fill ──────────────────────────────────────────────────
-// Only fetches cards that have *never* been cached. The 7AM global refresh
-// above handles keeping all prices current; this just fills gaps for
-// newly-added binder cards before the next 7AM cycle.
+// ── Binder background pre-fetch ────────────────────────────────────────────
+// Runs at app startup and when the binder page opens. Fetches all binder
+// card prices silently if they haven't been refreshed since today's 6AM GMT.
+// Silent runs continue in the background even when the binder page is hidden.
 function _binderAutoRefresh() {
   const btn = $('binderRefreshPricesBtn');
   if (!btn || btn.dataset.running === 'true') return;
+  if (!fullArtBinder.length) return;
+  const lastRefresh = parseInt(localStorage.getItem(BINDER_REFRESH_KEY) || '0', 10);
+  const stale = lastRefresh < _last6AMGMT();
   const hasUncached = fullArtBinder.some(b => !getLastKnownPrice(b.id));
-  if (!hasUncached) return;
+  if (!stale && !hasUncached) return;
   binderFetchAllPrices(btn, { silent: true });
 }
 
