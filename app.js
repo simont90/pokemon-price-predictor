@@ -303,7 +303,14 @@ async function _resolveLegacyTCGCImage(card) {
 }
 
 // ---- Live Pricing Cache (localStorage with TTL) ----
-const PRICE_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+// Price is valid until the next 6AM GMT refresh cycle — computed at call time.
+function _priceCacheIsValid(ts) {
+  const now = Date.now();
+  const d = new Date();
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 6, 0, 0, 0));
+  if (d < t) t.setUTCDate(t.getUTCDate() - 1);
+  return (ts || 0) >= t.getTime();
+}
 const PRICE_CACHE_KEY = 'pkm-live-prices-v5'; // v5: adds ACE/CGC/BGS/TAG/SGC 10 anchors from PC full-grade table
 let _priceCache = null; // in-memory mirror; avoids JSON.parse on every getCachedPrice call
 // Computation caches — per-card, invalidated when that card's price data changes
@@ -338,7 +345,7 @@ function getCachedPrice(cardId) {
   const cache = getPriceCache();
   const entry = cache[cardId];
   if (!entry) return null;
-  if (Date.now() - (entry._ts || 0) > PRICE_CACHE_TTL) return null;
+  if (!_priceCacheIsValid(entry._ts)) return null;
   return entry;
 }
 
@@ -2205,8 +2212,6 @@ async function fetchLivePrice(card) {
     renderLivePrice(cached);
     recalcWithLivePrice(card);
     maybeFetchMarketDataFromLive(card, cached);
-    // Still fetch fresh in background to update cache
-    fetchAndCacheFresh(card, thisId);
     return;
   }
 
