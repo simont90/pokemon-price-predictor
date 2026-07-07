@@ -303,7 +303,8 @@ async function _resolveLegacyTCGCImage(card) {
 }
 
 // ---- Live Pricing Cache (localStorage with TTL) ----
-// Price is valid until the next 6AM GMT refresh cycle — computed at call time.
+const PRICE_CACHE_TTL = 6 * 60 * 60 * 1000; // kept for other callers (rate-limits, UI counters)
+// For getCachedPrice: valid until next 6AM GMT rather than a rolling window.
 function _priceCacheIsValid(ts) {
   const now = Date.now();
   const d = new Date();
