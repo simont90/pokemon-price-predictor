@@ -1258,6 +1258,11 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   color: #f87171;
   border: 1px solid rgba(220, 38, 38, 0.3);
 }
+.lang-badge.cn {
+  background: rgba(251, 146, 60, 0.15);
+  color: #fb923c;
+  border: 1px solid rgba(251, 146, 60, 0.3);
+}
 .jp-name {
   font-size: 11px;
   color: var(--text-faint);
@@ -1265,6 +1270,9 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 }
 .search-result-item.jp-card {
   border-left: 2px solid rgba(220, 38, 38, 0.4);
+}
+.search-result-item.cn-card {
+  border-left: 2px solid rgba(251, 146, 60, 0.4);
 }
 .jp-name-subtitle {
   font-size: 13px;
@@ -2719,6 +2727,30 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   white-space: nowrap;
 }
 .ql-jp-toggle input { accent-color: var(--accent); }
+
+/* 3-way EN/JP/CN segment toggle in the manual-add modal */
+.ma-lang-seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.ma-lang-btn {
+  padding: 8px 11px;
+  background: var(--bg-raised);
+  border: none;
+  border-right: 1px solid var(--border);
+  font-size: 12px; font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  transition: background 0.12s, color 0.12s;
+  letter-spacing: 0.04em;
+}
+.ma-lang-btn:last-child { border-right: none; }
+.ma-lang-btn.active { background: var(--accent); color: var(--bg); }
+.ma-lang-btn:not(.active):hover { background: var(--bg-card); color: var(--text); }
 .ql-search-btn {
   background: var(--accent);
   color: var(--bg);
@@ -3163,6 +3195,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .lang-jp { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
 .lang-en { background: var(--supply-dim); color: var(--supply); border: 1px solid var(--supply-border); }
+.lang-cn { background: rgba(251, 146, 60, 0.15); color: #fb923c; border: 1px solid rgba(251, 146, 60, 0.3); }
 
 /* ================================================================
    Mobile responsive (≤600px) for new modals & PWA nav

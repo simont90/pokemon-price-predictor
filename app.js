@@ -507,8 +507,10 @@ async function init() {
     $('fxValue').textContent = `£${fxRate.toFixed(4)}`;
     if (cardData) {
       const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
-      const enCount = cardData.count - jpCount;
-      $('searchCount').textContent = `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP)`;
+      const cnCount = cardData.cards.filter(c => c.lang === 'CN').length;
+      const enCount = cardData.count - jpCount - cnCount;
+      const cnPart = cnCount > 0 ? ` + ${cnCount.toLocaleString()} CN` : '';
+      $('searchCount').textContent = `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart})`;
     }
   } catch (e) {
     console.error('Init failed:', e);
@@ -556,11 +558,13 @@ async function init() {
     buildSearchIndex(cardData.cards);
     if (typeof buildCounterpartIndex === 'function') buildCounterpartIndex(cardData.cards);
     const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
-    const enCount = cardData.count - jpCount;
+    const cnCount = cardData.cards.filter(c => c.lang === 'CN').length;
+    const enCount = cardData.count - jpCount - cnCount;
     const userCount = cardData.cards.filter(c => c._userAdded).length;
+    const cnPart = cnCount > 0 ? ` + ${cnCount.toLocaleString()} CN` : '';
     const userSuffix = userCount > 0 ? ` + ${userCount} added` : '';
     $('searchCount').textContent =
-      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${userSuffix})`;
+      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart}${userSuffix})`;
   }
   updateAll();
   _setupHomePip();
@@ -1523,9 +1527,10 @@ function doSearch(query) {
     const numLabel = c.cn && c.ct ? `#${c.cn}/${c.ct}` : c.cn ? `#${c.cn}` : '';
     const seriesLabel = c.sr && c.sr !== 'Scarlet & Violet' ? `<span class="meta-series">${esc(c.sr)}</span>` : '';
     const isJP = c.lang === 'JP';
-    const langBadge = isJP ? '<span class="lang-badge jp">JP</span>' : '';
+    const isCN = c.lang === 'CN';
+    const langBadge = isJP ? '<span class="lang-badge jp">JP</span>' : isCN ? '<span class="lang-badge cn">CN</span>' : '';
     const jpNameLabel = isJP && c.nj ? `<span class="jp-name">${esc(c.nj)}</span>` : '';
-    const cpFlag = hasCounterpart(c) ? `<span class="search-result-cp-flag" title="${isJP ? 'English' : 'Japanese'} counterpart available">⇄ ${isJP ? 'EN' : 'JP'}</span>` : '';
+    const cpFlag = hasCounterpart(c) ? `<span class="search-result-cp-flag" title="${isJP ? 'English' : isCN ? 'English' : 'Japanese'} counterpart available">⇄ ${isJP ? 'EN' : isCN ? 'EN' : 'JP'}</span>` : '';
     // Show cached live price if available, else static
     const cached = getCachedPrice(c.i);
     const displayPrice = cached ? (cached.market || cached.mid || c.p) : c.p;
@@ -1548,7 +1553,7 @@ function doSearch(query) {
       }
     } catch (e) {}
     return `
-    <div class="search-result-item${isJP ? ' jp-card' : ''}" data-id="${c.i}">
+    <div class="search-result-item${isJP ? ' jp-card' : isCN ? ' cn-card' : ''}" data-id="${c.i}">
       ${`<img class="search-result-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="_onImgError(this)">`}
       <div class="search-result-info">
         <div class="search-result-name">${langBadge}${esc(c.n)}${cpFlag}${jpNameLabel}</div>
@@ -8074,12 +8079,14 @@ function closeQuickLookup() {
 // Build deep-links to external card-search sites so the user can fall back to
 // manual searching whenever the inline pricing fetch breaks (CORS proxies are
 // flaky). These open in a new tab.
-function buildExternalSearchLinks(query, isJP) {
+function buildExternalSearchLinks(query, langOrIsJP) {
+  const lang = langOrIsJP === true ? 'JP' : (typeof langOrIsJP === 'string' ? langOrIsJP : 'EN');
   const q = encodeURIComponent(query);
   const qPlus = encodeURIComponent(query).replace(/%20/g, '+');
-  // TCG Collector — single-card search, switches to JP catalog when needed.
-  const tcgcUrl = isJP
+  const tcgcUrl = lang === 'JP'
     ? `https://www.tcgcollector.com/cards/jp?cardName=${q}`
+    : lang === 'CN'
+    ? `https://www.tcgcollector.com/cards/cn?cardName=${q}`
     : `https://www.tcgcollector.com/cards/intl?cardName=${q}`;
   return [
     { label: 'TCG Collector',  href: tcgcUrl,                                                                  hint: 'card data + market price' },
@@ -8759,15 +8766,19 @@ async function runManualAddSearch() {
   try {
     const md = await fetchTCGCollectorMarkdown(q);
     let rows = parseTCGCollectorMarkdown(md);
-    // When JP checkbox is on, sort JP-named sets first but don't hide EN results —
-    // many JP sets on TCG Collector use English names without "japanese" in the text,
-    // so filtering would silently drop all results.
-    const jpChecked = $('maJP').checked;
-    if (jpChecked) {
+    // Sort results by selected language — JP/CN sets bubble to top without hiding EN results.
+    const selLang = _maSelectedLang();
+    if (selLang === 'JP') {
       rows.sort((a, b) => {
         const aJP = /japan/i.test(a.setName) || /\b(jp|japanese)\b/i.test(a.setName) ? 0 : 1;
         const bJP = /japan/i.test(b.setName) || /\b(jp|japanese)\b/i.test(b.setName) ? 0 : 1;
         return aJP - bJP;
+      });
+    } else if (selLang === 'CN') {
+      rows.sort((a, b) => {
+        const aCN = /\b(chinese|china|cn|zh)\b/i.test(a.setName) ? 0 : 1;
+        const bCN = /\b(chinese|china|cn|zh)\b/i.test(b.setName) ? 0 : 1;
+        return aCN - bCN;
       });
     }
     if (!rows.length) {
@@ -8778,9 +8789,9 @@ async function runManualAddSearch() {
     $('maStatus').className = 'ql-status success';
     $('maStatus').textContent = `Found ${rows.length} card${rows.length === 1 ? '' : 's'}. Pick the right one.`;
     $('maResults').innerHTML = rows.map(renderManualAddCard).join('');
-    // Read checkbox at click time so the user can toggle JP after searching
+    // Read lang at click time so the user can switch language after searching
     $('maResults').querySelectorAll('.ma-add-btn').forEach(b => {
-      b.addEventListener('click', () => addManualCardFromTCGC(JSON.parse(b.dataset.card), $('maJP').checked));
+      b.addEventListener('click', () => addManualCardFromTCGC(JSON.parse(b.dataset.card), _maSelectedLang()));
     });
   } catch (e) {
     console.error(e);
@@ -8793,8 +8804,13 @@ async function runManualAddSearch() {
 
 function renderManualAddCard(r) {
   const numLabel = r.cn && r.ct ? `${r.cn}/${r.ct}` : r.cn || '';
-  const langGuess = /\b(japan|japanese)\b/i.test(r.setName) ? 'JP' : 'EN';
-  const langBadge = langGuess === 'JP' ? '<span class="lang-jp">JP</span>' : '<span class="lang-en">EN</span>';
+  const selLang = _maSelectedLang();
+  const langGuess = /\b(japan|japanese)\b/i.test(r.setName) ? 'JP'
+    : /\b(chinese|china|cn|zh)\b/i.test(r.setName) ? 'CN'
+    : selLang;
+  const langBadge = langGuess === 'JP' ? '<span class="lang-jp">JP</span>'
+    : langGuess === 'CN' ? '<span class="lang-cn">CN</span>'
+    : '<span class="lang-en">EN</span>';
   const safe = JSON.stringify(r).replace(/'/g, '&#39;');
   const img = r.imgUrl ? `<img class="ma-thumb" src="${escapeHtml(r.imgUrl)}" alt="" loading="lazy" onerror="_onImgError(this)">` : '';
   return `
@@ -8817,9 +8833,11 @@ function renderManualAddCard(r) {
     </div>`;
 }
 
-function addManualCardFromTCGC(r, isJPHint) {
+function addManualCardFromTCGC(r, lang) {
   if (!cardData) return;
-  const langGuess = /\b(japan|japanese)\b/i.test(r.setName) ? 'JP' : (isJPHint ? 'JP' : 'EN');
+  const langGuess = /\b(japan|japanese)\b/i.test(r.setName) ? 'JP'
+    : /\b(chinese|china|cn|zh)\b/i.test(r.setName) ? 'CN'
+    : (lang === 'JP' || lang === 'CN') ? lang : 'EN';
   // Build a synthetic card ID that won't collide with the indexed DB.
   // tcgc-{lang}-{tcgcId} keeps it stable across reloads.
   const id = `tcgc-${langGuess.toLowerCase()}-${r.tcgcId}`;
@@ -8857,11 +8875,13 @@ function addManualCardFromTCGC(r, isJPHint) {
   // Refresh the search-count display to reflect the new total
   try {
     const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
-    const enCount = cardData.count - jpCount;
+    const cnCount = cardData.cards.filter(c => c.lang === 'CN').length;
+    const enCount = cardData.count - jpCount - cnCount;
     const userCount = cardData.cards.filter(c => c._userAdded).length;
+    const cnPart = cnCount > 0 ? ` + ${cnCount.toLocaleString()} CN` : '';
     const userSuffix = userCount > 0 ? ` + ${userCount} added` : '';
     $('searchCount').textContent =
-      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${userSuffix})`;
+      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart}${userSuffix})`;
   } catch {}
   closeManualAdd();
   // Bust price cache for this id (just in case) and select it.
@@ -9059,11 +9079,13 @@ async function saveCustomCard() {
   // Refresh search-count display
   try {
     const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
-    const enCount = cardData.count - jpCount;
+    const cnCount = cardData.cards.filter(c => c.lang === 'CN').length;
+    const enCount = cardData.count - jpCount - cnCount;
     const userCount = cardData.cards.filter(c => c._userAdded).length;
+    const cnPart = cnCount > 0 ? ` + ${cnCount.toLocaleString()} CN` : '';
     const userSuffix = userCount > 0 ? ` + ${userCount} added` : '';
     $('searchCount').textContent =
-      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${userSuffix})`;
+      `${cardData.count.toLocaleString()} cards (${enCount.toLocaleString()} EN + ${jpCount.toLocaleString()} JP${cnPart}${userSuffix})`;
   } catch {}
   status.className = 'ql-status success';
   status.textContent = 'Card saved. Opening it now…';
@@ -9079,6 +9101,11 @@ function clearCustomCardForm() {
   $('mcName').focus();
 }
 
+function _maSelectedLang() {
+  const active = document.querySelector('#maLangSeg .ma-lang-btn.active');
+  return active ? (active.dataset.lang || 'EN') : 'EN';
+}
+
 function setupManualAdd() {
   const open = () => openManualAdd($('searchInput').value.trim());
   const closeBtn = $('maClose');
@@ -9089,6 +9116,13 @@ function setupManualAdd() {
   if (searchBtn) searchBtn.addEventListener('click', runManualAddSearch);
   const input = $('maInput');
   if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') runManualAddSearch(); });
+  // 3-way language segment toggle
+  document.querySelectorAll('#maLangSeg .ma-lang-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#maLangSeg .ma-lang-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
   // Tabs
   $('maTabSearch')?.addEventListener('click', () => switchManualAddTab('search'));
   $('maTabCustom')?.addEventListener('click', () => switchManualAddTab('custom'));
@@ -21187,20 +21221,28 @@ function _cardScoreData(card) {
   try {
     const pull = 7.65;
     const des = autoFillDesirability(card, pull);
+
+    // Stars: Pokémon tier × rarity × desirability — the card's inherent quality (±35)
+    const starResult = getInvestmentStars(card, des.total);
+    const stars = starResult ? starResult.stars : 3;
+    if      (stars === 5) score += 35;
+    else if (stars === 4) score += 20;
+    else if (stars === 3) score +=  8;
+    else if (stars === 2) score -=  5;
+    else                  score -= 20;
+
+    // Signal: model view of current market timing (±40)
     const sig = _getCachedSignal(card, pull, des.total);
     if (sig) {
-      if      (sig.signal === 'STRONG BUY') score += 55;
-      else if (sig.signal === 'BUY')        score += 30;
-      else if (sig.signal === 'HOLD')       score +=  5;
-      else if (sig.signal === 'SELL')       score -= 30;
-      // Use signalSentence so the reason always aligns with the signal direction
+      if      (sig.signal === 'STRONG BUY') score += 40;
+      else if (sig.signal === 'BUY')        score += 25;
+      else if (sig.signal === 'HOLD')       score +=  0;
+      else if (sig.signal === 'SELL')       score -= 25;
       if (typeof signalSentence === 'function') reason = signalSentence(sig.signal, sig.reasons, false);
       else if (sig.reasons && sig.reasons.length) reason = sig.reasons[0];
     }
-    const d = des.total || 0;
-    if      (d >= 8) score += 15;
-    else if (d >= 6) score +=  8;
-    else if (d <  3) score -= 10;
+
+    // Taste profile: personalisation supplement — only when enough collection data (±25)
     try {
       const tp = tasteGetProfile();
       if (tp && tp.items >= TASTE_MIN_ITEMS) {
