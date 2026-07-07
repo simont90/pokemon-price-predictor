@@ -2239,25 +2239,32 @@ async function fetchFreshPriceData(card, { skipCollectrics = false } = {}) {
     crRaw: 0, crPsa10: 0, crGemRate: 0, crName: '', crUrl: '', crPsa10VsRaw: 0,
   };
 
-  // 1. PriceCharting — primary source for ALL cards
-  try {
-    const pc = await fetchPriceChartingData(card);
+  // 1+2: PriceCharting and TCGPlayer/Cardmarket fire simultaneously — they're
+  // independent sources so there's no reason to wait for PC before starting TCG.
+  const isJP = card.lang === 'JP';
+  const [pcSettled, enSettled] = await Promise.allSettled([
+    fetchPriceChartingData(card),
+    isJP ? Promise.resolve(null) : fetchLivePriceEN(card.i),
+  ]);
+
+  // 1. Apply PriceCharting result
+  if (pcSettled.status === 'fulfilled') {
+    const pc = pcSettled.value;
     if (pc && pc.pcUngraded > 0) {
       Object.assign(priceData, pc);
       priceData.source = 'pricecharting';
       priceData.market = pc.pcUngraded;
       priceData.mid = pc.pcUngraded;
     }
-  } catch (e) {
-    console.warn('PriceCharting fetch failed:', e);
+  } else {
+    console.warn('PriceCharting fetch failed:', pcSettled.reason);
   }
 
-  // 2. For EN cards, also fetch TCGPlayer/Cardmarket as secondary data
-  if (card.lang !== 'JP') {
-    try {
-      const enData = await fetchLivePriceEN(card.i);
+  // 2. Apply TCGPlayer/Cardmarket result (EN only)
+  if (!isJP) {
+    if (enSettled.status === 'fulfilled') {
+      const enData = enSettled.value;
       if (enData) {
-        // Merge TCGPlayer + Cardmarket data as secondary
         priceData.tcgUpdated = enData.tcgUpdated;
         priceData.tcgUrl = enData.tcgUrl;
         priceData.cmTrend = enData.cmTrend;
@@ -2268,18 +2275,15 @@ async function fetchFreshPriceData(card, { skipCollectrics = false } = {}) {
         priceData.cmSuggested = enData.cmSuggested;
         priceData.cmUpdated = enData.cmUpdated;
         priceData.cmUrl = enData.cmUrl;
-        // Store TCGPlayer values for display
         priceData.tcgMarket = enData.market;
         priceData.tcgLow = enData.low;
         priceData.tcgMid = enData.mid;
         priceData.tcgHigh = enData.high;
         priceData.directLow = enData.directLow;
         if (priceData.pcUngraded > 0 && enData.market > 0) {
-          // Both sources available — use midpoint as the primary market price.
           priceData.market = (priceData.pcUngraded + enData.market) / 2;
           priceData.priceIsComposite = true;
         } else if (priceData.pcUngraded <= 0 && enData.market > 0) {
-          // PriceCharting failed — fall back to TCGPlayer alone
           priceData.source = 'pokemontcg.io';
           priceData.market = enData.market;
           priceData.low = enData.low;
@@ -2287,10 +2291,9 @@ async function fetchFreshPriceData(card, { skipCollectrics = false } = {}) {
           priceData.high = enData.high;
         }
       }
-    } catch (e) {
-      console.warn('TCGPlayer secondary fetch failed:', e);
-      // Only fatal if PriceCharting also failed AND there's no saved URL to try in step 2b
-      if (priceData.pcUngraded <= 0 && !getTcgOverride(card.i)) throw e;
+    } else {
+      console.warn('TCGPlayer secondary fetch failed:', enSettled.reason);
+      if (priceData.pcUngraded <= 0 && !getTcgOverride(card.i)) throw enSettled.reason;
     }
   }
 
@@ -6859,7 +6862,11 @@ async function binderFetchAllPrices(btn, { silent = false } = {}) {
     const usd = data.pcUngraded || data.market || data.mid || card.p || 0;
     const gbp = usdToGbp(usd);
     const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
+    // Grid detail view
     document.querySelectorAll(`.binder-pg-card[data-id="${CSS.escape(card.i)}"] .binder-pg-card-price`)
+      .forEach(el => { el.textContent = priceStr; });
+    // Flat paired view
+    document.querySelectorAll(`.bdl-row[data-id="${CSS.escape(card.i)}"] .bdl-price`)
       .forEach(el => { el.textContent = priceStr; });
   }
 
@@ -6877,8 +6884,9 @@ async function binderFetchAllPrices(btn, { silent = false } = {}) {
     }
   }
 
-  // 3 concurrent workers — natural fetch latency (~1–2 s each) provides spacing
-  await Promise.all([worker(), worker(), worker()]);
+  // 6 concurrent workers — PC+TCGPlayer now fire in parallel per card so
+  // individual latency is lower; more workers keeps the pipeline full.
+  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
 
   if (!silent) {
     btn.textContent = 'Refresh prices';
