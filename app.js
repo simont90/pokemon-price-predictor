@@ -2859,10 +2859,15 @@ function selectCard(id) {
   }
   const _heroBg = $('cardHeroBg');
   if (_heroBg) {
+    const _newHeroSrc = getCardImg(card);
     _heroBg.classList.remove('hero-loaded');
-    _heroBg.src = getCardImg(card);
-    _heroBg.onload = () => _heroBg.classList.add('hero-loaded');
-    _heroBg.onerror = () => {};
+    const _heroPreload = new Image();
+    _heroPreload.onload = () => {
+      _heroBg.src = _newHeroSrc;
+      requestAnimationFrame(() => requestAnimationFrame(() => _heroBg.classList.add('hero-loaded')));
+    };
+    _heroPreload.onerror = () => { _heroBg.src = _newHeroSrc; };
+    _heroPreload.src = _newHeroSrc;
   }
 
   // Update page title and URL so each card has a bookmarkable address

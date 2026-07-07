@@ -284,6 +284,8 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .card-thumb-jp { border: 1.5px solid var(--demand); opacity: 0.92; }
 .card-thumb-jp:hover { opacity: 1; }
 .selected-card-header { position: relative; overflow: hidden; border-radius: var(--radius-sm); }
+@keyframes _heroFadeIn       { from { opacity: 0; } to { opacity: 0.20; } }
+@keyframes _heroFadeIn_light  { from { opacity: 0; } to { opacity: 0.14; } }
 .card-hero-bg {
   display: block;
   position: absolute;
@@ -295,9 +297,12 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   opacity: 0;
   z-index: 0;
   pointer-events: none;
-  transition: opacity 0.45s ease;
+  will-change: opacity;
 }
-.card-hero-bg.hero-loaded { opacity: 0.20; }
+.card-hero-bg.hero-loaded {
+  opacity: 0.20;
+  animation: _heroFadeIn 0.5s ease forwards;
+}
 .card-images { position: relative; z-index: 1; }
 .selected-card-info { flex: 1; min-width: 0; position: relative; z-index: 1; }
 .card-name-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -5899,6 +5904,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   flex-direction: column;
   transform: translateX(100%);
   transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.32, 1);
+  will-change: transform;
 }
 .ai-chat-panel.open { transform: translateX(0); }
 
@@ -6785,9 +6791,10 @@ section.card .card-collapse-btn {
   color: var(--text-muted);
   cursor: pointer;
   z-index: 3;
-  opacity: 0.35;
+  opacity: 0;
   transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
 }
+section.card:hover .card-collapse-btn { opacity: 0.35; }
 section.card .card-collapse-btn:hover {
   background: rgba(232, 182, 52, 0.08);
   color: var(--accent);
@@ -8605,8 +8612,11 @@ section.card .card-collapse-btn { padding: 10px; }
 }
 
 [data-theme="light"] .card-hero-bg {
-  opacity: 0.14;
   filter: blur(36px) saturate(2.0);
+}
+[data-theme="light"] .card-hero-bg.hero-loaded {
+  opacity: 0.14;
+  animation: _heroFadeIn_light 0.5s ease forwards;
 }
 
 [data-theme="light"] .theme-btn:hover { background: rgba(0,0,0,0.07); color: var(--text); }
