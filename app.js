@@ -1996,6 +1996,9 @@ async function pcSearchRaw(query) {
 // Returns { pcAce10, pcCgc10, pcBgs10, pcTag10, pcSgc10 } in USD (0 when the
 // grade has no recorded sales). All fields are always present so callers can
 // spread the result safely.
+// PriceCharting full-prices table labels.
+// Grades 1–9 are labelled generically ("Grade 7") regardless of grader;
+// grade 10 is brand-specific ("PSA 10", "BGS 10", etc.).
 const PC_FULL_GRADE_PARSE_LABELS = {
   'ACE 10':  'pcAce10',
   'ACE 9':   'pcAce9',
@@ -2005,12 +2008,15 @@ const PC_FULL_GRADE_PARSE_LABELS = {
   'BGS 10':  'pcBgs10',
   'TAG 10':  'pcTag10',
   'SGC 10':  'pcSgc10',
-  'PSA 7':   'pcPsa7',
-  'PSA 8':   'pcPsa8',
-  'PSA 9':   'pcPsa9',
+  'PSA 10':  'pcPsa10',
+  'Grade 9': 'pcPsa9',
+  'Grade 8': 'pcPsa8',
+  'Grade 7': 'pcPsa7',
+  'Grade 6': 'pcPsa6',
+  'Grade 5': 'pcPsa5',
 };
 function _emptyFullGrades() {
-  return { pcAce10: 0, pcAce9: 0, pcAce8: 0, pcAce7: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0, pcPsa7: 0, pcPsa8: 0, pcPsa9: 0 };
+  return { pcAce10: 0, pcAce9: 0, pcAce8: 0, pcAce7: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0, pcPsa10: 0, pcPsa9: 0, pcPsa8: 0, pcPsa7: 0, pcPsa6: 0, pcPsa5: 0 };
 }
 function parsePCFullGrades(html) {
   const out = _emptyFullGrades();
@@ -2060,7 +2066,9 @@ function productToPC(p, fullGrades) {
   const fg = fullGrades || _emptyFullGrades();
   return {
     pcUngraded: parsePCPrice(p.price1),
-    pcPsa10: parsePCPrice(p.price2),
+    // Prefer PSA 10 from the full-grade table (brand-specific "PSA 10" row);
+    // fall back to price2 from the search API if the table didn't have it.
+    pcPsa10: fg.pcPsa10 || parsePCPrice(p.price2),
     pcGrade9: parsePCPrice(p.price3),
     // Full-grade table (USD, 0 = missing)
     pcAce10: fg.pcAce10 || 0,
@@ -2071,9 +2079,11 @@ function productToPC(p, fullGrades) {
     pcBgs10: fg.pcBgs10 || 0,
     pcTag10: fg.pcTag10 || 0,
     pcSgc10: fg.pcSgc10 || 0,
-    pcPsa7:  fg.pcPsa7  || 0,
-    pcPsa8:  fg.pcPsa8  || 0,
     pcPsa9:  fg.pcPsa9  || 0,
+    pcPsa8:  fg.pcPsa8  || 0,
+    pcPsa7:  fg.pcPsa7  || 0,
+    pcPsa6:  fg.pcPsa6  || 0,
+    pcPsa5:  fg.pcPsa5  || 0,
     pcName: p.productName || '',
     pcConsole: p.consoleName || '',
     pcId: p.id || '',
@@ -2282,6 +2292,7 @@ async function fetchFreshPriceData(card, { skipCollectrics = false } = {}) {
     cmUpdated: '', cmUrl: '', cmLang: card.lang || 'EN',
     pcUngraded: 0, pcPsa10: 0, pcGrade9: 0, pcName: '', pcConsole: '', pcId: '',
     pcAce10: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0,
+    pcPsa9: 0, pcPsa8: 0, pcPsa7: 0, pcPsa6: 0, pcPsa5: 0,
     crRaw: 0, crPsa10: 0, crGemRate: 0, crName: '', crUrl: '', crPsa10VsRaw: 0,
   };
 
@@ -21852,7 +21863,7 @@ function _vgLadder(card) {
   // No ratio estimate fallback: if neither live nor static DB PSA 10 exists, est10 = 0
   // so all sub-grade fair values are also 0 and no speculative prices are shown.
   const est10   = base10;
-  const liveByG = { 9: pd?.pcPsa9 || pd?.pcGrade9 || 0, 8: pd?.pcPsa8 || 0, 7: pd?.pcPsa7 || 0 };
+  const liveByG = { 9: pd?.pcPsa9 || pd?.pcGrade9 || 0, 8: pd?.pcPsa8 || 0, 7: pd?.pcPsa7 || 0, 6: pd?.pcPsa6 || 0, 5: pd?.pcPsa5 || 0 };
   const vgCard = card.g != null ? card : { ...card, g: 0.08 };
   let bestScore = null;
   const ladder = VINTAGE_GRADES.map(g => {
