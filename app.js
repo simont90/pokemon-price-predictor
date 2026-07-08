@@ -17911,6 +17911,7 @@ let _homeCollHash = '', _homeWishHash = '', _homeWatchHash = '';
 let _homeAiG10Hash = '', _homeAiG9Hash = '', _homeGradeCandHash = '';
 let _homeVintageHash = '';
 let _hvgLang = 'en', _hvgSelectedSet = 'base1', _hvgSelectedSetJP = 'neo1';
+let _hvgCategory = 'unlimited'; // 'unlimited' | '1ed'
 let _homeRenderTimer = null;
 function _scheduleHomeRender() {
   clearTimeout(_homeRenderTimer);
@@ -18228,6 +18229,61 @@ const _HVG_TAB_LABELS = {
   5: 'PSA 5', 4: 'PSA 4', 3: 'PSA 3', 2: 'PSA 2', 1: 'PSA 1',
 };
 
+// WOTC-era sets that had 1st Edition prints
+const _HVG_1ED_SETS = new Set(['base1','base2','base3','base5','gym1','gym2','neo1','neo2','neo3','neo4']);
+const _HVG_1ED_CACHE_KEY = 'pkm-vg-1ed-prices-v1';
+
+function _get1edPriceCache() {
+  try { return JSON.parse(localStorage.getItem(_HVG_1ED_CACHE_KEY) || '{}'); } catch { return {}; }
+}
+function _set1edPrice(cardId, data) {
+  const c = _get1edPriceCache();
+  c[cardId] = data;
+  try { localStorage.setItem(_HVG_1ED_CACHE_KEY, JSON.stringify(c)); } catch {}
+}
+function _getCached1edPrice(cardId) {
+  return _get1edPriceCache()[cardId] || null;
+}
+
+// Build a PSA grade ladder from cached 1st Edition PC prices.
+function _hvg1edLadder(card) {
+  const pd = _getCached1edPrice(card.i);
+  if (!pd || !(pd.pcPsa10 > 0)) return { rawGBP: 0, ladder: [] };
+  const psa10gbp = usdToGbp(pd.pcPsa10);
+  const ladder = [];
+  for (const g of [10, 9, 8, 7]) {
+    const key = g === 10 ? 'pcPsa10' : `pcPsa${g}`;
+    const usd = pd[key] || 0;
+    if (usd > 0) ladder.push({ g, gbp: usdToGbp(usd) });
+    else if (psa10gbp > 0) ladder.push({ g, gbp: psa10gbp * (PSA_RATIOS[g] || 0) });
+  }
+  const rawGBP = psa10gbp * 0.1;
+  return { rawGBP, ladder };
+}
+
+// Fetch 1st Edition PSA prices from PriceCharting for a single card.
+async function _hvg1edFetchOne(card) {
+  const q = `1st edition ${buildPCQuery(card)}`;
+  try {
+    const products = await pcSearchRaw(q);
+    if (!products || !products.length) return null;
+    const ranked = products
+      .filter(p => /1st.?edition|first.?edition/i.test(p.productName || ''))
+      .sort((a, b) => scorePCProduct(b, card) - scorePCProduct(a, card));
+    const best = ranked[0] || products[0];
+    const fg = await pcFetchFullGrades(best.id);
+    const data = {
+      pcPsa10: parsePCPrice(best.price2),
+      pcPsa9:  fg.pcPsa9  || 0,
+      pcPsa8:  fg.pcPsa8  || 0,
+      pcPsa7:  fg.pcPsa7  || 0,
+      _ts: Date.now(),
+    };
+    _set1edPrice(card.i, data);
+    return data;
+  } catch { return null; }
+}
+
 // Price at a grade including grades 1–4 not in VINTAGE_GRADES (ratio-estimated from PSA 10).
 function _hvgGradeGBP(card, grade, ladder) {
   const row = ladder.find(l => l.g === grade);
@@ -18246,8 +18302,19 @@ function _hvgWireGroup() {
     const lb = e.target.closest('[data-hvg-lang]');
     if (lb) {
       _hvgLang = lb.dataset.hvgLang;
+      _hvgCategory = 'unlimited'; // 1ed only applies to EN
       group.querySelectorAll('[data-hvg-lang]').forEach(b =>
         b.classList.toggle('vg-lang-active', b.dataset.hvgLang === _hvgLang));
+      _homeVintageHash = '';
+      const area = document.getElementById('homeVintageArea');
+      if (area) area.dataset.hvgTab = '';
+      _renderHomeVintage();
+      return;
+    }
+    // Category toggle (Unlimited / 1st Edition)
+    const catBtn = e.target.closest('[data-hvg-cat]');
+    if (catBtn) {
+      _hvgCategory = catBtn.dataset.hvgCat;
       _homeVintageHash = '';
       const area = document.getElementById('homeVintageArea');
       if (area) area.dataset.hvgTab = '';
@@ -18259,6 +18326,7 @@ function _hvgWireGroup() {
     if (chip) {
       if (_hvgLang === 'jp') _hvgSelectedSetJP = chip.dataset.hvgSet;
       else _hvgSelectedSet = chip.dataset.hvgSet;
+      _hvgCategory = 'unlimited'; // reset category on set change
       _homeVintageHash = '';
       const area = document.getElementById('homeVintageArea');
       if (area) area.dataset.hvgTab = '';
@@ -18308,7 +18376,12 @@ function _renderHomeVintage() {
   }
 
   const budget = getMaxBudgetGBP();
-  const hash = `${isJP}|${activeSet}|${budget}`;
+  // Force 'unlimited' category for JP or sets without 1st ed prints
+  const show1edToggle = !isJP && _HVG_1ED_SETS.has(activeSet);
+  if (!show1edToggle) _hvgCategory = 'unlimited';
+  const is1ed = _hvgCategory === '1ed';
+
+  const hash = `${isJP}|${activeSet}|${budget}|${_hvgCategory}`;
   if (hash === _homeVintageHash && area.querySelector('.home-card-tile, .home-empty')) return;
   _homeVintageHash = hash;
 
@@ -18317,6 +18390,9 @@ function _renderHomeVintage() {
 
   // Live PSA price coverage for the refresh status line
   const liveCount = isJP ? cards.length : cards.filter(c => {
+    if (is1ed) {
+      const pd = _getCached1edPrice(c.i); return pd && pd.pcPsa10 > 0 && _priceCacheIsValid(pd._ts);
+    }
     const pd = getCachedPrice(c.i); return pd && pd.pcPsa10 > 0 && _priceCacheIsValid(pd._ts);
   }).length;
 
@@ -18325,23 +18401,25 @@ function _renderHomeVintage() {
   for (const g of _HVG_ALL_GRADES) gradeCards[g] = [];
 
   for (const card of cards) {
-    const { rawGBP, ladder } = _vgLadder(card);
-    if (rawGBP > 0 && rawGBP <= budget) gradeCards.raw.push({ card, gbp: rawGBP });
+    const { rawGBP, ladder } = is1ed ? _hvg1edLadder(card) : _vgLadder(card);
+    if (!is1ed && rawGBP > 0 && rawGBP <= budget) gradeCards.raw.push({ card, gbp: rawGBP });
     for (const g of _HVG_ALL_GRADES) {
       const gbp = _hvgGradeGBP(card, g, ladder);
       if (gbp > 0 && gbp <= budget) gradeCards[g].push({ card, gbp });
     }
-    // Recommended: sweet-spot grade within budget
-    const { sweet } = _vgPicks(ladder, card);
-    const sweetGBP = _hvgGradeGBP(card, sweet, ladder);
-    if (sweetGBP > 0 && sweetGBP <= budget) gradeCards.reco.push({ card, gbp: sweetGBP, grade: sweet });
+    // Recommended: sweet-spot grade within budget (1ed skips raw tab; skip if ladder empty)
+    if (ladder.length > 0) {
+      const { sweet } = _vgPicks(ladder, card);
+      const sweetGBP = _hvgGradeGBP(card, sweet, ladder);
+      if (sweetGBP > 0 && sweetGBP <= budget) gradeCards.reco.push({ card, gbp: sweetGBP, grade: sweet });
+    }
   }
 
-  // Sort by deal score, cap at 25 per tab
-  const TAB_ORDER = ['reco', 'raw', ..._HVG_ALL_GRADES];
+  // Sort by PSA 10 price ascending for 1ed (no reliable deal score), deal score for unlimited
+  const TAB_ORDER = is1ed ? ['reco', ..._HVG_ALL_GRADES] : ['reco', 'raw', ..._HVG_ALL_GRADES];
   for (const key of TAB_ORDER) {
     gradeCards[key] = gradeCards[key]
-      .sort((a, b) => _vgDealScore(b.card) - _vgDealScore(a.card))
+      .sort((a, b) => is1ed ? a.gbp - b.gbp : _vgDealScore(b.card) - _vgDealScore(a.card))
       .slice(0, 25);
   }
 
@@ -18355,21 +18433,32 @@ function _renderHomeVintage() {
       <span class="vg-chip-year">${(s.releaseDate || '').slice(0, 4)}</span>
     </button>`).join('');
 
-  // Refresh status line (not shown for JP — no PC data for JP vintage)
+  // Category toggle (Unlimited / 1st Edition) — EN + 1ed-capable sets only
+  const catToggle = show1edToggle ? `<div class="vg-cat-row">
+    <button class="vg-cat-btn${_hvgCategory === 'unlimited' ? ' vg-cat-active' : ''}" data-hvg-cat="unlimited">Unlimited</button>
+    <button class="vg-cat-btn${_hvgCategory === '1ed' ? ' vg-cat-active' : ''}" data-hvg-cat="1ed">1st Edition</button>
+  </div>` : '';
+
+  // Refresh status line (not shown for JP)
+  const refreshLabel = is1ed ? 'Refresh 1st Ed prices' : 'Refresh PSA prices';
   const refreshStatusText = isJP ? '' :
-    liveCount === cards.length ? `${cards.length} live PSA prices` :
-    liveCount === 0 ? 'Prices are estimated — no live data yet' :
-    `${liveCount}/${cards.length} with live PSA prices`;
+    liveCount === cards.length ? `${cards.length} live ${is1ed ? '1st Ed' : 'PSA'} prices` :
+    liveCount === 0 ? `Prices are estimated — no live ${is1ed ? '1st Ed' : ''} data yet` :
+    `${liveCount}/${cards.length} with live ${is1ed ? '1st Ed' : 'PSA'} prices`;
   const refreshLine = isJP ? '' : `<div class="home-vintage-refresh-line">
     <span class="home-vintage-refresh-status" id="homeVintageRefreshStatus">${refreshStatusText}</span>
-    <button class="home-vintage-refresh-btn" id="homeVintageRefreshBtn">Refresh PSA prices</button>
+    <button class="home-vintage-refresh-btn" id="homeVintageRefreshBtn">${refreshLabel}</button>
   </div>`;
 
   if (!visibleTabs.length) {
+    const emptyMsg = is1ed
+      ? `No 1st Edition ${esc(setInfo?.name || 'set')} prices fetched yet — tap "Refresh 1st Ed prices" to load them.`
+      : `No ${esc(setInfo?.name || 'set')} cards within your ${fmtGBPDirect(budget)} budget.`;
     area.innerHTML = `
+      ${catToggle}
       <div class="vg-set-chips">${chips}</div>
       ${refreshLine}
-      <div class="home-empty" style="padding:16px 0">No ${esc(setInfo?.name || 'set')} cards within your ${fmtGBPDirect(budget)} budget.</div>`;
+      <div class="home-empty" style="padding:16px 0">${emptyMsg}</div>`;
     return;
   }
 
@@ -18385,6 +18474,7 @@ function _renderHomeVintage() {
   const activeTiles = _hvgBuildTiles(gradeCards[resolvedTab], resolvedTab);
 
   area.innerHTML = `
+    ${catToggle}
     <div class="vg-set-chips">${chips}</div>
     ${refreshLine}
     <div class="predict-tab-bar home-tab-bar">${tabBar}</div>
@@ -18411,11 +18501,17 @@ async function _hvgRefreshPrices() {
   if (_hvgRefreshing || !searchIndex.length) return;
   _hvgRefreshing = true;
   const isJP = _hvgLang === 'jp';
+  const is1ed = _hvgCategory === '1ed';
   const activeSet = isJP ? _hvgSelectedSetJP : _hvgSelectedSet;
   const allCards = searchIndex.filter(c =>
     c.sc === activeSet && (isJP ? c.lang === 'JP' : c.lang !== 'JP'));
-  // Only refresh cards missing today-fresh PSA 10 data
+
+  // Only refresh cards missing today-fresh data for the active category
   const toRefresh = allCards.filter(c => {
+    if (is1ed) {
+      const pd = _getCached1edPrice(c.i);
+      return !pd || !(pd.pcPsa10 > 0) || !_priceCacheIsValid(pd._ts);
+    }
     const pd = getCachedPrice(c.i);
     return !pd || !(pd.pcPsa10 > 0) || !_priceCacheIsValid(pd._ts);
   });
@@ -18437,7 +18533,10 @@ async function _hvgRefreshPrices() {
   const worker = async () => {
     while (cursor < toRefresh.length) {
       const card = toRefresh[cursor++];
-      try { await psRefreshOne(card.i); } catch {}
+      try {
+        if (is1ed) await _hvg1edFetchOne(card);
+        else await psRefreshOne(card.i);
+      } catch {}
       done++;
       update();
     }

@@ -13032,3 +13032,26 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 }
 .home-vintage-refresh-btn:hover { background: rgba(232,182,52,0.22); }
 .home-vintage-refresh-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Category toggle (Unlimited / 1st Edition) */
+.vg-cat-row {
+  display: flex;
+  gap: 4px;
+  padding: 8px 20px 4px;
+}
+.vg-cat-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: transparent;
+  color: var(--text-muted);
+  font: 600 12px/1.4 var(--font-ui, "Space Grotesk", sans-serif);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.vg-cat-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.vg-cat-active.vg-cat-btn {
+  background: rgba(232,182,52,0.15);
+  color: var(--accent, #e8b634);
+  border-color: rgba(232,182,52,0.4);
+}
