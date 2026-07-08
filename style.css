@@ -13009,3 +13009,26 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .home-vintage-panel .home-card-remove { display: none; }
 /* Pad the set-chip row inside the home group */
 #hTabVintage .vg-set-chips { padding: 10px 20px 6px; }
+/* Price data status + refresh trigger */
+.home-vintage-refresh-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 20px 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.home-vintage-refresh-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: none;
+  background: rgba(232,182,52,0.12);
+  color: var(--accent, #e8b634);
+  font: 600 11px/1.4 var(--font-ui, 'Space Grotesk', sans-serif);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.home-vintage-refresh-btn:hover { background: rgba(232,182,52,0.22); }
+.home-vintage-refresh-btn:disabled { opacity: 0.5; cursor: default; }

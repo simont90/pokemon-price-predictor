@@ -18265,6 +18265,11 @@ function _hvgWireGroup() {
       _renderHomeVintage();
       return;
     }
+    // Refresh PSA prices
+    if (e.target.closest('#homeVintageRefreshBtn')) {
+      _hvgRefreshPrices();
+      return;
+    }
     // Grade tab
     const tabBtn = e.target.closest('[data-hvtab]');
     if (tabBtn) {
@@ -18310,6 +18315,11 @@ function _renderHomeVintage() {
   const cards = searchIndex.filter(c =>
     c.sc === activeSet && (isJP ? c.lang === 'JP' : c.lang !== 'JP'));
 
+  // Live PSA price coverage for the refresh status line
+  const liveCount = isJP ? cards.length : cards.filter(c => {
+    const pd = getCachedPrice(c.i); return pd && pd.pcPsa10 > 0 && _priceCacheIsValid(pd._ts);
+  }).length;
+
   // Compute which cards fit budget at each grade
   const gradeCards = { reco: [], raw: [] };
   for (const g of _HVG_ALL_GRADES) gradeCards[g] = [];
@@ -18345,9 +18355,20 @@ function _renderHomeVintage() {
       <span class="vg-chip-year">${(s.releaseDate || '').slice(0, 4)}</span>
     </button>`).join('');
 
+  // Refresh status line (not shown for JP — no PC data for JP vintage)
+  const refreshStatusText = isJP ? '' :
+    liveCount === cards.length ? `${cards.length} live PSA prices` :
+    liveCount === 0 ? 'Prices are estimated — no live data yet' :
+    `${liveCount}/${cards.length} with live PSA prices`;
+  const refreshLine = isJP ? '' : `<div class="home-vintage-refresh-line">
+    <span class="home-vintage-refresh-status" id="homeVintageRefreshStatus">${refreshStatusText}</span>
+    <button class="home-vintage-refresh-btn" id="homeVintageRefreshBtn">Refresh PSA prices</button>
+  </div>`;
+
   if (!visibleTabs.length) {
     area.innerHTML = `
       <div class="vg-set-chips">${chips}</div>
+      ${refreshLine}
       <div class="home-empty" style="padding:16px 0">No ${esc(setInfo?.name || 'set')} cards within your ${fmtGBPDirect(budget)} budget.</div>`;
     return;
   }
@@ -18365,6 +18386,7 @@ function _renderHomeVintage() {
 
   area.innerHTML = `
     <div class="vg-set-chips">${chips}</div>
+    ${refreshLine}
     <div class="predict-tab-bar home-tab-bar">${tabBar}</div>
     <section class="home-section-wrap home-vintage-panel">
       <div class="home-scroll-row">${activeTiles}</div>
@@ -18382,6 +18404,48 @@ function _hvgBuildTiles(entries, tabKey) {
     return _homeTile(card.i, getCardImg(card) || '', card.n, fmtGBPDirect(gbp),
       sigCls, sigLabel, '', card.s || '', { scoreBadgeHtml: scoreHtml });
   }).join('');
+}
+
+let _hvgRefreshing = false;
+async function _hvgRefreshPrices() {
+  if (_hvgRefreshing || !searchIndex.length) return;
+  _hvgRefreshing = true;
+  const isJP = _hvgLang === 'jp';
+  const activeSet = isJP ? _hvgSelectedSetJP : _hvgSelectedSet;
+  const allCards = searchIndex.filter(c =>
+    c.sc === activeSet && (isJP ? c.lang === 'JP' : c.lang !== 'JP'));
+  // Only refresh cards missing today-fresh PSA 10 data
+  const toRefresh = allCards.filter(c => {
+    const pd = getCachedPrice(c.i);
+    return !pd || !(pd.pcPsa10 > 0) || !_priceCacheIsValid(pd._ts);
+  });
+
+  const btn = document.getElementById('homeVintageRefreshBtn');
+  const status = document.getElementById('homeVintageRefreshStatus');
+  if (!toRefresh.length) {
+    if (status) status.textContent = 'All prices up to date';
+    _hvgRefreshing = false;
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = `0/${toRefresh.length}…`; }
+
+  let done = 0, cursor = 0;
+  const update = () => {
+    const b = document.getElementById('homeVintageRefreshBtn');
+    if (b) b.textContent = `${done}/${toRefresh.length}…`;
+  };
+  const worker = async () => {
+    while (cursor < toRefresh.length) {
+      const card = toRefresh[cursor++];
+      try { await psRefreshOne(card.i); } catch {}
+      done++;
+      update();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, toRefresh.length) }, worker));
+  _hvgRefreshing = false;
+  _homeVintageHash = '';
+  _renderHomeVintage();
 }
 
 // Find the best qualifying strategy for a card: must be low risk, strong hold
