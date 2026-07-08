@@ -19024,8 +19024,10 @@ function _detectDupes() {
   for (const [, group] of nameGroups) {
     if (group.length < 2) continue;
     const ids = group.map(g => g.card.i).sort();
-    // Skip pairs already covered by exact or EN/JP counterpart sections
-    const alreadyCovered = results.exact.some(e => ids.includes(e.a.id) && ids.includes(e.b.id))
+    // Skip pairs already covered by exact, dismissed-exact, or EN/JP counterpart sections
+    const allSameId = ids.every(id => id === ids[0]);
+    const alreadyCovered = (allSameId && dismissed.has(`exact:${ids[0]}`))
+      || results.exact.some(e => ids.includes(e.a.id) && ids.includes(e.b.id))
       || results.counterparts.some(cp => ids.includes(cp.enCard.i) && ids.includes(cp.jpCard.i));
     if (alreadyCovered) continue;
     const key = `name:${ids.join(':')}`;
@@ -19051,17 +19053,35 @@ function renderToolsDuplicates() {
   const dupes = _detectDupes();
   const total = dupes.exact.length + dupes.counterparts.length + dupes.nameDupes.length;
 
-  function cardThumb(item, card) {
+  // Render a pick column: card thumbnail + optional meta line + action button
+  function pickCol(item, card, actionHtml = '') {
     const img   = (item?.img || '') ? `<img class="dupe-thumb" src="${esc(item.img)}" alt="" onerror="this.style.opacity='0'">` : '<div class="dupe-thumb"></div>';
     const lang  = card?.lang === 'JP' ? '<span class="dupe-lang jp">JP</span>' : '<span class="dupe-lang en">EN</span>';
     const name  = esc(card?.n || item?.name || '');
     const set   = esc(card?.s || item?.set || '');
-    const price = card ? `£${usdToGbp(getCurrentPrice(card)).toFixed(2)}` : '';
-    return `<div class="dupe-card-thumb">${img}<div class="dupe-card-meta">${lang}<span class="dupe-card-name">${name}</span><span class="dupe-card-set">${set}</span>${price ? `<span class="dupe-card-price">${price}</span>` : ''}</div></div>`;
+    const price = card ? fmtGBPDirect(usdToGbp(getCurrentPrice(card))) : '';
+    const cost  = (() => { try { const c = getAcqCostBasisGBP(item?.id); return Number.isFinite(c) && c > 0 ? `Cost ${fmtGBPDirect(c)}` : ''; } catch { return ''; } })();
+    const date  = item?.addedDate ? `Added ${new Date(item.addedDate).toLocaleDateString('en-GB')}` : '';
+    const copies = (item?.copies || 1) > 1 ? `×${item.copies} copies` : '';
+    const meta  = [date, cost, copies].filter(Boolean).join(' · ');
+    return `<div class="dupe-pick-col">
+      <div class="dupe-card-thumb">${img}<div class="dupe-card-meta">${lang}<span class="dupe-card-name">${name}</span><span class="dupe-card-set">${set}</span>${price ? `<span class="dupe-card-price">${price}</span>` : ''}</div></div>
+      ${meta ? `<div class="dupe-pick-meta">${esc(meta)}</div>` : ''}
+      ${actionHtml}
+    </div>`;
   }
 
-  function actionBar(key, extra = '') {
-    return `<div class="dupe-actions">${extra}<button class="dupe-btn dupe-dismiss" data-dupe-key="${esc(key)}">Dismiss</button></div>`;
+  function dismissBtn(key, label = 'Dismiss') {
+    return `<button class="dupe-btn dupe-dismiss" data-dupe-key="${esc(key)}">${label}</button>`;
+  }
+
+  function _afterAction(key, row) {
+    const dismissed = _getDupeDismissed();
+    dismissed.add(key);
+    _saveDupeDismissed(dismissed);
+    row?.remove();
+    updateToolsDupeBadge();
+    if (!el.querySelector('.dupe-row')) el.innerHTML = '<div class="dupe-empty"><p>All clear.</p></div>';
   }
 
   if (total === 0) {
@@ -19071,88 +19091,113 @@ function renderToolsDuplicates() {
 
   let html = '';
 
-  // --- Exact duplicates ---
+  // --- Exact duplicates: same card ID added multiple times ---
   if (dupes.exact.length > 0) {
     html += `<div class="dupe-section-hd">Exact duplicates · ${dupes.exact.length}</div>`;
     for (const { a, b, key } of dupes.exact) {
       const cardA = getCardById(a.id);
+      const keepABtn = `<button class="dupe-btn dupe-merge dupe-pick-keep" data-dupe-key="${esc(key)}" data-keep-date="${esc(a.addedDate||'')}" data-remove-date="${esc(b.addedDate||'')}" data-card-id="${esc(a.id)}">Keep this one</button>`;
+      const keepBBtn = `<button class="dupe-btn dupe-merge dupe-pick-keep" data-dupe-key="${esc(key)}" data-keep-date="${esc(b.addedDate||'')}" data-remove-date="${esc(a.addedDate||'')}" data-card-id="${esc(b.id)}">Keep this one</button>`;
       html += `<div class="dupe-row" data-dupe-key="${esc(key)}">
-        <div class="dupe-cards">
-          ${cardThumb(a, cardA)}
-          <span class="dupe-vs">×2</span>
-          ${cardThumb(b, cardA)}
+        <div class="dupe-detail">Same card added twice — pick which entry to keep. Copies will be combined.</div>
+        <div class="dupe-pick-grid">
+          ${pickCol(a, cardA, keepABtn)}
+          ${pickCol(b, cardA, keepBBtn)}
         </div>
-        <div class="dupe-detail">Same card added twice — added ${a.addedDate ? new Date(a.addedDate).toLocaleDateString('en-GB') : 'unknown'} and ${b.addedDate ? new Date(b.addedDate).toLocaleDateString('en-GB') : 'unknown'}.</div>
-        ${actionBar(key, `<button class="dupe-btn dupe-merge" data-dupe-key="${esc(key)}" data-keep-id="${esc(a.id)}" data-remove-id="${esc(b.id)}">Merge (keep older)</button>`)}
+        <div class="dupe-actions">${dismissBtn(key)}</div>
       </div>`;
     }
   }
 
-  // --- EN/JP counterpart pairs ---
+  // --- EN/JP counterpart pairs: both language versions in collection ---
   if (dupes.counterparts.length > 0) {
     html += `<div class="dupe-section-hd">EN / JP pairs in collection · ${dupes.counterparts.length}</div>`;
     for (const { enItem, enCard, jpItem, jpCard, enRawGBP, jpRawGBP, key } of dupes.counterparts) {
       const diff = enRawGBP > 0 && jpRawGBP > 0
-        ? (jpRawGBP < enRawGBP ? `JP is £${(enRawGBP - jpRawGBP).toFixed(2)} cheaper (${Math.round((enRawGBP - jpRawGBP) / enRawGBP * 100)}%)` : `EN is £${(jpRawGBP - enRawGBP).toFixed(2)} cheaper`)
+        ? (jpRawGBP < enRawGBP
+            ? `JP is ${fmtGBPDirect(enRawGBP - jpRawGBP)} cheaper (${Math.round((enRawGBP - jpRawGBP) / enRawGBP * 100)}%)`
+            : `EN is ${fmtGBPDirect(jpRawGBP - enRawGBP)} cheaper`)
         : '';
+      const keepEnBtn = `<button class="dupe-btn dupe-keep-only" data-dupe-key="${esc(key)}" data-keep-id="${esc(enCard.i)}" data-remove-ids="${esc(jpCard.i)}">Keep EN only</button>`;
+      const keepJpBtn = `<button class="dupe-btn dupe-keep-only" data-dupe-key="${esc(key)}" data-keep-id="${esc(jpCard.i)}" data-remove-ids="${esc(enCard.i)}">Keep JP only</button>`;
       html += `<div class="dupe-row" data-dupe-key="${esc(key)}">
-        <div class="dupe-cards">
-          ${cardThumb(enItem, enCard)}
-          <span class="dupe-vs">vs</span>
-          ${cardThumb(jpItem, jpCard)}
-        </div>
         ${diff ? `<div class="dupe-detail">${diff}</div>` : ''}
-        ${actionBar(key, `<button class="dupe-btn dupe-compare" data-en-id="${esc(enCard.i)}" data-jp-id="${esc(jpCard.i)}">Compare in Predict</button>`)}
+        <div class="dupe-pick-grid">
+          ${pickCol(enItem, enCard, keepEnBtn)}
+          ${pickCol(jpItem, jpCard, keepJpBtn)}
+        </div>
+        <div class="dupe-actions">
+          <button class="dupe-btn dupe-compare" data-en-id="${esc(enCard.i)}" data-jp-id="${esc(jpCard.i)}">Compare in Predict</button>
+          ${dismissBtn(key, 'Dismiss — keeping both')}
+        </div>
       </div>`;
     }
   }
 
-  // --- Name-based near-duplicates ---
+  // --- Name-based near-duplicates: same Pokémon, different set/variant ---
   if (dupes.nameDupes.length > 0) {
     html += `<div class="dupe-section-hd">Same name, different cards · ${dupes.nameDupes.length}</div>`;
     for (const { group, key } of dupes.nameDupes) {
-      const thumbs = group.map(({ p, card }) => cardThumb(p, card)).join('<span class="dupe-vs">·</span>');
+      const cols = group.map(({ p, card }) => {
+        const removeOtherIds = group.filter(g => g.card.i !== card.i).map(g => g.card.i).join(',');
+        const keepBtn = `<button class="dupe-btn dupe-keep-only" data-dupe-key="${esc(key)}" data-keep-id="${esc(card.i)}" data-remove-ids="${esc(removeOtherIds)}">Keep only this</button>`;
+        return pickCol(p, card, keepBtn);
+      }).join('');
       html += `<div class="dupe-row" data-dupe-key="${esc(key)}">
-        <div class="dupe-cards">${thumbs}</div>
-        <div class="dupe-detail">Multiple cards with the same name — may be intentional (different sets/variants).</div>
-        ${actionBar(key)}
+        <div class="dupe-detail">Multiple versions of the same Pokémon — pick one to keep, or dismiss if intentional.</div>
+        <div class="dupe-pick-grid">${cols}</div>
+        <div class="dupe-actions">${dismissBtn(key, 'Dismiss — keeping all')}</div>
       </div>`;
     }
   }
 
   el.innerHTML = html;
 
-  // Wire actions
   el.addEventListener('click', e => {
-    const dismissBtn = e.target.closest('.dupe-dismiss');
-    if (dismissBtn) {
-      const key = dismissBtn.dataset.dupeKey;
-      const dismissed = _getDupeDismissed();
-      dismissed.add(key);
-      _saveDupeDismissed(dismissed);
-      dismissBtn.closest('.dupe-row')?.remove();
-      updateToolsDupeBadge();
-      if (!el.querySelector('.dupe-row')) el.innerHTML = '<div class="dupe-empty"><p>All clear.</p></div>';
+    // Dismiss
+    const dis = e.target.closest('.dupe-dismiss');
+    if (dis) { _afterAction(dis.dataset.dupeKey, dis.closest('.dupe-row')); return; }
+
+    // Exact dupe: pick which entry to keep (merges copies)
+    const pickKeep = e.target.closest('.dupe-pick-keep');
+    if (pickKeep) {
+      const cardId     = pickKeep.dataset.cardId;
+      const keepDate   = pickKeep.dataset.keepDate;
+      const removeDate = pickKeep.dataset.removeDate;
+      const entries    = portfolio.filter(p => p.id === cardId);
+      const keepEntry   = entries.find(p => p.addedDate === keepDate) || entries[0];
+      const removeEntry = entries.find(p => p !== keepEntry && (!removeDate || p.addedDate === removeDate)) || entries.find(p => p !== keepEntry);
+      if (keepEntry && removeEntry) {
+        keepEntry.copies = (keepEntry.copies || 1) + (removeEntry.copies || 1);
+        portfolio.splice(portfolio.indexOf(removeEntry), 1);
+        savePortfolio();
+        renderPortfolio?.();
+        _homeCollHash = ''; _renderHomeCollection?.();
+      }
+      _afterAction(pickKeep.dataset.dupeKey, pickKeep.closest('.dupe-row'));
       return;
     }
-    const mergeBtn = e.target.closest('.dupe-merge');
-    if (mergeBtn) {
-      const removeId = mergeBtn.dataset.removeId;
-      const keepId   = mergeBtn.dataset.keepId;
-      _mergePortfolioEntries(keepId, removeId);
-      const dismissed = _getDupeDismissed();
-      dismissed.add(mergeBtn.dataset.dupeKey);
-      _saveDupeDismissed(dismissed);
-      mergeBtn.closest('.dupe-row')?.remove();
-      updateToolsDupeBadge();
-      if (!el.querySelector('.dupe-row')) el.innerHTML = '<div class="dupe-empty"><p>All clear.</p></div>';
+
+    // Keep-only: remove the other card(s) from portfolio entirely (different IDs)
+    const keepOnly = e.target.closest('.dupe-keep-only');
+    if (keepOnly) {
+      const removeIds = (keepOnly.dataset.removeIds || '').split(',').filter(Boolean);
+      for (const rid of removeIds) {
+        const idx = portfolio.findIndex(p => p.id === rid);
+        if (idx >= 0) portfolio.splice(idx, 1);
+      }
+      savePortfolio();
+      renderPortfolio?.();
+      _homeCollHash = ''; _renderHomeCollection?.();
+      _afterAction(keepOnly.dataset.dupeKey, keepOnly.closest('.dupe-row'));
       return;
     }
-    const compareBtn = e.target.closest('.dupe-compare');
-    if (compareBtn) {
-      const enId = compareBtn.dataset.enId;
+
+    // Compare in Predict
+    const cmp = e.target.closest('.dupe-compare');
+    if (cmp) {
       go('predict');
-      setTimeout(() => { try { selectCard(enId); } catch {} }, 80);
+      setTimeout(() => { try { selectCard(cmp.dataset.enId); } catch {} }, 80);
     }
   });
 }
