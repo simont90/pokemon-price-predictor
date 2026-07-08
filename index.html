@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260708u">
+  <link rel="stylesheet" href="style.css?v=20260708v">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -158,12 +158,7 @@
         <span>Vintage</span>
         <span class="page-nav-sub">WOTC 1999 – 2003</span>
       </button>
-      <button class="page-nav-btn" data-page="wtb" type="button">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-        <span>Buy</span>
-        <span class="page-nav-sub">Deals · era focus</span>
-      </button>
-      <button class="page-nav-btn page-nav-ask" id="aiChatBtn" type="button" aria-label="PokeKnow">
+      <button class="page-nav-btn page-nav-ask" id="aiChatBtn" data-page="know" type="button" aria-label="PokeKnow">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10.5"/>
           <line x1="1.5" y1="12" x2="8.8" y2="12"/>
@@ -174,7 +169,8 @@
           <path d="M7.83 7.02 A6.5 6.5 0 0 0 16.17 7.02" stroke-width="0.9" stroke-opacity="0.32" fill="none"/>
           <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"><animate attributeName="r" values="1.5;2.0;1.5" dur="2.8s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0.35;1" dur="2.8s" repeatCount="indefinite"/></circle>
         </svg>
-        <span>Ask</span>
+        <span>PokeKnow</span>
+        <span class="page-nav-sub">Search &amp; AI</span>
       </button>
       <div class="nav-ctx-sep" id="navCtxSep" aria-hidden="true"></div>
       <button class="nav-ctx-btn" id="navFilterCtx" type="button" aria-label="Filter">
@@ -2192,9 +2188,6 @@
       <!-- Vintage page rendered entirely by JS -->
     </div><!-- /#pageVintage -->
 
-    <div class="page" id="pageWtb" data-page="wtb" style="display:none">
-      <!-- What to Buy page rendered entirely by JS -->
-    </div><!-- /#pageWtb -->
 
     <!-- Vestigial main close to keep DOM well-formed. Hidden Top 50 placeholder below is moved at init. -->
     <main style="display:none">
@@ -2251,27 +2244,30 @@
     <footer class="footer"><p>Live prices via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> + <a href="https://tcgdex.net" target="_blank">TCGdex</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a></p></footer>
   </div>
 
-  <!-- Ask the Predictor panel (button lives in bottom nav) -->
-  <div class="ai-chat-backdrop" id="aiChatBackdrop" style="display:none" aria-hidden="true"></div>
-
-  <aside class="ai-chat-panel" id="aiChatPanel" style="display:none" role="dialog" aria-modal="true" aria-labelledby="aiChatTitle">
-    <div class="ai-chat-handle" id="aiChatHandle" aria-hidden="true"></div>
-    <header class="ai-chat-header">
-      <div class="ai-chat-title-block">
-        <h3 id="aiChatTitle">PokeKnow</h3>
-        <span class="ai-chat-sub">Sees your portfolio, wishlist &amp; market in real time</span>
+  <!-- PokeKnow page — card search + AI analyst -->
+  <div class="page pkn-page" id="pageKnow" data-page="know" style="display:none">
+    <header class="pkn-page-hd">
+      <svg class="pkn-logo" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10.5"/>
+        <line x1="1.5" y1="12" x2="8.8" y2="12"/>
+        <line x1="15.2" y1="12" x2="22.5" y2="12"/>
+        <circle cx="12" cy="12" r="3.2"/>
+        <path d="M10.39 10.09 A2.5 2.5 0 0 0 13.61 10.09" stroke-width="1.3" fill="none"/>
+        <path d="M9.11 8.55 A4.5 4.5 0 0 0 14.89 8.55" stroke-width="1.1" stroke-opacity="0.65" fill="none"/>
+        <path d="M7.83 7.02 A6.5 6.5 0 0 0 16.17 7.02" stroke-width="0.9" stroke-opacity="0.32" fill="none"/>
+        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"><animate attributeName="r" values="1.5;2.0;1.5" dur="2.8s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0.35;1" dur="2.8s" repeatCount="indefinite"/></circle>
+      </svg>
+      <div class="pkn-title-wrap">
+        <div class="pkn-title">PokeKnow</div>
+        <div class="pkn-sub">Sees your portfolio, wishlist &amp; market in real time</div>
       </div>
       <div class="ai-chat-header-actions">
-        <button class="ai-chat-icon-btn ai-chat-minimise-btn" id="aiChatMinimise" title="Minimise">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
         <button class="ai-chat-icon-btn" id="aiChatSettings" title="Settings">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
         <button class="ai-chat-icon-btn" id="aiChatClear" title="Clear chat">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
         </button>
-        <button class="ai-chat-icon-btn ai-chat-close-btn" id="aiChatClose" title="Close">✕</button>
       </div>
     </header>
 
@@ -2295,7 +2291,29 @@
       <p class="ai-chat-privacy">Claude uses your Worker's Anthropic key — no setup needed. For other providers, your key never leaves your browser.</p>
     </div>
 
-    <!-- Focus bar — adjusts scoring everywhere + guides AI recommendations -->
+    <!-- Card finder -->
+    <section class="pkn-find-section">
+      <div class="pkn-section-label">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Find cards to buy
+      </div>
+      <div class="wtb-search-wrap">
+        <input class="wtb-search-input" id="wtbSearchInput" type="text"
+          placeholder="e.g. vintage PSA 10–7 under £150 · cheap Charizard · modern alt art"
+          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button class="wtb-search-btn" id="wtbSearchBtn" type="button">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Search
+        </button>
+      </div>
+      <div class="wtb-chips" id="wtbChips"></div>
+      <div class="wtb-results" id="wtbResults"></div>
+    </section>
+
+    <!-- AI analyst -->
+    <div class="pkn-section-divider">Ask the analyst</div>
+
+    <!-- Focus bar -->
     <div class="ai-focus-bar" id="aiFocusBar">
       <div class="ai-focus-top">
         <span class="ai-focus-heading">Focus</span>
@@ -2320,7 +2338,7 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
       </button>
     </form>
-  </aside>
+  </div>
 
   <!-- Floating Filter Button -->
   <button class="filter-fab" id="filterFab" title="Card Screener">
@@ -2620,7 +2638,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260708u"></script>
+  <script src="app.js?v=20260708v"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

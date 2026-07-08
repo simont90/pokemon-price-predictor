@@ -767,8 +767,10 @@ async function handleAiQuery(request, env, url) {
 Fields:
 - vintage: boolean — true for WOTC/classic/pre-2004 era (1999–2003: Base Set, Jungle, Fossil, Gym, Neo, Legendary Collection, etc.)
 - modern: boolean — true for post-2004 era (EX, Diamond & Pearl, Black & White, XY, Sun & Moon, Sword & Shield, Scarlet & Violet, etc.)
-- grade: number|null — specific PSA grade requested (10, 9, 8, 7, 6, 5) or null
-- gradeType: "psa"|null — "psa" if PSA grading mentioned at all without a specific grade, null otherwise
+- grade: number|null — a SINGLE specific PSA grade (10, 9, 8, 7, 6, 5) or null; use null if a range is given
+- gradeMin: number|null — lower bound of a PSA grade range (e.g. 7 for "PSA 10-7"); null if not a range query
+- gradeMax: number|null — upper bound of a PSA grade range (e.g. 10 for "PSA 10-7"); null if not a range query
+- gradeType: "psa"|null — "psa" if PSA grading mentioned at all without a specific single grade, null otherwise
 - maxGBP: number|null — max budget in GBP (extract from "under £X", "cheap", "affordable", "budget", "less than £X", bare "£X")
 - minGBP: number|null — minimum price in GBP (from "over £X", "at least £X")
 - rarity: "holo"|"fullart"|"altart"|"secret"|"rainbow"|null
@@ -777,12 +779,13 @@ Fields:
 - dealsOnly: boolean — true if user wants deals, value, undervalued, cheap finds, or bargains
 
 Examples:
-"vintage PSA under £150" → {"vintage":true,"modern":false,"grade":null,"gradeType":"psa","maxGBP":150,"minGBP":null,"rarity":null,"pokemon":null,"setName":null,"dealsOnly":false}
-"cheap Charizard" → {"vintage":false,"modern":false,"grade":null,"gradeType":null,"maxGBP":null,"minGBP":null,"rarity":null,"pokemon":"Charizard","setName":null,"dealsOnly":true}
-"PSA 9 Base Set holos under £500" → {"vintage":true,"modern":false,"grade":9,"gradeType":"psa","maxGBP":500,"minGBP":null,"rarity":"holo","pokemon":null,"setName":"Base Set","dealsOnly":false}
-"modern alt art deals under £100" → {"vintage":false,"modern":true,"grade":null,"gradeType":null,"maxGBP":100,"minGBP":null,"rarity":"altart","pokemon":null,"setName":null,"dealsOnly":true}
-"affordable Pikachu vintage" → {"vintage":true,"modern":false,"grade":null,"gradeType":null,"maxGBP":50,"minGBP":null,"rarity":null,"pokemon":"Pikachu","setName":null,"dealsOnly":true}
-"Neo Genesis rare finds" → {"vintage":true,"modern":false,"grade":null,"gradeType":null,"maxGBP":null,"minGBP":null,"rarity":null,"pokemon":null,"setName":"Neo Genesis","dealsOnly":true}`;
+"vintage PSA under £150" → {"vintage":true,"modern":false,"grade":null,"gradeMin":null,"gradeMax":null,"gradeType":"psa","maxGBP":150,"minGBP":null,"rarity":null,"pokemon":null,"setName":null,"dealsOnly":false}
+"vintage PSA 10-7 under £150" → {"vintage":true,"modern":false,"grade":null,"gradeMin":7,"gradeMax":10,"gradeType":"psa","maxGBP":150,"minGBP":null,"rarity":null,"pokemon":null,"setName":null,"dealsOnly":false}
+"cheap Charizard" → {"vintage":false,"modern":false,"grade":null,"gradeMin":null,"gradeMax":null,"gradeType":null,"maxGBP":null,"minGBP":null,"rarity":null,"pokemon":"Charizard","setName":null,"dealsOnly":true}
+"PSA 9 Base Set holos under £500" → {"vintage":true,"modern":false,"grade":9,"gradeMin":null,"gradeMax":null,"gradeType":"psa","maxGBP":500,"minGBP":null,"rarity":"holo","pokemon":null,"setName":"Base Set","dealsOnly":false}
+"modern alt art deals under £100" → {"vintage":false,"modern":true,"grade":null,"gradeMin":null,"gradeMax":null,"gradeType":null,"maxGBP":100,"minGBP":null,"rarity":"altart","pokemon":null,"setName":null,"dealsOnly":true}
+"affordable Pikachu vintage" → {"vintage":true,"modern":false,"grade":null,"gradeMin":null,"gradeMax":null,"gradeType":null,"maxGBP":50,"minGBP":null,"rarity":null,"pokemon":"Pikachu","setName":null,"dealsOnly":true}
+"Neo Genesis rare finds" → {"vintage":true,"modern":false,"grade":null,"gradeMin":null,"gradeMax":null,"gradeType":null,"maxGBP":null,"minGBP":null,"rarity":null,"pokemon":null,"setName":"Neo Genesis","dealsOnly":true}`;
 
   let claudeResp;
   try {

@@ -9573,9 +9573,6 @@ function pwaPushCard(cardId) {
   updatePWANavButtons();
 }
 function pwaBack() {
-  // If AI panel is open, close it first rather than navigating cards.
-  const aiPanel = document.getElementById('aiChatPanel');
-  if (aiPanel && aiPanel.classList.contains('open')) { aiClosePanel(true); return; }
   if (pwaHistory.idx <= 0) return;
   pwaHistory.idx--;
   pwaHistory.suppress = true;
@@ -9632,12 +9629,6 @@ function setupPWANav() {
 
   // Also wire native browser back/forward (where available) so they feel consistent
   window.addEventListener('popstate', (e) => {
-    // Back gesture while AI panel is open → close the panel, don't navigate.
-    const aiPanel = document.getElementById('aiChatPanel');
-    if (aiPanel && aiPanel.classList.contains('open')) {
-      aiClosePanel(true); // true = called from popstate, skip history.back()
-      return;
-    }
     if (e.state && e.state.cardId) {
       pwaHistory.suppress = true;
       selectCard(e.state.cardId);
@@ -16168,51 +16159,11 @@ function aiToggleSettings(show) {
 }
 
 function aiOpenPanel() {
-  const panel    = document.getElementById('aiChatPanel');
-  const backdrop = document.getElementById('aiChatBackdrop');
-  if (!panel) return;
-
-  // Push a history entry so the back gesture closes the panel instead of navigating away.
-  // Guard against double-push if somehow called while already open.
-  if (!panel.classList.contains('open')) {
-    try { history.pushState({ aiOpen: true }, '', location.href); } catch(e) {}
-  }
-
-  const _autoCard = selectedCard;
-
-  panel.style.display = 'flex';
-  if (backdrop) backdrop.style.display = 'block';
-  setTimeout(() => {
-    panel.classList.add('open');
-    if (backdrop) backdrop.classList.add('open');
-  }, 10);
-  aiRenderHistory();
-  const _openCfg = AI_PROVIDERS[aiGetProvider()];
-  const _needsKey = !_openCfg?.noKey && !aiGetKey();
-  if (_needsKey) aiToggleSettings(true);
-  const input = document.getElementById('aiChatInput');
-  if (input) setTimeout(() => input.focus(), 200);
-
-  // Auto-submit card analysis only if there's no existing conversation to resume.
-  if (_autoCard && !_needsKey && aiChatHistory.length === 0) {
-    setTimeout(() => aiSubmit(`Analyse ${_autoCard.n} (${_autoCard.s}) in full. What's the signal, should I buy it, hold it, or grade it? Give me the 5-year outlook and any risks.`), 300);
-  }
+  // PokeKnow is now a full page — navigate to it via the normal routing
+  if (typeof go === 'function') go('know');
 }
 function aiClosePanel(_viaPopstate) {
-  const panel    = document.getElementById('aiChatPanel');
-  const backdrop = document.getElementById('aiChatBackdrop');
-  if (!panel) return;
-  panel.classList.remove('open');
-  if (backdrop) backdrop.classList.remove('open');
-  setTimeout(() => {
-    panel.style.display = 'none';
-    if (backdrop) backdrop.style.display = 'none';
-  }, 200);
-  // If closed by UI (X button, backdrop, Escape) consume the history entry we pushed.
-  // Don't call history.back() when we're already here via popstate — that would double-pop.
-  if (!_viaPopstate) {
-    try { history.back(); } catch(e) {}
-  }
+  // No-op: PokeKnow is a page now; dismissal is handled by page navigation
 }
 
 async function aiSubmit(userText) {
@@ -16430,8 +16381,6 @@ function aiSetupQuickPrompts() {
 }
 
 function setupAiChat() {
-  const btn = document.getElementById('aiChatBtn');
-  const close = document.getElementById('aiChatClose');
   const settingsBtn = document.getElementById('aiChatSettings');
   const clearBtn = document.getElementById('aiChatClear');
   const saveBtn = document.getElementById('aiChatSaveKey');
@@ -16440,25 +16389,8 @@ function setupAiChat() {
   const helpLink = document.getElementById('aiChatKeyHelp');
   const form = document.getElementById('aiChatForm');
   const input = document.getElementById('aiChatInput');
-  if (!btn || !form) return;
+  if (!form) return;
 
-  btn.addEventListener('click', aiOpenPanel);
-  close && close.addEventListener('click', aiClosePanel);
-  document.getElementById('aiChatMinimise')?.addEventListener('click', aiClosePanel);
-  document.getElementById('aiChatBackdrop')?.addEventListener('click', aiClosePanel);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && document.getElementById('aiChatPanel').classList.contains('open')) aiClosePanel();
-  });
-
-  // Swipe-down on handle to dismiss (mobile bottom sheet)
-  const handle = document.getElementById('aiChatHandle');
-  if (handle) {
-    let _hTouchY = 0;
-    handle.addEventListener('touchstart', e => { _hTouchY = e.touches[0].clientY; }, { passive: true });
-    handle.addEventListener('touchend', e => {
-      if (e.changedTouches[0].clientY - _hTouchY > 50) aiClosePanel();
-    }, { passive: true });
-  }
   settingsBtn && settingsBtn.addEventListener('click', () => aiToggleSettings());
   clearBtn && clearBtn.addEventListener('click', () => {
     if (!confirm('Clear chat history?')) return;
@@ -16528,6 +16460,7 @@ function setupAiChat() {
   document.getElementById('aiFocusClear')?.addEventListener('click', clearFocus);
 
   aiSetupQuickPrompts();
+  _pknWireSearch();
 }
 
 // =============================================================
@@ -19193,7 +19126,7 @@ function setupPageNav() {
     binder: document.getElementById('pageBinder'),
     budget: document.getElementById('pageBudget'),
     vintage: document.getElementById('pageVintage'),
-    wtb: document.getElementById('pageWtb'),
+    know: document.getElementById('pageKnow'),
   };
 
   function go(page) {
@@ -19224,7 +19157,7 @@ function setupPageNav() {
     if (page === 'tools') { try { updateToolsDupeBadge(); } catch(e) {} }
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
     if (page === 'vintage') { try { renderVintagePage(); } catch(e) {} }
-    if (page === 'wtb') { try { renderWhatToBuyPage(); } catch(e) {} }
+    if (page === 'know') { try { _pknOnNavigate(); } catch(e) {} }
     // URL + title: cards get their own address (#cardId); other pages reset to page hash
     if (page === 'predict' && selectedCard) {
       try { history.replaceState({ cardId: selectedCard.i }, '', '#' + selectedCard.i); } catch(e) {}
@@ -19335,7 +19268,7 @@ function setupPageNav() {
   //   #<cardId>   — set by selectCard() / pwaPushCard, works as a bookmark
   const _deepCard = new URLSearchParams(location.search).get('card');
   const initial = (location.hash || '#home').replace('#', '');
-  const isKnownPage = ['home', 'predict', 'discover', 'tools', 'binder', 'budget', 'vintage'].includes(initial);
+  const isKnownPage = ['home', 'predict', 'discover', 'tools', 'binder', 'budget', 'vintage', 'know'].includes(initial);
   const _hashCard = !isKnownPage && initial ? initial : null;
   const cardToOpen = _deepCard || _hashCard;
   if (cardToOpen) {
@@ -22379,7 +22312,22 @@ function _vgRefresh(el, changedId) {
   window.scrollTo(0, y);
 }
 
-// ── What to Buy page ──────────────────────────────────────────────────────────
+// ── PokeKnow page helpers ─────────────────────────────────────────────────────
+
+function _pknOnNavigate() {
+  _pknWireSearch();
+  aiRenderHistory();
+  const _cfg = AI_PROVIDERS[aiGetProvider()];
+  const _needsKey = !_cfg?.noKey && !aiGetKey();
+  if (_needsKey) aiToggleSettings(true);
+  const input = document.getElementById('aiChatInput');
+  if (input) setTimeout(() => input.focus(), 300);
+  if (selectedCard && !_needsKey && aiChatHistory.length === 0) {
+    setTimeout(() => aiSubmit(`Analyse ${selectedCard.n} (${selectedCard.s}) in full. What's the signal, should I buy it, hold it, or grade it? Give me the 5-year outlook and any risks.`), 400);
+  }
+}
+
+// ── What to Buy search (embedded in PokeKnow) ────────────────────────────────
 
 const WTB_CHIPS = [
   { label: 'Vintage holo deals',  q: 'vintage holo deals' },
@@ -22397,8 +22345,8 @@ const WTB_CHIPS = [
 function _wtbParseQuery(q) {
   const s = {
     nameQuery: '', vintage: false, modern: false, wantJP: false,
-    grade: null, gradeType: null, maxGBP: null, minGBP: null, rarity: null,
-    eras: [], dealsOnly: false,
+    grade: null, gradeMin: null, gradeMax: null, gradeType: null,
+    maxGBP: null, minGBP: null, rarity: null, eras: [], dealsOnly: false,
   };
   let r = q.toLowerCase();
 
@@ -22406,10 +22354,18 @@ function _wtbParseQuery(q) {
   if (/\bmodern\b|\bscarlet\b|\bviolet\b|\bswsh\b/.test(r)) { s.modern = true; r = r.replace(/\bmodern\b|\bscarlet\b|\bviolet\b|\bswsh\b/g, ''); }
   if (/\bjapanese\b|\bjp\b/.test(r)) { s.wantJP = true; r = r.replace(/\bjapanese\b|\bjp\b/g, ''); }
 
-  // Specific grade first (PSA 9, gem mint), then bare "PSA" as grade-format signal
-  const gm = r.match(/psa\s*(\d+)|gem\s*mint/);
-  if (gm) { s.grade = gm[1] ? +gm[1] : 10; r = r.replace(/psa\s*\d+|gem\s*mint/g, ''); }
-  if (/\bpsa\b/.test(r)) { s.gradeType = 'psa'; r = r.replace(/\bpsa\b/g, ''); }
+  // Grade range first (PSA 10-7 or PSA 10 – 7), then exact grade, then bare PSA as type signal
+  const grm = r.match(/psa\s*(\d+)\s*[-–]\s*(\d+)/);
+  if (grm) {
+    s.gradeMin = Math.min(+grm[1], +grm[2]);
+    s.gradeMax = Math.max(+grm[1], +grm[2]);
+    s.gradeType = 'psa';
+    r = r.replace(/psa\s*\d+\s*[-–]\s*\d+/g, '');
+  } else {
+    const gm = r.match(/psa\s*(\d+)|gem\s*mint/);
+    if (gm) { s.grade = gm[1] ? +gm[1] : 10; r = r.replace(/psa\s*\d+|gem\s*mint/g, ''); }
+    if (/\bpsa\b/.test(r)) { s.gradeType = 'psa'; r = r.replace(/\bpsa\b/g, ''); }
+  }
 
   const um = r.match(/under\s*[£$]?\s*(\d+)/);
   if (um) { s.maxGBP = +um[1]; r = r.replace(/under\s*[£$]?\s*\d+/g, ''); }
@@ -22539,8 +22495,15 @@ function _wtbSearchWithSig(sig) {
       const vl = _vgLadder(card);
       ladder = vl.ladder;
 
-      if (sig.maxGBP) {
-        // For vintage, filter at grade level: find best-scoring grade within budget
+      if (sig.gradeMin !== null && sig.gradeMax !== null) {
+        // Grade range: e.g. "PSA 10-7" — find best in range, optionally within budget
+        let rows = vl.ladder.filter(row => row.gbp > 0 && row.g >= sig.gradeMin && row.g <= sig.gradeMax);
+        if (sig.maxGBP) rows = rows.filter(row => row.gbp <= sig.maxGBP);
+        if (!rows.length) continue;
+        const best = rows.reduce((b, row) => (row.score || 0) > (b?.score || 0) ? row : b, null);
+        if (best) { bestGrade = best.g; bestGbp = best.gbp; dealScore = best.score || 0; }
+      } else if (sig.maxGBP) {
+        // Budget filter across all grades: find best-scoring grade within budget
         const inBudget = vl.ladder.filter(row => row.gbp > 0 && row.gbp <= sig.maxGBP);
         if (!inBudget.length) continue;
         const best = inBudget.reduce((b, row) => (row.score || 0) > (b?.score || 0) ? row : b, null);
@@ -22664,34 +22627,16 @@ function _wtbCardHTMLFull(entry) {
   </div>`;
 }
 
-function renderWhatToBuyPage() {
-  const el = document.getElementById('pageWtb');
-  if (!el || el.style.display === 'none') return;
-  if (el._wtbWired) return;
-  el._wtbWired = true;
+function _pknWireSearch() {
+  const chipsEl  = document.getElementById('wtbChips');
+  const input    = document.getElementById('wtbSearchInput');
+  const searchBtn= document.getElementById('wtbSearchBtn');
+  const resultsEl= document.getElementById('wtbResults');
+  if (!chipsEl || !input) return;
+  if (chipsEl._wtbWired) return;
+  chipsEl._wtbWired = true;
 
-  el.innerHTML = `<div class="app wtb-page">
-    <div class="wtb-hero">
-      <div class="wtb-hero-title">What to Buy</div>
-      <div class="wtb-hero-sub">Describe what you're looking for — get card recommendations with links</div>
-      <div class="wtb-search-wrap">
-        <input class="wtb-search-input" id="wtbSearchInput" type="text"
-          placeholder="e.g. cheap PSA 9 Base Set holos · Charizard vintage · modern alt art under £100"
-          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-        <button class="wtb-search-btn" id="wtbSearchBtn" type="button">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          Search
-        </button>
-      </div>
-      <div class="wtb-chips" id="wtbChips">
-        ${WTB_CHIPS.map(c => `<button class="wtb-chip" type="button" data-q="${esc(c.q)}">${esc(c.label)}</button>`).join('')}
-      </div>
-    </div>
-    <div class="wtb-results" id="wtbResults"></div>
-  </div>`;
-
-  const input     = el.querySelector('#wtbSearchInput');
-  const resultsEl = el.querySelector('#wtbResults');
+  chipsEl.innerHTML = WTB_CHIPS.map(c => `<button class="wtb-chip" type="button" data-q="${esc(c.q)}">${esc(c.label)}</button>`).join('');
 
   async function runSearch(q) {
     q = (q || '').trim();
@@ -22705,8 +22650,10 @@ function renderWhatToBuyPage() {
       const resp = await fetch(`${workerUrl}/ai/query?q=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(7000) });
       if (resp.ok) {
         sig = await resp.json();
-        sig.eras    = sig.eras    || [];
-        sig.wantJP  = sig.wantJP  || false;
+        sig.eras     = sig.eras    || [];
+        sig.wantJP   = sig.wantJP  || false;
+        sig.gradeMin = sig.gradeMin != null ? +sig.gradeMin : null;
+        sig.gradeMax = sig.gradeMax != null ? +sig.gradeMax : null;
       } else {
         sig = _wtbParseQuery(q);
       }
@@ -22724,7 +22671,7 @@ function renderWhatToBuyPage() {
         sig.vintage ? 'vintage' : sig.modern ? 'modern' : '',
         sig.rarity || '',
         sig.maxGBP ? `under £${sig.maxGBP}` : '',
-        sig.grade  ? `PSA ${sig.grade}` : (sig.gradeType ? sig.gradeType.toUpperCase() : ''),
+        sig.gradeMin !== null && sig.gradeMax !== null ? `PSA ${sig.gradeMax}–${sig.gradeMin}` : sig.grade ? `PSA ${sig.grade}` : (sig.gradeType ? sig.gradeType.toUpperCase() : ''),
         sig.pokemon || (sig.setName ? sig.setName : ''),
       ].filter(Boolean).join(' · ');
       resultsEl.innerHTML = `
@@ -22747,10 +22694,12 @@ function renderWhatToBuyPage() {
     }
   }
 
-  el.querySelector('#wtbSearchBtn').addEventListener('click', () => runSearch(input.value));
+  searchBtn && searchBtn.addEventListener('click', () => runSearch(input.value));
   input.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(input.value); });
-  el.querySelector('#wtbChips').addEventListener('click', e => {
+  chipsEl.addEventListener('click', e => {
     const chip = e.target.closest('.wtb-chip');
     if (chip) runSearch(chip.dataset.q);
   });
 }
+
+function renderWhatToBuyPage() { _pknWireSearch(); }
