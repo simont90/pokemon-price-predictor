@@ -22481,6 +22481,13 @@ function _wtbCardSignal(card) {
 
 function _wtbSearchWithSig(sig) {
   if (!searchIndex || !searchIndex.length) return [];
+
+  // Respect the global Max Per Card budget from the home page slider
+  const _globalMax = getMaxBudgetGBP();
+  if (_globalMax < 99000) {
+    sig.maxGBP = sig.maxGBP ? Math.min(sig.maxGBP, _globalMax) : _globalMax;
+  }
+
   const vSets = new Set(_vintageSets().map(s => s.code));
 
   const eras = [...(sig.eras || [])];
