@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260708p">
+  <link rel="stylesheet" href="style.css?v=20260708q">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -156,6 +156,11 @@
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         <span>Vintage</span>
         <span class="page-nav-sub">WOTC 1999 – 2003</span>
+      </button>
+      <button class="page-nav-btn" data-page="wtb" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        <span>Buy</span>
+        <span class="page-nav-sub">Deals · era focus</span>
       </button>
       <button class="page-nav-btn page-nav-ask" id="aiChatBtn" type="button" aria-label="PokeKnow">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -2186,6 +2191,10 @@
       <!-- Vintage page rendered entirely by JS -->
     </div><!-- /#pageVintage -->
 
+    <div class="page" id="pageWtb" data-page="wtb" style="display:none">
+      <!-- What to Buy page rendered entirely by JS -->
+    </div><!-- /#pageWtb -->
+
     <!-- Vestigial main close to keep DOM well-formed. Hidden Top 50 placeholder below is moved at init. -->
     <main style="display:none">
       <section class="card top50-card" id="top50Section">
@@ -2610,7 +2619,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260708p"></script>
+  <script src="app.js?v=20260708q"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

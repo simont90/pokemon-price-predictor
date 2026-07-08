@@ -19193,6 +19193,7 @@ function setupPageNav() {
     binder: document.getElementById('pageBinder'),
     budget: document.getElementById('pageBudget'),
     vintage: document.getElementById('pageVintage'),
+    wtb: document.getElementById('pageWtb'),
   };
 
   function go(page) {
@@ -19223,6 +19224,7 @@ function setupPageNav() {
     if (page === 'tools') { try { updateToolsDupeBadge(); } catch(e) {} }
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
     if (page === 'vintage') { try { renderVintagePage(); } catch(e) {} }
+    if (page === 'wtb') { try { renderWhatToBuyPage(); } catch(e) {} }
     // URL + title: cards get their own address (#cardId); other pages reset to page hash
     if (page === 'predict' && selectedCard) {
       try { history.replaceState({ cardId: selectedCard.i }, '', '#' + selectedCard.i); } catch(e) {}
@@ -22375,4 +22377,250 @@ function _vgRefresh(el, changedId) {
     }
   }
   window.scrollTo(0, y);
+}
+
+// ── What to Buy page ──────────────────────────────────────────────────────────
+
+let _wtbHash = '';
+
+function _wtbExplainVintage(card, grade, score, gbp, ladder) {
+  const psa10row = ladder.find(l => l.g === 10);
+  const psa10gbp = psa10row?.gbp || 0;
+  const si = (typeof setsData !== 'undefined' && setsData) ? setsData[card.sc] : null;
+  const setName = si?.name || card.sc || '';
+  const r = (card.r || '').toLowerCase();
+  const isBase = card.sc === 'base1';
+  const isNeo  = ['neo1','neo2','neo3','neo4'].includes(card.sc);
+  const isGym  = ['gym1','gym2'].includes(card.sc);
+  const parts = [];
+
+  const scoreDesc = score >= 100
+    ? `Grade ratio analysis puts expected fair value well above the current ${fmtGBPDirect(gbp)}.`
+    : `PSA ${grade} at ${fmtGBPDirect(gbp)} is ~${score}% below where grade ratios put fair value.`;
+  parts.push(scoreDesc);
+
+  if (grade === 10) {
+    if (isBase) {
+      parts.push(`Base Set gem copies are rare — low PSA populations mean any below-market 10 tends to get absorbed fast.`);
+    } else {
+      parts.push(`Gem Mint WOTC slabs carry a scarcity premium; PSA populations are small and any below-fair-value copy is unusual.`);
+    }
+  } else if (grade === 9) {
+    if (isBase) {
+      parts.push(`${setName} PSA 9s sit in the most liquid position — collector demand from both set completionists and single-card PCs keeps the grade active.`);
+    } else if (isNeo) {
+      parts.push(`Neo-era PSA 9s are genuinely hard to source — thin print runs and ageing card stock mean the population is small and barely growing.`);
+    } else if (isGym) {
+      parts.push(`Gym set PSA 9s see sustained demand from character-card collectors; supply is thinner than it looks because the sets are often skipped at submission time.`);
+    } else {
+      parts.push(`PSA 9 is the most tradeable WOTC slab — authenticated quality that sells on both primary and secondary markets without long holds.`);
+    }
+  } else if (grade === 8) {
+    parts.push(`PSA 8 delivers full collector presentation at a fraction of gem cost, and WOTC holos at this grade have real demand from buyers priced out of 9s.`);
+  } else if (grade === 7) {
+    parts.push(`PSA 7 is the entry for graded collecting; most ungraded WOTC copies in circulation grade 6 or below, making clean 7s harder to source than they appear.`);
+  } else if (grade <= 6) {
+    parts.push(`PSA ${grade} carries genuine collector demand — set completionists need every grade, and graded WOTC supply at any level is structurally limited.`);
+  }
+
+  if (psa10gbp > 0 && grade < 10) {
+    const pct = Math.round(gbp / psa10gbp * 100);
+    parts.push(`At ${pct}% of the ${fmtGBPDirect(psa10gbp)} PSA 10, it captures most of the card's prestige at a more accessible entry.`);
+  }
+
+  return parts.join(' ');
+}
+
+function _wtbExplainModern(card, score, gbp, cmDip, mktGap) {
+  const parts = [];
+  if (cmDip > 0) {
+    parts.push(`Cardmarket 7-day average is ${cmDip}% below the 30-day average — the card is in a short-term dip relative to recent trend.`);
+  } else if (mktGap > 0) {
+    parts.push(`Current market price is ${mktGap}% below TCGPlayer market — a gap that typically closes within a few days as buyers arbitrage.`);
+  }
+  parts.push(`Worth targeting at ${fmtGBPDirect(gbp)} if you have conviction on the card's long-term meta or collector relevance.`);
+  return parts.join(' ');
+}
+
+function _wtbEraExplain(sc, setName, data, isVintage) {
+  const count = data.count;
+  const best  = data.best;
+  if (sc === 'base1') {
+    return `Base Set is the cornerstone of WOTC collecting — ${count} card${count > 1 ? 's' : ''} showing live deal signals. Any Base holo below fair grade value tends to get absorbed quickly; the collector base is wide and global.`;
+  }
+  if (sc === 'neo1') {
+    return `Neo Genesis is widely considered the most artistically strong WOTC set. ${count} card${count > 1 ? 's' : ''} flagging positive value right now. PSA populations are thin relative to Base Set and collector interest has grown steadily.`;
+  }
+  if (['gym1','gym2'].includes(sc)) {
+    return `${setName} is one of the most underappreciated WOTC sets — ${count} card${count > 1 ? 's' : ''} showing deal signals. Character-specific cards (Leader's Pokémon) have a loyal niche and graded supply is structurally thin.`;
+  }
+  if (['jungle','fossil'].includes(sc)) {
+    return `${setName} often trades at a discount to Base Set despite similar collector demographics. ${count} card${count > 1 ? 's' : ''} with positive deal signals — natural targets for anyone building a full WOTC run.`;
+  }
+  if (isVintage) {
+    return `${count} card${count > 1 ? 's' : ''} from ${setName} showing positive deal scores (best: +${best}). WOTC-era prints at this level tend to be absorbed into long-term collections as graded supply gets locked away.`;
+  }
+  return `${count} modern card${count > 1 ? 's' : ''} from ${setName} showing temporary price dips. Worth targeting if you have long-term conviction on meta relevance or art desirability.`;
+}
+
+function renderWhatToBuyPage() {
+  const el = document.getElementById('pageWtb');
+  if (!el || el.style.display === 'none') return;
+
+  if (!searchIndex || !searchIndex.length) {
+    el.innerHTML = '<div class="app"><p style="padding:40px;text-align:center;color:var(--text-muted)">Loading card database…</p></div>';
+    setTimeout(() => { try { renderWhatToBuyPage(); } catch(e) {} }, 400);
+    return;
+  }
+
+  const vSets = new Set(_vintageSets().map(s => s.code));
+
+  // --- Vintage: grade-ratio deal scoring ---
+  const vintageDeals = [], vintageWatch = [];
+  let vintageAnalysed = 0;
+
+  for (const card of searchIndex) {
+    if (card.lang === 'JP' || !vSets.has(card.sc)) continue;
+    const pd = getCachedPrice(card.i) || getLastKnownPrice(card.i);
+    if (!pd) continue;
+    vintageAnalysed++;
+
+    const { ladder, bestScore } = _vgLadder(card);
+    if (bestScore === null) continue;
+
+    let best = null;
+    for (const row of ladder) {
+      if (row.score !== null && (best === null || row.score > best.score)) best = row;
+    }
+    if (!best) continue;
+
+    const entry = { card, grade: best.g, score: best.score, gbp: best.gbp, ladder, source: 'vintage' };
+    if (best.score >= VG_DEAL_SCORE) vintageDeals.push(entry);
+    else if (best.score >= 10) vintageWatch.push(entry);
+  }
+
+  vintageDeals.sort((a, b) => b.score - a.score);
+  vintageWatch.sort((a, b) => b.score - a.score);
+
+  // --- Modern: CM 7-day dip or market vs TCGPlayer gap ---
+  const modernDeals = [], modernWatch = [];
+  let modernAnalysed = 0;
+
+  for (const card of searchIndex) {
+    if (card.lang === 'JP' || vSets.has(card.sc)) continue;
+    const pd = getCachedPrice(card.i) || getLastKnownPrice(card.i);
+    if (!pd) continue;
+    modernAnalysed++;
+
+    const cmDip  = (pd.cmAvg7 > 0 && pd.cmAvg30 > 0) ? Math.round((1 - pd.cmAvg7 / pd.cmAvg30) * 100) : 0;
+    const mktGap = (pd.market > 0 && pd.tcgMarket > 0) ? Math.round((1 - pd.market / pd.tcgMarket) * 100) : 0;
+    const bestSig = Math.max(cmDip, mktGap);
+    if (bestSig < 10) continue;
+
+    const gbp = usdToGbp(pd.market || pd.tcgMarket || 0);
+    if (gbp < 0.5) continue;
+    const entry = { card, score: bestSig, gbp, cmDip, mktGap, source: 'modern' };
+    if (bestSig >= 20) modernDeals.push(entry);
+    else modernWatch.push(entry);
+  }
+
+  modernDeals.sort((a, b) => b.score - a.score);
+  modernWatch.sort((a, b) => b.score - a.score);
+
+  const allDeals = [...vintageDeals, ...modernDeals].sort((a, b) => b.score - a.score).slice(0, 15);
+  const allWatch = [...vintageWatch, ...modernWatch].sort((a, b) => b.score - a.score).slice(0, 8);
+  const totalAnalysed = vintageAnalysed + modernAnalysed;
+
+  // --- Era spotlight: sets with most consistent deal signals ---
+  const setScores = {};
+  for (const d of [...allDeals, ...allWatch]) {
+    const sc = d.card.sc;
+    if (!setScores[sc]) setScores[sc] = { total: 0, count: 0, best: 0 };
+    setScores[sc].total += d.score;
+    setScores[sc].count++;
+    if (d.score > setScores[sc].best) setScores[sc].best = d.score;
+  }
+  const topSets = Object.entries(setScores)
+    .sort((a, b) => (b[1].total / b[1].count) - (a[1].total / a[1].count))
+    .slice(0, 3);
+
+  const hash = allDeals.map(d => d.card.i + ',' + d.score).join('|');
+  if (hash === _wtbHash) return;
+  _wtbHash = hash;
+
+  function cardHTML(d) {
+    const c = d.card;
+    const img = getCardImg(c) || '';
+    const si = (typeof setsData !== 'undefined' && setsData) ? setsData[c.sc] : null;
+    const setName = si?.name || c.sc || '';
+    const explain = d.source === 'vintage'
+      ? _wtbExplainVintage(c, d.grade, d.score, d.gbp, d.ladder)
+      : _wtbExplainModern(c, d.score, d.gbp, d.cmDip, d.mktGap);
+    const ebayUrl = d.source === 'vintage' ? _vgEbayUrl(c, d.grade) : '';
+    const sc2 = d.score >= 50 ? 'wtb-score-hot' : d.score >= VG_DEAL_SCORE ? 'wtb-score-deal' : 'wtb-score-watch';
+    const gradeLabel = d.source === 'vintage' ? `PSA ${d.grade} · ` : '';
+    return `<div class="wtb-card">
+      ${img ? `<img class="wtb-card-img" src="${esc(img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="wtb-card-img-ph"></div>'}
+      <div class="wtb-card-body">
+        <div class="wtb-card-hd">
+          <span class="wtb-card-name">${esc(c.n)}</span>
+          <span class="wtb-score ${sc2}">+${d.score}</span>
+        </div>
+        <div class="wtb-card-meta">${esc(setName)}${c.cn ? ' · #' + esc(c.cn) : ''} · ${gradeLabel}${fmtGBPDirect(d.gbp)}</div>
+        <p class="wtb-card-explain">${explain}</p>
+        ${ebayUrl ? `<a class="wtb-buy-btn" href="${esc(ebayUrl)}" target="_blank" rel="noopener noreferrer">Search eBay ↗</a>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function eraSection() {
+    if (!topSets.length) return '<p class="wtb-empty">Not enough data yet — run Refresh Vintage PSA prices in Tools → Price Sync.</p>';
+    return topSets.map(([sc, data]) => {
+      const si = (typeof setsData !== 'undefined' && setsData) ? setsData[sc] : null;
+      const name = si?.name || sc;
+      const year = (si?.releaseDate || '').slice(0, 4);
+      const avg  = Math.round(data.total / data.count);
+      return `<div class="wtb-era-card">
+        <div class="wtb-era-hd">
+          <span class="wtb-era-name">${esc(name)}</span>
+          ${year ? `<span class="wtb-era-year">${year}</span>` : ''}
+          <span class="wtb-score wtb-score-deal">avg +${avg}</span>
+        </div>
+        <p class="wtb-era-explain">${_wtbEraExplain(sc, name, data, vSets.has(sc))}</p>
+      </div>`;
+    }).join('');
+  }
+
+  const noDataNote = totalAnalysed < 20
+    ? `<div class="wtb-note">Run <strong>Refresh Vintage PSA prices</strong> in Tools → Price Sync to populate live grade data for full coverage.</div>`
+    : '';
+
+  el.innerHTML = `<div class="app wtb-page">
+    <div class="wtb-hd">
+      <div class="wtb-title">What to Buy</div>
+      <div class="wtb-sub">${totalAnalysed} cards with cached data · ${allDeals.length} deal${allDeals.length !== 1 ? 's' : ''} · ${allWatch.length} to watch</div>
+      ${noDataNote}
+    </div>
+    <div class="wtb-section">
+      <div class="wtb-section-hd">
+        <div class="wtb-section-title">Excellent deals right now</div>
+        <div class="wtb-section-sub">Live price sitting well below expected grade value</div>
+      </div>
+      ${allDeals.length ? allDeals.map(cardHTML).join('') : '<p class="wtb-empty">No deals detected with current cached data. Refresh prices to get live grade comparisons.</p>'}
+    </div>
+    <div class="wtb-section">
+      <div class="wtb-section-hd">
+        <div class="wtb-section-title">Worth watching</div>
+        <div class="wtb-section-sub">Approaching deal territory — monitor or wait for a dip</div>
+      </div>
+      ${allWatch.length ? allWatch.map(cardHTML).join('') : '<p class="wtb-empty">Nothing in the watch range with current data.</p>'}
+    </div>
+    <div class="wtb-section">
+      <div class="wtb-section-hd">
+        <div class="wtb-section-title">Era focus</div>
+        <div class="wtb-section-sub">Sets showing the most consistent value signals right now</div>
+      </div>
+      ${eraSection()}
+    </div>
+  </div>`;
 }
