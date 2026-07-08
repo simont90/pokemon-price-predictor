@@ -2293,14 +2293,19 @@ async function fetchFreshPriceData(card, { skipCollectrics = false } = {}) {
     isJP ? Promise.resolve(null) : fetchLivePriceEN(card.i),
   ]);
 
-  // 1. Apply PriceCharting result
+  // 1. Apply PriceCharting result.
+  // Always apply PC data (so pcPsa10 and grade prices are stored even when pcUngraded = 0).
+  // Only set market/mid from PC if it has a valid ungraded price — otherwise leave
+  // those fields for TCGPlayer/Cardmarket to fill in.
   if (pcSettled.status === 'fulfilled') {
     const pc = pcSettled.value;
-    if (pc && pc.pcUngraded > 0) {
+    if (pc) {
       Object.assign(priceData, pc);
-      priceData.source = 'pricecharting';
-      priceData.market = pc.pcUngraded;
-      priceData.mid = pc.pcUngraded;
+      if (pc.pcUngraded > 0) {
+        priceData.source = 'pricecharting';
+        priceData.market = pc.pcUngraded;
+        priceData.mid = pc.pcUngraded;
+      }
     }
   } else {
     console.warn('PriceCharting fetch failed:', pcSettled.reason);
