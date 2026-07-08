@@ -1562,7 +1562,7 @@ function doSearch(query) {
     } catch (e) {}
     return `
     <div class="search-result-item${isJP ? ' jp-card' : isCN ? ' cn-card' : isKR ? ' kr-card' : ''}" data-id="${c.i}">
-      ${`<img class="search-result-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="_onImgError(this)">`}
+      ${`<img class="search-result-img" src="${getCardImg(c)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">`}
       <div class="search-result-info">
         <div class="search-result-name">${langBadge}${esc(c.n)}${cpFlag}${jpNameLabel}</div>
         <div class="search-result-meta">
@@ -6533,7 +6533,7 @@ function _buildBinderPanelBody(items, setBuckets) {
       return `
         <div class="bdl-row bdl-row-${lang}" data-id="${b.id}">
           <span class="bdl-lang ${lang}">${lang.toUpperCase()}</span>
-          ${imgSrc ? `<img class="bdl-thumb" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="bdl-thumb bdl-thumb-ph"></div>'}
+          ${imgSrc ? `<img class="bdl-thumb" src="${imgSrc}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="bdl-thumb bdl-thumb-ph"></div>'}
           <div class="bdl-info">
             <div class="bdl-name">${esc(b.name)}</div>
             <div class="bdl-set">${esc(b.set)}</div>
@@ -6638,7 +6638,7 @@ function renderBinderPage() {
     return `
       <div class="binder-pg-card${(b.owned || b.upgrade) ? ' binder-pg-owned-card' : ''}${isSelected ? ' breorg-selected' : ''}" data-id="${b.id}" draggable="true">
         <div class="binder-pg-img-wrap">
-          ${imgSrc ? `<img class="binder-pg-img" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
+          ${imgSrc ? `<img class="binder-pg-img" src="${imgSrc}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
           ${langPill}${reorgCb}
         </div>
         <div class="binder-pg-card-info">
@@ -6826,7 +6826,7 @@ function renderBinderPage() {
     html += `<div class="binder-dex-cell${tier === 0 ? ' binder-dex-need' : ' binder-dex-have'}"
          data-species="${esc(species)}" role="button" tabindex="0">
       <span class="binder-dex-num">${isFinite(groupDex[species]) ? '#' + String(groupDex[species]).padStart(4, '0') : '—'}</span>
-      ${spriteUrl ? `<img class="binder-dex-sprite" src="${spriteUrl}" alt="${esc(species)}" loading="lazy">` : '<div class="binder-dex-sprite binder-dex-sprite-ph"></div>'}
+      ${spriteUrl ? `<img class="binder-dex-sprite" src="${spriteUrl}" alt="${esc(species)}" loading="lazy" decoding="async">` : '<div class="binder-dex-sprite binder-dex-sprite-ph"></div>'}
       <span class="binder-dex-name">${esc(species)}${hasOverride ? '<span class="binder-dex-override" title="Name overridden">·</span>' : ''}</span>
       <div class="binder-dex-langs">
         ${hasEN ? '<span class="binder-dex-lang en">EN</span>' : ''}
@@ -6868,7 +6868,7 @@ function renderBinderPage() {
       return `
         <div class="bdl-row bdl-row-${lang}" data-id="${b.id}">
           <span class="bdl-lang ${lang}">${lang.toUpperCase()}</span>
-          ${imgSrc ? `<img class="bdl-thumb" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : '<div class="bdl-thumb bdl-thumb-ph"></div>'}
+          ${imgSrc ? `<img class="bdl-thumb" src="${imgSrc}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="bdl-thumb bdl-thumb-ph"></div>'}
           <div class="bdl-info">
             <div class="bdl-name">${esc(b.name)}</div>
             <div class="bdl-set">${esc(b.set)}</div>
@@ -7969,7 +7969,7 @@ function renderValuePicks(filter) {
     return `
       <div class="vp-item" data-id="${c.i}">
         <div class="vp-rank ${rankClass}">${i + 1}</div>
-        <img class="vp-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="_onImgError(this)">
+        <img class="vp-img" src="${getCardImg(c)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">
         <div class="vp-info">
           <div class="vp-name">${esc(c.n)}${hasCounterpart(c) ? `<span class="search-result-cp-flag" title="${isJP ? 'English' : 'Japanese'} counterpart available">⇄ ${isJP ? 'EN' : 'JP'}</span>` : ''}</div>
           <div class="vp-meta">${langBadge}${esc(c.s)} · ${p.rarity}</div>
@@ -8892,7 +8892,7 @@ function renderManualAddCard(r) {
     : langGuess === 'CN' ? '<span class="lang-cn">CN</span>'
     : '<span class="lang-en">EN</span>';
   const safe = JSON.stringify(r).replace(/'/g, '&#39;');
-  const img = r.imgUrl ? `<img class="ma-thumb" src="${escapeHtml(r.imgUrl)}" alt="" loading="lazy" onerror="_onImgError(this)">` : '';
+  const img = r.imgUrl ? `<img class="ma-thumb" src="${escapeHtml(r.imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '';
   return `
     <div class="ql-card ma-card">
       <div class="ql-card-head">
@@ -9732,7 +9732,7 @@ function _openSnapshot() {
   content.innerHTML = `
     <div class="snapshot-card-layout">
       <div class="snapshot-img-wrap">
-        <img src="${esc(imgUrl)}" alt="" class="snapshot-img" loading="lazy" onerror="_onImgError(this)">
+        <img src="${esc(imgUrl)}" alt="" class="snapshot-img" loading="lazy" decoding="async" onerror="_onImgError(this)">
       </div>
       <div class="snapshot-details">
         <div class="snapshot-card-name">${esc(card.n)}</div>
@@ -11278,7 +11278,7 @@ function renderReassignSuggestions(fromCardId) {
     const imgSrc = typeof getCardImg === 'function' ? getCardImg(c) : '';
     return `
       <button type="button" class="mra-result mra-suggested" data-card-id="${esc(c.i)}">
-        ${imgSrc ? `<img class="mra-result-img" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : ''}
+        ${imgSrc ? `<img class="mra-result-img" src="${imgSrc}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : ''}
         <div class="mra-result-main">
           <div class="mra-result-name">${esc(c.n)} ${langBadge}<span class="mra-suggest-pill">★ Suggested</span></div>
           <div class="mra-result-sub">${esc(c.s || '')} · ${numLabel}${c.r ? ' · ' + esc(c.r) : ''}</div>
@@ -11355,7 +11355,7 @@ function runReassignSearch() {
     const imgSrc = typeof getCardImg === 'function' ? getCardImg(c) : '';
     return `
       <button type="button" class="mra-result" data-card-id="${esc(c.i)}">
-        ${imgSrc ? `<img class="mra-result-img" src="${imgSrc}" alt="" loading="lazy" onerror="_onImgError(this)">` : ''}
+        ${imgSrc ? `<img class="mra-result-img" src="${imgSrc}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : ''}
         <div class="mra-result-main">
           <div class="mra-result-name">${esc(c.n)} ${langBadge}</div>
           <div class="mra-result-sub">${esc(c.s || '')} · ${numLabel}${c.r ? ' · ' + esc(c.r) : ''}</div>
@@ -14843,7 +14843,7 @@ function _cgShowPicker(imgs) {
 
   grid.innerHTML = imgs.map((src, i) => `
     <div class="cg-pick-item" data-idx="${i}">
-      <img class="cg-pick-thumb" src="${src}" alt="Image ${i + 1}" loading="lazy">
+      <img class="cg-pick-thumb" src="${src}" alt="Image ${i + 1}" loading="lazy" decoding="async">
       <div class="cg-pick-btns">
         <button class="cg-pick-btn" data-slot="Front" type="button">Front</button>
         <button class="cg-pick-btn" data-slot="Back" type="button">Back</button>
@@ -17043,7 +17043,7 @@ function _recoTileHtml(r) {
   const id = r.card.i;
   const imgSrc = (typeof getCardImg === 'function') ? getCardImg(r.card) : '';
   const img = imgSrc
-    ? `<img class="home-card-art" src="${esc(imgSrc)}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">`
+    ? `<img class="home-card-art" src="${esc(imgSrc)}" alt="" loading="lazy" decoding="async" onerror="this.style.opacity='0.15'">`
     : `<div class="home-card-art"></div>`;
   const manual = r.manualPrice ? `<span class="reco-manual-tag">manual</span>` : '';
   const gem = r.gemScore >= 2.0 ? `<span class="reco-gem-tag">overlooked</span>` : '';
@@ -17092,7 +17092,7 @@ function _recoStrategyTileHtml(r) {
   const id = r.card.i;
   const imgSrc = (typeof getCardImg === 'function') ? getCardImg(r.card) : '';
   const img = imgSrc
-    ? `<img class="home-card-art" src="${esc(imgSrc)}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">`
+    ? `<img class="home-card-art" src="${esc(imgSrc)}" alt="" loading="lazy" decoding="async" onerror="this.style.opacity='0.15'">`
     : `<div class="home-card-art"></div>`;
   const manual = r.manualPrice ? `<span class="reco-manual-tag">manual</span>` : '';
   const gem    = r.gemScore >= 2.0 ? `<span class="reco-gem-tag">overlooked</span>` : '';
@@ -17330,7 +17330,7 @@ function _recoViewRow(r, i) {
   const id     = r.card.i;
   const imgSrc = (typeof getCardImg === 'function') ? getCardImg(r.card) : '';
   const img    = imgSrc
-    ? `<img class="hva-row-img" src="${esc(imgSrc)}" alt="" loading="lazy" onerror="this.style.opacity='0.15'">`
+    ? `<img class="hva-row-img" src="${esc(imgSrc)}" alt="" loading="lazy" decoding="async" onerror="this.style.opacity='0.15'">`
     : `<div class="hva-row-img"></div>`;
   const price  = r.strategyToday || r.marketGBP;
   const sub    = r.strategyRoi > 0
@@ -17428,7 +17428,7 @@ function renderHvaGrid(query) {
   }
   grid.innerHTML = filtered.map(it => {
     const img = it.img
-      ? `<img class="hva-row-img" src="${esc(it.img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+      ? `<img class="hva-row-img" src="${esc(it.img)}" alt="" loading="lazy" decoding="async" onerror="this.style.opacity='0'">`
       : `<div class="hva-row-img"></div>`;
     const sig = it.sigClass && it.signal
       ? `<span class="hva-row-sig ${esc(it.sigClass)}">${esc(it.signal)}</span>` : '';
@@ -17680,7 +17680,7 @@ function _renderHomeAcePicks() {
   list.innerHTML = scored.slice(0, 12).map(({ p, dbCard, ace10GBP, rawGBP, profit, roi, fromDirectPC }) => {
     const img = p.img || getCardImg(dbCard) || '';
     const imgEl = img
-      ? `<img class="ace-pick-art" src="${esc(img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+      ? `<img class="ace-pick-art" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="this.style.opacity='0'">`
       : `<div class="ace-pick-art"></div>`;
     const pcBadge = fromDirectPC
       ? `<span class="ace-pick-pc-badge">PC live</span>`
@@ -17945,7 +17945,7 @@ function _setupHomePip() {
 function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass, subText, opts = {}) {
   const hiresImgUrl = _hiresUrl(imgUrl);
   const img = hiresImgUrl
-    ? `<img class="home-card-art" src="${hiresImgUrl}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+    ? `<img class="home-card-art" src="${hiresImgUrl}" alt="" loading="lazy" decoding="async" onerror="this.style.opacity='0'">`
     : `<div class="home-card-art"></div>`;
   const signal = signalClass && signalLabel
     ? `<span class="home-card-signal ${signalClass}">${signalLabel}</span>`
@@ -18036,7 +18036,7 @@ function _renderHomeAiGrades() {
     const c = $(countId); if (c) c.textContent = deals.length;
     list.innerHTML = deals.map(d => {
       const img = d.listingImg
-        ? `<img class="home-card-art" src="${esc(d.listingImg)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`
+        ? `<img class="home-card-art" src="${esc(d.listingImg)}" alt="" loading="lazy" decoding="async" onerror="this.style.opacity='0'">`
         : `<div class="home-card-art"></div>`;
       const price = d.priceGBP ? `£${d.priceGBP.toFixed(2)}` : '';
       const verdict = d.breakdown?.verdict || '';
@@ -18128,7 +18128,7 @@ function _renderHomeGradeCandidates() {
       ? `this.onerror=null;this.src='${fallbackSrc.replace(/'/g, "\\'")}'`
       : `this.style.opacity='0'`;
     const img = primarySrc
-      ? `<img class="home-card-art" src="${esc(primarySrc)}" alt="" loading="lazy" onerror="${onerr}">`
+      ? `<img class="home-card-art" src="${esc(primarySrc)}" alt="" loading="lazy" decoding="async" onerror="${onerr}">`
       : `<div class="home-card-art"></div>`;
     const price = d.priceGBP ? `£${Number(d.priceGBP).toFixed(2)}` : '';
     const signalLabel = isUpgradeCandidate ? 'PSA 10 Upgrade?' : 'AI Grade?';
@@ -19013,7 +19013,7 @@ function _renderGradeItemHTML({ card, name, img, rawGBP, p10GBP, psaFeeGBP, psaP
       const cls = roi >= 40 ? 'groi-good' : roi >= 0 ? 'groi-ok' : 'groi-bad';
       return `<span class="${cls}">${profit >= 0 ? '+' : ''}£${profit.toFixed(0)} (${roi.toFixed(0)}%)</span>`;
     };
-    const imgEl = img ? `<img class="home-card-art" src="${esc(img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="home-card-art"></div>';
+    const imgEl = img ? `<img class="home-card-art" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="this.style.opacity='0'">` : '<div class="home-card-art"></div>';
     return `<div class="home-grading-item" data-id="${esc(card.i)}">
       ${imgEl}
       <div class="home-grading-info">
@@ -20061,7 +20061,7 @@ function urRender(results) {
     return `
       <div class="ur-row" data-id="${esc(c.i)}">
         <div class="ur-rank ${rankCls}">${i + 1}</div>
-        <img class="ur-img" src="${getCardImg(c)}" alt="" loading="lazy" onerror="this.style.opacity=0">
+        <img class="ur-img" src="${getCardImg(c)}" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0">
         <div class="ur-info">
           <div class="ur-name">${esc(c.n)} ${langPill}</div>
           <div class="ur-meta">${esc(c.s || '—')} · ${esc((RARITY_RATES[c.rc] || RARITY_RATES['']).label || 'Rare')}</div>
@@ -22133,7 +22133,7 @@ function _vgCardRowHTML(card, data) {
     : '';
   return `<details class="vg-card${isExcellent ? ' vg-card--excellent' : isDeal ? ' vg-card-deal' : ''}" data-vg-card="${esc(card.i)}">
     <summary class="vg-card-summary">
-      <img class="vg-card-img" src="${esc(getCardImg(card) || '')}" alt="" loading="lazy" onerror="this.style.opacity='0'">
+      <img class="vg-card-img" src="${esc(getCardImg(card) || '')}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">
       <span class="vg-card-num">${card.cn ? '#' + esc(String(card.cn)) : ''}</span>
       <span class="vg-card-name">${esc(card.n)}</span>
       <span class="vg-card-meta">${esc(card.r || '')}</span>
@@ -22160,7 +22160,7 @@ function _vgTargetsHTML(data) {
     const gradeOpts = VINTAGE_GRADES.map(g =>
       `<option value="${g}" ${g === t.grade ? 'selected' : ''}>PSA ${g}</option>`).join('');
     return `<div class="vg-tgt-row ${t.owned ? 'vg-tgt-owned' : ''}" data-id="${esc(id)}">
-      <img class="vg-tgt-img" src="${esc(getCardImg(card) || '')}" alt="" loading="lazy" onerror="this.style.opacity='0'">
+      <img class="vg-tgt-img" src="${esc(getCardImg(card) || '')}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">
       <div class="vg-tgt-info">
         <span class="vg-tgt-name">${esc(card.n)}</span>
         <span class="vg-tgt-set">${esc(card.s)}${card.cn ? ' · #' + esc(String(card.cn)) : ''}</span>
@@ -22560,7 +22560,7 @@ function renderWhatToBuyPage() {
     const sc2 = d.score >= 50 ? 'wtb-score-hot' : d.score >= VG_DEAL_SCORE ? 'wtb-score-deal' : 'wtb-score-watch';
     const gradeLabel = d.source === 'vintage' ? `PSA ${d.grade} · ` : '';
     return `<div class="wtb-card">
-      ${img ? `<img class="wtb-card-img" src="${esc(img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="wtb-card-img-ph"></div>'}
+      ${img ? `<img class="wtb-card-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="wtb-card-img-ph"></div>'}
       <div class="wtb-card-body">
         <div class="wtb-card-hd">
           <span class="wtb-card-name">${esc(c.n)}</span>

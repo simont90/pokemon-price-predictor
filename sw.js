@@ -7,11 +7,11 @@
 //   HTML                       → Network First, cache fallback (gets fresh busters)
 //   External APIs              → Network Only (PriceCharting, Worker, eBay)
 
-const SW_VER   = '20260708q';
+const SW_VER   = '20260708r';
 const S_CACHE  = 'pkm-static-' + SW_VER;
 const D_CACHE  = 'pkm-data-v1'; // survives SW updates — data files don't change often
 const IMG_CACHE = 'pkm-img-v1'; // card images — survives SW updates, capped by entry count
-const IMG_MAX   = 300;          // ~15–30 MB at avg 60 KB/image
+const IMG_MAX   = 1200;         // ~60–120 MB at avg 60 KB/image — fits comfortably on modern devices
 
 function _storeCardImg(req, res) {
   caches.open(IMG_CACHE).then(c => {
