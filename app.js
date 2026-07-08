@@ -16431,33 +16431,19 @@ function setupAiChat() {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      const v = input.value;
+      const v = input.value.trim();
       input.value = '';
       input.style.height = 'auto';
-      aiSubmit(v);
+      _pknHandleInput(v);
     }
   });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const v = input.value;
+    const v = input.value.trim();
     input.value = '';
     input.style.height = 'auto';
-    aiSubmit(v);
+    _pknHandleInput(v);
   });
-
-  // Focus chips — toggle on click, click active chip again to clear
-  _renderFocusBar();
-  document.getElementById('aiFocusChips')?.addEventListener('click', (e) => {
-    const chip = e.target.closest('.ai-focus-chip');
-    if (!chip) return;
-    const focus = getFocus();
-    if (focus && focus.id === chip.dataset.focusId) {
-      clearFocus();
-    } else {
-      setFocus(chip.dataset.focusId, chip.dataset.focusLabel);
-    }
-  });
-  document.getElementById('aiFocusClear')?.addEventListener('click', clearFocus);
 
   aiSetupQuickPrompts();
   _pknWireSearch();
@@ -22322,9 +22308,6 @@ function _pknOnNavigate() {
   if (_needsKey) aiToggleSettings(true);
   const input = document.getElementById('aiChatInput');
   if (input) setTimeout(() => input.focus(), 300);
-  if (selectedCard && !_needsKey && aiChatHistory.length === 0) {
-    setTimeout(() => aiSubmit(`Analyse ${selectedCard.n} (${selectedCard.s}) in full. What's the signal, should I buy it, hold it, or grade it? Give me the 5-year outlook and any risks.`), 400);
-  }
 }
 
 // ── What to Buy search (embedded in PokeKnow) ────────────────────────────────
@@ -22510,35 +22493,45 @@ function _wtbSearchWithSig(sig) {
     let dealScore = 0, bestGrade = null, bestGbp = 0, ladder = null;
 
     if (isVintage) {
+      // Use same price source as Hold Strategy: getPsa10Anchor × estimateGradePrice
+      const anchor = getPsa10Anchor(card);
+      const psa10USD = anchor.usd;
+      if (!(psa10USD > 0)) continue; // no PSA 10 basis — can't price any grade
+
+      // Pre-compute GBP estimate for each grade via Hold Strategy model
+      const gradeEstGBP = {};
+      for (const g of VINTAGE_GRADES) {
+        const usd = estimateGradePrice(card, g, psa10USD);
+        if (usd > 0) gradeEstGBP[g] = usdToGbp(usd);
+      }
+
+      // _vgLadder is still used for deal scoring (live vs expected comparison)
       const vl = _vgLadder(card);
       ladder = vl.ladder;
 
-      if (sig.gradeMin !== null && sig.gradeMax !== null) {
-        // Grade range: e.g. "PSA 10-7" — find best in range, optionally within budget
-        let rows = vl.ladder.filter(row => row.gbp > 0 && row.g >= sig.gradeMin && row.g <= sig.gradeMax);
-        if (sig.maxGBP) rows = rows.filter(row => row.gbp <= sig.maxGBP);
-        if (!rows.length) continue;
-        const best = rows.reduce((b, row) => (row.score || 0) > (b?.score || 0) ? row : b, null);
-        if (best) { bestGrade = best.g; bestGbp = best.gbp; dealScore = best.score || 0; }
-      } else if (sig.maxGBP) {
-        // Budget filter across all grades: find best-scoring grade within budget
-        const inBudget = vl.ladder.filter(row => row.gbp > 0 && row.gbp <= sig.maxGBP);
-        if (!inBudget.length) continue;
-        const best = inBudget.reduce((b, row) => (row.score || 0) > (b?.score || 0) ? row : b, null);
-        if (best) { bestGrade = best.g; bestGbp = best.gbp; dealScore = best.score || 0; }
-      } else if (vl.bestScore !== null) {
-        dealScore = vl.bestScore;
-        const bestRow = vl.ladder.reduce((b, row) =>
-          row.score !== null && (b === null || row.score > b.score) ? row : b, null);
-        if (bestRow) { bestGrade = bestRow.g; bestGbp = bestRow.gbp; }
-      }
+      let candidates = VINTAGE_GRADES.filter(g => gradeEstGBP[g] > 0);
 
       if (sig.grade) {
-        const gr = vl.ladder.find(row => row.g === sig.grade && row.gbp > 0);
-        if (!gr) continue;
-        bestGrade = gr.g; bestGbp = gr.gbp; dealScore = gr.score || 0;
+        if (!gradeEstGBP[sig.grade]) continue;
+        bestGrade = sig.grade;
+      } else if (sig.gradeMin !== null && sig.gradeMax !== null) {
+        // Grade range: e.g. "PSA 10-7" — highest grade in range within budget
+        candidates = candidates.filter(g => g >= sig.gradeMin && g <= sig.gradeMax);
+        if (sig.maxGBP) candidates = candidates.filter(g => gradeEstGBP[g] <= sig.maxGBP);
+        if (!candidates.length) continue;
+        bestGrade = candidates[0]; // VINTAGE_GRADES is desc — [0] = highest
+      } else if (sig.maxGBP) {
+        candidates = candidates.filter(g => gradeEstGBP[g] <= sig.maxGBP);
+        if (!candidates.length) continue;
+        bestGrade = candidates[0]; // highest grade within budget
+      } else {
+        bestGrade = gradeEstGBP[9] ? 9 : candidates[0]; // default: PSA 9 target
       }
-      if (sig.minGBP && bestGbp > 0 && bestGbp < sig.minGBP) continue;
+
+      if (!bestGrade) continue;
+      bestGbp = gradeEstGBP[bestGrade];
+      if (sig.minGBP && bestGbp < sig.minGBP) continue;
+      dealScore = vl.ladder.find(r => r.g === bestGrade)?.score ?? 0;
 
     } else if (pd) {
       const rawGBP = usdToGbp(pd.market || pd.mid || 0);
@@ -22653,84 +22646,102 @@ function _wtbCardHTMLFull(entry) {
       <div class="wtb-card-links">
         <a class="wtb-link-btn" href="${esc(ebayUrl)}" target="_blank" rel="noopener noreferrer">eBay ↗</a>
         <a class="wtb-link-btn" href="${esc(pcUrl)}" target="_blank" rel="noopener noreferrer">PriceCharting ↗</a>
-        <button class="wtb-link-btn wtb-view-btn" type="button" data-wtb-view="${esc(card.i)}">View in app</button>
+        <button class="wtb-link-btn wtb-ai-btn" type="button" data-wtb-ai="${esc(card.i)}">AI Analysis</button>
+        <button class="wtb-link-btn wtb-view-btn" type="button" data-wtb-view="${esc(card.i)}">Open in app</button>
       </div>
     </div>
   </div>`;
 }
 
-function _pknWireSearch() {
-  const chipsEl  = document.getElementById('wtbChips');
-  const input    = document.getElementById('wtbSearchInput');
-  const searchBtn= document.getElementById('wtbSearchBtn');
-  const resultsEl= document.getElementById('wtbResults');
-  if (!chipsEl || !input) return;
-  if (chipsEl._wtbWired) return;
-  chipsEl._wtbWired = true;
+// Runs card search only (no AI) — used by chip clicks and as part of _pknHandleInput
+async function _pknRunWtb(q) {
+  q = (q || '').trim();
+  if (!q) return;
+  const resultsEl = document.getElementById('wtbResults');
+  const inputEl   = document.getElementById('aiChatInput');
+  if (!resultsEl) return;
+  if (inputEl && document.activeElement !== inputEl) inputEl.value = q;
 
-  chipsEl.innerHTML = WTB_CHIPS.map(c => `<button class="wtb-chip" type="button" data-q="${esc(c.q)}">${esc(c.label)}</button>`).join('');
+  resultsEl.innerHTML = '<div class="wtb-loading"><span class="wtb-loading-dot"></span>Searching…</div>';
 
-  async function runSearch(q) {
-    q = (q || '').trim();
-    if (!q) return;
-    input.value = q;
-    resultsEl.innerHTML = '<div class="wtb-loading"><span class="wtb-loading-dot"></span>Analysing…</div>';
-
-    let sig;
-    try {
-      const workerUrl = (typeof MKT_WORKER_DEFAULT !== 'undefined' ? MKT_WORKER_DEFAULT : 'https://pokemon-marketplace.simontariq.workers.dev');
-      const resp = await fetch(`${workerUrl}/ai/query?q=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(7000) });
-      if (resp.ok) {
-        sig = await resp.json();
-        sig.eras     = sig.eras    || [];
-        sig.wantJP   = sig.wantJP  || false;
-        sig.gradeMin = sig.gradeMin != null ? +sig.gradeMin : null;
-        sig.gradeMax = sig.gradeMax != null ? +sig.gradeMax : null;
-      } else {
-        sig = _wtbParseQuery(q);
-      }
-    } catch(e) {
+  let sig;
+  try {
+    const workerUrl = (typeof MKT_WORKER_DEFAULT !== 'undefined' ? MKT_WORKER_DEFAULT : 'https://pokemon-marketplace.simontariq.workers.dev');
+    const resp = await fetch(`${workerUrl}/ai/query?q=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(7000) });
+    if (resp.ok) {
+      sig = await resp.json();
+      sig.eras     = sig.eras    || [];
+      sig.wantJP   = sig.wantJP  || false;
+      sig.gradeMin = sig.gradeMin != null ? +sig.gradeMin : null;
+      sig.gradeMax = sig.gradeMax != null ? +sig.gradeMax : null;
+    } else {
       sig = _wtbParseQuery(q);
     }
-
-    try {
-      const hits = _wtbSearchWithSig(sig);
-      if (!hits.length) {
-        resultsEl.innerHTML = `<p class="wtb-empty">No cards matched "${esc(q)}". Try broader terms — e.g. just the Pokémon name or set name.</p>`;
-        return;
-      }
-      const context = [
-        sig.vintage ? 'vintage' : sig.modern ? 'modern' : '',
-        sig.rarity || '',
-        sig.maxGBP ? `under £${sig.maxGBP}` : '',
-        sig.gradeMin !== null && sig.gradeMax !== null ? `PSA ${sig.gradeMax}–${sig.gradeMin}` : sig.grade ? `PSA ${sig.grade}` : (sig.gradeType ? sig.gradeType.toUpperCase() : ''),
-        sig.pokemon || (sig.setName ? sig.setName : ''),
-      ].filter(Boolean).join(' · ');
-      resultsEl.innerHTML = `
-        <div class="wtb-results-hd">
-          <span class="wtb-results-count">${hits.length} result${hits.length !== 1 ? 's' : ''}</span>
-          ${context ? `<span class="wtb-results-context">${esc(context)}</span>` : ''}
-        </div>
-        ${hits.map(h => _wtbCardHTMLFull(h)).join('')}
-      `;
-      resultsEl.querySelectorAll('[data-wtb-view]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const id = btn.dataset.wtbView;
-          go('predict');
-          setTimeout(() => { try { selectCard(id); } catch(e) {} }, 80);
-        });
-      });
-    } catch(e) {
-      console.error('WTB search error:', e);
-      resultsEl.innerHTML = '<p class="wtb-empty">Something went wrong. Try a different search.</p>';
-    }
+  } catch(e) {
+    sig = _wtbParseQuery(q);
   }
 
-  searchBtn && searchBtn.addEventListener('click', () => runSearch(input.value));
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(input.value); });
+  try {
+    const hits = _wtbSearchWithSig(sig);
+    if (!hits.length) {
+      resultsEl.innerHTML = `<p class="wtb-empty">No cards matched "${esc(q)}". Try broader terms or ask the AI above.</p>`;
+      return;
+    }
+    const context = [
+      sig.vintage ? 'vintage' : sig.modern ? 'modern' : '',
+      sig.rarity || '',
+      sig.maxGBP ? `under £${sig.maxGBP}` : '',
+      sig.gradeMin !== null && sig.gradeMax !== null ? `PSA ${sig.gradeMax}–${sig.gradeMin}` : sig.grade ? `PSA ${sig.grade}` : (sig.gradeType ? sig.gradeType.toUpperCase() : ''),
+      sig.pokemon || (sig.setName ? sig.setName : ''),
+    ].filter(Boolean).join(' · ');
+    resultsEl.innerHTML = `
+      <div class="wtb-results-hd">
+        <span class="wtb-results-count">${hits.length} result${hits.length !== 1 ? 's' : ''}</span>
+        ${context ? `<span class="wtb-results-context">${esc(context)}</span>` : ''}
+      </div>
+      ${hits.map(h => _wtbCardHTMLFull(h)).join('')}
+    `;
+    // Wire "Open in app" navigation
+    resultsEl.querySelectorAll('[data-wtb-view]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.wtbView;
+        go('predict');
+        setTimeout(() => { try { selectCard(id); } catch(e) {} }, 80);
+      });
+    });
+    // Wire GenAI card analysis buttons
+    resultsEl.querySelectorAll('[data-wtb-ai]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const c = getCardById(btn.dataset.wtbAi);
+        if (!c) return;
+        const setName = (typeof setsData !== 'undefined' && setsData?.[c.sc]?.name) || c.sc || '';
+        aiSubmit(`Analyse ${c.n} (${setName}) in full — Hold Strategy signal, buy/sell/hold verdict, which PSA grade to target if vintage, 5-year price outlook, and key risks.`);
+        document.getElementById('aiChatMessages')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  } catch(e) {
+    console.error('WTB search error:', e);
+    resultsEl.innerHTML = '<p class="wtb-empty">Something went wrong. Try a different search.</p>';
+  }
+}
+
+// Unified submit: card search + AI query together
+function _pknHandleInput(q) {
+  if (!q) return;
+  _pknRunWtb(q);
+  aiSubmit(q);
+}
+
+function _pknWireSearch() {
+  const chipsEl = document.getElementById('wtbChips');
+  if (!chipsEl) return;
+  if (chipsEl._wtbWired) return;
+  chipsEl._wtbWired = true;
+  chipsEl.innerHTML = WTB_CHIPS.map(c => `<button class="wtb-chip" type="button" data-q="${esc(c.q)}">${esc(c.label)}</button>`).join('');
+  // Chip click: card search only (chips are predefined card queries, not open-ended questions)
   chipsEl.addEventListener('click', e => {
     const chip = e.target.closest('.wtb-chip');
-    if (chip) runSearch(chip.dataset.q);
+    if (chip) _pknRunWtb(chip.dataset.q);
   });
 }
 

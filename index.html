@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260709a">
+  <link rel="stylesheet" href="style.css?v=20260709c">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2288,53 +2288,22 @@
       <p class="ai-chat-privacy">Claude uses your Worker's Anthropic key — no setup needed. For other providers, your key never leaves your browser.</p>
     </div>
 
-    <!-- Card finder -->
-    <section class="pkn-find-section">
-      <div class="pkn-section-label">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        Find cards to buy
-      </div>
-      <div class="wtb-search-wrap">
-        <input class="wtb-search-input" id="wtbSearchInput" type="text"
-          placeholder="e.g. vintage PSA 10–7 under £150 · cheap Charizard · modern alt art"
-          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-        <button class="wtb-search-btn" id="wtbSearchBtn" type="button">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          Search
-        </button>
-      </div>
-      <div class="wtb-chips" id="wtbChips"></div>
-      <div class="wtb-results" id="wtbResults"></div>
-    </section>
-
-    <!-- AI analyst -->
-    <div class="pkn-section-divider">Ask the analyst</div>
-
-    <!-- Focus bar -->
-    <div class="ai-focus-bar" id="aiFocusBar">
-      <div class="ai-focus-top">
-        <span class="ai-focus-heading">Focus</span>
-        <button class="ai-focus-clear-btn" id="aiFocusClear" type="button" style="display:none">&#xD7; Clear</button>
-      </div>
-      <div class="ai-focus-chips" id="aiFocusChips">
-        <button class="ai-focus-chip" data-focus-id="art-rares"  data-focus-label="Art Rares"   type="button">Art Rares</button>
-        <button class="ai-focus-chip" data-focus-id="vintage"    data-focus-label="Vintage"      type="button">Vintage</button>
-        <button class="ai-focus-chip" data-focus-id="budget"     data-focus-label="Budget buys"  type="button">Budget</button>
-        <button class="ai-focus-chip" data-focus-id="japanese"   data-focus-label="Japanese"     type="button">Japanese</button>
-        <button class="ai-focus-chip" data-focus-id="five-star"  data-focus-label="5&#x2605; only"  type="button">5&#x2605; only</button>
-        <button class="ai-focus-chip" data-focus-id="s-tier"     data-focus-label="S-tier chars" type="button">S-tier</button>
-      </div>
-      <p class="ai-focus-sub">Scores &amp; AI recs adjust to your goal</p>
-    </div>
-
-    <div class="ai-chat-messages" id="aiChatMessages"></div>
-
+    <!-- Unified search — cards and AI in one bar -->
     <form class="ai-chat-form" id="aiChatForm">
-      <textarea id="aiChatInput" rows="1" placeholder="Ask about your portfolio, market timing, what's underrated…"></textarea>
+      <textarea id="aiChatInput" rows="1" placeholder="Search cards or ask anything — vintage PSA 9, should I sell Mewtwo, alt art deals…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
       <button class="ai-chat-send" type="submit" title="Send (Enter)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
       </button>
     </form>
+
+    <!-- Quick card search chips -->
+    <div class="wtb-chips" id="wtbChips"></div>
+
+    <!-- Card results (populated by chip/search; cleared on AI-only queries) -->
+    <div class="wtb-results" id="wtbResults"></div>
+
+    <!-- AI conversation -->
+    <div class="ai-chat-messages" id="aiChatMessages"></div>
     </div><!-- /#pageKnow -->
   </div><!-- /#app -->
 
@@ -2636,7 +2605,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260709a"></script>
+  <script src="app.js?v=20260709c"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

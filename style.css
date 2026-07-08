@@ -13142,10 +13142,12 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   min-height: 120px;
 }
 
-/* Form in page context — static, not sticky */
+/* Form in page context — unified search at top, border on bottom */
 .pkn-page .ai-chat-form {
   position: static;
   margin: 0;
+  border-top: none;
+  border-bottom: 1px solid var(--border);
 }
 
 /* ── What to Buy search elements ────────────────────────────────── */
@@ -13256,3 +13258,5 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   touch-action: manipulation; font-family: var(--font-ui, sans-serif);
 }
 .wtb-link-btn:hover { background: rgba(255,255,255,0.13); color: var(--text); }
+.wtb-ai-btn { background: rgba(232,182,52,0.12); color: var(--accent, #e8b634); }
+.wtb-ai-btn:hover { background: rgba(232,182,52,0.22); color: var(--accent, #e8b634); }
