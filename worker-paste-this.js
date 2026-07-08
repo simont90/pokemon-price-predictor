@@ -754,6 +754,76 @@ async function handleOAuthToken(request, env) {
   return _jsonResp(200, { access_token: accessToken, token_type: 'bearer', expires_in: 120 * 86400 }, ch);
 }
 
+// ---- AI query parser (natural language → structured card search params) ----
+async function handleAiQuery(request, env, url) {
+  const ch = corsHeaders(request);
+  if (!env.ANTHROPIC_API_KEY) return _jsonResp(503, { error: 'ANTHROPIC_API_KEY not configured.' }, ch);
+
+  const q = (url.searchParams.get('q') || '').trim();
+  if (!q) return _jsonResp(400, { error: 'Missing ?q= parameter.' }, ch);
+
+  const SYSTEM = `You are a Pokémon TCG card search query parser. Extract search intent from a natural language query and return ONLY a valid JSON object with no prose, no markdown, and no explanation.
+
+Fields:
+- vintage: boolean — true for WOTC/classic/pre-2004 era (1999–2003: Base Set, Jungle, Fossil, Gym, Neo, Legendary Collection, etc.)
+- modern: boolean — true for post-2004 era (EX, Diamond & Pearl, Black & White, XY, Sun & Moon, Sword & Shield, Scarlet & Violet, etc.)
+- grade: number|null — specific PSA grade requested (10, 9, 8, 7, 6, 5) or null
+- gradeType: "psa"|null — "psa" if PSA grading mentioned at all without a specific grade, null otherwise
+- maxGBP: number|null — max budget in GBP (extract from "under £X", "cheap", "affordable", "budget", "less than £X", bare "£X")
+- minGBP: number|null — minimum price in GBP (from "over £X", "at least £X")
+- rarity: "holo"|"fullart"|"altart"|"secret"|"rainbow"|null
+- pokemon: string|null — specific Pokémon name, capitalised (e.g. "Charizard", "Pikachu", "Mewtwo"); null if not mentioned
+- setName: string|null — specific set in English (e.g. "Base Set", "Neo Genesis", "Jungle", "151", "Prismatic Evolutions"); null if not mentioned
+- dealsOnly: boolean — true if user wants deals, value, undervalued, cheap finds, or bargains
+
+Examples:
+"vintage PSA under £150" → {"vintage":true,"modern":false,"grade":null,"gradeType":"psa","maxGBP":150,"minGBP":null,"rarity":null,"pokemon":null,"setName":null,"dealsOnly":false}
+"cheap Charizard" → {"vintage":false,"modern":false,"grade":null,"gradeType":null,"maxGBP":null,"minGBP":null,"rarity":null,"pokemon":"Charizard","setName":null,"dealsOnly":true}
+"PSA 9 Base Set holos under £500" → {"vintage":true,"modern":false,"grade":9,"gradeType":"psa","maxGBP":500,"minGBP":null,"rarity":"holo","pokemon":null,"setName":"Base Set","dealsOnly":false}
+"modern alt art deals under £100" → {"vintage":false,"modern":true,"grade":null,"gradeType":null,"maxGBP":100,"minGBP":null,"rarity":"altart","pokemon":null,"setName":null,"dealsOnly":true}
+"affordable Pikachu vintage" → {"vintage":true,"modern":false,"grade":null,"gradeType":null,"maxGBP":50,"minGBP":null,"rarity":null,"pokemon":"Pikachu","setName":null,"dealsOnly":true}
+"Neo Genesis rare finds" → {"vintage":true,"modern":false,"grade":null,"gradeType":null,"maxGBP":null,"minGBP":null,"rarity":null,"pokemon":null,"setName":"Neo Genesis","dealsOnly":true}`;
+
+  let claudeResp;
+  try {
+    claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        system: SYSTEM,
+        messages: [{ role: 'user', content: q }],
+      }),
+    });
+  } catch (e) {
+    return _jsonResp(502, { error: `Claude API unreachable: ${e.message}` }, ch);
+  }
+
+  if (!claudeResp.ok) {
+    const errTxt = await claudeResp.text().catch(() => '');
+    return _jsonResp(502, { error: `Claude API error ${claudeResp.status}: ${errTxt.slice(0, 80)}` }, ch);
+  }
+
+  const result = await claudeResp.json();
+  const raw = (result.content?.[0]?.text || '').trim();
+
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch {
+    const m = raw.match(/\{[\s\S]*?\}/);
+    if (m) try { parsed = JSON.parse(m[0]); } catch {}
+  }
+  if (!parsed) return _jsonResp(502, { error: 'Failed to parse AI response.' }, ch);
+
+  return new Response(JSON.stringify(parsed), {
+    headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
+  });
+}
+
 // ---- Main handler ----
 async function handle(request, env) {
   const url = new URL(request.url);
@@ -772,6 +842,7 @@ async function handle(request, env) {
   if (url.pathname === '/user/sync') return handleUserSync(request, env);
   if (url.pathname === '/auth/account' && request.method === 'DELETE') return handleDeleteAccount(request, env);
   if (url.pathname === '/ai/chat' && request.method === 'POST') return handleAiChat(request, env);
+  if (url.pathname === '/ai/query') return handleAiQuery(request, env, url);
   if (url.pathname === '/tcg-price') return handleTcgPrice(request, url);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 

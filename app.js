@@ -22397,7 +22397,7 @@ const WTB_CHIPS = [
 function _wtbParseQuery(q) {
   const s = {
     nameQuery: '', vintage: false, modern: false, wantJP: false,
-    grade: null, maxGBP: null, minGBP: null, rarity: null,
+    grade: null, gradeType: null, maxGBP: null, minGBP: null, rarity: null,
     eras: [], dealsOnly: false,
   };
   let r = q.toLowerCase();
@@ -22406,8 +22406,10 @@ function _wtbParseQuery(q) {
   if (/\bmodern\b|\bscarlet\b|\bviolet\b|\bswsh\b/.test(r)) { s.modern = true; r = r.replace(/\bmodern\b|\bscarlet\b|\bviolet\b|\bswsh\b/g, ''); }
   if (/\bjapanese\b|\bjp\b/.test(r)) { s.wantJP = true; r = r.replace(/\bjapanese\b|\bjp\b/g, ''); }
 
+  // Specific grade first (PSA 9, gem mint), then bare "PSA" as grade-format signal
   const gm = r.match(/psa\s*(\d+)|gem\s*mint/);
   if (gm) { s.grade = gm[1] ? +gm[1] : 10; r = r.replace(/psa\s*\d+|gem\s*mint/g, ''); }
+  if (/\bpsa\b/.test(r)) { s.gradeType = 'psa'; r = r.replace(/\bpsa\b/g, ''); }
 
   const um = r.match(/under\s*[£$]?\s*(\d+)/);
   if (um) { s.maxGBP = +um[1]; r = r.replace(/under\s*[£$]?\s*\d+/g, ''); }
@@ -22480,62 +22482,108 @@ function _wtbNameScore(card, nq) {
   return 0;
 }
 
-function _wtbSearch(q) {
+function _wtbSetNameToEras(setName) {
+  if (!setName) return [];
+  const low = setName.toLowerCase().trim();
+  const map = {
+    'base set': ['base1'], 'base': ['base1'],
+    'jungle': ['jungle'],
+    'fossil': ['fossil'],
+    'base set 2': ['base2'],
+    'team rocket': ['base3'],
+    'gym heroes': ['gym1'], 'gym challenge': ['gym2'], 'gym': ['gym1','gym2'],
+    'neo genesis': ['neo1'], 'neo discovery': ['neo2'],
+    'neo revelation': ['neo3'], 'neo destiny': ['neo4'],
+    'neo': ['neo1','neo2','neo3','neo4'],
+    'legendary collection': ['base6'],
+    '151': ['sv3pt5'],
+    'prismatic evolutions': ['sv8pt5'], 'prismatic': ['sv8pt5'],
+    'scarlet & violet': ['sv1'], 'scarlet and violet': ['sv1'],
+  };
+  if (map[low]) return map[low];
+  for (const [k, v] of Object.entries(map)) {
+    if (low.includes(k) || k.includes(low)) return v;
+  }
+  if (typeof setsData !== 'undefined' && setsData) {
+    for (const [code, meta] of Object.entries(setsData)) {
+      if (meta.name && meta.name.toLowerCase().includes(low)) return [code];
+    }
+  }
+  return [];
+}
+
+function _wtbSearchWithSig(sig) {
   if (!searchIndex || !searchIndex.length) return [];
   const vSets = new Set(_vintageSets().map(s => s.code));
-  const sig = _wtbParseQuery(q);
-  const nq  = sig.nameQuery;
-  const results = [];
 
+  const eras = [...(sig.eras || [])];
+  if (sig.setName) _wtbSetNameToEras(sig.setName).forEach(c => { if (!eras.includes(c)) eras.push(c); });
+  const nq = ((sig.pokemon || sig.nameQuery || '')).toLowerCase().trim();
+
+  const results = [];
   for (const card of searchIndex) {
     if (card.lang === 'JP' && !sig.wantJP) continue;
     const isVintage = vSets.has(card.sc);
     if (sig.vintage && !isVintage) continue;
     if (sig.modern  && isVintage)  continue;
-    if (sig.eras.length && !sig.eras.includes(card.sc)) continue;
+    if (eras.length && !eras.includes(card.sc)) continue;
     if (sig.rarity && !_wtbRarityMatch(card, sig.rarity)) continue;
 
     const nameScore = _wtbNameScore(card, nq);
     if (nq && nameScore === 0) continue;
 
     const pd = getCachedPrice(card.i) || getLastKnownPrice(card.i);
-
-    if (pd && (sig.maxGBP || sig.minGBP)) {
-      const gbp = usdToGbp(pd.market || pd.mid || card.p || 0);
-      if (sig.maxGBP && gbp > sig.maxGBP) continue;
-      if (sig.minGBP && gbp < sig.minGBP) continue;
-    }
-
     let dealScore = 0, bestGrade = null, bestGbp = 0, ladder = null;
+
     if (isVintage) {
       const vl = _vgLadder(card);
-      if (vl.bestScore !== null) {
+      ladder = vl.ladder;
+
+      if (sig.maxGBP) {
+        // For vintage, filter at grade level: find best-scoring grade within budget
+        const inBudget = vl.ladder.filter(row => row.gbp > 0 && row.gbp <= sig.maxGBP);
+        if (!inBudget.length) continue;
+        const best = inBudget.reduce((b, row) => (row.score || 0) > (b?.score || 0) ? row : b, null);
+        if (best) { bestGrade = best.g; bestGbp = best.gbp; dealScore = best.score || 0; }
+      } else if (vl.bestScore !== null) {
         dealScore = vl.bestScore;
         const bestRow = vl.ladder.reduce((b, row) =>
           row.score !== null && (b === null || row.score > b.score) ? row : b, null);
         if (bestRow) { bestGrade = bestRow.g; bestGbp = bestRow.gbp; }
-        if (sig.grade) {
-          const gr = vl.ladder.find(row => row.g === sig.grade);
-          if (gr) { bestGrade = gr.g; bestGbp = gr.gbp; }
-        }
-        ladder = vl.ladder;
       }
+
+      if (sig.grade) {
+        const gr = vl.ladder.find(row => row.g === sig.grade && row.gbp > 0);
+        if (!gr) continue;
+        bestGrade = gr.g; bestGbp = gr.gbp; dealScore = gr.score || 0;
+      }
+      if (sig.minGBP && bestGbp > 0 && bestGbp < sig.minGBP) continue;
+
     } else if (pd) {
+      const rawGBP = usdToGbp(pd.market || pd.mid || 0);
+      if (sig.maxGBP && rawGBP > sig.maxGBP) continue;
+      if (sig.minGBP && rawGBP < sig.minGBP) continue;
       const cmDip  = (pd.cmAvg7 > 0 && pd.cmAvg30 > 0) ? Math.round((1 - pd.cmAvg7 / pd.cmAvg30) * 100) : 0;
       const mktGap = (pd.market > 0 && pd.tcgMarket > 0) ? Math.round((1 - pd.market / pd.tcgMarket) * 100) : 0;
       dealScore = Math.max(cmDip, mktGap);
+    } else if (sig.maxGBP || sig.minGBP) {
+      continue; // Budget specified but no price data — skip
     }
 
     if (sig.dealsOnly && dealScore < 5 && nameScore < 30) continue;
 
     const rawGBP = pd ? usdToGbp(pd.market || pd.mid || 0) : usdToGbp(card.p || 0);
-    const total  = nameScore * 2 + dealScore + (pd ? 15 : 0);
+    const total  = nameScore * 2 + dealScore + (pd ? 15 : 0) + (bestGbp > 0 ? 10 : 0);
     if (total <= 0) continue;
 
     results.push({ card, total, dealScore, nameScore, bestGrade, bestGbp, ladder, rawGBP, pd, isVintage });
   }
 
   return results.sort((a, b) => b.total - a.total).slice(0, 20);
+}
+
+function _wtbSearch(q) {
+  return _wtbSearchWithSig(_wtbParseQuery(q));
 }
 
 function _wtbExplainCard(card, dealScore, bestGrade, bestGbp, rawGBP, pd, isVintage, ladder) {
@@ -22645,44 +22693,58 @@ function renderWhatToBuyPage() {
   const input     = el.querySelector('#wtbSearchInput');
   const resultsEl = el.querySelector('#wtbResults');
 
-  function runSearch(q) {
+  async function runSearch(q) {
     q = (q || '').trim();
     if (!q) return;
     input.value = q;
     resultsEl.innerHTML = '<div class="wtb-loading"><span class="wtb-loading-dot"></span>Analysing…</div>';
-    requestAnimationFrame(() => setTimeout(() => {
-      try {
-        const hits = _wtbSearch(q);
-        if (!hits.length) {
-          resultsEl.innerHTML = `<p class="wtb-empty">No cards matched "${esc(q)}". Try broader terms — e.g. just the Pokémon name or set name.</p>`;
-          return;
-        }
-        const sig = _wtbParseQuery(q);
-        const context = [
-          sig.vintage ? 'vintage' : sig.modern ? 'modern' : '',
-          sig.rarity || '',
-          sig.maxGBP ? `under £${sig.maxGBP}` : '',
-          sig.grade  ? `PSA ${sig.grade}` : '',
-        ].filter(Boolean).join(' · ');
-        resultsEl.innerHTML = `
-          <div class="wtb-results-hd">
-            <span class="wtb-results-count">${hits.length} result${hits.length !== 1 ? 's' : ''}</span>
-            ${context ? `<span class="wtb-results-context">${esc(context)}</span>` : ''}
-          </div>
-          ${hits.map(h => _wtbCardHTMLFull(h)).join('')}
-        `;
-        resultsEl.querySelectorAll('[data-wtb-view]').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const id = btn.dataset.wtbView;
-            go('predict');
-            setTimeout(() => { try { selectCard(id); } catch(e) {} }, 80);
-          });
-        });
-      } catch(e) {
-        console.error('WTB search error:', e);
-        resultsEl.innerHTML = '<p class="wtb-empty">Something went wrong. Try a different search.</p>';
+
+    let sig;
+    try {
+      const workerUrl = (typeof MKT_WORKER_DEFAULT !== 'undefined' ? MKT_WORKER_DEFAULT : 'https://pokemon-marketplace.simontariq.workers.dev');
+      const resp = await fetch(`${workerUrl}/ai/query?q=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(7000) });
+      if (resp.ok) {
+        sig = await resp.json();
+        sig.eras    = sig.eras    || [];
+        sig.wantJP  = sig.wantJP  || false;
+      } else {
+        sig = _wtbParseQuery(q);
       }
-    }, 0));
+    } catch(e) {
+      sig = _wtbParseQuery(q);
+    }
+
+    try {
+      const hits = _wtbSearchWithSig(sig);
+      if (!hits.length) {
+        resultsEl.innerHTML = `<p class="wtb-empty">No cards matched "${esc(q)}". Try broader terms — e.g. just the Pokémon name or set name.</p>`;
+        return;
+      }
+      const context = [
+        sig.vintage ? 'vintage' : sig.modern ? 'modern' : '',
+        sig.rarity || '',
+        sig.maxGBP ? `under £${sig.maxGBP}` : '',
+        sig.grade  ? `PSA ${sig.grade}` : (sig.gradeType ? sig.gradeType.toUpperCase() : ''),
+        sig.pokemon || (sig.setName ? sig.setName : ''),
+      ].filter(Boolean).join(' · ');
+      resultsEl.innerHTML = `
+        <div class="wtb-results-hd">
+          <span class="wtb-results-count">${hits.length} result${hits.length !== 1 ? 's' : ''}</span>
+          ${context ? `<span class="wtb-results-context">${esc(context)}</span>` : ''}
+        </div>
+        ${hits.map(h => _wtbCardHTMLFull(h)).join('')}
+      `;
+      resultsEl.querySelectorAll('[data-wtb-view]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.wtbView;
+          go('predict');
+          setTimeout(() => { try { selectCard(id); } catch(e) {} }, 80);
+        });
+      });
+    } catch(e) {
+      console.error('WTB search error:', e);
+      resultsEl.innerHTML = '<p class="wtb-empty">Something went wrong. Try a different search.</p>';
+    }
   }
 
   el.querySelector('#wtbSearchBtn').addEventListener('click', () => runSearch(input.value));
