@@ -4800,6 +4800,17 @@ function setupPortfolio() {
     });
   }
 
+  const dupesBtn = $('portfolioDupesBtn');
+  if (dupesBtn) {
+    dupesBtn.addEventListener('click', () => {
+      $('portfolioClose')?.click();
+      go('tools');
+      setTimeout(() => {
+        document.querySelector('[data-toolstab="dupes"]')?.click();
+      }, 80);
+    });
+  }
+
   // Delegated listeners — wired once so renderPortfolio() can skip re-attaching.
   const list = $('portfolioList');
   if (list) {
@@ -5369,7 +5380,26 @@ function renderPortfolio() {
     `;
   });
 
-  list.innerHTML = items.join('');
+  const exactDupes = _detectDupes().exact;
+  const dupeBanner = exactDupes.length > 0
+    ? `<div class="portfolio-dupe-banner" id="portDupeBanner">
+        <span class="portfolio-dupe-icon">⚠</span>
+        <span class="portfolio-dupe-text">${exactDupes.length} duplicate card entr${exactDupes.length === 1 ? 'y' : 'ies'} found</span>
+        <button class="portfolio-dupe-link" id="portDupeGoBtn">Review &amp; merge</button>
+      </div>`
+    : '';
+  list.innerHTML = dupeBanner + items.join('');
+  document.getElementById('portDupeGoBtn')?.addEventListener('click', () => {
+    document.getElementById('portfolioClose')?.click();
+    go('tools');
+    setTimeout(() => document.querySelector('[data-toolstab="dupes"]')?.click(), 80);
+  });
+  const dupesHeaderBtn = document.getElementById('portfolioDupesBtn');
+  const dupesCountEl   = document.getElementById('portfolioDupeCount');
+  if (dupesHeaderBtn) {
+    dupesHeaderBtn.style.display = exactDupes.length > 0 ? '' : 'none';
+    if (dupesCountEl) dupesCountEl.textContent = exactDupes.length > 0 ? `(${exactDupes.length})` : '';
+  }
   if (hasAnyAcq && totalCostGBP > 0) {
     const pnl = totalGBP - totalCostGBP;
     const pnlPct = (pnl / totalCostGBP) * 100;
@@ -14156,6 +14186,20 @@ function renderAcquisition() {
   if (copiesCountEl) copiesCountEl.textContent = copies;
   if (copiesDecEl)   copiesDecEl.disabled = copies <= 1;
 
+  // Per-card duplicate notice
+  const dupNoticeEl = document.getElementById('acqDupeNotice');
+  const cardDupes = portfolio.filter(p => p.id === card.i);
+  if (dupNoticeEl) {
+    if (cardDupes.length > 1) {
+      const totalCopies = cardDupes.reduce((s, p) => s + (p.copies || 1), 0);
+      dupNoticeEl.style.display = 'flex';
+      const txt = dupNoticeEl.querySelector('.acq-dupe-text');
+      if (txt) txt.textContent = `${cardDupes.length} separate entries for this card (${totalCopies} copies total). Merge into one?`;
+    } else {
+      dupNoticeEl.style.display = 'none';
+    }
+  }
+
   // Toggle button state
   document.querySelectorAll('.acq-src-btn').forEach(b => {
     const src = b.dataset.src;
@@ -14575,6 +14619,19 @@ function setupAcquisition() {
   document.getElementById('acqCopiesDec')?.addEventListener('click', () => {
     const item = portfolio.find(p => p.id === selectedCard?.i);
     _setCopies((item?.copies || 1) - 1);
+  });
+
+  // Per-card duplicate merge button
+  document.getElementById('acqDupeMergeBtn')?.addEventListener('click', () => {
+    if (!selectedCard) return;
+    const dupes = portfolio.filter(p => p.id === selectedCard.i);
+    if (dupes.length < 2) return;
+    // Keep the first entry; merge all others into it
+    const keep = dupes[0];
+    for (let i = 1; i < dupes.length; i++) {
+      _mergePortfolioEntries(keep.id, dupes[i].id);
+    }
+    renderAcquisition();
   });
 
   // Storage materials checkboxes
@@ -18902,6 +18959,19 @@ function _saveDupeDismissed(set) {
   try { localStorage.setItem(DUPE_DISMISS_KEY, JSON.stringify([...set])); } catch {}
 }
 
+function _mergePortfolioEntries(keepId, removeId) {
+  const keepEntry   = portfolio.find(p => p.id === keepId);
+  const removeEntry = portfolio.find(p => p.id === removeId && p !== keepEntry);
+  if (!keepEntry || !removeEntry) return;
+  keepEntry.copies = (keepEntry.copies || 1) + (removeEntry.copies || 1);
+  portfolio.splice(portfolio.indexOf(removeEntry), 1);
+  savePortfolio();
+  renderPortfolio?.();
+  updateToolsDupeBadge?.();
+  _homeCollHash = '';
+  _renderHomeCollection?.();
+}
+
 function _detectDupes() {
   const dismissed = _getDupeDismissed();
   const results = { exact: [], counterparts: [], nameDupes: [] };
@@ -18954,8 +19024,9 @@ function _detectDupes() {
   for (const [, group] of nameGroups) {
     if (group.length < 2) continue;
     const ids = group.map(g => g.card.i).sort();
-    // Skip pairs already covered by the EN/JP counterpart section
-    const alreadyCovered = results.counterparts.some(cp => ids.includes(cp.enCard.i) && ids.includes(cp.jpCard.i));
+    // Skip pairs already covered by exact or EN/JP counterpart sections
+    const alreadyCovered = results.exact.some(e => ids.includes(e.a.id) && ids.includes(e.b.id))
+      || results.counterparts.some(cp => ids.includes(cp.enCard.i) && ids.includes(cp.jpCard.i));
     if (alreadyCovered) continue;
     const key = `name:${ids.join(':')}`;
     if (dismissed.has(key)) continue;
@@ -19068,10 +19139,7 @@ function renderToolsDuplicates() {
     if (mergeBtn) {
       const removeId = mergeBtn.dataset.removeId;
       const keepId   = mergeBtn.dataset.keepId;
-      const idx = portfolio.findIndex(p => p.id === removeId && portfolio.some(q => q.id === keepId && q !== p));
-      if (idx >= 0) portfolio.splice(idx, 1);
-      savePortfolio();
-      renderPortfolio?.();
+      _mergePortfolioEntries(keepId, removeId);
       const dismissed = _getDupeDismissed();
       dismissed.add(mergeBtn.dataset.dupeKey);
       _saveDupeDismissed(dismissed);

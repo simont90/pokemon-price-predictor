@@ -11252,6 +11252,40 @@ html { scroll-behavior: smooth; }
 
 .dupe-empty { padding: 24px 0; text-align: center; color: var(--text-muted); font-size: 13px; }
 
+/* Portfolio-panel duplicate banner */
+.portfolio-dupe-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 14px; margin: 0 0 8px;
+  border-radius: 8px;
+  background: rgba(239,83,80,0.10); border: 1px solid rgba(239,83,80,0.25);
+  font-size: 12px;
+}
+.portfolio-dupe-icon { font-style: normal; color: #ef5350; flex-shrink: 0; }
+.portfolio-dupe-text { flex: 1; color: var(--text); }
+.portfolio-dupe-link {
+  flex-shrink: 0; padding: 3px 10px; border-radius: 5px; border: none;
+  background: rgba(239,83,80,0.18); color: #ef5350;
+  font-size: 11px; font-weight: 600; font-family: inherit; cursor: pointer;
+}
+.portfolio-dupes-btn { color: #ef5350 !important; }
+
+/* Acquisition per-card duplicate notice */
+.acq-dupe-notice {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; margin-bottom: 12px;
+  border-radius: 8px;
+  background: rgba(239,83,80,0.08); border: 1px solid rgba(239,83,80,0.20);
+  font-size: 12px;
+}
+.acq-dupe-icon { color: #ef5350; flex-shrink: 0; }
+.acq-dupe-text { flex: 1; color: var(--text-muted); }
+.acq-dupe-merge-btn {
+  flex-shrink: 0; padding: 4px 12px; border-radius: 6px; border: none;
+  background: rgba(74,158,255,0.15); color: #4a9eff;
+  font-size: 11px; font-weight: 600; font-family: inherit; cursor: pointer;
+}
+.acq-dupe-merge-btn:hover { background: rgba(74,158,255,0.28); }
+
 /* Responsive: stack cards vertically on narrow screens */
 @media (max-width: 480px) {
   .binder-pair-cards { flex-direction: column; }

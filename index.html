@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260708d">
+  <link rel="stylesheet" href="style.css?v=20260708e">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -197,6 +197,10 @@
         <button class="portfolio-refresh-btn" id="portfolioRefreshBtn" type="button" title="Refresh live prices for all cards in your collection">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
           Refresh prices
+        </button>
+        <button class="portfolio-refresh-btn portfolio-dupes-btn" id="portfolioDupesBtn" type="button" title="Find and merge duplicate card entries" style="display:none">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="4"/><circle cx="15" cy="15" r="4"/></svg>
+          Duplicates <span id="portfolioDupeCount"></span>
         </button>
         <span class="pi-load-status" id="portfolioLoadAllStatus"></span>
       </div>
@@ -1373,6 +1377,11 @@
               <span class="acq-copies-count" id="acqCopiesCount">1</span>
               <button class="acq-copies-btn" id="acqCopiesInc" type="button" aria-label="Add a copy">+</button>
             </div>
+          </div>
+          <div class="acq-dupe-notice" id="acqDupeNotice" style="display:none">
+            <span class="acq-dupe-icon">⚠</span>
+            <span class="acq-dupe-text"></span>
+            <button class="acq-dupe-merge-btn" id="acqDupeMergeBtn" type="button">Merge</button>
           </div>
 
           <div class="acq-source-toggle" role="radiogroup" aria-label="How did you get this card?">
@@ -2569,7 +2578,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260708d"></script>
+  <script src="app.js?v=20260708e"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
