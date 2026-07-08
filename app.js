@@ -13772,6 +13772,10 @@ function psFormatAgo(ts) {
   return `${d}d ago`;
 }
 
+function psCollectionIds() {
+  return (portfolio || []).filter(p => p && p.id).map(p => p.id);
+}
+
 function psTrackedIds() {
   const set = new Set();
   (portfolio || []).forEach(p => p && p.id && set.add(p.id));
@@ -13823,6 +13827,12 @@ function psUpdateStats() {
   }
 
   // Other hints
+  const collectionCount = psCollectionIds().length;
+  const cHint = document.getElementById('psCollectionHint');
+  if (cHint) cHint.textContent = collectionCount
+    ? `${collectionCount} card${collectionCount === 1 ? '' : 's'} in your portfolio`
+    : 'No cards in collection yet';
+
   const trackedCount = psTrackedIds().length;
   const tHint = document.getElementById('psTrackedHint');
   if (tHint) tHint.textContent = trackedCount
@@ -13896,7 +13906,7 @@ function psHideProgress() {
 }
 
 function psSetButtonsDisabled(disabled) {
-  ['psRefreshSelected', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psRefreshVintagePSA', 'psRefreshUnderFiver', 'psClearCache', 'psManualGo', 'livePriceRefresh']
+  ['psRefreshSelected', 'psRefreshCollection', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psRefreshVintagePSA', 'psRefreshUnderFiver', 'psClearCache', 'psManualGo', 'livePriceRefresh']
     .forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -14081,6 +14091,9 @@ function setupPriceSync() {
   sel('psForceRefreshAll')?.addEventListener('click', () => {
     forceRefreshAllPrices();
     psLog('Force-refreshing all tracked + cached cards…', 'info');
+  });
+  sel('psRefreshCollection')?.addEventListener('click', () => {
+    psBatchRefresh(psCollectionIds(), 'Refresh my collection');
   });
   sel('psRefreshTracked')?.addEventListener('click', () => {
     psBatchRefresh(psTrackedIds(), 'Refresh tracked cards');
