@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260708j">
+  <link rel="stylesheet" href="style.css?v=20260708k">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1959,6 +1959,16 @@
               <span class="ps-btn-text">Refresh everything cached</span>
               <span class="ps-btn-hint" id="psAllHint">Re-pulls every cached card</span>
             </button>
+            <button class="ps-btn" id="psRefreshVintagePSA" type="button">
+              <span class="ps-btn-ico">⌛</span>
+              <span class="ps-btn-text">Refresh Vintage PSA prices</span>
+              <span class="ps-btn-hint" id="psVintagePSAHint">WOTC-era EN cards missing today-fresh PSA data</span>
+            </button>
+            <button class="ps-btn" id="psRefreshUnderFiver" type="button">
+              <span class="ps-btn-ico">£</span>
+              <span class="ps-btn-text">Refresh prices under £5</span>
+              <span class="ps-btn-hint" id="psUnderFiverHint">Re-check cached cards with a market price below £5</span>
+            </button>
             <button class="ps-btn ps-btn-ghost" id="psClearCache" type="button">
               <span class="ps-btn-ico">⌫</span>
               <span class="ps-btn-text">Clear price cache</span>
@@ -2593,7 +2603,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260708j"></script>
+  <script src="app.js?v=20260708k"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

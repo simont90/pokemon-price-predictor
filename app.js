@@ -13838,6 +13838,22 @@ function psUpdateStats() {
   if (allHint) allHint.textContent = stats.total
     ? `Re-pulls all ${stats.total} cached card${stats.total === 1 ? '' : 's'}`
     : 'Cache is empty';
+
+  const vintageHint = document.getElementById('psVintagePSAHint');
+  if (vintageHint) {
+    const vCount = psVintagePSAIds().length;
+    vintageHint.textContent = vCount
+      ? `${vCount} WOTC-era card${vCount === 1 ? '' : 's'} missing today-fresh PSA data`
+      : 'All Vintage PSA prices up to date';
+  }
+
+  const fiverHint = document.getElementById('psUnderFiverHint');
+  if (fiverHint) {
+    const fCount = psCacheIdsUnderFiver().length;
+    fiverHint.textContent = fCount
+      ? `${fCount} cached card${fCount === 1 ? '' : 's'} priced under £5`
+      : 'No cached cards under £5';
+  }
 }
 
 function psLog(line, kind) {
@@ -13880,7 +13896,7 @@ function psHideProgress() {
 }
 
 function psSetButtonsDisabled(disabled) {
-  ['psRefreshSelected', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psClearCache', 'psManualGo', 'livePriceRefresh']
+  ['psRefreshSelected', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psRefreshVintagePSA', 'psRefreshUnderFiver', 'psClearCache', 'psManualGo', 'livePriceRefresh']
     .forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -14025,6 +14041,35 @@ async function psManualRefresh() {
   await psBatchRefresh([card.i], `Refresh "${card.n}"`);
 }
 
+// IDs of all WOTC-era EN vintage cards missing today-fresh PSA 10 data
+function psVintagePSAIds() {
+  if (!searchIndex || !searchIndex.length) return [];
+  const vintageSets = new Set(
+    (typeof _vintageSets === 'function' ? _vintageSets() : []).map(s => s.code)
+  );
+  return searchIndex
+    .filter(c => vintageSets.has(c.sc) && c.lang !== 'JP')
+    .filter(c => {
+      const pd = getCachedPrice(c.i);
+      return !pd || !(pd.pcPsa10 > 0) || !_priceCacheIsValid(pd._ts);
+    })
+    .map(c => c.i);
+}
+
+// IDs of cached cards where the raw market price (converted to GBP) is under £5
+function psCacheIdsUnderFiver() {
+  const cache = getPriceCache();
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  return Object.entries(cache)
+    .filter(([, e]) => {
+      if (!e) return false;
+      const rawUSD = e.pcUngraded || e.market || e.tcgMarket || 0;
+      const gbp = rawUSD * fx;
+      return gbp > 0 && gbp < 5;
+    })
+    .map(([id]) => id);
+}
+
 function setupPriceSync() {
   const sel = id => document.getElementById(id);
   if (!sel('priceSyncSection')) return;
@@ -14059,6 +14104,14 @@ function setupPriceSync() {
     if (!_psState.running) return;
     _psState.cancel = true;
     psLog('Cancelling after current batch finishes…', 'warn');
+  });
+  sel('psRefreshVintagePSA')?.addEventListener('click', () => {
+    const ids = psVintagePSAIds();
+    psBatchRefresh(ids, 'Refresh Vintage PSA prices');
+  });
+  sel('psRefreshUnderFiver')?.addEventListener('click', () => {
+    const ids = psCacheIdsUnderFiver();
+    psBatchRefresh(ids, 'Refresh prices under £5');
   });
   sel('psManualGo')?.addEventListener('click', psManualRefresh);
   sel('psManualInput')?.addEventListener('keydown', e => {
