@@ -17615,6 +17615,7 @@ function renderHomeDashboard() {
   _renderHomeGradeCandidates();
   _renderHomeAcePicks();
   _renderHomeReco(); // use cache if valid; savePortfolio/Wishlist/Watchlist null it on change
+  try { _renderHomeVintage(); } catch(e) {}
 }
 
 // Silently refresh stale tracked card prices in the background when the user
@@ -17908,12 +17909,15 @@ function _setupTileEvents(scrollEl, deleteFn) {
 // ─── Home render deduplication ─────────────────────────────
 let _homeCollHash = '', _homeWishHash = '', _homeWatchHash = '';
 let _homeAiG10Hash = '', _homeAiG9Hash = '', _homeGradeCandHash = '';
+let _homeVintageHash = '';
+let _hvgLang = 'en', _hvgSelectedSet = 'base1', _hvgSelectedSetJP = 'neo1';
 let _homeRenderTimer = null;
 function _scheduleHomeRender() {
   clearTimeout(_homeRenderTimer);
   _homeRenderTimer = setTimeout(() => {
     try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
     try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); _renderHomeAcePicks(); } catch {}
+    try { _renderHomeVintage(); } catch {}
   }, 350);
 }
 
@@ -18211,6 +18215,173 @@ function _renderHomeCollection() {
     savePortfolio(); renderPortfolio(); updatePortfolioButton();
     _renderHomeCollection();
   });
+}
+
+// ─── Home Vintage section ─────────────────────────────────────────────────────
+// Shows cards from a chosen vintage set organised by PSA grade, filtered to the
+// current budget. Tabs are hidden when nothing qualifies at that grade.
+
+const _HVG_ALL_GRADES = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+const _HVG_TAB_LABELS = {
+  reco: 'Recommended', raw: 'Raw',
+  10: 'PSA 10', 9: 'PSA 9', 8: 'PSA 8', 7: 'PSA 7', 6: 'PSA 6',
+  5: 'PSA 5', 4: 'PSA 4', 3: 'PSA 3', 2: 'PSA 2', 1: 'PSA 1',
+};
+
+// Price at a grade including grades 1–4 not in VINTAGE_GRADES (ratio-estimated from PSA 10).
+function _hvgGradeGBP(card, grade, ladder) {
+  const row = ladder.find(l => l.g === grade);
+  if (row) return row.gbp;
+  const psa10 = ladder.find(l => l.g === 10);
+  const est10 = psa10 ? psa10.gbp : 0;
+  return est10 > 0 ? est10 * (PSA_RATIOS[grade] || 0) : 0;
+}
+
+function _hvgWireGroup() {
+  const group = document.getElementById('hTabVintage');
+  if (!group || group._hvgWired) return;
+  group._hvgWired = true;
+  group.addEventListener('click', e => {
+    // EN/JP toggle
+    const lb = e.target.closest('[data-hvg-lang]');
+    if (lb) {
+      _hvgLang = lb.dataset.hvgLang;
+      group.querySelectorAll('[data-hvg-lang]').forEach(b =>
+        b.classList.toggle('vg-lang-active', b.dataset.hvgLang === _hvgLang));
+      _homeVintageHash = '';
+      const area = document.getElementById('homeVintageArea');
+      if (area) area.dataset.hvgTab = '';
+      _renderHomeVintage();
+      return;
+    }
+    // Set chip
+    const chip = e.target.closest('[data-hvg-set]');
+    if (chip) {
+      if (_hvgLang === 'jp') _hvgSelectedSetJP = chip.dataset.hvgSet;
+      else _hvgSelectedSet = chip.dataset.hvgSet;
+      _homeVintageHash = '';
+      const area = document.getElementById('homeVintageArea');
+      if (area) area.dataset.hvgTab = '';
+      _renderHomeVintage();
+      return;
+    }
+    // Grade tab
+    const tabBtn = e.target.closest('[data-hvtab]');
+    if (tabBtn) {
+      const area = document.getElementById('homeVintageArea');
+      if (area) area.dataset.hvgTab = tabBtn.dataset.hvtab;
+      _homeVintageHash = '';
+      _renderHomeVintage();
+      return;
+    }
+    // Tile click (not remove — vintage tiles are browse-only)
+    if (e.target.closest('.home-card-remove')) return;
+    const tile = e.target.closest('.home-card-tile');
+    if (tile && !e.target.closest('.home-pip-trigger') && !e.target.closest('.home-card-newtab')) {
+      _homeItemClick(tile.dataset.id);
+    }
+  });
+}
+
+function _renderHomeVintage() {
+  _hvgWireGroup();
+  const area = document.getElementById('homeVintageArea');
+  if (!area) return;
+
+  const isJP = _hvgLang === 'jp';
+  const sets = isJP ? _vintageJPSets() : _vintageSets();
+  if (!sets.length || !searchIndex || !searchIndex.length) {
+    area.innerHTML = '<div class="home-empty" style="padding:16px 0">Loading card database…</div>';
+    return;
+  }
+
+  // Validate active set
+  let activeSet = isJP ? _hvgSelectedSetJP : _hvgSelectedSet;
+  if (!sets.some(s => s.code === activeSet)) {
+    activeSet = sets[0].code;
+    if (isJP) _hvgSelectedSetJP = activeSet; else _hvgSelectedSet = activeSet;
+  }
+
+  const budget = getMaxBudgetGBP();
+  const hash = `${isJP}|${activeSet}|${budget}`;
+  if (hash === _homeVintageHash && area.querySelector('.home-card-tile, .home-empty')) return;
+  _homeVintageHash = hash;
+
+  const cards = searchIndex.filter(c =>
+    c.sc === activeSet && (isJP ? c.lang === 'JP' : c.lang !== 'JP'));
+
+  // Compute which cards fit budget at each grade
+  const gradeCards = { reco: [], raw: [] };
+  for (const g of _HVG_ALL_GRADES) gradeCards[g] = [];
+
+  for (const card of cards) {
+    const { rawGBP, ladder } = _vgLadder(card);
+    if (rawGBP > 0 && rawGBP <= budget) gradeCards.raw.push({ card, gbp: rawGBP });
+    for (const g of _HVG_ALL_GRADES) {
+      const gbp = _hvgGradeGBP(card, g, ladder);
+      if (gbp > 0 && gbp <= budget) gradeCards[g].push({ card, gbp });
+    }
+    // Recommended: sweet-spot grade within budget
+    const { sweet } = _vgPicks(ladder, card);
+    const sweetGBP = _hvgGradeGBP(card, sweet, ladder);
+    if (sweetGBP > 0 && sweetGBP <= budget) gradeCards.reco.push({ card, gbp: sweetGBP, grade: sweet });
+  }
+
+  // Sort by deal score, cap at 25 per tab
+  const TAB_ORDER = ['reco', 'raw', ..._HVG_ALL_GRADES];
+  for (const key of TAB_ORDER) {
+    gradeCards[key] = gradeCards[key]
+      .sort((a, b) => _vgDealScore(b.card) - _vgDealScore(a.card))
+      .slice(0, 25);
+  }
+
+  const visibleTabs = TAB_ORDER.filter(t => gradeCards[t].length > 0);
+
+  // Set chips
+  const setInfo = sets.find(s => s.code === activeSet);
+  const chips = sets.map(s => `
+    <button class="vg-set-chip ${s.code === activeSet ? 'vg-chip-active' : ''}" data-hvg-set="${esc(s.code)}">
+      <span class="vg-chip-name">${esc(s.name)}</span>
+      <span class="vg-chip-year">${(s.releaseDate || '').slice(0, 4)}</span>
+    </button>`).join('');
+
+  if (!visibleTabs.length) {
+    area.innerHTML = `
+      <div class="vg-set-chips">${chips}</div>
+      <div class="home-empty" style="padding:16px 0">No ${esc(setInfo?.name || 'set')} cards within your ${fmtGBPDirect(budget)} budget.</div>`;
+    return;
+  }
+
+  // Resolve active tab (persisted across re-renders via area.dataset)
+  const prevTab = area.dataset.hvgTab || '';
+  const resolvedTab = visibleTabs.find(t => String(t) === prevTab) ?? visibleTabs[0];
+  area.dataset.hvgTab = String(resolvedTab);
+
+  const tabBar = visibleTabs.map(t => `
+    <button class="ptab ${t === resolvedTab ? 'ptab-active' : ''}" data-hvtab="${esc(String(t))}">${_HVG_TAB_LABELS[t]}</button>`
+  ).join('');
+
+  const activeTiles = _hvgBuildTiles(gradeCards[resolvedTab], resolvedTab);
+
+  area.innerHTML = `
+    <div class="vg-set-chips">${chips}</div>
+    <div class="predict-tab-bar home-tab-bar">${tabBar}</div>
+    <section class="home-section-wrap home-vintage-panel">
+      <div class="home-scroll-row">${activeTiles}</div>
+    </section>`;
+}
+
+function _hvgBuildTiles(entries, tabKey) {
+  if (!entries || !entries.length) return '<div class="home-empty">Nothing at this grade within your budget.</div>';
+  return entries.map(({ card, gbp, grade }) => {
+    const ds = _vgDealScore(card);
+    const sc = ds >= 30 ? 'sig-strong-buy' : ds >= 0 ? 'sig-buy' : 'sig-hold';
+    const sigCls   = tabKey === 'reco' && grade ? sc   : null;
+    const sigLabel = tabKey === 'reco' && grade ? `PSA ${grade}` : null;
+    const scoreHtml = `<span class="vg-score ${ds >= 0 ? 'vg-score-pos' : 'vg-score-neg'}" style="font-size:9px">${ds > 0 ? '+' : ''}${ds}</span>`;
+    return _homeTile(card.i, getCardImg(card) || '', card.n, fmtGBPDirect(gbp),
+      sigCls, sigLabel, '', card.s || '', { scoreBadgeHtml: scoreHtml });
+  }).join('');
 }
 
 // Find the best qualifying strategy for a card: must be low risk, strong hold
@@ -18750,6 +18921,7 @@ function setupPageNav() {
     _renderHomeWishlist();
     _renderHomeWatchlist();
     _renderHomeReco(true);
+    _homeVintageHash = ''; try { _renderHomeVintage(); } catch(e) {}
   });
 
   // Budget slider + manual input
@@ -18768,6 +18940,7 @@ function setupPageNav() {
         _renderHomeReco(true);
         _renderHomeWishlist();
         _renderHomeWatchlist();
+        _homeVintageHash = ''; try { _renderHomeVintage(); } catch(e) {}
       }
     }
 

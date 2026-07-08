@@ -13003,3 +13003,9 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 
 .home-card-sub .taste-badge { margin-left: 5px; }
 .search-result-meta .taste-badge { flex-shrink: 0; }
+
+/* ─── Home Vintage section ─── */
+/* Browse-only tiles — no remove action */
+.home-vintage-panel .home-card-remove { display: none; }
+/* Pad the set-chip row inside the home group */
+#hTabVintage .vg-set-chips { padding: 10px 20px 6px; }
