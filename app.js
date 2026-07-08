@@ -22476,7 +22476,7 @@ function _wtbCardSignal(card) {
     if (rar?.pullRate > 0) pull = Math.round(1 / rar.pullRate) * (rar.count || 1) / 100;
   } catch {}
   const des = autoFillDesirability ? autoFillDesirability(card, pull).total : 50;
-  return computeSignal(card, pull, des);
+  return _getCachedSignal(card, pull, des);
 }
 
 function _wtbSearchWithSig(sig) {
@@ -22553,19 +22553,13 @@ function _wtbSearchWithSig(sig) {
 
     if (sig.dealsOnly && dealScore < 5 && nameScore < 30) continue;
 
-    // Align with Hold Strategy signal — score boost for BUY/STRONG BUY, skip SELL
+    // Gate strictly on Hold Strategy — only BUY and STRONG BUY surface
     const cardSig = _wtbCardSignal(card);
-    let sigBonus = 0;
-    if (cardSig) {
-      if (cardSig.signal === 'STRONG BUY') sigBonus = 30;
-      else if (cardSig.signal === 'BUY') sigBonus = 15;
-      else if (cardSig.signal === 'SELL') continue;
-    }
+    if (!cardSig || (cardSig.signal !== 'BUY' && cardSig.signal !== 'STRONG BUY')) continue;
 
     const rawGBP = pd ? usdToGbp(pd.market || pd.mid || 0) : usdToGbp(card.p || 0);
-    const total  = nameScore * 2 + dealScore + (pd ? 15 : 0) + (bestGbp > 0 ? 10 : 0) + sigBonus;
-    if (total <= 0) continue;
-
+    // Hold Strategy score is the primary sort key; deal metrics and name are tiebreakers
+    const total = cardSig.score * 100 + dealScore + nameScore + (pd ? 15 : 0) + (bestGbp > 0 ? 10 : 0);
     results.push({ card, total, dealScore, nameScore, bestGrade, bestGbp, ladder, rawGBP, pd, isVintage, cardSig });
   }
 
