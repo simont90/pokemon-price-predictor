@@ -317,7 +317,7 @@ let _priceCache = null; // in-memory mirror; avoids JSON.parse on every getCache
 // Computation caches — per-card, invalidated when that card's price data changes
 const _sigCache = new Map(); // card.i → { v: computeSignal result, ts }
 const _hcCache  = new Map(); // card.i → { v: computeHoldCore result, ts }
-const _COMP_TTL = 120_000;   // 2-minute TTL (signals don't shift faster than this)
+const _COMP_TTL = 600_000;   // 10-minute TTL — signals don't change faster than live price refreshes
 
 function getPriceCache() {
   if (_priceCache) return _priceCache;
@@ -576,13 +576,16 @@ async function init() {
   setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 800);
 }
 
-// Re-check the 7AM boundary whenever the tab regains focus — handles the case
-// where a browser tab stays open overnight and crosses the 7AM boundary.
+// Re-check the 6AM boundary whenever the tab regains focus — handles the case
+// where a browser tab stays open overnight and crosses the 6AM boundary.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     try { _globalRefreshIfDue(); } catch {}
   }
 });
+// Periodic check every 5 minutes so the refresh fires even if the tab stays
+// open across 6AM without any user interaction (no visibilitychange event).
+setInterval(() => { try { _globalRefreshIfDue(); } catch {} }, 5 * 60 * 1000);
 
 // ---- Currency ----
 function usdToGbp(usd) { return usd * fxRate; }
@@ -3116,11 +3119,15 @@ function computeSignal(card, pullCost, desirability) {
   if (!card) return null;
 
   const marketPrice = getCurrentPrice(card);
+  if (!marketPrice) return null;
   const { priceUSD: modelPrice } = predictPrice(pullCost, desirability);
   const modelVsMarket = modelPrice / marketPrice;
 
-  const fc = forecast(card, pullCost, desirability);
-  const { rarityRate, charMult, ageMonths } = fc;
+  // Compute directly — avoids calling forecast() which builds 15 scenario objects we don't need
+  const rarityRate = (RARITY_RATES[card.rc] || RARITY_RATES['']).base;
+  const charMult   = getCharacterMultiplier(card.n);
+  const ageMonths  = getSetAgeMonths(card.sc);
+  const ageMult    = getAgeMultiplier(ageMonths, 1);
 
   const momentum = getMarketMomentum();
   const isHeating = momentum.mult > 1.1;
@@ -3130,7 +3137,6 @@ function computeSignal(card, pullCost, desirability) {
 
   // Primary signal: model's projected annual growth rate (rarityRate × charMult × ageMult)
   // Benchmarked against ~8% opportunity cost. This is the direct output of the forecast model.
-  const ageMult = getAgeMultiplier(ageMonths, 1);
   const annualRate = rarityRate * charMult * ageMult;
 
   let score = 0;
@@ -7040,12 +7046,18 @@ async function _globalSilentRefresh() {
 }
 
 // Auto-trigger if 6AM GMT boundary has passed since last global refresh.
-// Called once at app start; also triggered on page focus so an open tab
-// that crosses 7AM picks it up on next interaction.
+// Called once at app start, on tab focus, and every 5 minutes.
 function _globalRefreshIfDue() {
   if (!_shouldGlobalRefresh()) return;
   _markGlobalRefreshed();
   _globalSilentRefresh();
+}
+
+// Force a full price refresh right now, regardless of the 6AM schedule.
+// Exposed globally so it can be called from the Price Sync section or console.
+function forceRefreshAllPrices() {
+  _markGlobalRefreshed();
+  return _globalSilentRefresh();
 }
 
 // ── Binder background pre-fetch ────────────────────────────────────────────
@@ -13988,6 +14000,10 @@ function setupPriceSync() {
   sel('psRefreshSelected')?.addEventListener('click', () => {
     if (!selectedCard) return;
     psBatchRefresh([selectedCard.i], `Refresh "${selectedCard.n}"`);
+  });
+  sel('psForceRefreshAll')?.addEventListener('click', () => {
+    forceRefreshAllPrices();
+    psLog('Force-refreshing all tracked + cached cards…', 'info');
   });
   sel('psRefreshTracked')?.addEventListener('click', () => {
     psBatchRefresh(psTrackedIds(), 'Refresh tracked cards');
