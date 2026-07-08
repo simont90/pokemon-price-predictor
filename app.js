@@ -5725,6 +5725,12 @@ function setupWishlist() {
   $('wishlistToggle').addEventListener('click', () => toggleSidePanel('wishlistPanel'));
   $('wishlistClose').addEventListener('click', () => { $('wishlistPanel').style.display = 'none'; });
   $('addWishlistBtn').addEventListener('click', () => toggleCardInWishlist());
+  $('addAiAnalysisBtn').addEventListener('click', () => {
+    if (!selectedCard) return;
+    const setName = (typeof setsData !== 'undefined' && setsData?.[selectedCard.sc]?.name) || selectedCard.sc || '';
+    go('know');
+    setTimeout(() => aiSubmit(`Analyse ${selectedCard.n} (${setName}) in full — Hold Strategy signal, buy/sell/hold verdict, which PSA grade to target if vintage, 5-year price outlook, and key risks.`), 150);
+  });
 
   // Delegated listeners — wired once so renderWishlist() can skip re-attaching.
   const list = $('wishlistList');
