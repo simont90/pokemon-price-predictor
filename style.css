@@ -13074,75 +13074,119 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   border-color: rgba(232,182,52,0.4);
 }
 
-/* ── What to Buy page ───────────────────────────────────────────── */
+/* ── What to Buy page — search-driven advisor ───────────────────── */
 .wtb-page { padding: 0 0 110px; }
-.wtb-hd { padding: 20px 20px 10px; }
-.wtb-title { font: 700 22px/1.2 var(--font-ui, 'Space Grotesk', sans-serif); color: var(--accent, #e8b634); }
-.wtb-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-.wtb-note {
-  margin-top: 10px; padding: 8px 14px;
-  background: rgba(232,182,52,0.08); border-left: 2px solid var(--accent, #e8b634);
-  border-radius: 4px; font-size: 12px; color: var(--text-muted); line-height: 1.5;
+
+/* Hero */
+.wtb-hero { padding: 28px 20px 16px; }
+.wtb-hero-title { font: 700 24px/1.2 var(--font-ui, 'Space Grotesk', sans-serif); color: var(--accent, #e8b634); }
+.wtb-hero-sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+
+/* Search bar */
+.wtb-search-wrap { display: flex; gap: 8px; margin-top: 14px; }
+.wtb-search-input {
+  flex: 1; min-width: 0;
+  background: var(--bg-raised, rgba(255,255,255,0.06));
+  border: 1.5px solid var(--border, rgba(255,255,255,0.12));
+  border-radius: 10px; padding: 11px 14px;
+  font: 14px/1.4 var(--font-ui, sans-serif); color: var(--text);
+  outline: none; transition: border-color 0.15s;
+}
+.wtb-search-input:focus { border-color: var(--accent, #e8b634); }
+.wtb-search-input::placeholder { color: var(--text-faint, rgba(255,255,255,0.3)); }
+.wtb-search-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 11px 16px; border-radius: 10px;
+  background: var(--accent, #e8b634); color: #000;
+  font: 600 13px/1 var(--font-ui, sans-serif);
+  border: none; cursor: pointer; flex-shrink: 0;
+  transition: background 0.12s, transform 0.08s;
+  touch-action: manipulation;
+}
+.wtb-search-btn:hover { background: #f0c440; }
+.wtb-search-btn:active { transform: scale(0.97); }
+
+/* Suggestion chips */
+.wtb-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.wtb-chip {
+  padding: 5px 11px; border-radius: 20px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.09);
+  color: var(--text-muted); font-size: 12px;
+  cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
+  touch-action: manipulation;
+}
+.wtb-chip:hover {
+  background: rgba(232,182,52,0.1); border-color: rgba(232,182,52,0.3);
+  color: var(--accent, #e8b634);
 }
 
-.wtb-section { margin-bottom: 4px; }
-.wtb-section-hd { padding: 18px 20px 6px; }
-.wtb-section-title {
-  font: 600 11px/1.3 var(--font-ui, sans-serif);
-  letter-spacing: .08em; text-transform: uppercase;
-  color: var(--text);
+/* Results */
+.wtb-results { padding: 0 0 20px; }
+.wtb-results-hd {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 20px 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
 }
-.wtb-section-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.wtb-empty { padding: 10px 20px 14px; font-size: 13px; color: var(--text-muted); }
+.wtb-results-count { font: 600 11px/1 var(--font-ui, sans-serif); color: var(--text); letter-spacing: .06em; text-transform: uppercase; }
+.wtb-results-context { font-size: 11px; color: var(--text-muted); padding: 2px 8px; background: rgba(255,255,255,0.05); border-radius: 10px; }
 
+/* Loading state */
+.wtb-loading { display: flex; align-items: center; gap: 10px; padding: 24px 20px; font-size: 13px; color: var(--text-muted); }
+.wtb-loading-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent, #e8b634);
+  animation: wtb-pulse 1.1s ease-in-out infinite;
+}
+@keyframes wtb-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50%       { opacity: 1;    transform: scale(1.2); }
+}
+
+.wtb-empty { padding: 20px; font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+/* Card items */
 .wtb-card {
-  display: flex; gap: 12px; padding: 14px 20px;
+  display: flex; gap: 14px; padding: 16px 20px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
+  contain: layout style;
 }
 .wtb-card-img {
-  width: 60px; height: 84px; object-fit: contain;
-  border-radius: 4px; flex-shrink: 0; align-self: flex-start;
+  width: 64px; height: 90px; object-fit: contain;
+  border-radius: 5px; flex-shrink: 0; align-self: flex-start;
+  background: rgba(128,128,128,0.08);
 }
 .wtb-card-img-ph {
-  width: 60px; height: 84px; flex-shrink: 0;
-  background: rgba(255,255,255,0.04); border-radius: 4px;
+  width: 64px; height: 90px; flex-shrink: 0;
+  background: rgba(255,255,255,0.04); border-radius: 5px;
 }
 .wtb-card-body { flex: 1; min-width: 0; }
-.wtb-card-hd {
-  display: flex; justify-content: space-between;
-  align-items: baseline; gap: 8px; margin-bottom: 1px;
-}
+.wtb-card-hd { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 2px; }
 .wtb-card-name {
   font: 600 15px/1.3 var(--font-ui, sans-serif); color: var(--text);
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.wtb-score {
-  font: 700 12px/1 var(--mono, 'JetBrains Mono', monospace);
-  flex-shrink: 0; padding: 2px 6px; border-radius: 4px;
-}
-.wtb-score-hot  { color: var(--green, #4caf7d); background: rgba(76,175,125,0.12); }
-.wtb-score-deal { color: var(--accent, #e8b634); background: rgba(232,182,52,0.12); }
+.wtb-score { font: 700 12px/1 var(--mono, 'JetBrains Mono', monospace); flex-shrink: 0; padding: 3px 7px; border-radius: 4px; }
+.wtb-score-hot   { color: var(--green, #4caf7d); background: rgba(76,175,125,0.12); }
+.wtb-score-deal  { color: var(--accent, #e8b634); background: rgba(232,182,52,0.12); }
 .wtb-score-watch { color: var(--text-muted); background: rgba(255,255,255,0.05); }
+.wtb-score-none  { display: none; }
 
-.wtb-card-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+.wtb-card-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 7px; }
 .wtb-card-explain {
   font-size: 13px; line-height: 1.58;
   color: var(--text-secondary, rgba(255,255,255,0.72));
-  margin: 0 0 8px;
+  margin: 0 0 10px;
 }
-.wtb-buy-btn {
-  display: inline-block; font-size: 11px; padding: 3px 10px;
-  border-radius: 6px; background: rgba(255,255,255,0.07);
-  color: var(--text-muted); text-decoration: none;
-  transition: background 0.15s, color 0.15s;
-}
-.wtb-buy-btn:hover { background: rgba(255,255,255,0.13); color: var(--text); }
 
-.wtb-era-card { padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-.wtb-era-hd { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-.wtb-era-name { font: 600 14px/1.3 var(--font-ui, sans-serif); color: var(--text); }
-.wtb-era-year { font-size: 11px; color: var(--text-muted); }
-.wtb-era-explain {
-  font-size: 13px; line-height: 1.58;
-  color: var(--text-secondary, rgba(255,255,255,0.72)); margin: 0;
+/* Card action links */
+.wtb-card-links { display: flex; gap: 7px; flex-wrap: wrap; }
+.wtb-link-btn {
+  display: inline-flex; align-items: center;
+  font-size: 11px; padding: 4px 11px; border-radius: 6px;
+  background: rgba(255,255,255,0.07); color: var(--text-muted);
+  text-decoration: none; border: none; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  touch-action: manipulation; font-family: var(--font-ui, sans-serif);
 }
+.wtb-link-btn:hover { background: rgba(255,255,255,0.13); color: var(--text); }
