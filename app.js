@@ -303,8 +303,8 @@ async function _resolveLegacyTCGCImage(card) {
 }
 
 // ---- Live Pricing Cache (localStorage with TTL) ----
-const PRICE_CACHE_TTL = 6 * 60 * 60 * 1000; // kept for other callers (rate-limits, UI counters)
-// For getCachedPrice: valid until next 6AM GMT rather than a rolling window.
+// Price validity: prices are considered current until the next 6AM GMT boundary.
+// _priceCacheIsValid(ts) is the single source of truth for fresh vs stale.
 function _priceCacheIsValid(ts) {
   const now = Date.now();
   const d = new Date();
@@ -5304,8 +5304,8 @@ function renderPortfolio() {
   let hasAnyAcq = false;
   const items = portfolio.map(p => {
     const currentCard = getCardById(p.id);
-    const cached = getCachedPrice(p.id);           // fresh (<1 h)
-    const stale = !cached ? getLastKnownPrice(p.id) : null; // stale fallback
+    const cached = getCachedPrice(p.id);           // valid since last 6AM GMT
+    const stale = !cached ? getLastKnownPrice(p.id) : null; // pre-6AM fallback
     const priceData = cached || stale;
     const currentPrice = priceData
       ? (priceData.market || priceData.mid || (currentCard ? currentCard.p : p.price))
@@ -5365,7 +5365,7 @@ function renderPortfolio() {
           ${p.img ? `<img class="portfolio-item-img" src="${_hiresUrl(p.img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="portfolio-item-img"></div>'}
           <div class="portfolio-item-info">
             <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}${copiesBadge}</div>
-            <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}${isStale ? ' · <span class="stale-price-tag" title="Cached price (>1h old) — tap Refresh prices to update">cached</span>' : ''}</div>
+            <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}${isStale ? ' · <span class="stale-price-tag" title="Price from before today\'s 6AM — tap Refresh prices to update">cached</span>' : ''}</div>
             ${acqLine}
           </div>
           <div class="portfolio-item-right">
@@ -13744,7 +13744,7 @@ function renderHoldStrategy(card) {
 //   2. Tracked      — every card in portfolio ∪ wishlist ∪ watchlist
 //   3. Cached/Stale — every entry currently in the local price cache
 //
-// Each refresh bypasses the 1-hour cache TTL by calling fetchFreshPriceData
+// Each refresh bypasses the cache by calling fetchFreshPriceData directly
 // directly and overwriting the cache entry with a new timestamp. Batched
 // refreshes run with a small concurrency limit so we don't hammer
 // PriceCharting / pokemontcg.io.
@@ -13782,24 +13782,20 @@ function psTrackedIds() {
 
 function psCacheIds(opts = {}) {
   const cache = getPriceCache();
-  const now = Date.now();
   return Object.keys(cache).filter(id => {
     const entry = cache[id];
     if (!entry) return false;
-    if (opts.staleOnly) {
-      return (now - (entry._ts || 0)) > PRICE_CACHE_TTL;
-    }
+    if (opts.staleOnly) return !_priceCacheIsValid(entry._ts);
     return true;
   });
 }
 
 function psCacheStats() {
   const cache = getPriceCache();
-  const now = Date.now();
   let fresh = 0, stale = 0;
   Object.values(cache).forEach(e => {
     if (!e) return;
-    if (now - (e._ts || 0) <= PRICE_CACHE_TTL) fresh++; else stale++;
+    if (_priceCacheIsValid(e._ts)) fresh++; else stale++;
   });
   return { total: fresh + stale, fresh, stale };
 }
@@ -14076,7 +14072,7 @@ function setupPriceSync() {
   });
 
   // Refresh button on the Model Prediction card — same as the Live panel
-  // refresh: bypasses the 1-hour cache, re-pulls live prices and reruns the
+  // refresh: bypasses the cache, re-pulls live prices only and reruns the
   // model for the currently selected card. Mirrors enabled-state from the
   // selected card; spins the icon while a refresh is in flight.
   sel('modelRefreshBtn')?.addEventListener('click', async () => {

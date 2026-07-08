@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260708f">
+  <link rel="stylesheet" href="style.css?v=20260708g">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1909,12 +1909,12 @@
         <section class="card price-sync-card" id="priceSyncSection">
           <div class="section-header">
             <h2><span class="ps-icon">⟳</span> Price Sync</h2>
-            <p class="ps-subtitle">Pull fresh prices from PriceCharting · TCGPlayer · Cardmarket. Cache lasts 1 hour — force a refresh below.</p>
+            <p class="ps-subtitle">Pull fresh prices from PriceCharting · TCGPlayer · Cardmarket. Prices stay current until 6AM the next morning or a forced refresh.</p>
           </div>
           <div class="ps-stats" id="psStats">
             <div class="ps-stat"><span class="ps-stat-num" id="psStatCached">0</span><span class="ps-stat-lbl">Cached</span></div>
-            <div class="ps-stat"><span class="ps-stat-num" id="psStatFresh">0</span><span class="ps-stat-lbl">Fresh (&lt;1h)</span></div>
-            <div class="ps-stat"><span class="ps-stat-num" id="psStatStale">0</span><span class="ps-stat-lbl">Stale</span></div>
+            <div class="ps-stat"><span class="ps-stat-num" id="psStatFresh">0</span><span class="ps-stat-lbl">Current</span></div>
+            <div class="ps-stat"><span class="ps-stat-num" id="psStatStale">0</span><span class="ps-stat-lbl">From yesterday</span></div>
             <div class="ps-stat"><span class="ps-stat-num" id="psStatTracked">0</span><span class="ps-stat-lbl">Tracked cards</span></div>
             <div class="ps-stat"><span class="ps-stat-num" id="psStatLast">—</span><span class="ps-stat-lbl">Last sync</span></div>
           </div>
@@ -1936,8 +1936,8 @@
             </button>
             <button class="ps-btn" id="psRefreshStale" type="button">
               <span class="ps-btn-ico">⌛</span>
-              <span class="ps-btn-text">Refresh stale (&gt;1h) only</span>
-              <span class="ps-btn-hint" id="psStaleHint">Skips fresh entries</span>
+              <span class="ps-btn-text">Refresh prices from before today</span>
+              <span class="ps-btn-hint" id="psStaleHint">Skips cards already refreshed since 6AM</span>
             </button>
             <button class="ps-btn" id="psRefreshAll" type="button">
               <span class="ps-btn-ico">⇣</span>
@@ -2578,7 +2578,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260708f"></script>
+  <script src="app.js?v=20260708g"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
