@@ -4848,6 +4848,7 @@ function toggleCardInPortfolio() {
       price: getCurrentPrice(selectedCard),
       addedDate: new Date().toISOString(),
       addedPriceGBP: usdToGbp(getCurrentPrice(selectedCard)),
+      copies: 1,
     });
   }
   try { savePortfolio(); } catch (e) { console.warn('[portfolio] save failed', e); }
@@ -5301,7 +5302,8 @@ function renderPortfolio() {
     const currentGBP = usdToGbp(currentPrice);
     const isLive = !!cached;
     const isStale = !cached && !!stale;
-    totalGBP += currentGBP;
+    const copies = Math.max(1, p.copies || 1);
+    totalGBP += currentGBP * copies;
 
     let signal = null;
     if (currentCard) {
@@ -5333,26 +5335,30 @@ function renderPortfolio() {
       acqBadge = `<span class="portfolio-acq-badge portfolio-acq-${acq.source}" title="${lbl}">${ico} ${lbl}</span>`;
     }
     if (Number.isFinite(acqCost) && acqCost > 0) {
-      totalCostGBP += acqCost;
+      totalCostGBP += acqCost * copies;
       const pnlPct = ((currentGBP - acqCost) / acqCost) * 100;
       const pnlGBP = currentGBP - acqCost;
       const pos = pnlPct >= 0;
-      acqLine = `<div class="portfolio-acq-line">Cost £${acqCost.toFixed(2)} · <span class="portfolio-acq-pnl ${pos ? 'pos' : 'neg'}">${pos ? '+' : ''}£${pnlGBP.toFixed(2)} (${pos ? '+' : ''}${pnlPct.toFixed(1)}%)</span></div>`;
+      const perCopy = `Cost £${acqCost.toFixed(2)} · <span class="portfolio-acq-pnl ${pos ? 'pos' : 'neg'}">${pos ? '+' : ''}£${pnlGBP.toFixed(2)} (${pos ? '+' : ''}${pnlPct.toFixed(1)}%)</span>`;
+      acqLine = copies > 1
+        ? `<div class="portfolio-acq-line">${perCopy} · ×${copies} = £${(currentGBP * copies).toFixed(2)}</div>`
+        : `<div class="portfolio-acq-line">${perCopy}</div>`;
     } else if (acq && acq.source) {
       acqLine = `<div class="portfolio-acq-line portfolio-acq-line-empty">Add cost to track ROI</div>`;
     }
+    const copiesBadge = copies > 1 ? `<span class="portfolio-copies-badge">×${copies}</span>` : '';
 
     return `
       <div class="portfolio-item-card" data-id="${p.id}">
         <div class="portfolio-item" data-id="${p.id}">
           ${p.img ? `<img class="portfolio-item-img" src="${_hiresUrl(p.img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="portfolio-item-img"></div>'}
           <div class="portfolio-item-info">
-            <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}</div>
+            <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}${copiesBadge}</div>
             <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}${isStale ? ' · <span class="stale-price-tag" title="Cached price (>1h old) — tap Refresh prices to update">cached</span>' : ''}</div>
             ${acqLine}
           </div>
           <div class="portfolio-item-right">
-            <div class="portfolio-item-price">£${currentGBP.toFixed(2)}</div>
+            <div class="portfolio-item-price">${copies > 1 ? `£${(currentGBP * copies).toFixed(2)}<span class="portfolio-price-each"> (£${currentGBP.toFixed(2)} ea)</span>` : `£${currentGBP.toFixed(2)}`}</div>
             ${signal ? `<span class="portfolio-item-signal sig-${signal.signal.toLowerCase().replace('strong ', '')}"> ${signal.signal}</span>` : ''}
             ${piRenderButton(p.id, currentPrice)}
           </div>
@@ -14141,6 +14147,14 @@ function renderAcquisition() {
 
   const card = selectedCard;
   const acq = getAcq(card.i) || {};
+  const portfolioItem = portfolio.find(p => p.id === card.i);
+  const copies = Math.max(1, portfolioItem?.copies || 1);
+
+  // Copies stepper
+  const copiesCountEl = document.getElementById('acqCopiesCount');
+  const copiesDecEl   = document.getElementById('acqCopiesDec');
+  if (copiesCountEl) copiesCountEl.textContent = copies;
+  if (copiesDecEl)   copiesDecEl.disabled = copies <= 1;
 
   // Toggle button state
   document.querySelectorAll('.acq-src-btn').forEach(b => {
@@ -14367,11 +14381,13 @@ function renderAcquisition() {
   if (acq.source === 'pack') {
     const hits = Math.max(1, parseInt(acq.packHits || 1, 10));
     const pack = parseFloat(acq.packCostGBP);
-    costSub.textContent = `${fmtGBPDirect(pack)} pack ÷ ${hits} hit${hits === 1 ? '' : 's'}`;
+    const packBase = `${fmtGBPDirect(pack)} pack ÷ ${hits} hit${hits === 1 ? '' : 's'}`;
+    costSub.textContent = copies > 1 ? `${packBase} · ×${copies} = ${fmtGBPDirect(costGBP * copies)} total` : packBase;
   } else {
     const bits = [];
     if (acq.singleDate) bits.push(acq.singleDate);
     if (acq.singleWhere) bits.push(acq.singleWhere);
+    if (copies > 1) bits.push(`×${copies} = ${fmtGBPDirect(costGBP * copies)} total`);
     costSub.textContent = bits.join(' · ');
   }
 
@@ -14380,7 +14396,8 @@ function renderAcquisition() {
   const delta = marketGBP - costGBP;
   const deltaEl = document.getElementById('acqMarketDelta');
   if (Number.isFinite(delta)) {
-    deltaEl.textContent = (delta >= 0 ? '+' : '') + fmtGBPDirect(delta) + ' vs cost';
+    const deltaBase = (delta >= 0 ? '+' : '') + fmtGBPDirect(delta) + ' vs cost';
+    deltaEl.textContent = copies > 1 ? `${deltaBase} · ×${copies} = ${fmtGBPDirect(marketGBP * copies)} total` : deltaBase;
     deltaEl.classList.toggle('acq-pos', delta >= 0);
     deltaEl.classList.toggle('acq-neg', delta < 0);
   }
@@ -14403,11 +14420,15 @@ function renderAcquisition() {
     maxEl.textContent = fmtPct(maxROI, true);
     maxEl.classList.toggle('acq-pos', maxROI >= 0);
     maxEl.classList.toggle('acq-neg', maxROI < 0);
-    maxSub.textContent = `if it grades PSA 10 · projected ${fmtGBPDirect(maxValueGBP)} in 5 years`;
-    profEl.textContent = (maxProfit >= 0 ? '+' : '') + fmtGBPDirect(maxProfit);
+    maxSub.textContent = copies > 1
+      ? `if each grades PSA 10 · ${fmtGBPDirect(maxValueGBP)}/copy · ×${copies} = ${fmtGBPDirect(maxValueGBP * copies)} in 5 years`
+      : `if it grades PSA 10 · projected ${fmtGBPDirect(maxValueGBP)} in 5 years`;
+    profEl.textContent = (maxProfit >= 0 ? '+' : '') + fmtGBPDirect(maxProfit) + (copies > 1 ? '/copy' : '');
     profEl.classList.toggle('acq-pos', maxProfit >= 0);
     profEl.classList.toggle('acq-neg', maxProfit < 0);
-    profSub.textContent = `after ${fmtGBPDirect(maxGradingFeeGBP)} grading + materials + 10% sell fees`;
+    profSub.textContent = copies > 1
+      ? `×${copies} = ${(maxProfit >= 0 ? '+' : '') + fmtGBPDirect(maxProfit * copies)} total · after ${fmtGBPDirect(maxGradingFeeGBP)} grading + 10% fees per copy`
+      : `after ${fmtGBPDirect(maxGradingFeeGBP)} grading + materials + 10% sell fees`;
   } else {
     maxEl.textContent = '—';
     maxSub.textContent = 'PSA 10 anchor unavailable for this card';
@@ -14535,6 +14556,25 @@ function setupAcquisition() {
         try { renderHoldStrategy(selectedCard); } catch {}
       }
     });
+  });
+
+  // Copies stepper
+  const _setCopies = (n) => {
+    if (!selectedCard) return;
+    const item = portfolio.find(p => p.id === selectedCard.i);
+    if (!item) return;
+    item.copies = Math.max(1, n);
+    savePortfolio();
+    renderAcquisition();
+    _homeCollHash = ''; _renderHomeCollection();
+  };
+  document.getElementById('acqCopiesInc')?.addEventListener('click', () => {
+    const item = portfolio.find(p => p.id === selectedCard?.i);
+    _setCopies((item?.copies || 1) + 1);
+  });
+  document.getElementById('acqCopiesDec')?.addEventListener('click', () => {
+    const item = portfolio.find(p => p.id === selectedCard?.i);
+    _setCopies((item?.copies || 1) - 1);
   });
 
   // Storage materials checkboxes
@@ -18093,7 +18133,8 @@ function _renderHomeCollection() {
     const cached = getCachedPrice(p.id);
     const priceUSD = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
     const priceGBP = usdToGbp(priceUSD);
-    totalGBP += priceGBP;
+    const copies = Math.max(1, p.copies || 1);
+    totalGBP += priceGBP * copies;
     let signal = null;
     if (card) {
       let pull = 7.65;
@@ -18105,11 +18146,13 @@ function _renderHomeCollection() {
       if (sig) signal = sig.signal;
     }
     const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
-    return _homeTile(p.id, p.img, p.name, fmtGBPDirect(priceGBP), signal ? sc : null, signal, '', p.set,
+    const priceLabel = copies > 1 ? `${fmtGBPDirect(priceGBP * copies)} <span style="font-size:10px;opacity:.65">×${copies}</span>` : fmtGBPDirect(priceGBP);
+    return _homeTile(p.id, p.img, p.name, priceLabel, signal ? sc : null, signal, '', p.set,
       { scoreBadgeHtml: card ? _cardScoreBadgeHtml(card) : '' });
   });
   list.innerHTML = tiles.join('');
-  if (totalEl) totalEl.textContent = `${fmtGBPDirect(totalGBP)} · ${portfolio.length} card${portfolio.length !== 1 ? 's' : ''}`;
+  const totalCards = portfolio.reduce((s, p) => s + Math.max(1, p.copies || 1), 0);
+  if (totalEl) totalEl.textContent = `${fmtGBPDirect(totalGBP)} · ${totalCards} card${totalCards !== 1 ? 's' : ''}`;
   _setupTileEvents(list, id => {
     portfolio = portfolio.filter(p => p.id !== id);
     savePortfolio(); renderPortfolio(); updatePortfolioButton();

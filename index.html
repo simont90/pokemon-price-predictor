@@ -26,7 +26,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260708c">
+  <link rel="stylesheet" href="style.css?v=20260708d">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1366,6 +1366,15 @@
             <h2><span class="acq-icon">💰</span> Acquisition &amp; Max ROI</h2>
             <p class="acq-sub">Tell the model how you got this card so it knows your true cost basis. The lower your basis, the higher your ceiling.</p>
           </div>
+          <div class="acq-copies-row" id="acqCopiesRow">
+            <span class="acq-copies-label">Copies owned</span>
+            <div class="acq-copies-stepper">
+              <button class="acq-copies-btn" id="acqCopiesDec" type="button" aria-label="Remove a copy">−</button>
+              <span class="acq-copies-count" id="acqCopiesCount">1</span>
+              <button class="acq-copies-btn" id="acqCopiesInc" type="button" aria-label="Add a copy">+</button>
+            </div>
+          </div>
+
           <div class="acq-source-toggle" role="radiogroup" aria-label="How did you get this card?">
             <button class="acq-src-btn" data-src="pack" role="radio" aria-checked="false" type="button">
               <span class="acq-src-ico">🎁</span>
@@ -2560,7 +2569,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260708c"></script>
+  <script src="app.js?v=20260708d"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

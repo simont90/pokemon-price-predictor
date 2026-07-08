@@ -5351,6 +5351,25 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .acq-sub { margin: 4px 0 14px; color: var(--text-muted); font-size: 13px; }
 
+.acq-copies-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.acq-copies-label { font-size: 14px; font-weight: 600; color: var(--text-muted); }
+.acq-copies-stepper { display: flex; align-items: center; gap: 12px; }
+.acq-copies-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  color: var(--text); font-size: 18px; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+.acq-copies-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.acq-copies-btn:disabled { opacity: 0.3; cursor: default; }
+.acq-copies-count { font-size: 20px; font-weight: 700; min-width: 24px; text-align: center; }
+
 .acq-source-toggle {
   display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;
   align-items: stretch;
@@ -5611,6 +5630,16 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 
 /* Portfolio list acquisition badge + cost/ROI line */
+.portfolio-copies-badge {
+  display: inline-block;
+  margin-left: 5px; padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px; font-weight: 700;
+  background: var(--bg-raised); color: var(--text-muted);
+  border: 1px solid var(--border);
+  vertical-align: middle;
+}
+.portfolio-price-each { font-size: 10px; font-weight: 400; opacity: 0.6; }
 .portfolio-acq-badge {
   display: inline-block;
   margin-left: 6px; padding: 1px 6px;
