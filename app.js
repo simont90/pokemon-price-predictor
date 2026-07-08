@@ -21842,44 +21842,35 @@ function _vgSetCards(setCode) {
 }
 
 // PSA price ladder for one card, in GBP. Sources in preference order:
-// live PriceCharting per-grade data (cached) → static DB PSA 10 → ratio
-// estimate from the raw price (~9× raw for a 10, flagged as estimated).
+// live PriceCharting per-grade data (cached) → static DB PSA 10.
+// Grades with no live data show gbp=0 (rendered as "—"); no ratio estimates.
 function _vgLadder(card) {
   const pd = getCachedPrice(card.i) || getLastKnownPrice(card.i);
   const rawUSD  = pd ? (pd.pcUngraded || pd.market || pd.mid || card.p || 0) : (card.p || 0);
   const pc10    = pd?.pcPsa10 > 0 ? pd.pcPsa10 : 0;
   const base10  = pc10 || card.p10 || 0;
-  const est10   = base10 > 0 ? base10 : rawUSD * 9;
+  // No ratio estimate fallback: if neither live nor static DB PSA 10 exists, est10 = 0
+  // so all sub-grade fair values are also 0 and no speculative prices are shown.
+  const est10   = base10;
   const liveByG = { 9: pd?.pcPsa9 || pd?.pcGrade9 || 0, 8: pd?.pcPsa8 || 0, 7: pd?.pcPsa7 || 0 };
-  // WOTC cards rarely have gem rate data — assume low-moderate (8%) so ratio estimates
-  // are more conservative: PSA 9 ~30% of 10, PSA 8 ~16% (rather than 35%/18%).
   const vgCard = card.g != null ? card : { ...card, g: 0.08 };
   let bestScore = null;
   const ladder = VINTAGE_GRADES.map(g => {
-    const fairUSD = g === 10 ? est10 : est10 * _gemRateGradeRatio(vgCard, g);
+    // fairUSD is only used for scoring live sub-grade prices against expected value.
+    const fairUSD = est10 > 0 ? (g === 10 ? est10 : est10 * _gemRateGradeRatio(vgCard, g)) : 0;
     let usd, src, score = null;
     if (g === 10) {
       usd = est10; src = pc10 ? 'pc' : (card.p10 ? 'db' : 'est');
-      // A live 10 can only be judged against the static DB reference price
       if (pc10 && card.p10 && card.p10 !== pc10) score = _vgScore(card.p10, pc10);
     } else if (liveByG[g] > 0) {
       usd = liveByG[g]; src = 'pc';
       score = _vgScore(fairUSD, usd);
     } else {
-      usd = fairUSD; src = 'est';
+      usd = 0; src = 'est';
     }
     if (score !== null && (bestScore === null || score > bestScore)) bestScore = score;
     return { g, gbp: usdToGbp(usd || 0), src, score };
   });
-  // Enforce monotonicity: estimated grades must not exceed the grade above them.
-  // Mixed live/estimated data can otherwise produce inversions (e.g. PSA 8 est > PSA 9 live).
-  for (let i = 1; i < ladder.length; i++) {
-    const upper = ladder[i - 1];
-    const lower = ladder[i];
-    if (lower.src !== 'pc' && upper.gbp > 0 && lower.gbp > upper.gbp * 0.92) {
-      lower.gbp = upper.gbp * 0.85;
-    }
-  }
   return { rawGBP: usdToGbp(rawUSD || 0), ladder, hasLive: !!pd, bestScore };
 }
 
@@ -22071,7 +22062,7 @@ function _vgLadderHTML(card) {
   const data = _vgLoad();
   const target = data.targets[card.i];
   const srcBadge = s => s === 'pc' ? '<span class="vg-src vg-src-pc" title="PriceCharting recent sales">PC</span>'
-    : s === 'db' ? '' : '<span class="vg-src vg-src-est" title="Estimated from raw price via grade ratios">~est</span>';
+    : s === 'db' ? '<span class="vg-src vg-src-db" title="Static database reference price">DB</span>' : '';
   const rows = ladder.map(({ g, gbp, src, score }) => {
     const tags = [];
     if (g === picks.gem)          tags.push('<span class="vg-tag vg-tag-gem">Gem</span>');
@@ -22097,9 +22088,10 @@ function _vgLadderHTML(card) {
     <span class="vg-ladder-tags"><span class="vg-tag vg-tag-raw">Ungraded ref</span></span>
     <span></span>
   </div>`;
-  const liveNote = hasLive
-    ? ''
-    : `<div class="vg-ladder-note">Static estimates — <button class="vg-fetch-btn" data-vg-fetch="${esc(card.i)}">fetch live prices</button> for real sold data</div>`;
+  const hasEstimates = ladder.some(l => l.src === 'est');
+  const liveNote = hasEstimates
+    ? `<div class="vg-ladder-note"><button class="vg-fetch-btn" data-vg-fetch="${esc(card.i)}">Refresh prices</button> — ${hasLive ? 'some grades have no data yet' : 'no live data yet'}</div>`
+    : '';
   const vintageCtx = `<div class="vg-vintage-ctx">${
     isGS
       ? 'Gold Star — scarcity drives value more than condition. PSA 6+ trades actively; lower grades still attract serious collectors.'

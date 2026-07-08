@@ -12131,6 +12131,7 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
 .vg-ladder-price { font-family: var(--mono); display: flex; align-items: center; gap: 6px; }
 .vg-src { font-size: 9px; padding: 1px 5px; border-radius: 6px; font-family: var(--mono); }
 .vg-src-pc  { color: var(--green, #4caf7d); background: var(--green-dim, rgba(76,175,125,0.12)); }
+.vg-src-db  { color: var(--text-muted); background: rgba(128,128,128,0.12); }
 .vg-src-est { color: var(--text-muted); background: rgba(128,128,128,0.12); }
 .vg-ladder-tags { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
 .vg-tag { font-size: 9.5px; font-weight: 600; padding: 2px 7px; border-radius: 9px; white-space: nowrap; }
