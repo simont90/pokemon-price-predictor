@@ -22468,6 +22468,17 @@ function _wtbSetNameToEras(setName) {
   return [];
 }
 
+function _wtbCardSignal(card) {
+  let pull = 7.65;
+  try {
+    const set = setsData?.[card.sc];
+    const rar = set?.rarities?.[card.rc];
+    if (rar?.pullRate > 0) pull = Math.round(1 / rar.pullRate) * (rar.count || 1) / 100;
+  } catch {}
+  const des = autoFillDesirability ? autoFillDesirability(card, pull).total : 50;
+  return computeSignal(card, pull, des);
+}
+
 function _wtbSearchWithSig(sig) {
   if (!searchIndex || !searchIndex.length) return [];
   const vSets = new Set(_vintageSets().map(s => s.code));
@@ -22535,11 +22546,20 @@ function _wtbSearchWithSig(sig) {
 
     if (sig.dealsOnly && dealScore < 5 && nameScore < 30) continue;
 
+    // Align with Hold Strategy signal — score boost for BUY/STRONG BUY, skip SELL
+    const cardSig = _wtbCardSignal(card);
+    let sigBonus = 0;
+    if (cardSig) {
+      if (cardSig.signal === 'STRONG BUY') sigBonus = 30;
+      else if (cardSig.signal === 'BUY') sigBonus = 15;
+      else if (cardSig.signal === 'SELL') continue;
+    }
+
     const rawGBP = pd ? usdToGbp(pd.market || pd.mid || 0) : usdToGbp(card.p || 0);
-    const total  = nameScore * 2 + dealScore + (pd ? 15 : 0) + (bestGbp > 0 ? 10 : 0);
+    const total  = nameScore * 2 + dealScore + (pd ? 15 : 0) + (bestGbp > 0 ? 10 : 0) + sigBonus;
     if (total <= 0) continue;
 
-    results.push({ card, total, dealScore, nameScore, bestGrade, bestGbp, ladder, rawGBP, pd, isVintage });
+    results.push({ card, total, dealScore, nameScore, bestGrade, bestGbp, ladder, rawGBP, pd, isVintage, cardSig });
   }
 
   return results.sort((a, b) => b.total - a.total).slice(0, 20);
@@ -22549,7 +22569,7 @@ function _wtbSearch(q) {
   return _wtbSearchWithSig(_wtbParseQuery(q));
 }
 
-function _wtbExplainCard(card, dealScore, bestGrade, bestGbp, rawGBP, pd, isVintage, ladder) {
+function _wtbExplainCard(card, dealScore, bestGrade, bestGbp, rawGBP, pd, isVintage, ladder, cardSig) {
   const si = (typeof setsData !== 'undefined' && setsData) ? setsData[card.sc] : null;
   const setName = si?.name || card.sc || '';
   const r = (card.r || '').toLowerCase();
@@ -22587,19 +22607,30 @@ function _wtbExplainCard(card, dealScore, bestGrade, bestGbp, rawGBP, pd, isVint
     parts.push(`Matched your search. No live price data cached — run a price refresh for current market signals.`);
   }
 
+  // Append Hold Strategy signal if available and not already captured in parts
+  if (cardSig && (cardSig.signal === 'STRONG BUY' || cardSig.signal === 'BUY') && cardSig.reasons?.length) {
+    const sigReason = cardSig.reasons[0];
+    if (!parts.some(p => p.toLowerCase().includes(sigReason.toLowerCase().slice(0, 20)))) {
+      parts.push(signalSentence(cardSig.signal, cardSig.reasons, false));
+    }
+  }
+
   return parts.join(' ');
 }
 
 function _wtbCardHTMLFull(entry) {
-  const { card, dealScore, bestGrade, bestGbp, ladder, rawGBP, pd, isVintage } = entry;
+  const { card, dealScore, bestGrade, bestGbp, ladder, rawGBP, pd, isVintage, cardSig } = entry;
   const si = (typeof setsData !== 'undefined' && setsData) ? setsData[card.sc] : null;
   const setName    = si?.name || card.sc || '';
   const img        = getCardImg(card) || '';
-  const explain    = _wtbExplainCard(card, dealScore, bestGrade, bestGbp, rawGBP, pd, isVintage, ladder);
+  const explain    = _wtbExplainCard(card, dealScore, bestGrade, bestGbp, rawGBP, pd, isVintage, ladder, cardSig);
   const displayGBP = isVintage && bestGbp > 0 ? bestGbp : rawGBP;
   const gradeTag   = isVintage && bestGrade ? `PSA ${bestGrade} · ` : '';
-  const scoreClass = dealScore >= 50 ? 'wtb-score-hot' : dealScore >= 25 ? 'wtb-score-deal' : dealScore >= 5 ? 'wtb-score-watch' : 'wtb-score-none';
-  const scoreLabel = dealScore > 0 ? `+${dealScore}` : '—';
+  const sigLabel   = cardSig?.signal === 'STRONG BUY' ? 'Strong Buy' : cardSig?.signal === 'BUY' ? 'Buy' : null;
+  const scoreClass = cardSig?.signal === 'STRONG BUY' ? 'wtb-score-hot'
+    : cardSig?.signal === 'BUY' ? 'wtb-score-deal'
+    : dealScore >= 50 ? 'wtb-score-hot' : dealScore >= 25 ? 'wtb-score-deal' : dealScore >= 5 ? 'wtb-score-watch' : 'wtb-score-none';
+  const scoreLabel = sigLabel || (dealScore > 0 ? `+${dealScore}` : '—');
 
   const cardNum  = card.cn && card.ct ? `${card.cn}/${card.ct}` : (card.cn || '');
   const gradeStr = isVintage && bestGrade ? ` PSA ${bestGrade}` : '';

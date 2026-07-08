@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260708v">
+  <link rel="stylesheet" href="style.css?v=20260708w">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2241,11 +2241,8 @@
 
     <div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div><p>Loading card database...</p></div>
 
-    <footer class="footer"><p>Live prices via <a href="https://pokemontcg.io" target="_blank">pokemontcg.io</a> + <a href="https://tcgdex.net" target="_blank">TCGdex</a> · Market via <a href="https://mycollectrics.com" target="_blank">mycollectrics</a> · JP via <a href="https://www.tcgcollector.com" target="_blank">tcgcollector</a> · Prices via <a href="https://www.pricecharting.com" target="_blank">pricecharting</a></p></footer>
-  </div>
-
-  <!-- PokeKnow page — card search + AI analyst -->
-  <div class="page pkn-page" id="pageKnow" data-page="know" style="display:none">
+    <!-- PokeKnow page — card search + AI analyst -->
+    <div class="page pkn-page" id="pageKnow" data-page="know" style="display:none">
     <header class="pkn-page-hd">
       <svg class="pkn-logo" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10.5"/>
@@ -2338,7 +2335,8 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
       </button>
     </form>
-  </div>
+    </div><!-- /#pageKnow -->
+  </div><!-- /#app -->
 
   <!-- Floating Filter Button -->
   <button class="filter-fab" id="filterFab" title="Card Screener">
@@ -2638,7 +2636,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260708v"></script>
+  <script src="app.js?v=20260708w"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
