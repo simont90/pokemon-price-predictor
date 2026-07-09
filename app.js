@@ -526,6 +526,7 @@ async function init() {
   setupInputs();
   setupPortfolio();
   setupWishlist();
+  _setupCardAiOverlay();
   setupFullArtBinder();
   setupCompare();
   setupScreener();
@@ -5727,9 +5728,7 @@ function setupWishlist() {
   $('addWishlistBtn').addEventListener('click', () => toggleCardInWishlist());
   $('addAiAnalysisBtn').addEventListener('click', () => {
     if (!selectedCard) return;
-    const setName = (typeof setsData !== 'undefined' && setsData?.[selectedCard.sc]?.name) || selectedCard.sc || '';
-    go('know');
-    setTimeout(() => aiSubmit(`Analyse ${selectedCard.n} (${setName}) in full — Hold Strategy signal, buy/sell/hold verdict, which PSA grade to target if vintage, 5-year price outlook, and key risks.`), 150);
+    _showCardAiOverlay(selectedCard);
   });
 
   // Delegated listeners — wired once so renderWishlist() can skip re-attaching.
@@ -22752,3 +22751,132 @@ function _pknWireSearch() {
 }
 
 function renderWhatToBuyPage() { _pknWireSearch(); }
+
+// ---- Card AI Overlay ----
+
+function _setupCardAiOverlay() {
+  const overlay = document.getElementById('cardAiOverlay');
+  if (!overlay) return;
+  document.getElementById('cardAiOverlayClose')?.addEventListener('click', _closeCardAiOverlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) _closeCardAiOverlay(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && overlay.style.display !== 'none') _closeCardAiOverlay(); });
+}
+
+function _closeCardAiOverlay() {
+  const overlay = document.getElementById('cardAiOverlay');
+  if (overlay) overlay.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+async function _showCardAiOverlay(card) {
+  if (!card) return;
+  const cfg = AI_PROVIDERS[aiGetProvider()];
+  const key = aiGetKey();
+  if (!cfg?.noKey && !key) { aiToggleSettings(true); return; }
+
+  const overlay = document.getElementById('cardAiOverlay');
+  const body    = document.getElementById('cardAiOverlayBody');
+  const titleEl = document.getElementById('cardAiOverlayTitle');
+  if (!overlay || !body) return;
+
+  const setName = setsData?.[card.sc]?.name || card.sc || '';
+  if (titleEl) titleEl.textContent = card.n + (setName ? ' · ' + setName : '');
+  body.innerHTML = '<span class="ai-cursor"></span>';
+  overlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+
+  // Prices
+  const rawUSD   = getCurrentPrice(card) || 0;
+  const rawGBP   = usdToGbp(rawUSD);
+  const anchor   = getPsa10Anchor(card);
+  const psa10GBP = usdToGbp(anchor.usd);
+
+  // Pull cost & desirability
+  let pull = 7.65;
+  try {
+    const set = setsData?.[card.sc];
+    const rar = set?.rarities?.[card.rc];
+    if (rar?.pullRate > 0) pull = Math.round(1 / rar.pullRate) * (rar.count || 1) / 100;
+  } catch (_) {}
+  const des    = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pull).total : 50;
+  const sig    = computeSignal(card, pull, des);
+  const { priceUSD: modelUSD } = predictPrice(pull, des);
+  const modelGBP = usdToGbp(modelUSD);
+
+  // Set context
+  const ageMonths = Math.round(getSetAgeMonths(card.sc));
+  const isVintage = (typeof _vintageSets === 'function') && _vintageSets().some(s => s.code === card.sc);
+  const gemRate   = card.g != null ? (card.g * 100).toFixed(1) + '%' : null;
+  const owned     = Array.isArray(portfolio) && portfolio.some(p => p.id === card.i);
+  const budget    = getMaxBudgetGBP();
+
+  // Grade ladder (GBP)
+  const f = v => v > 0 ? fmtGBPDirect(v) : null;
+  const gradePrices = {};
+  if (anchor.usd > 0) {
+    for (const g of [10, 9, 8, 7]) {
+      const gbp = usdToGbp(estimateGradePrice(card, g, anchor.usd));
+      if (gbp > 0) gradePrices['PSA ' + g] = fmtGBPDirect(gbp);
+    }
+  }
+
+  const cardInfo = {
+    card:               card.n + (setName ? ' · ' + setName : '') + (card.cn ? ' #' + card.cn : ''),
+    rarity:             card.r || card.rc || null,
+    language:           card.lang === 'JP' ? 'Japanese' : 'English',
+    is_vintage_wotc:    isVintage,
+    set_age_months:     ageMonths,
+    ...(gemRate && { gem_rate_psa10: gemRate }),
+    raw_market_price_gbp:  f(rawGBP)   || 'no data',
+    model_fair_value_gbp:  f(modelGBP) || 'no data',
+    ...(Object.keys(gradePrices).length && { psa_grade_prices_gbp: gradePrices }),
+    hold_strategy_signal:  sig?.signal   || 'HOLD',
+    hold_strategy_score:   sig?.score    ?? 0,
+    hold_strategy_reasons: sig?.reasons  || [],
+    desirability_score:    Math.round(des),
+    pull_cost_equivalent:  '£' + pull.toFixed(2),
+    owned_in_collection:   owned,
+    user_max_budget:       budget < 99000 ? fmtGBPDirect(budget) : 'no limit',
+  };
+
+  const systemPrompt = `You are a Pokémon TCG investment analyst. Give a concise, actionable verdict on this card.
+
+Format your response with exactly these five sections:
+
+**Signal** — one line: verdict and the single main driver
+**Max price to pay** — the highest GBP price that still makes sense, with brief reasoning
+**Raw or slab?** — clear recommendation. Raw = binder (display/collection). Slab = long-term investment (PSA submission). If slab: which grade to target and why.
+**5-year outlook** — one short paragraph on price direction and key drivers
+**Key risks** — exactly 2–3 bullet points on what could undermine this card's value
+
+Be specific with GBP numbers. No filler. No preamble.`;
+
+  const userPrompt = 'Analyse this card:\n\n' + JSON.stringify(cardInfo, null, 2);
+  const _esc = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
+  const escStr = s => String(s).replace(/[&<>]/g, ch => _esc[ch] || ch);
+
+  let full = '';
+  try {
+    await aiStreamChat({
+      provider: aiGetProvider(),
+      key,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: userPrompt   },
+      ],
+      onToken: tok => {
+        full += tok;
+        body.innerHTML = escStr(full).replace(/\n/g, '<br>') + '<span class="ai-cursor"></span>';
+        body.scrollTop = body.scrollHeight;
+      },
+      onDone: whole => {
+        body.innerHTML = aiMdRender(whole);
+      },
+      onError: err => {
+        body.innerHTML = '<p style="color:var(--red,#f44336)">Error: ' + escStr(err?.message || err) + '</p>';
+      },
+    });
+  } catch (e) {
+    body.innerHTML = '<p style="color:var(--red,#f44336)">Error: ' + escStr(e?.message || e) + '</p>';
+  }
+}

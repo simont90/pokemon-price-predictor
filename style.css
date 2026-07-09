@@ -13260,3 +13260,88 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .wtb-link-btn:hover { background: rgba(255,255,255,0.13); color: var(--text); }
 .wtb-ai-btn { background: rgba(232,182,52,0.12); color: var(--accent, #e8b634); }
 .wtb-ai-btn:hover { background: rgba(232,182,52,0.22); color: var(--accent, #e8b634); }
+
+/* ---- Card AI Overlay ---- */
+.card-ai-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.card-ai-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.68);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.card-ai-panel {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 540px;
+  max-height: 82vh;
+  background: var(--bg-raised);
+  border-radius: 20px 20px 0 0;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.card-ai-panel-hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px 16px 13px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.card-ai-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  font: 600 14px/1.2 var(--font-ui, sans-serif);
+  color: var(--accent, #e8b634);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-ai-panel-title svg { flex-shrink: 0; }
+.card-ai-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.12s;
+  touch-action: manipulation;
+}
+.card-ai-close:hover { background: rgba(255,255,255,0.15); color: var(--text); }
+.card-ai-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 18px calc(20px + env(safe-area-inset-bottom, 0px));
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.card-ai-body p { margin: 0 0 10px; }
+.card-ai-body ul { margin: 0 0 10px; padding-left: 20px; }
+.card-ai-body li { margin-bottom: 4px; }
+.card-ai-body strong { color: var(--text); }
+.card-ai-body::-webkit-scrollbar { width: 6px; }
+.card-ai-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
