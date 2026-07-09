@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260710b">
+  <link rel="stylesheet" href="style.css?v=20260710c">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1535,6 +1535,7 @@
             <div class="haf-body" id="hafBody"></div>
           </div>
           <div class="hold-grid" id="holdGrid"></div>
+          <div class="hold-grade-donut" id="holdGradeDonut" style="display:none"></div>
           <div class="hold-outcomes" id="holdOutcomes"></div>
           <div class="hold-footnote-wrap">
             <button class="hold-footnote-toggle" id="holdFootnoteToggle" type="button">
@@ -2774,7 +2775,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260710b"></script>
+  <script src="app.js?v=20260710c"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

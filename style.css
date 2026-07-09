@@ -14677,3 +14677,141 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 [data-theme="light"] .haf-lbl-grade  { color: #00875a; }
 [data-theme="light"] .haf-lbl-market { color: #a86800; }
 [data-theme="light"] .haf-lbl-risk   { color: #cc2200; }
+
+/* ── Hold Strategy — Grade Donut Chart ──────────────────────── */
+.hold-grade-donut {
+  border-top: 1px solid var(--border);
+  padding: 18px 0 4px;
+  margin-bottom: 8px;
+}
+.hgd-service-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.hgd-service-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hgd-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  opacity: 0.85;
+}
+.hgd-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 3px;
+  line-height: 1.2;
+}
+.hgd-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+.hgd-svg {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+  overflow: visible;
+}
+.hgd-cval {
+  font-size: 17px;
+  font-weight: 700;
+  fill: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+}
+.hgd-clbl {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  fill: var(--text-muted);
+}
+.hgd-arc-lbl {
+  font-size: 10px;
+  font-weight: 600;
+  fill: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+}
+.hgd-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px 14px;
+  flex-wrap: wrap;
+  margin: 4px 0 16px;
+  justify-content: center;
+}
+.hgd-leg-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.hgd-leg-lbl {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hgd-table {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 13px;
+}
+.hgd-thead {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  padding: 7px 12px;
+  background: var(--surface2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  gap: 4px;
+}
+.hgd-trow {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  padding: 10px 12px;
+  gap: 4px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+}
+.hgd-grade {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'Space Grotesk', sans-serif;
+  color: var(--text);
+}
+.hgd-pos { color: #3dd68c; }
+.hgd-neg { color: #ff6b6b; }
+[data-theme="light"] .hgd-pos { color: #00875a; }
+[data-theme="light"] .hgd-neg { color: #cc2200; }
+/* SVG fill overrides for light theme */
+[data-theme="light"] .hgd-cval { fill: var(--text); }
+[data-theme="light"] .hgd-clbl { fill: var(--text-muted); }
+[data-theme="light"] .hgd-arc-lbl { fill: var(--text); }
+@media (max-width: 600px) {
+  .hgd-thead, .hgd-trow {
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+  .hgd-title { font-size: 15px; }
+}

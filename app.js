@@ -13667,6 +13667,119 @@ function renderHoldCounterpartCompare(card) {
   });
 }
 
+function _renderGradeDonut(container, card, rawEntryUSD, gradeCost, gradingFeeUSD, gradingMaterialsUSD, psa10Price, fx) {
+  if (!container || !card || !psa10Price) { if (container) container.style.display = 'none'; return; }
+
+  const rawGBP      = rawEntryUSD * fx;
+  const feeGBP      = (gradingFeeUSD + gradingMaterialsUSD) * fx;
+  const totalCostGBP = gradeCost * fx;
+
+  const psa9USD  = estimateGradePrice(card, 9, psa10Price);
+  const psa9GBP  = psa9USD * fx;
+  const psa10GBP = psa10Price * fx;
+
+  if (!psa9GBP || psa9GBP < 1) { container.style.display = 'none'; return; }
+
+  const p9NetGBP  = psa9GBP  * (1 - BUY_SELL_FRICTION);
+  const p10NetGBP = psa10GBP * (1 - BUY_SELL_FRICTION);
+  const profit9GBP  = p9NetGBP  - totalCostGBP;
+  const profit10GBP = p10NetGBP - totalCostGBP;
+  const roi9  = totalCostGBP > 0 ? (profit9GBP  / totalCostGBP) * 100 : 0;
+  const roi10 = totalCostGBP > 0 ? (profit10GBP / totalCostGBP) * 100 : 0;
+
+  // Donut segments (anchored to PSA 9 gross): raw cost | fee | profit
+  const profitSeg = Math.max(0, psa9GBP - rawGBP - feeGBP);
+  const total3    = rawGBP + feeGBP + profitSeg;
+  const p1 = total3 > 0 ? rawGBP    / total3 : 0.34;
+  const p2 = total3 > 0 ? feeGBP    / total3 : 0.33;
+  const p3 = total3 > 0 ? profitSeg / total3 : 0.33;
+
+  // SVG donut geometry — r=68, strokeWidth=24, center (110,100)
+  const cx = 110, cy = 100, r = 68, sw = 24;
+  const C    = 2 * Math.PI * r;
+  const GAP  = 4;
+  const avail = C - 3 * GAP;
+  const s1 = p1 * avail, s2 = p2 * avail, s3 = p3 * avail;
+
+  // Rotation angles: circle path starts at 3-o'clock; rotate(-90+off) puts arc at 12-o'clock+off
+  const gapDeg = (GAP / C) * 360;
+  const s1deg  = (s1  / C) * 360;
+  const s2deg  = (s2  / C) * 360;
+  const rot1 = -90 + gapDeg / 2;
+  const rot2 = rot1 + s1deg + gapDeg;
+  const rot3 = rot2 + s2deg + gapDeg;
+
+  // Label coordinates on outside of ring (clock-degrees: 0 = top)
+  const toXY = (clockDeg, radius) => {
+    const rad = (clockDeg - 90) * Math.PI / 180;
+    return [cx + radius * Math.cos(rad), cy + radius * Math.sin(rad)];
+  };
+  const lr = r + sw / 2 + 14;
+  const [lx1, ly1] = toXY((rot1 + 90) + s1deg / 2, lr);
+  const [lx2, ly2] = toXY((rot2 + 90) + s2deg / 2, lr);
+  const [lx3, ly3] = toXY((rot3 + 90) + ((s3 / C) * 360) / 2, lr);
+  const ta = x => x < cx - 8 ? 'end' : x > cx + 8 ? 'start' : 'middle';
+
+  const fmtS  = v => v >= 1000 ? `£${(v / 1000).toFixed(1)}k` : `£${Math.round(v)}`;
+  const fmtPL = v => `${v >= 0 ? '+' : ''}${fmtGBPDirect(v)}`;
+  const clsPL = v => v >= 0 ? 'hgd-pos' : 'hgd-neg';
+
+  const titleText = roi9 >= 100 ? 'Strong Grading EV'
+    : roi9 >= 30 ? 'Good Return at PSA 9'
+    : roi9 >= 0 ? 'Modest Return at PSA 9'
+    : 'Marginal at Current Prices';
+  const subText = profit9GBP >= 0
+    ? `PSA 9 nets +${fmtGBPDirect(profit9GBP)} over total cost at current prices`
+    : `PSA 9 falls ${fmtGBPDirect(Math.abs(profit9GBP))} short of total cost at current prices`;
+
+  container.style.display = '';
+  container.innerHTML = `
+    <div class="hgd-service-row">
+      <span class="hgd-service-lbl">PSA Grading</span>
+      <span class="hgd-badge">BUY RAW + GRADE</span>
+    </div>
+    <div class="hgd-title">${titleText}</div>
+    <div class="hgd-sub">${subText}</div>
+    <svg class="hgd-svg" viewBox="0 0 220 200" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--surface2,#333)" stroke-width="${sw}"/>
+      ${s1 > 1 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#6cb8ff" stroke-width="${sw}"
+        stroke-dasharray="${s1.toFixed(2)} ${(C - s1).toFixed(2)}"
+        transform="rotate(${rot1.toFixed(2)}, ${cx}, ${cy})"/>` : ''}
+      ${s2 > 1 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#666" stroke-width="${sw}"
+        stroke-dasharray="${s2.toFixed(2)} ${(C - s2).toFixed(2)}"
+        transform="rotate(${rot2.toFixed(2)}, ${cx}, ${cy})"/>` : ''}
+      ${s3 > 1 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#3dd68c" stroke-width="${sw}"
+        stroke-dasharray="${s3.toFixed(2)} ${(C - s3).toFixed(2)}"
+        transform="rotate(${rot3.toFixed(2)}, ${cx}, ${cy})"/>` : ''}
+      <text x="${cx}" y="${cy - 6}" text-anchor="middle" class="hgd-cval">${fmtGBPDirect(psa9GBP)}</text>
+      <text x="${cx}" y="${cy + 11}" text-anchor="middle" class="hgd-clbl">PSA 9 RESALE</text>
+      ${s1 > 24 ? `<text x="${lx1.toFixed(1)}" y="${(ly1 + 4).toFixed(1)}" text-anchor="${ta(lx1)}" class="hgd-arc-lbl">${fmtS(rawGBP)}</text>` : ''}
+      ${s2 > 24 ? `<text x="${lx2.toFixed(1)}" y="${(ly2 + 4).toFixed(1)}" text-anchor="${ta(lx2)}" class="hgd-arc-lbl">${fmtS(feeGBP)}</text>` : ''}
+      ${s3 > 24 ? `<text x="${lx3.toFixed(1)}" y="${(ly3 + 4).toFixed(1)}" text-anchor="${ta(lx3)}" class="hgd-arc-lbl">${fmtS(profitSeg)}</text>` : ''}
+    </svg>
+    <div class="hgd-legend">
+      <span class="hgd-leg-dot" style="background:#3dd68c"></span><span class="hgd-leg-lbl">Graded Profit</span>
+      <span class="hgd-leg-dot" style="background:#666"></span><span class="hgd-leg-lbl">Grading Cost</span>
+      <span class="hgd-leg-dot" style="background:#6cb8ff"></span><span class="hgd-leg-lbl">Ungraded Value</span>
+    </div>
+    <div class="hgd-table">
+      <div class="hgd-thead"><span></span><span>Resale</span><span>Profit / Loss</span><span>ROI</span></div>
+      <div class="hgd-trow">
+        <span class="hgd-grade">PSA 10</span>
+        <span>${fmtGBPDirect(p10NetGBP)}</span>
+        <span class="${clsPL(profit10GBP)}">${fmtPL(profit10GBP)}</span>
+        <span class="${clsPL(roi10)}">${roi10 >= 0 ? '+' : ''}${roi10.toFixed(0)}%</span>
+      </div>
+      <div class="hgd-trow">
+        <span class="hgd-grade">PSA 9</span>
+        <span>${fmtGBPDirect(p9NetGBP)}</span>
+        <span class="${clsPL(profit9GBP)}">${fmtPL(profit9GBP)}</span>
+        <span class="${clsPL(roi9)}">${roi9 >= 0 ? '+' : ''}${roi9.toFixed(0)}%</span>
+      </div>
+    </div>
+  `;
+}
+
 function renderHoldStrategy(card) {
   const section = $('holdStrategySection');
   if (!section || !card) return;
@@ -14266,6 +14379,9 @@ function renderHoldStrategy(card) {
       _toggleBtn.dataset.expanded = expanded ? '0' : '1';
     });
   }
+
+  // ---------- Grade donut chart (Buy Raw + Grade visual) ----------
+  _renderGradeDonut($('holdGradeDonut'), card, rawEntryUSD, gradeCost, gradingFeeUSD, gradingMaterialsUSD, psa10Price, fx);
 
   // ---------- PSA grading outcome distribution ----------
   // Probability bar + P&L for each PSA grade outcome — always shown since
