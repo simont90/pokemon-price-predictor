@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260709h">
+  <link rel="stylesheet" href="style.css?v=20260709i">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1033,6 +1033,14 @@
     <!-- Search -->
     <div class="page" id="pagePredict" data-page="predict">
     <section class="search-section">
+      <div class="search-page-hd">
+        <h1 class="search-page-title">Search</h1>
+        <div class="search-seg" id="searchLangSeg">
+          <button class="search-seg-btn search-seg-active" data-lang="all">All</button>
+          <button class="search-seg-btn" data-lang="EN">English</button>
+          <button class="search-seg-btn" data-lang="JP">Japanese</button>
+        </div>
+      </div>
       <div class="search-container">
         <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         <input type="text" id="searchInput" placeholder="Search 26k+ cards (EN + JP) — name, number, set... e.g. Charizard VSTAR, 212/172, リザードン" autocomplete="off" spellcheck="false">
@@ -2611,7 +2619,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260709h"></script>
+  <script src="app.js?v=20260709i"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

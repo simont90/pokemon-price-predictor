@@ -13607,3 +13607,93 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   .brief-stat-v { font-size: 13px; }
   .brief-stat-k { font-size: 9px; }
 }
+
+/* ── Search page header: big title + language segments (DoubleHolo search) ── */
+.search-page-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 4px 0 12px;
+}
+.search-page-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.search-seg {
+  display: flex;
+  gap: 0;
+  padding: 3px;
+  border-radius: 14px;
+}
+[data-theme="dark"] .search-seg { background: rgba(255,255,255,0.06); }
+[data-theme="light"] .search-seg { background: rgba(0,0,0,0.05); }
+.search-seg-btn {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 11px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.search-seg-btn.search-seg-active {
+  color: var(--text-primary, #fff);
+  background: rgba(232,182,52,0.16);
+  box-shadow: inset 0 0 0 1px rgba(232,182,52,0.4);
+}
+@media (max-width: 480px) {
+  .search-page-title { font-size: 22px; }
+  .search-seg-btn { padding: 5px 11px; font-size: 11.5px; }
+}
+
+/* ── Tile rarity pill (top-left, DoubleHolo badge) ── */
+.home-card-rarity {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 2.5px 7px;
+  border-radius: 7px;
+  color: #14130b;
+  background: var(--accent, #e8b634);
+  z-index: 1;
+  pointer-events: none;
+}
+/* remove button reveals above the pill on hover */
+.home-card-remove { z-index: 2; }
+
+/* ── Vintage shop-by-set logo chips ── */
+.vg-set-chip-logo {
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 14px 8px;
+  border-radius: 14px;
+  min-width: 96px;
+}
+.vg-chip-logo {
+  height: 26px;
+  max-width: 92px;
+  object-fit: contain;
+  display: block;
+}
+.vg-chip-txt { display: flex; align-items: center; gap: 6px; }
+
+/* Vintage rows on phones: give the card name room next to score badges */
+@media (max-width: 480px) {
+  .vg-card-summary { gap: 7px; padding: 8px 10px; }
+  .vg-card-num { min-width: 24px; font-size: 10px; }
+  .vg-card-name { font-size: 13px; }
+  .vg-card-raw { font-size: 11.5px; }
+  .vg-score { font-size: 9px; padding: 1.5px 5px; }
+  .vg-open-btn { padding: 2px 3px; }
+}

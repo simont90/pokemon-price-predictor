@@ -1474,6 +1474,23 @@ function setupSearch() {
       $('searchResults').classList.remove('open');
     }
   });
+
+  // All / English / Japanese segment — re-runs the current query on change
+  $('searchLangSeg')?.addEventListener('click', e => {
+    const btn = e.target.closest('.search-seg-btn');
+    if (!btn) return;
+    _searchLangFilter = btn.dataset.lang;
+    document.querySelectorAll('#searchLangSeg .search-seg-btn')
+      .forEach(b => b.classList.toggle('search-seg-active', b === btn));
+    if (input.value.length >= 2) doSearch(input.value);
+  });
+}
+
+// Language segment on the search header (All / English / Japanese)
+let _searchLangFilter = 'all';
+function _searchLangPass(c) {
+  if (_searchLangFilter === 'all') return true;
+  return _searchLangFilter === 'JP' ? c.lang === 'JP' : c.lang !== 'JP';
 }
 
 function doSearch(query) {
@@ -1487,14 +1504,14 @@ function doSearch(query) {
   let matches;
   if (numSlashMatch) {
     const [, num, total] = numSlashMatch;
-    matches = searchIndex.filter(c => String(c.cn) === num || c._search.includes(num));
+    matches = searchIndex.filter(c => _searchLangPass(c) && (String(c.cn) === num || c._search.includes(num)));
     matches.sort((a, b) => {
       const aExact = (String(a.cn) === num && String(a.ct) === total) ? 2 : String(a.cn) === num ? 1 : 0;
       const bExact = (String(b.cn) === num && String(b.ct) === total) ? 2 : String(b.cn) === num ? 1 : 0;
       return bExact - aExact;
     });
   } else {
-    matches = searchIndex.filter(c => c._search.includes(query));
+    matches = searchIndex.filter(c => _searchLangPass(c) && c._search.includes(query));
     if (/^\d+$/.test(query) || /^#\d+/.test(query)) {
       const num = query.replace('#', '');
       matches.sort((a, b) => {
@@ -18099,8 +18116,11 @@ function _homeTile(id, imgUrl, name, price, signalClass, signalLabel, extraClass
   const newTabBtn = isRealCard
     ? `<a class="home-card-newtab" href="?card=${esc(id)}" target="_blank" rel="noopener" title="Open in new tab">↗</a>`
     : '';
+  // Rarity pill top-left, DoubleHolo style
+  const rc = isRealCard ? (getCardById(id)?.rc || '') : '';
+  const rarityPill = rc ? `<span class="home-card-rarity" title="${esc(getCardById(id)?.r || rc)}">${esc(rc)}</span>` : '';
   return `<div class="${tileClass}" data-id="${esc(id)}"${hiddenAttr}${dealUrlAttr}>
-    ${img}${signal}${pipBtn}${newTabBtn}
+    ${img}${rarityPill}${signal}${pipBtn}${newTabBtn}
     <button class="home-card-remove" aria-label="Remove">✕</button>
     <div class="home-card-info">
       <div class="home-card-name">${esc(name)}</div>
@@ -22351,13 +22371,17 @@ function renderVintagePage() {
     }
   }
 
+  // Shop-by-set chips with the official set logo (graceful text fallback for
+  // JP sets and any code pokemontcg.io doesn't host a logo for).
   const chips = sets.map(s => {
     const year = s.releaseDate.slice(0, 4);
     const tg = targetsBySet[s.code];
     const prog = tg ? `<span class="vg-chip-prog">${tg.owned}/${tg.total}</span>` : '';
-    return `<button class="vg-set-chip ${s.code === activeSet ? 'vg-chip-active' : ''}" data-vg-set="${esc(s.code)}">
-      <span class="vg-chip-name">${esc(s.name)}</span>
-      <span class="vg-chip-year">${year}</span>${prog}
+    const logo = isJP ? '' : `<img class="vg-chip-logo" src="https://images.pokemontcg.io/${esc(s.code)}/logo.png" alt="" loading="lazy" onerror="this.style.display='none'">`;
+    return `<button class="vg-set-chip vg-set-chip-logo ${s.code === activeSet ? 'vg-chip-active' : ''}" data-vg-set="${esc(s.code)}">
+      ${logo}
+      <span class="vg-chip-txt"><span class="vg-chip-name">${esc(s.name)}</span>
+      <span class="vg-chip-year">${year}</span>${prog}</span>
     </button>`;
   }).join('');
 
