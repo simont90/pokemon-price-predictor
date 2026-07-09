@@ -13697,3 +13697,80 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   .vg-score { font-size: 9px; padding: 1.5px 5px; }
   .vg-open-btn { padding: 2px 3px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   CLEAN FOUNDATION LAYER — DoubleHolo-modelled surfaces
+   Flat quiet background, floating rounded cards, hairline borders,
+   generous spacing, one accent. Appended last so it overrides the
+   older glassmorphism treatments app-wide.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Surfaces: flat, big radius, hairline border, soft single shadow */
+[data-theme="dark"] .card,
+[data-theme="dark"] .home-dashboard > .home-section-wrap,
+[data-theme="dark"] .home-brief,
+[data-theme="dark"] .home-budget-bar {
+  background: #0e0f15;
+  border: 1px solid rgba(255,255,255,0.05);
+  box-shadow: 0 10px 32px rgba(0,0,0,0.35);
+  border-radius: 22px;
+}
+[data-theme="light"] .card,
+[data-theme="light"] .home-dashboard > .home-section-wrap,
+[data-theme="light"] .home-brief,
+[data-theme="light"] .home-budget-bar {
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.05);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.07);
+  border-radius: 22px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Breathe: wider gaps between home sections, roomier card padding */
+.home-dashboard { gap: 26px; padding-top: 20px; }
+.card { padding: 20px; }
+@media (max-width: 480px) { .card { padding: 16px; } }
+
+/* Tab bars → quiet segmented controls (matches the search segments) */
+.predict-tab-bar, .home-tab-bar {
+  padding: 3px;
+  border-radius: 14px;
+  gap: 0;
+  border: none;
+  box-shadow: none;
+}
+[data-theme="dark"] .predict-tab-bar { background: rgba(255,255,255,0.055); }
+[data-theme="light"] .predict-tab-bar { background: rgba(0,0,0,0.05); }
+.predict-tab-bar button, .home-tab-bar button {
+  border: none;
+  border-radius: 11px;
+  box-shadow: none;
+}
+
+/* Quiet the inner chrome: hairline dividers only */
+[data-theme="dark"] .home-section-hd { border-bottom-color: rgba(255,255,255,0.05); }
+[data-theme="dark"] .binder-species-group,
+[data-theme="dark"] .vg-card,
+[data-theme="dark"] .binder-flat-row,
+[data-theme="dark"] .bdl-pair {
+  background: #0e0f15;
+  border-color: rgba(255,255,255,0.05);
+}
+[data-theme="dark"] .vg-set-chip,
+[data-theme="dark"] .bgf-btn {
+  background: rgba(255,255,255,0.045);
+  border-color: rgba(255,255,255,0.07);
+}
+
+/* Vintage / Budget / Binder page cards inherit the same surface + radius */
+.vg-card, .binder-species-group, .bdl-pair, .vg-targets { border-radius: 18px; }
+.bdg-month { border-radius: 22px; }
+
+/* Micro-labels: consistent uppercase kicker style everywhere */
+.bdg-target-label, .vg-set-count {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 10.5px;
+  font-weight: 700;
+}
