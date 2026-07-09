@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260709l">
+  <link rel="stylesheet" href="style.css?v=20260709n">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -518,6 +518,38 @@
         </div>
         <div class="ql-status" id="cpovStatus"></div>
         <div class="ql-results" id="cpovResults"></div>
+      </div>
+    </section>
+
+    <!-- Multi-language link modal — link Chinese / Korean variant cards -->
+    <div class="ql-overlay" id="mlinkOverlay" style="display:none" aria-hidden="true"></div>
+    <section class="ql-modal" id="mlinkModal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="mlinkTitle">
+      <div class="ql-header">
+        <div>
+          <h2 id="mlinkTitle">Language variants</h2>
+          <p class="ql-sub" id="mlinkSub"></p>
+        </div>
+        <button class="ql-close" id="mlinkClose" aria-label="Close">✕</button>
+      </div>
+      <div class="ql-body">
+        <div class="mlink-lang-menu" id="mlinkLangMenu">
+          <div class="mlink-current-links" id="mlinkCurrentLinks"></div>
+          <div class="mlink-add-btns" id="mlinkAddBtns"></div>
+        </div>
+        <div class="mlink-search-section" id="mlinkSearchSection" style="display:none">
+          <div class="mlink-search-back" id="mlinkSearchBack">← Back to options</div>
+          <div class="cpov-search-grid">
+            <label class="cpov-field">
+              <span class="cpov-field-label" id="mlinkSearchLabel">Search for the card to link</span>
+              <input type="text" id="mlinkInput" placeholder="e.g. Umbreon ex  — or  161" autocomplete="off" spellcheck="false">
+            </label>
+            <div class="cpov-buttons">
+              <button class="ql-search-btn" id="mlinkSearchBtn">Search</button>
+            </div>
+          </div>
+          <div class="ql-status" id="mlinkStatus"></div>
+          <div class="ql-results" id="mlinkResults"></div>
+        </div>
       </div>
     </section>
 
@@ -1076,6 +1108,7 @@
               <div class="card-nav-name" id="cardNavName"></div>
               <div class="card-nav-sub" id="cardNavSub"></div>
             </div>
+            <div class="card-lang-tabs" id="cardLangTabs"></div>
           </div>
           <div class="selected-card-header">
             <div id="cardHeroBg" class="card-hero-bg" aria-hidden="true"></div>
@@ -2664,7 +2697,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260709l"></script>
+  <script src="app.js?v=20260709n"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

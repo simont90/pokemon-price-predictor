@@ -535,6 +535,7 @@ async function init() {
   setupQuickLookup();
   setupPCOverride();
   setupCPOverride();
+  setupMLinkPicker();
   setupManualAdd();
   setupEditCard();
   setupImageLightbox();
@@ -987,6 +988,82 @@ function clearCPOverride(cardId) {
 }
 function getCPOverride(cardId) {
   return getCPOverrides()[cardId] || null;
+}
+
+// ── Multi-language card links (CN, KR — EN/JP uses counterpart system) ───────
+// Storage format: { [cardId]: { CN?: id, KR?: id, EN?: id, JP?: id } }
+// Bidirectional: both sides of a link store a reference to each other.
+const MULTI_LANG_KEY = 'pkm-multi-lang-v1';
+function _mlStore() {
+  try { return JSON.parse(localStorage.getItem(MULTI_LANG_KEY) || '{}'); } catch { return {}; }
+}
+function _mlSave(s) { try { localStorage.setItem(MULTI_LANG_KEY, JSON.stringify(s)); } catch {} }
+function getMLLinks(cardId) { return _mlStore()[cardId] || {}; }
+
+function setMLLink(srcCard, tgtCard, tgtLang) {
+  const s = _mlStore();
+  if (!s[srcCard.i]) s[srcCard.i] = {};
+  s[srcCard.i][tgtLang] = tgtCard.i;
+  if (!s[tgtCard.i]) s[tgtCard.i] = {};
+  s[tgtCard.i][srcCard.lang || 'EN'] = srcCard.i;
+  // Propagate to EN↔JP counterpart so JP card also shows the CN/KR tab
+  try {
+    const cp = findCounterparts(srcCard);
+    if (cp && cp.primary) {
+      if (!s[cp.primary.i]) s[cp.primary.i] = {};
+      s[cp.primary.i][tgtLang] = tgtCard.i;
+      s[tgtCard.i][cp.primary.lang || 'EN'] = cp.primary.i;
+    }
+  } catch {}
+  _mlSave(s);
+}
+
+function removeMLLink(srcCard, tgtLang) {
+  const s = _mlStore();
+  const tgtId = s[srcCard.i]?.[tgtLang];
+  if (tgtId) {
+    if (s[tgtId]) {
+      delete s[tgtId][srcCard.lang || 'EN'];
+      try {
+        const cp = findCounterparts(srcCard);
+        if (cp && cp.primary) delete s[tgtId][cp.primary.lang || 'JP'];
+      } catch {}
+    }
+    try {
+      const cp = findCounterparts(srcCard);
+      if (cp && cp.primary && s[cp.primary.i]) delete s[cp.primary.i][tgtLang];
+    } catch {}
+  }
+  if (s[srcCard.i]) delete s[srcCard.i][tgtLang];
+  _mlSave(s);
+}
+
+// Returns { EN, JP, CN, KR } cards for the given card's language group.
+// Note: EN cards in the DB have lang===undefined; JP cards have lang==='JP'.
+function _getFullLangGroup(card) {
+  const group = { EN: null, JP: null, CN: null, KR: null };
+  const cl = card.lang || 'EN';
+  if (cl === 'EN') group.EN = card;
+  else if (cl === 'JP') group.JP = card;
+  try {
+    const cp = findCounterparts(card);
+    if (cp && cp.primary) {
+      const ol = cp.primary.lang || 'EN';
+      if (ol === 'EN' && !group.EN) group.EN = cp.primary;
+      else if (ol === 'JP' && !group.JP) group.JP = cp.primary;
+    }
+  } catch {}
+  const checked = [card];
+  if (group.EN && group.EN.i !== card.i) checked.push(group.EN);
+  if (group.JP && group.JP.i !== card.i) checked.push(group.JP);
+  for (const c of checked) {
+    const lk = getMLLinks(c.i);
+    if (lk.CN && !group.CN) { const cn = getCardById(lk.CN); if (cn) group.CN = cn; }
+    if (lk.KR && !group.KR) { const kr = getCardById(lk.KR); if (kr) group.KR = kr; }
+    if (lk.EN && !group.EN) { const en = getCardById(lk.EN); if (en) group.EN = en; }
+    if (lk.JP && !group.JP) { const jp = getCardById(lk.JP); if (jp) group.JP = jp; }
+  }
+  return group;
 }
 
 // Returns { counterparts:[cards], primary, counterpartLang, isManual }
@@ -2893,6 +2970,9 @@ function selectCard(id) {
   const _insGrid = document.getElementById('cardInsightsGrid');
   if (_insGrid) _insGrid.style.display = 'none';
 
+  // Render language variant tabs
+  try { _renderCardLangTabs(card); } catch (_) {}
+
   const isJP = card.lang === 'JP';
 
   // Card images — click to open the full-resolution lightbox
@@ -3375,6 +3455,33 @@ function _renderCardInsightsGrid(card, signal, pullCost, desirability) {
   }
 
   grid.style.display = 'grid';
+}
+
+function _renderCardLangTabs(card) {
+  const container = document.getElementById('cardLangTabs');
+  if (!container) return;
+  const group = _getFullLangGroup(card);
+  const tabs = [
+    { lang: 'EN', label: 'EN',   card: group.EN },
+    { lang: 'JP', label: 'JP',   card: group.JP },
+    { lang: 'CN', label: '中文', card: group.CN },
+    { lang: 'KR', label: '한국어', card: group.KR },
+  ];
+  let html = '';
+  for (const t of tabs) {
+    if (!t.card) continue;
+    const isActive = t.card.i === card.i;
+    html += `<button class="clang-tab ${isActive ? 'active' : 'linked'}" data-lang="${t.lang}" data-card-id="${esc(t.card.i)}">${t.label}</button>`;
+  }
+  html += `<button class="clang-tab add-lang" id="clangManageBtn" title="Manage language variants">+</button>`;
+  container.innerHTML = html;
+  container.querySelectorAll('.clang-tab[data-card-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tid = btn.dataset.cardId;
+      if (tid && tid !== card.i) selectCard(tid);
+    });
+  });
+  container.querySelector('#clangManageBtn')?.addEventListener('click', () => openMLinkPicker(card));
 }
 
 // ---- Calculations ----
@@ -8805,6 +8912,159 @@ function setupCPOverride() {
 function cpovDebounce(fn, ms) {
   let t;
   return function(...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
+}
+
+// ================================================================
+// Multi-language link picker — link CN / KR variant cards to a language group
+// ================================================================
+let _mlinkCard = null;
+let _mlinkTargetLang = null;
+
+function openMLinkPicker(card) {
+  _mlinkCard = card;
+  _mlinkTargetLang = null;
+  $('mlinkOverlay').style.display = '';
+  $('mlinkOverlay').setAttribute('aria-hidden', 'false');
+  $('mlinkModal').style.display = 'flex';
+  $('mlinkSub').textContent = card.n + (card.cn ? ' · #' + card.cn : '');
+  _renderMLinkMenu();
+}
+
+function closeMLinkPicker() {
+  $('mlinkOverlay').style.display = 'none';
+  $('mlinkOverlay').setAttribute('aria-hidden', 'true');
+  $('mlinkModal').style.display = 'none';
+  _mlinkCard = null;
+  _mlinkTargetLang = null;
+}
+
+function _renderMLinkMenu() {
+  const langMenu = $('mlinkLangMenu');
+  const searchSection = $('mlinkSearchSection');
+  if (!langMenu || !searchSection || !_mlinkCard) return;
+  langMenu.style.display = '';
+  searchSection.style.display = 'none';
+  $('mlinkResults').innerHTML = '';
+
+  const group = _getFullLangGroup(_mlinkCard);
+  const LANGS = [
+    { lang: 'CN', label: '中文 (Chinese)' },
+    { lang: 'KR', label: '한국어 (Korean)' },
+  ];
+
+  const cur = $('mlinkCurrentLinks');
+  const linked = LANGS.filter(l => group[l.lang]);
+  if (linked.length > 0) {
+    cur.innerHTML =
+      `<div class="mlink-section-label">Linked variants</div>` +
+      linked.map(l => {
+        const c = group[l.lang];
+        return `<div class="mlink-link-row">
+          <div>
+            <div class="mlink-link-name">${esc(l.label)}</div>
+            <div class="mlink-link-sub">${esc(c.n)}${c.cn ? ' · #' + esc(c.cn) : ''} · ${esc(c.s || '')}</div>
+          </div>
+          <button class="mlink-unlink-btn" data-lang="${l.lang}">Remove</button>
+        </div>`;
+      }).join('');
+    cur.querySelectorAll('.mlink-unlink-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        removeMLLink(_mlinkCard, btn.dataset.lang);
+        _renderMLinkMenu();
+        if (typeof selectedCard !== 'undefined' && selectedCard) _renderCardLangTabs(selectedCard);
+      });
+    });
+  } else {
+    cur.innerHTML = '';
+  }
+
+  const unlinkable = LANGS.filter(l => !group[l.lang]);
+  const addBtns = $('mlinkAddBtns');
+  if (unlinkable.length > 0) {
+    addBtns.innerHTML = unlinkable.map(l =>
+      `<button class="mlink-add-lang-btn" data-lang="${l.lang}">+ Link ${esc(l.label)}</button>`
+    ).join('');
+    addBtns.querySelectorAll('.mlink-add-lang-btn').forEach(btn => {
+      btn.addEventListener('click', () => _showMLinkSearch(btn.dataset.lang));
+    });
+  } else {
+    addBtns.innerHTML = '';
+  }
+}
+
+function _showMLinkSearch(lang) {
+  _mlinkTargetLang = lang;
+  const labels = { CN: '中文 (Chinese)', KR: '한국어 (Korean)' };
+  $('mlinkLangMenu').style.display = 'none';
+  $('mlinkSearchSection').style.display = '';
+  $('mlinkSearchLabel').textContent = `Search for the ${labels[lang] || lang} version`;
+  $('mlinkStatus').textContent = '';
+  $('mlinkResults').innerHTML = '';
+  const input = $('mlinkInput');
+  if (input) { input.value = _mlinkCard ? (_mlinkCard.n || '') : ''; }
+  setTimeout(() => { if (input) { input.focus(); input.select(); } }, 50);
+  _runMLinkSearch();
+}
+
+function _runMLinkSearch() {
+  if (!_mlinkCard || !searchIndex) return;
+  const q = ($('mlinkInput')?.value || '').trim().toLowerCase();
+  const status = $('mlinkStatus');
+  const results = $('mlinkResults');
+
+  let pool = searchIndex.filter(c => c.i !== _mlinkCard.i);
+  if (q) {
+    const tokens = q.split(/\s+/).filter(Boolean);
+    pool = pool.filter(c => tokens.every(t => c._search.includes(t)));
+  }
+  pool = pool.slice(0, 40);
+
+  if (pool.length === 0) {
+    status.textContent = 'No cards found.';
+    results.innerHTML = '';
+    return;
+  }
+  status.textContent = '';
+  results.innerHTML = pool.map(c => {
+    const lang = c.lang === 'JP' ? 'JP' : (c.lang || 'EN');
+    const langBadge = lang === 'JP' ? '<span class="lang-jp">JP</span>' : `<span class="lang-en">${esc(lang)}</span>`;
+    const num = c.cn ? (c.ct ? `${c.cn}/${c.ct}` : c.cn) : '';
+    return `<div class="ql-card">
+      <div class="ql-card-head">
+        <div class="ql-card-title">
+          <div class="ql-card-name">${esc(c.n)}</div>
+          <div class="ql-card-set">${esc(c.s || '')}${num ? ' · #' + esc(num) : ''}${c.r ? ' · ' + esc(c.r) : ''}</div>
+          <div class="ql-card-meta">${langBadge}</div>
+        </div>
+        <div class="ql-card-actions">
+          <button class="pcov-pick-btn mlink-pick" data-id="${esc(c.i)}">Link</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  results.querySelectorAll('.mlink-pick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tgtCard = getCardById(btn.dataset.id);
+      if (!tgtCard || !_mlinkCard || !_mlinkTargetLang) return;
+      setMLLink(_mlinkCard, tgtCard, _mlinkTargetLang);
+      closeMLinkPicker();
+      if (typeof selectedCard !== 'undefined' && selectedCard) _renderCardLangTabs(selectedCard);
+    });
+  });
+}
+
+function setupMLinkPicker() {
+  $('mlinkClose')?.addEventListener('click', closeMLinkPicker);
+  $('mlinkOverlay')?.addEventListener('click', closeMLinkPicker);
+  $('mlinkSearchBack')?.addEventListener('click', _renderMLinkMenu);
+  const debounced = cpovDebounce(_runMLinkSearch, 180);
+  $('mlinkInput')?.addEventListener('input', debounced);
+  $('mlinkSearchBtn')?.addEventListener('click', _runMLinkSearch);
+  $('mlinkInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') _runMLinkSearch(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('mlinkModal') && $('mlinkModal').style.display !== 'none') closeMLinkPicker();
+  });
 }
 
 // ================================================================
