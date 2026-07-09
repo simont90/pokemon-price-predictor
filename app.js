@@ -2842,6 +2842,32 @@ function recalcWithLivePrice(card) {
     $('psa10GBP').textContent = fmtGBP(livePrice.pcPsa10);
   }
 
+  // Grading Population section
+  try {
+    const popGrid = document.getElementById('cdPopGrid');
+    const popHdr  = document.getElementById('cdPopHdr');
+    const gemRate = livePrice.crGemRate > 0 ? livePrice.crGemRate : (card.g != null ? card.g * 100 : null);
+    const psa10Gbp = livePrice.crPsa10 > 0 ? livePrice.crPsa10 : (livePrice.pcPsa10 > 0 ? usdToGbp(livePrice.pcPsa10) : (card.p10 > 0 ? usdToGbp(card.p10) : null));
+    const rawGbp  = livePrice.crRaw > 0 ? livePrice.crRaw : usdToGbp(lp);
+    if (popGrid && (gemRate !== null || psa10Gbp !== null)) {
+      const gemEl = document.getElementById('cdPopGem');
+      const p10El = document.getElementById('cdPopPsa10');
+      const roiEl = document.getElementById('cdPopRoi');
+      if (gemEl) {
+        gemEl.textContent = gemRate !== null ? gemRate.toFixed(1) + '%' : '—';
+        gemEl.className = 'cd-pop-val' + (gemRate >= 30 ? ' cd-val-green' : gemRate !== null && gemRate < 15 ? ' cd-val-yellow' : '');
+      }
+      if (p10El) p10El.textContent = psa10Gbp ? fmtGBPDirect(psa10Gbp) : '—';
+      if (roiEl && psa10Gbp && rawGbp > 0) {
+        const roi = ((psa10Gbp - rawGbp - 18) / rawGbp * 100).toFixed(0);
+        roiEl.textContent = (roi > 0 ? '+' : '') + roi + '%';
+        roiEl.className = 'cd-pop-val' + (roi > 50 ? ' cd-val-green' : roi > 0 ? '' : ' cd-val-red');
+      } else if (roiEl) { roiEl.textContent = '—'; roiEl.className = 'cd-pop-val'; }
+      popGrid.style.display = '';
+      if (popHdr) popHdr.style.display = '';
+    }
+  } catch (_) {}
+
   // Re-calculate pull cost
   let pullCost = 7.65;
   if (setsData && setsData[card.sc]) {
@@ -3080,6 +3106,24 @@ function selectCard(id) {
   $('psa10USD').textContent = card.p10 > 0 ? fmtUSD(card.p10) : '—';
   $('psa10GBP').textContent = card.p10 > 0 ? fmtGBP(card.p10) : '—';
   $('gemPct').textContent = card.g ? `${(card.g * 100).toFixed(1)}%` : '—';
+
+  // Card Details accordion
+  try {
+    const cdAccordion = document.getElementById('cdDetailsAccordion');
+    if (cdAccordion) {
+      const setMeta = setsData?.[card.sc] || {};
+      const releaseYear = setMeta.releaseDate ? setMeta.releaseDate.slice(0, 4) : '—';
+      const era = setMeta.series || '—';
+      document.getElementById('cdDetailName').textContent    = card.n || '—';
+      document.getElementById('cdDetailNum').textContent     = card.cn ? '#' + card.cn + (card.ct ? '/' + card.ct : '') : '—';
+      document.getElementById('cdDetailRarity').textContent  = card.r || '—';
+      document.getElementById('cdDetailLang').textContent    = card.lang === 'JP' ? 'Japanese' : 'English';
+      document.getElementById('cdDetailSet').textContent     = card.s || setMeta.name || '—';
+      document.getElementById('cdDetailYear').textContent    = releaseYear;
+      document.getElementById('cdDetailEra').textContent     = era;
+      cdAccordion.style.display = '';
+    }
+  } catch (_) {}
 
   // Auto-fill pull cost from set data
   let pullCost = 7.65;
@@ -3400,16 +3444,28 @@ function _renderCardInsightsGrid(card, signal, pullCost, desirability) {
     }
   }
 
-  // Max Buy cell (model fair value)
-  const mbEl  = document.getElementById('ciMaxBuyVal');
-  const mbSub = document.getElementById('ciMaxBuySub');
-  if (mbEl) {
-    try {
-      const { priceUSD } = predictPrice(pullCost, desirability);
-      const gbp = usdToGbp(priceUSD);
-      mbEl.textContent = gbp > 0 ? fmtGBPDirect(gbp) : '—';
-      if (mbSub) mbSub.textContent = 'model fair value';
-    } catch (_) { mbEl.textContent = '—'; }
+  // Hold cell (Hold Strategy winner)
+  const holdEl  = document.getElementById('ciHoldVal');
+  const holdSub = document.getElementById('ciHoldSub');
+  if (holdEl) {
+    let holdText, holdCls;
+    if (_holdWinnerKey === null) {
+      holdText = '—'; holdCls = '';
+    } else if (_holdWinnerKey === 'none') {
+      holdText = 'HOLD'; holdCls = 'ci-yellow';
+    } else if (_holdWinnerKey === 'gamble') {
+      holdText = 'WATCH'; holdCls = 'ci-yellow';
+    } else if (_holdWinnerKey === 'raw') {
+      holdText = 'HOLD'; holdCls = 'ci-yellow';
+    } else {
+      holdText = 'GRADE'; holdCls = 'ci-green';
+    }
+    holdEl.textContent = holdText;
+    holdEl.className = 'ci-value' + (holdCls ? ' ' + holdCls : '');
+    if (holdSub) {
+      const roiMatch = _holdWinnerDesc ? _holdWinnerDesc.match(/(\d+)% projected ROI/) : null;
+      holdSub.textContent = roiMatch ? roiMatch[1] + '% proj. ROI' : 'strategy';
+    }
   }
 
   // Grade? cell
@@ -3455,6 +3511,8 @@ function _renderCardInsightsGrid(card, signal, pullCost, desirability) {
   }
 
   grid.style.display = 'grid';
+  const aiHdr = document.getElementById('cdAiHdr');
+  if (aiHdr) aiHdr.style.display = '';
 }
 
 function _renderCardLangTabs(card) {

@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260709o">
+  <link rel="stylesheet" href="style.css?v=20260709p">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1222,6 +1222,11 @@
             <div class="price-tile"><span class="price-tile-label">PSA 10 Gem %</span><span class="price-tile-big" id="gemPct">—</span></div>
             <div class="price-tile" style="display:none"><span class="price-tile-label">Pull Cost</span><span class="price-tile-big" id="autoPullCost">—</span><span class="price-tile-sub" id="autoPullPacks"></span></div>
           </div>
+          <!-- AI Analysis section header -->
+          <div class="cd-section-hdr" id="cdAiHdr" style="display:none">
+            <span class="cd-section-icon cd-icon-ai">✦</span>
+            <span class="cd-section-title">AI Analysis</span>
+          </div>
           <!-- AI Insights 2×2 grid — populated by _renderCardInsightsGrid() -->
           <div class="card-insights-grid" id="cardInsightsGrid" style="display:none">
             <div class="ci-cell">
@@ -1230,9 +1235,9 @@
               <div class="ci-sub" id="ciSignalSub"></div>
             </div>
             <div class="ci-cell">
-              <div class="ci-label">Max Buy</div>
-              <div class="ci-value" id="ciMaxBuyVal">—</div>
-              <div class="ci-sub" id="ciMaxBuySub">model value</div>
+              <div class="ci-label">Hold</div>
+              <div class="ci-value" id="ciHoldVal">—</div>
+              <div class="ci-sub" id="ciHoldSub">strategy</div>
             </div>
             <div class="ci-cell">
               <div class="ci-label">Grade?</div>
@@ -1240,11 +1245,47 @@
               <div class="ci-sub" id="ciGradeSub"></div>
             </div>
             <div class="ci-cell">
-              <div class="ci-label">Gem Rate</div>
+              <div class="ci-label">Pop</div>
               <div class="ci-value" id="ciPopVal">—</div>
-              <div class="ci-sub" id="ciPopSub">PSA 10</div>
+              <div class="ci-sub" id="ciPopSub">gem rate</div>
             </div>
           </div>
+          <!-- Grading Population — populated by renderLivePrice() -->
+          <div class="cd-section-hdr" id="cdPopHdr" style="display:none">
+            <svg class="cd-section-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span class="cd-section-title">Grading Population</span>
+          </div>
+          <div class="cd-pop-grid" id="cdPopGrid" style="display:none">
+            <div class="cd-pop-cell">
+              <span class="cd-pop-val" id="cdPopGem">—</span>
+              <span class="cd-pop-lbl">Gem Rate</span>
+            </div>
+            <div class="cd-pop-cell">
+              <span class="cd-pop-val" id="cdPopPsa10">—</span>
+              <span class="cd-pop-lbl">PSA 10</span>
+            </div>
+            <div class="cd-pop-cell">
+              <span class="cd-pop-val" id="cdPopRoi">—</span>
+              <span class="cd-pop-lbl">Grade ROI</span>
+            </div>
+          </div>
+          <!-- Card Details accordion -->
+          <details class="cd-details" id="cdDetailsAccordion" style="display:none">
+            <summary class="cd-details-summary">
+              <svg class="cd-section-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span>Card Details</span>
+              <svg class="cd-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </summary>
+            <div class="cd-details-body">
+              <div class="cd-detail-row"><span class="cd-detail-key">Name</span><span class="cd-detail-val" id="cdDetailName">—</span></div>
+              <div class="cd-detail-row"><span class="cd-detail-key">Number</span><span class="cd-detail-val" id="cdDetailNum">—</span></div>
+              <div class="cd-detail-row"><span class="cd-detail-key">Rarity</span><span class="cd-detail-val" id="cdDetailRarity">—</span></div>
+              <div class="cd-detail-row"><span class="cd-detail-key">Language</span><span class="cd-detail-val" id="cdDetailLang">—</span></div>
+              <div class="cd-detail-row"><span class="cd-detail-key">Set</span><span class="cd-detail-val" id="cdDetailSet">—</span></div>
+              <div class="cd-detail-row"><span class="cd-detail-key">Year</span><span class="cd-detail-val" id="cdDetailYear">—</span></div>
+              <div class="cd-detail-row"><span class="cd-detail-key">Era</span><span class="cd-detail-val" id="cdDetailEra">—</span></div>
+            </div>
+          </details>
         </section>
 
         <!-- Pull Cost — hidden from UI, algorithm still runs -->
@@ -2697,7 +2738,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260709o"></script>
+  <script src="app.js?v=20260709p"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
