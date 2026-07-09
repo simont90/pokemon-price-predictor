@@ -15744,12 +15744,14 @@ function aiBuildContext() {
         const pullW = (() => { try { if (setsData?.[card?.sc]) { const r = setsData[card.sc].rarities?.[card.rc]; if (r?.pullRate > 0) return Math.round(1 / r.pullRate) * r.count / 100; } } catch {} return 7.65; })();
         const desW = card && (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pullW) : { total: 5 };
         const starsW = card && (typeof getInvestmentStars === 'function') ? getInvestmentStars(card, desW.total) : null;
+        const wGbp = +usdToGbp(usd).toFixed(2);
         return {
           id: w.id, name: w.name, set: w.set, lang: w.lang || 'EN',
-          current_gbp: +usdToGbp(usd).toFixed(2),
+          current_gbp: wGbp,
           target_gbp: w.targetGBP || null,
           psa10_gem_rate_pct: card?.g ? +(card.g * 100).toFixed(1) : null,
           investment_stars: starsW?.stars ?? null,
+          over_budget: !!(ctx.max_budget_gbp && wGbp > ctx.max_budget_gbp),
         };
       });
     }
@@ -15784,6 +15786,7 @@ function aiBuildContext() {
       const starResult = (typeof getInvestmentStars === 'function') ? getInvestmentStars(c, des.total) : null;
       ctx.selected_card = {
         id: c.i, name: c.n, set: c.s, number: c.cn, rarity: c.rc, lang: c.lang || 'EN',
+        over_budget: !!(ctx.max_budget_gbp && usdToGbp(usd) > ctx.max_budget_gbp),
         raw_gbp: +usdToGbp(usd).toFixed(2),
         psa10_gbp: anchor.usd ? +usdToGbp(anchor.usd).toFixed(2) : null,
         psa10_source: anchor.source,
@@ -15919,7 +15922,14 @@ CHART SENTINELS — optional, use when discussing price performance or projectio
 - When discussing a card's historical price performance, you may emit [[chart:price:ID]] on its own line to render an inline price chart for that card.
 - When discussing projected/future performance, you may emit [[chart:forecast:ID]] on its own line to render an inline forecast chart.
 - Only emit chart sentinels for card IDs present in context. Each sentinel must be on its own line, alone.
-- Use charts sparingly — only when the visual adds clear value (e.g. "here's how it's trended" or "here's the 5-year projection").`;
+- Use charts sparingly — only when the visual adds clear value (e.g. "here's how it's trended" or "here's the 5-year projection").${ctx.max_budget_gbp ? `
+
+HARD BUDGET RULE — absolute, applies to every reply:
+- The user pays at most £${ctx.max_budget_gbp} for a single card. This is the line across the whole app.
+- Before naming ANY card as a buy, watch or grade suggestion, check its price in the context JSON (raw_gbp / price_gbp / current_gbp / buy_price_gbp). If it exceeds £${ctx.max_budget_gbp}, do not suggest it.
+- This includes cards you know from general knowledge that are not in context — if their market price exceeds £${ctx.max_budget_gbp}, they are off the table.
+- Items flagged "over_budget": true are reference-only (things the user already tracks) — never pitch them as purchases.
+- If the user asks about an over-budget card directly, answer factually, state clearly that it is above their £${ctx.max_budget_gbp} per-card budget, and offer the closest in-budget alternative from card_market or value_picks.` : ''}`;
 }
 
 // ---- LLM client (streaming) ----
@@ -16190,10 +16200,16 @@ async function aiSubmit(userText) {
   const ctx = aiBuildContext();
   const sys = aiSystemPrompt(ctx);
   // Keep only the recent conversation (last 10 turns) to control cost
-  const recent = aiChatHistory.slice(-10);
+  const recent = aiChatHistory.slice(-10).map(m => ({ role: m.role, content: m.content }));
+  // Re-assert the budget cap right next to the newest question — long system
+  // prompts alone are not enough to keep models inside the per-card line.
+  if (ctx.max_budget_gbp && recent.length && recent[recent.length - 1].role === 'user') {
+    recent[recent.length - 1].content +=
+      `\n\n[App note: hard per-card budget £${ctx.max_budget_gbp} — only suggest cards at or under this price.]`;
+  }
   const messages = [
     { role: 'system', content: sys },
-    ...recent.map(m => ({ role: m.role, content: m.content })),
+    ...recent,
   ];
 
   const target = aiAppendStreamMessage();
@@ -16524,11 +16540,12 @@ let _recoPrefetchTs = 0;
 
 // After the reco cache is built, quietly fetch live prices for the top
 // strategy-section cards so PSA10 tiles show real prices (not stale card.p10).
-// Rate-limited to once per PRICE_CACHE_TTL so it doesn't re-run on every
-// home-tab visit.
+// Rate-limited to once per hour so it doesn't re-run on every home-tab visit
+// (the old PRICE_CACHE_TTL constant was removed with the 6AM cache policy).
+const _RECO_PREFETCH_MIN_MS = 60 * 60 * 1000;
 async function _homeRecoPrefetch(all) {
   const now = Date.now();
-  if (now - _recoPrefetchTs < PRICE_CACHE_TTL) return;
+  if (now - _recoPrefetchTs < _RECO_PREFETCH_MIN_MS) return;
   _recoPrefetchTs = now;
 
   const seen = new Set();
@@ -16810,6 +16827,11 @@ function tasteAutoAdd(card) {
     || wishlist.some(w => w.id === card.i)
     || (typeof watchlist !== 'undefined' && watchlist.some(w => w.id === card.i));
   if (tracked || s.score < TASTE_AUTO_ADD) return s;
+  // The per-card budget is the absolute line everywhere — never auto-recommend
+  // a card the owner has said they won't pay for.
+  const cached = getCachedPrice(card.i) || getLastKnownPrice(card.i);
+  const usd = cached ? (cached.pcUngraded || cached.market || cached.mid || card.p || 0) : (card.p || 0);
+  if (usdToGbp(usd) > getMaxBudgetGBP()) return s;
   const store = _tasteRecosLoad();
   const already = store[card.i];
   store[card.i] = { score: s.score, ts: already?.ts || Date.now() };
@@ -22007,7 +22029,10 @@ function _vgLadderHTML(card) {
     if (picks.collector.has(g))   tags.push('<span class="vg-tag vg-tag-collector">Collector grade</span>');
     if (g === picks.budget)       tags.push('<span class="vg-tag vg-tag-budget">Authenticity pick</span>');
     const isTarget = target && target.grade === g;
-    const isDeal   = score !== null && score >= VG_DEAL_SCORE;
+    // A deal is only a deal if it's inside the per-card budget — that line is
+    // absolute across the app. Great-but-unaffordable rungs keep their score
+    // badge without the buy prompt.
+    const isDeal   = score !== null && score >= VG_DEAL_SCORE && gbp <= getMaxBudgetGBP();
     if (isDeal) tags.unshift('<span class="vg-tag vg-tag-deal">Excellent value</span>');
     const buyBtn = isDeal
       ? `<a class="vg-buy-btn" href="${_vgEbayUrl(card, g)}" target="_blank" rel="noopener noreferrer">Buy ↗</a>`
@@ -22040,7 +22065,8 @@ function _vgLadderHTML(card) {
 function _vgCardRowHTML(card, data) {
   const target = data.targets[card.i];
   const { rawGBP, ladder, bestScore } = _vgLadder(card);
-  const isDeal = bestScore !== null && bestScore >= VG_DEAL_SCORE;
+  // Yellow outline only when a deal rung is actually within the per-card budget
+  const isDeal = ladder.some(l => l.score !== null && l.score >= VG_DEAL_SCORE && l.gbp <= getMaxBudgetGBP());
   const targetBadge = target
     ? `<span class="vg-row-target ${target.owned ? 'vg-row-owned' : ''}">${target.owned ? '✓' : '★'} PSA ${target.grade}</span>`
     : '';
