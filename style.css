@@ -13345,3 +13345,129 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .card-ai-body strong { color: var(--text); }
 .card-ai-body::-webkit-scrollbar { width: 6px; }
 .card-ai-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   DAILY BRIEF — one-glance market summary on Home
+   ══════════════════════════════════════════════════════════════════════ */
+
+.home-brief {
+  border-radius: 16px;
+  padding: 16px 16px 8px;
+  margin-bottom: 16px;
+}
+[data-theme="dark"] .home-brief { background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); }
+[data-theme="light"] .home-brief { background: rgba(255,255,255,0.75); border: 1px solid rgba(0,0,0,0.07); }
+
+.brief-hd { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.brief-title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+.brief-date { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+
+.brief-section { padding: 10px 0; }
+.brief-section + .brief-section { border-top: 1px solid rgba(128,128,128,0.10); }
+.brief-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.brief-svc {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  letter-spacing: 0.05em;
+  color: #e53935;
+  background: rgba(229,57,53,0.12);
+  border: 1px solid rgba(229,57,53,0.35);
+}
+
+.brief-row { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 2px 0; }
+.brief-row:active { transform: scale(0.99); }
+.brief-img {
+  width: 42px;
+  height: 58px;
+  object-fit: contain;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: rgba(128,128,128,0.08);
+}
+.brief-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.brief-name { font-size: 14.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brief-sub  { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brief-price { font-family: var(--mono); font-size: 14px; font-weight: 600; white-space: nowrap; }
+
+.brief-pill {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.brief-pill-up   { color: #7ee2ae; background: rgba(52,168,110,0.16); }
+.brief-pill-down { color: #ff9b9b; background: rgba(211,74,74,0.16); }
+
+.brief-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  width: fit-content;
+}
+.brief-tag-buy  { color: var(--green, #4caf7d); }
+.brief-tag-sell { color: #e57373; }
+
+.brief-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+}
+.brief-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.brief-stat-k {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.brief-stat-v { font-family: var(--mono); font-size: 14.5px; font-weight: 700; white-space: nowrap; }
+.brief-green { color: var(--green, #4caf7d); }
+
+/* Brief header: kicker + generated headline (market-brief banner style) */
+.brief-hd-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.brief-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent, #e8b634);
+}
+.brief-hd .brief-title { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brief-hd-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+
+/* Gainers / losers toggle */
+.brief-toggle { display: inline-flex; gap: 4px; margin-left: auto; }
+.brief-tgl-btn {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 3px 10px;
+  border-radius: 11px;
+  border: 1px solid rgba(128,128,128,0.25);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-transform: none;
+}
+.brief-tgl-btn.brief-tgl-active {
+  color: var(--text-primary, #fff);
+  border-color: rgba(232,182,52,0.5);
+  background: rgba(232,182,52,0.10);
+}

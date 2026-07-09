@@ -17657,6 +17657,196 @@ function renderHomeDashboard() {
   _renderHomeAcePicks();
   _renderHomeReco(); // use cache if valid; savePortfolio/Wishlist/Watchlist null it on change
   try { _renderHomeVintage(); } catch(e) {}
+  try { _renderHomeDailyBrief(); } catch(e) {}
+}
+
+// ── Daily Brief — one-glance market summary at the top of Home ──────────────
+// Aggregates what the app already knows into a briefing: biggest mover among
+// tracked cards, today's buy/sell picks, the strongest grading candidate with
+// a RAW/PSA10/PROFIT/ROI stat row, and the top taste-engine find.
+function _renderHomeDailyBrief() {
+  const el = document.getElementById('homeDailyBrief');
+  if (!el) return;
+  // Cold boot renders Home before the card DB has decoded — retry until it
+  // has (the other home sections work from stored list data; this one can't).
+  if (!cardData || !searchIndex || !searchIndex.length) {
+    setTimeout(() => {
+      const home = document.getElementById('pageHome');
+      if (home && home.style.display !== 'none') _renderHomeDailyBrief();
+    }, 500);
+    return;
+  }
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const sections = [];
+
+  const rowHTML = (card, extra) => {
+    const img = getCardImg(card) || '';
+    return `<div class="brief-row" data-brief-id="${esc(card.i)}">
+      ${img ? `<img class="brief-img" src="${esc(img)}" alt="" loading="lazy" onerror="this.style.opacity='0'">` : '<div class="brief-img"></div>'}
+      ${extra}
+    </div>`;
+  };
+
+  // 1. Top movers — live cached price vs database baseline, tracked cards
+  //    ranked first. Gainers/losers toggle like a market ticker, plus a
+  //    tracked-cards index pill and a one-line headline for the header.
+  let headline = '', indexPill = '';
+  try {
+    const cache = getPriceCache();
+    const trackedIds = new Set([
+      ...portfolio.map(p => p.id), ...wishlist.map(w => w.id),
+      ...(typeof watchlist !== 'undefined' ? watchlist.map(w => w.id) : []),
+    ]);
+    const movers = [];
+    let idxBase = 0, idxLive = 0;
+    for (const [id, e] of Object.entries(cache)) {
+      const c = getCardById(id);
+      if (!c || !(c.p > 3)) continue;
+      const live = e.market || e.mid || e.pcUngraded || 0;
+      if (!(live > 0)) continue;
+      const pct = ((live - c.p) / c.p) * 100;
+      if (Math.abs(pct) > 200) continue; // bad data
+      if (trackedIds.has(id)) { idxBase += c.p; idxLive += live; }
+      if (Math.abs(pct) < 2) continue;   // noise
+      movers.push({ c, live, pct, tracked: trackedIds.has(id) });
+    }
+    const rank = (a, b) => (b.tracked - a.tracked) || Math.abs(b.pct) - Math.abs(a.pct);
+    const gainers = movers.filter(m => m.pct > 0).sort(rank).slice(0, 3);
+    const losers  = movers.filter(m => m.pct < 0).sort(rank).slice(0, 3);
+    if (idxBase > 0) {
+      const idxPct = ((idxLive - idxBase) / idxBase) * 100;
+      indexPill = `<span class="brief-pill ${idxPct >= 0 ? 'brief-pill-up' : 'brief-pill-down'}" title="Your tracked cards: live value vs baseline">${idxPct >= 0 ? '↑' : '↓'} Tracked ${idxPct >= 0 ? '+' : ''}${idxPct.toFixed(1)}%</span>`;
+    }
+    if (gainers[0]) headline = `${gainers[0].c.n} leads, up ${gainers[0].pct.toFixed(0)}%`;
+    else if (losers[0]) headline = `${losers[0].c.n} slides ${Math.abs(losers[0].pct).toFixed(0)}%`;
+    if (gainers.length || losers.length) {
+      const moverRow = m => rowHTML(m.c, `<div class="brief-main">
+          <span class="brief-name">${esc(m.c.n)}</span>
+          <span class="brief-sub">${esc(m.c.s || '')}</span>
+        </div>
+        <span class="brief-pill ${m.pct >= 0 ? 'brief-pill-up' : 'brief-pill-down'}">${m.pct >= 0 ? '↑' : '↓'} ${Math.abs(m.pct).toFixed(1)}%</span>
+        <span class="brief-price">${fmtGBPDirect(usdToGbp(m.live))}</span>`);
+      const gHtml = gainers.map(moverRow).join('') || '<div class="brief-sub" style="padding:4px 0">No gainers today.</div>';
+      const lHtml = losers.map(moverRow).join('')  || '<div class="brief-sub" style="padding:4px 0">No losers today.</div>';
+      sections.push(`<div class="brief-section">
+        <div class="brief-label">Top movers
+          <span class="brief-toggle">
+            <button class="brief-tgl-btn brief-tgl-active" data-brief-tgl="g">↗ Gainers</button>
+            <button class="brief-tgl-btn" data-brief-tgl="l">↘ Losers</button>
+          </span>
+        </div>
+        <div data-brief-movers="g">${gHtml}</div>
+        <div data-brief-movers="l" style="display:none">${lHtml}</div>
+      </div>`);
+    }
+  } catch (e) {}
+
+  // 2. Today's picks — hottest buy from the reco engine, sell check on owned cards
+  try {
+    const hot = _recoCached?.general?.[0];
+    let picksHtml = '';
+    if (hot) {
+      picksHtml += rowHTML(hot.card, `<div class="brief-main">
+        <span class="brief-tag brief-tag-buy">Hottest to buy</span>
+        <span class="brief-name">${esc(hot.card.n)}</span>
+        <span class="brief-sub">${esc((hot.reasons || [])[0] || hot.card.s || '')}</span>
+      </div>
+      <span class="brief-price">${fmtGBPDirect(hot.marketGBP)}</span>`);
+    }
+    let sell = null;
+    for (const p of portfolio.slice(0, 60)) {
+      const c = getCardById(p.id);
+      if (!c) continue;
+      const des = autoFillDesirability(c, 7.65);
+      const sig = computeSignal(c, 7.65, des.total);
+      if (sig && sig.signal === 'SELL' && (!sell || sig.score < sell.sig.score)) sell = { c, sig };
+    }
+    if (sell) {
+      const usd = (getCachedPrice(sell.c.i)?.market) || sell.c.p || 0;
+      picksHtml += rowHTML(sell.c, `<div class="brief-main">
+        <span class="brief-tag brief-tag-sell">Consider selling</span>
+        <span class="brief-name">${esc(sell.c.n)}</span>
+        <span class="brief-sub">${esc((sell.sig.reasons || [])[0] || '')}</span>
+      </div>
+      <span class="brief-price">${fmtGBPDirect(usdToGbp(usd))}</span>`);
+    }
+    if (picksHtml) sections.push(`<div class="brief-section"><div class="brief-label">Today's picks</div>${picksHtml}</div>`);
+  } catch (e) {}
+
+  // 3. Worth grading — strongest ROI candidate with the full stat row
+  try {
+    const items = _buildGradeItems([...portfolio, ...wishlist]);
+    const g = items[0];
+    if (g && Math.max(g.psaROI, g.aceROI) >= 30) {
+      const psaBetter = g.psaROI >= g.aceROI;
+      const profit = psaBetter ? g.psaProfit : g.aceProfit;
+      const roi    = Math.round(psaBetter ? g.psaROI : g.aceROI);
+      const p10    = psaBetter ? g.p10GBP : g.ace10GBP;
+      sections.push(`<div class="brief-section">
+        <div class="brief-label">Worth grading <span class="brief-svc">${psaBetter ? 'PSA' : 'ACE'}</span></div>
+        ${rowHTML(g.card, `<div class="brief-main">
+          <span class="brief-name">${esc(g.name)}</span>
+          <span class="brief-sub">${esc(g.card.s || '')}</span>
+        </div>`)}
+        <div class="brief-stats">
+          <div class="brief-stat"><span class="brief-stat-k">Raw</span><span class="brief-stat-v">${fmtGBPDirect(g.rawGBP)}</span></div>
+          <div class="brief-stat"><span class="brief-stat-k">${psaBetter ? 'PSA' : 'ACE'} 10</span><span class="brief-stat-v">${fmtGBPDirect(p10)}</span></div>
+          <div class="brief-stat"><span class="brief-stat-k">Profit</span><span class="brief-stat-v brief-green">+${fmtGBPDirect(profit)}</span></div>
+          <div class="brief-stat"><span class="brief-stat-k">ROI</span><span class="brief-stat-v brief-green">+${roi}%</span></div>
+        </div>
+      </div>`);
+    }
+  } catch (e) {}
+
+  // 4. For you — the taste engine's strongest recent find
+  try {
+    const store = _tasteRecosLoad();
+    const top = Object.entries(store).sort((a, b) => b[1].score - a[1].score)[0];
+    if (top) {
+      const c = getCardById(top[0]);
+      if (c) {
+        const usd = (getCachedPrice(c.i)?.market) || c.p || 0;
+        sections.push(`<div class="brief-section">
+          <div class="brief-label">For you <span class="taste-badge taste-hi">◆ ${top[1].score}%</span></div>
+          ${rowHTML(c, `<div class="brief-main">
+            <span class="brief-name">${esc(c.n)}</span>
+            <span class="brief-sub">${esc(c.s || '')} · matches what you collect</span>
+          </div>
+          <span class="brief-price">${fmtGBPDirect(usdToGbp(usd))}</span>`)}
+        </div>`);
+      }
+    }
+  } catch (e) {}
+
+  if (!sections.length) { el.style.display = 'none'; return; }
+  const d = new Date();
+  el.style.display = '';
+  el.innerHTML = `<div class="brief-hd">
+    <div class="brief-hd-main">
+      <span class="brief-kicker">Today's market brief</span>
+      <span class="brief-title">${esc(headline || 'Your market at a glance')}</span>
+    </div>
+    <div class="brief-hd-side">
+      <span class="brief-date">${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}</span>
+      ${indexPill}
+    </div>
+  </div>${sections.join('')}`;
+
+  if (!el._briefWired) {
+    el._briefWired = true;
+    el.addEventListener('click', e => {
+      const tgl = e.target.closest('[data-brief-tgl]');
+      if (tgl) {
+        const mode = tgl.dataset.briefTgl;
+        el.querySelectorAll('[data-brief-tgl]').forEach(b => b.classList.toggle('brief-tgl-active', b === tgl));
+        el.querySelectorAll('[data-brief-movers]').forEach(div =>
+          div.style.display = div.dataset.briefMovers === mode ? '' : 'none');
+        return;
+      }
+      const row = e.target.closest('[data-brief-id]');
+      if (row) _homeItemClick(row.dataset.briefId);
+    });
+  }
 }
 
 // Silently refresh stale tracked card prices in the background when the user

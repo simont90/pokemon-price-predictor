@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260709f">
+  <link rel="stylesheet" href="style.css?v=20260709g">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -763,6 +763,9 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           </button>
         </div>
+
+        <!-- Daily Brief: one-glance market summary built from the app's engines -->
+        <div id="homeDailyBrief" class="home-brief" style="display:none"></div>
 
         <!-- GROUP: My Collection & Consider Grading -->
         <div class="home-tab-group" id="hTabColl">
@@ -2608,7 +2611,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260709f"></script>
+  <script src="app.js?v=20260709g"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
