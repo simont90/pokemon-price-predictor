@@ -3462,26 +3462,35 @@ function _renderCardLangTabs(card) {
   if (!container) return;
   const group = _getFullLangGroup(card);
   const tabs = [
-    { lang: 'EN', label: 'EN',   card: group.EN },
-    { lang: 'JP', label: 'JP',   card: group.JP },
-    { lang: 'CN', label: '中文', card: group.CN },
+    { lang: 'EN', label: 'EN',    card: group.EN },
+    { lang: 'JP', label: 'JP',    card: group.JP },
+    { lang: 'CN', label: '中文',  card: group.CN },
     { lang: 'KR', label: '한국어', card: group.KR },
   ];
   let html = '';
   for (const t of tabs) {
-    if (!t.card) continue;
-    const isActive = t.card.i === card.i;
-    html += `<button class="clang-tab ${isActive ? 'active' : 'linked'}" data-lang="${t.lang}" data-card-id="${esc(t.card.i)}">${t.label}</button>`;
+    const isActive = !!(t.card && t.card.i === card.i);
+    const isLinked = !!(t.card && !isActive);
+    const cls = isActive ? 'active' : isLinked ? 'linked' : 'add-lang';
+    const cidAttr = t.card ? ` data-card-id="${esc(t.card.i)}"` : '';
+    html += `<button class="clang-tab ${cls}" data-lang="${t.lang}"${cidAttr}>${t.label}</button>`;
   }
-  html += `<button class="clang-tab add-lang" id="clangManageBtn" title="Manage language variants">+</button>`;
   container.innerHTML = html;
-  container.querySelectorAll('.clang-tab[data-card-id]').forEach(btn => {
+  container.querySelectorAll('.clang-tab').forEach(btn => {
     btn.addEventListener('click', () => {
-      const tid = btn.dataset.cardId;
-      if (tid && tid !== card.i) selectCard(tid);
+      const lang = btn.dataset.lang;
+      const cardId = btn.dataset.cardId;
+      if (cardId && cardId !== card.i) {
+        selectCard(cardId);
+      } else if (!cardId) {
+        if (lang === 'EN' || lang === 'JP') {
+          if (typeof openCPOverride === 'function') openCPOverride(card);
+        } else {
+          openMLinkPicker(card, lang);
+        }
+      }
     });
   });
-  container.querySelector('#clangManageBtn')?.addEventListener('click', () => openMLinkPicker(card));
 }
 
 // ---- Calculations ----
@@ -8920,14 +8929,18 @@ function cpovDebounce(fn, ms) {
 let _mlinkCard = null;
 let _mlinkTargetLang = null;
 
-function openMLinkPicker(card) {
+function openMLinkPicker(card, lang) {
   _mlinkCard = card;
   _mlinkTargetLang = null;
   $('mlinkOverlay').style.display = '';
   $('mlinkOverlay').setAttribute('aria-hidden', 'false');
   $('mlinkModal').style.display = 'flex';
   $('mlinkSub').textContent = card.n + (card.cn ? ' · #' + card.cn : '');
-  _renderMLinkMenu();
+  if (lang && (lang === 'CN' || lang === 'KR')) {
+    _showMLinkSearch(lang);
+  } else {
+    _renderMLinkMenu();
+  }
 }
 
 function closeMLinkPicker() {

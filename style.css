@@ -14181,6 +14181,28 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 [data-theme="light"] .ci-value.ci-red   { color: #CC0000; }
 [data-theme="light"] .ci-value.ci-yellow { color: #a86800; }
 
+/* ── Counterpart flag at top of card detail ── */
+.counterpart-flag-top {
+  margin: 0;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(232,182,52,0.05), rgba(61,214,140,0.04));
+}
+.counterpart-flag-top.verdict-buy-jp {
+  border-bottom-color: rgba(255,92,92,0.25);
+  background: linear-gradient(135deg, rgba(255,92,92,0.07), rgba(255,92,92,0.02));
+}
+.counterpart-flag-top.verdict-buy-en {
+  border-bottom-color: rgba(61,214,140,0.25);
+  background: linear-gradient(135deg, rgba(61,214,140,0.08), rgba(61,214,140,0.02));
+}
+
+/* nav title must shrink when 4 lang tabs are present */
+.card-nav-title { flex: 1; min-width: 0; overflow: hidden; }
+
 /* ── Language variant tabs (card detail nav bar) ── */
 .card-lang-tabs {
   display: flex;

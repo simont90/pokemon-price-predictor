@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260709n">
+  <link rel="stylesheet" href="style.css?v=20260709o">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1110,6 +1110,21 @@
             </div>
             <div class="card-lang-tabs" id="cardLangTabs"></div>
           </div>
+          <!-- EN ↔ JP Counterpart Flag — moved to top for visibility -->
+          <div class="counterpart-flag counterpart-flag-top" id="counterpartFlag" style="display:none">
+            <div class="cp-head">
+              <span class="cp-badge" id="cpBadge">EN ↔ JP</span>
+              <span class="cp-headline" id="cpHeadline"></span>
+            </div>
+            <div class="cp-prices" id="cpPrices"></div>
+            <div class="cp-reason" id="cpReason"></div>
+            <div class="cp-scenarios" id="cpScenarios" style="display:none"></div>
+            <div class="cp-actions">
+              <button class="cp-btn cp-btn-primary" id="cpOpenBtn">Open counterpart</button>
+              <button class="cp-btn cp-btn-secondary" id="cpCompareBtn">Compare side-by-side</button>
+              <button class="cp-btn cp-btn-tertiary" id="cpOverrideBtn" title="Pick the correct EN/JP counterpart manually">Wrong card? Pick manually</button>
+            </div>
+          </div>
           <div class="selected-card-header">
             <div id="cardHeroBg" class="card-hero-bg" aria-hidden="true"></div>
             <div class="card-images">
@@ -1198,21 +1213,6 @@
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                   Snapshot
                 </button>
-              </div>
-              <!-- EN ↔ JP Counterpart Flag -->
-              <div class="counterpart-flag" id="counterpartFlag" style="display:none">
-                <div class="cp-head">
-                  <span class="cp-badge" id="cpBadge">EN ↔ JP</span>
-                  <span class="cp-headline" id="cpHeadline"></span>
-                </div>
-                <div class="cp-prices" id="cpPrices"></div>
-                <div class="cp-reason" id="cpReason"></div>
-                <div class="cp-scenarios" id="cpScenarios" style="display:none"></div>
-                <div class="cp-actions">
-                  <button class="cp-btn cp-btn-primary" id="cpOpenBtn">Open counterpart</button>
-                  <button class="cp-btn cp-btn-secondary" id="cpCompareBtn">Compare side-by-side</button>
-                  <button class="cp-btn cp-btn-tertiary" id="cpOverrideBtn" title="Pick the correct EN/JP counterpart manually">Wrong card? Pick manually</button>
-                </div>
               </div>
             </div>
           </div>
@@ -2697,7 +2697,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260709n"></script>
+  <script src="app.js?v=20260709o"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
