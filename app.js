@@ -2878,6 +2878,21 @@ function selectCard(id) {
 
   const section = $('selectedCardSection');
   section.style.display = 'block';
+
+  // Populate back-bar title
+  const _navName = document.getElementById('cardNavName');
+  const _navSub  = document.getElementById('cardNavSub');
+  if (_navName) _navName.textContent = card.n;
+  if (_navSub) {
+    const _setName = setsData?.[card.sc]?.name || card.sc || '';
+    const _year    = setsData?.[card.sc]?.year  || '';
+    _navSub.textContent = [_setName, card.cn ? '#' + card.cn : '', _year].filter(Boolean).join(' · ');
+  }
+
+  // Reset insights grid until updateSignal populates it
+  const _insGrid = document.getElementById('cardInsightsGrid');
+  if (_insGrid) _insGrid.style.display = 'none';
+
   const isJP = card.lang === 'JP';
 
   // Card images — click to open the full-resolution lightbox
@@ -3283,6 +3298,83 @@ function updateSignal(card, pullCost, desirability) {
       jumpBtnEl.style.display  = 'none';
     }
   }
+
+  try { _renderCardInsightsGrid(card, signal, pullCost, desirability); } catch (_) {}
+}
+
+function _renderCardInsightsGrid(card, signal, pullCost, desirability) {
+  const grid = document.getElementById('cardInsightsGrid');
+  if (!grid || !card) return;
+
+  // Signal cell
+  const sigEl  = document.getElementById('ciSignalVal');
+  const sigSub = document.getElementById('ciSignalSub');
+  if (sigEl) {
+    sigEl.textContent = signal || '—';
+    const sc = signal === 'STRONG BUY' || signal === 'BUY' || signal === 'GRADE' ? 'ci-green' :
+               signal === 'SELL' ? 'ci-red' : '';
+    sigEl.className = 'ci-value' + (sc ? ' ' + sc : '');
+    if (sigSub) {
+      const d = desirability || 0;
+      sigSub.textContent = d >= 70 ? 'high demand' : d >= 50 ? 'moderate demand' : d > 0 ? 'watch closely' : '';
+    }
+  }
+
+  // Max Buy cell (model fair value)
+  const mbEl  = document.getElementById('ciMaxBuyVal');
+  const mbSub = document.getElementById('ciMaxBuySub');
+  if (mbEl) {
+    try {
+      const { priceUSD } = predictPrice(pullCost, desirability);
+      const gbp = usdToGbp(priceUSD);
+      mbEl.textContent = gbp > 0 ? fmtGBPDirect(gbp) : '—';
+      if (mbSub) mbSub.textContent = 'model fair value';
+    } catch (_) { mbEl.textContent = '—'; }
+  }
+
+  // Grade? cell
+  const grEl  = document.getElementById('ciGradeVal');
+  const grSub = document.getElementById('ciGradeSub');
+  if (grEl) {
+    try {
+      const rawGBP   = usdToGbp(getCurrentPrice(card) || 0);
+      const anchor   = getPsa10Anchor(card);
+      const psa10GBP = usdToGbp(anchor.usd);
+      const ratio    = rawGBP > 0 ? psa10GBP / rawGBP : 0;
+      if (ratio >= 2.5) {
+        grEl.textContent = 'YES';
+        grEl.className = 'ci-value ci-green';
+        if (grSub) grSub.textContent = ratio.toFixed(1) + '× PSA uplift';
+      } else if (ratio >= 1.6) {
+        grEl.textContent = 'MAYBE';
+        grEl.className = 'ci-value ci-yellow';
+        if (grSub) grSub.textContent = ratio.toFixed(1) + '× PSA uplift';
+      } else {
+        grEl.textContent = 'NO';
+        grEl.className = 'ci-value ci-red';
+        if (grSub) grSub.textContent = ratio > 0 ? ratio.toFixed(1) + '× vs raw' : 'No PSA data';
+      }
+    } catch (_) { grEl.textContent = '—'; grEl.className = 'ci-value'; }
+  }
+
+  // Gem Rate cell
+  const popEl  = document.getElementById('ciPopVal');
+  const popSub = document.getElementById('ciPopSub');
+  if (popEl) {
+    const gemRate = card.g != null ? card.g * 100 : null;
+    if (gemRate !== null) {
+      if (gemRate >= 50)      { popEl.textContent = 'High';   popEl.className = 'ci-value ci-green'; }
+      else if (gemRate >= 30) { popEl.textContent = 'Good';   popEl.className = 'ci-value ci-green'; }
+      else if (gemRate >= 15) { popEl.textContent = 'Medium'; popEl.className = 'ci-value'; }
+      else                    { popEl.textContent = 'Scarce'; popEl.className = 'ci-value ci-yellow'; }
+      if (popSub) popSub.textContent = gemRate.toFixed(0) + '% gem rate';
+    } else {
+      popEl.textContent = '—'; popEl.className = 'ci-value';
+      if (popSub) popSub.textContent = 'No gem data';
+    }
+  }
+
+  grid.style.display = 'grid';
 }
 
 // ---- Calculations ----
@@ -5748,6 +5840,7 @@ function setupWishlist() {
     if (!selectedCard) return;
     _showCardAiOverlay(selectedCard);
   });
+  $('cardBackBtn')?.addEventListener('click', () => go('home'));
 
   // Delegated listeners — wired once so renderWishlist() can skip re-attaching.
   const list = $('wishlistList');

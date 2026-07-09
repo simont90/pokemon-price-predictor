@@ -13,9 +13,11 @@
   --text: #e8e6e3;
   --text-muted: #8b8d99;
   --text-faint: #555768;
-  --accent: #e8b634;
-  --accent-dim: rgba(232, 182, 52, 0.12);
-  --accent-hover: #f0c44a;
+  --accent: #FFCB05;
+  --accent-dim: rgba(255,203,5,0.12);
+  --accent-hover: #ffe033;
+  --pokemon-red: #CC0000;
+  --pokemon-yellow: #FFCB05;
   --supply: #4a9eff;
   --supply-dim: rgba(74, 158, 255, 0.12);
   --supply-border: rgba(74, 158, 255, 0.25);
@@ -8538,9 +8540,11 @@ section.card .card-collapse-btn { padding: 10px; }
   --text-secondary: #444444;
   --text-muted: #666666;
   --text-faint: #999999;
-  --accent: #f01478;
-  --accent-hover: #d90f69;
-  --accent-dim: rgba(240,20,120,0.10);
+  --accent: #CC0000;
+  --accent-hover: #aa0000;
+  --accent-dim: rgba(204,0,0,0.10);
+  --pokemon-red: #CC0000;
+  --pokemon-yellow: #FFCB05;
   --green: #00b67a;
   --green-dim: rgba(0,182,122,0.10);
   --green-border: rgba(0,182,122,0.25);
@@ -8557,9 +8561,9 @@ section.card .card-collapse-btn { padding: 10px; }
 
 [data-theme="light"] body {
   background:
-    radial-gradient(ellipse 90% 55% at 8% -5%,  rgba(120,60,255,0.16) 0%, transparent 55%),
-    radial-gradient(ellipse 65% 45% at 92% 8%,  rgba(0,195,230,0.12) 0%, transparent 55%),
-    radial-gradient(ellipse 55% 40% at 50% 105%, rgba(232,182,52,0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at 0% -5%,   rgba(204,0,0,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 35% at 100% 0%,  rgba(255,203,5,0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 45% 30% at 50% 105%, rgba(255,203,5,0.05) 0%, transparent 55%),
     var(--bg);
   color: var(--text);
 }
@@ -13821,7 +13825,7 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 [data-theme="light"] .page-nav-btn.active svg { color: var(--accent); }
 [data-theme="light"] .page-nav-ask { color: var(--accent); }
 [data-theme="light"] .page-nav-ask svg { color: var(--accent); }
-[data-theme="light"] .nav-pill { background: rgba(240,20,120,0.10); box-shadow: none; }
+[data-theme="light"] .nav-pill { background: rgba(204,0,0,0.10); box-shadow: none; }
 
 /* ── Home dashboard ─────────────────────────────────────────── */
 [data-theme="light"] .home-dashboard {
@@ -13917,7 +13921,7 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   box-shadow: 0 2px 14px rgba(0,0,0,0.10), 0 0 0 0.5px rgba(0,0,0,0.04);
 }
 [data-theme="light"] .home-card-tile.alert-tile {
-  box-shadow: 0 0 0 2px var(--accent), 0 2px 14px rgba(240,20,120,0.18);
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 14px rgba(204,0,0,0.18);
 }
 [data-theme="light"] .home-card-info {
   position: absolute;
@@ -13976,14 +13980,14 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   margin: 8px 14px 4px;
   padding: 13px 15px;
   background: linear-gradient(135deg, #fff1f6 0%, #fde8f0 100%);
-  border: 1px solid rgba(240,20,120,0.14);
+  border: 1px solid rgba(204,0,0,0.14);
   border-radius: 14px;
   cursor: pointer;
   transition: box-shadow 0.15s;
   display: none; /* shown only in light mode */
 }
 [data-theme="light"] .market-brief { display: block; }
-.market-brief:hover { box-shadow: 0 4px 16px rgba(240,20,120,0.12); }
+.market-brief:hover { box-shadow: 0 4px 16px rgba(204,0,0,0.12); }
 .market-brief-top {
   display: flex;
   align-items: center;
@@ -14067,3 +14071,112 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   color: rgba(255,255,255,0.85);
   font-size: 9px;
 }
+
+/* ── brief-tgl-btn: use red accent in light mode ── */
+[data-theme="light"] .brief-tgl-btn.brief-tgl-active {
+  color: #CC0000;
+  border-color: rgba(204,0,0,0.4);
+  background: rgba(204,0,0,0.08);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   CARD DETAIL — Back button nav bar + AI Insights grid
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Back button bar ─────────────────────────────────────────── */
+.card-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.card-back-btn {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.card-back-btn:active { transform: scale(0.88); }
+[data-theme="light"] .card-back-btn {
+  background: rgba(255,255,255,0.90);
+  border: 1px solid rgba(0,0,0,0.10);
+  color: #111;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.10);
+}
+.card-nav-title { flex: 1; min-width: 0; }
+.card-nav-name {
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.card-nav-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+/* ── AI Insights 2×2 grid ─────────────────────────────────────── */
+.card-insights-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px;
+  margin-top: 4px;
+}
+.ci-cell {
+  background: var(--glass-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+[data-theme="light"] .ci-cell {
+  background: rgba(255,255,255,0.82);
+  border: 1px solid rgba(0,0,0,0.07);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+}
+.ci-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.ci-value {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.1;
+}
+.ci-value.ci-green  { color: var(--green, #3dd68c); }
+.ci-value.ci-red    { color: var(--red,   #ff5c5c); }
+.ci-value.ci-yellow { color: var(--accent); }
+.ci-sub {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-theme="light"] .ci-value.ci-green { color: #00875a; }
+[data-theme="light"] .ci-value.ci-red   { color: #CC0000; }
+[data-theme="light"] .ci-value.ci-yellow { color: #a86800; }

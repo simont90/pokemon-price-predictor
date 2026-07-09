@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260709k">
+  <link rel="stylesheet" href="style.css?v=20260709l">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1068,6 +1068,15 @@
       <div class="inputs-column">
         <!-- Selected Card -->
         <section class="card selected-card" id="selectedCardSection" style="display:none">
+          <div class="card-nav-bar">
+            <button class="card-back-btn" id="cardBackBtn" type="button" aria-label="Back">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <div class="card-nav-title">
+              <div class="card-nav-name" id="cardNavName"></div>
+              <div class="card-nav-sub" id="cardNavSub"></div>
+            </div>
+          </div>
           <div class="selected-card-header">
             <div id="cardHeroBg" class="card-hero-bg" aria-hidden="true"></div>
             <div class="card-images">
@@ -1179,6 +1188,29 @@
             <div class="price-tile"><span class="price-tile-label">PSA 10</span><span class="price-tile-usd" id="psa10USD"></span><span class="price-tile-gbp" id="psa10GBP"></span></div>
             <div class="price-tile"><span class="price-tile-label">PSA 10 Gem %</span><span class="price-tile-big" id="gemPct">—</span></div>
             <div class="price-tile" style="display:none"><span class="price-tile-label">Pull Cost</span><span class="price-tile-big" id="autoPullCost">—</span><span class="price-tile-sub" id="autoPullPacks"></span></div>
+          </div>
+          <!-- AI Insights 2×2 grid — populated by _renderCardInsightsGrid() -->
+          <div class="card-insights-grid" id="cardInsightsGrid" style="display:none">
+            <div class="ci-cell">
+              <div class="ci-label">Signal</div>
+              <div class="ci-value" id="ciSignalVal">—</div>
+              <div class="ci-sub" id="ciSignalSub"></div>
+            </div>
+            <div class="ci-cell">
+              <div class="ci-label">Max Buy</div>
+              <div class="ci-value" id="ciMaxBuyVal">—</div>
+              <div class="ci-sub" id="ciMaxBuySub">model value</div>
+            </div>
+            <div class="ci-cell">
+              <div class="ci-label">Grade?</div>
+              <div class="ci-value" id="ciGradeVal">—</div>
+              <div class="ci-sub" id="ciGradeSub"></div>
+            </div>
+            <div class="ci-cell">
+              <div class="ci-label">Gem Rate</div>
+              <div class="ci-value" id="ciPopVal">—</div>
+              <div class="ci-sub" id="ciPopSub">PSA 10</div>
+            </div>
           </div>
         </section>
 
@@ -2632,7 +2664,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260709k"></script>
+  <script src="app.js?v=20260709l"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
