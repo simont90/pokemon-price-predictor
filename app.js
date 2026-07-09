@@ -3041,10 +3041,12 @@ function selectCard(id) {
   // Reset insights grid + new sections until async data populates them
   const _insGrid = document.getElementById('cardInsightsGrid');
   if (_insGrid) _insGrid.style.display = 'none';
-  ['cdAiHdr','cdSignalTags','cdPopHdr','cdPopGrid','cdPriceMovHdr','cdPriceMov'].forEach(id => {
+  ['cdAiHdr','cdSignalTags','cdPopHdr','cdPopGrid','cdPriceMovHdr','cdPriceMov','cdAiBrief'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.style.display = 'none'; if (id === 'cdSignalTags') el.innerHTML = ''; }
   });
+  // Trigger inline AI brief (async, non-blocking)
+  setTimeout(() => { try { _loadCardAiBrief(card); } catch {} }, 400);
 
   // Render language variant tabs
   try { _renderCardLangTabs(card); } catch (_) {}
@@ -3475,6 +3477,67 @@ function updateSignal(card, pullCost, desirability) {
 
   try { _renderCardInsightsGrid(card, signal, pullCost, desirability); } catch (_) {}
 }
+
+// ── Inline AI brief ─────────────────────────────────────────────────
+const _aiBriefCache = new Map();
+
+async function _loadCardAiBrief(card) {
+  const wrap = document.getElementById('cdAiBrief');
+  const txt  = document.getElementById('cdAiBriefText');
+  if (!wrap || !txt || !card) return;
+
+  // Use cached result if same card
+  const cached = _aiBriefCache.get(card.i);
+  if (cached) { txt.innerHTML = cached; wrap.style.display = ''; return; }
+
+  // Require at least the worker-based Claude (no user key needed)
+  const cfg = AI_PROVIDERS[aiGetProvider()];
+  if (!cfg) return;
+  if (!cfg.noKey && !aiGetKey()) return;
+
+  txt.innerHTML = '<span class="cd-ai-loading">Generating brief…</span>';
+  wrap.style.display = '';
+
+  const rawUSD   = getCurrentPrice(card) || 0;
+  const rawGBP   = usdToGbp(rawUSD);
+  const anchor   = getPsa10Anchor(card);
+  const psa10GBP = usdToGbp(anchor.usd);
+  const setMeta  = setsData?.[card.sc] || {};
+  const setName  = setMeta.name || card.s || '';
+  const gemStr   = card.g != null ? (card.g * 100).toFixed(0) + '%' : null;
+  const ratio    = rawGBP > 0 && psa10GBP > 0 ? (psa10GBP / rawGBP).toFixed(1) : null;
+  const lang     = card.lang === 'JP' ? 'Japanese' : 'English';
+
+  const systemPrompt = `You are a sharp Pokémon TCG investment analyst writing for a collector who already understands the hobby. Write exactly 2 short sentences — no headers, no bullet points, no markdown formatting. First sentence: what makes this card worth attention (or not) right now. Second sentence: a specific action — whether to buy, hold, or grade, and at what price. Use £ prices. Be direct.`;
+
+  const facts = [`${card.n} · ${setName}${card.cn ? ' #' + card.cn : ''}`, `${lang}`, `Rarity: ${card.r || 'unknown'}`, `Raw: £${rawGBP.toFixed(2)}`, psa10GBP > 0 ? `PSA 10: £${psa10GBP.toFixed(2)} (${ratio}× uplift)` : null, gemStr ? `Gem rate: ${gemStr}` : null].filter(Boolean);
+
+  let full = '';
+  const _e = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+  try {
+    await aiStreamChat({
+      provider: aiGetProvider(),
+      key: aiGetKey(),
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: facts.join(' · ') },
+      ],
+      onToken: tok => {
+        full += tok;
+        txt.innerHTML = _e(full) + '<span class="cd-ai-cursor"></span>';
+      },
+      onDone: whole => {
+        const rendered = _e(whole.trim());
+        txt.innerHTML = rendered;
+        _aiBriefCache.set(card.i, rendered);
+        wrap.style.display = '';
+      },
+      onError: () => { wrap.style.display = 'none'; },
+    });
+  } catch { wrap.style.display = 'none'; }
+}
+// ────────────────────────────────────────────────────────────────────
 
 function _renderCardInsightsGrid(card, signal, pullCost, desirability) {
   const grid = document.getElementById('cardInsightsGrid');

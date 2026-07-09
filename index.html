@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260709q">
+  <link rel="stylesheet" href="style.css?v=20260709r">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1227,9 +1227,13 @@
             <span class="cd-section-icon cd-icon-ai">✦</span>
             <span class="cd-section-title">AI Analysis</span>
           </div>
+          <!-- Inline AI brief — auto-streams when a card is selected -->
+          <div class="cd-ai-brief" id="cdAiBrief" style="display:none">
+            <p class="cd-ai-brief-text" id="cdAiBriefText"></p>
+          </div>
           <!-- Signal tags — populated by _renderCardInsightsGrid() and renderLivePrice() -->
           <div class="cd-signal-tags" id="cdSignalTags" style="display:none"></div>
-          <!-- AI Insights 2×2 grid — populated by _renderCardInsightsGrid() -->
+          <!-- AI Insights 4-col stat bar — populated by _renderCardInsightsGrid() -->
           <div class="card-insights-grid" id="cardInsightsGrid" style="display:none">
             <div class="ci-cell">
               <div class="ci-label">Signal</div>
@@ -2759,7 +2763,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260709q"></script>
+  <script src="app.js?v=20260709r"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
