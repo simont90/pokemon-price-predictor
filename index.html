@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260709p">
+  <link rel="stylesheet" href="style.css?v=20260709q">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1227,6 +1227,8 @@
             <span class="cd-section-icon cd-icon-ai">✦</span>
             <span class="cd-section-title">AI Analysis</span>
           </div>
+          <!-- Signal tags — populated by _renderCardInsightsGrid() and renderLivePrice() -->
+          <div class="cd-signal-tags" id="cdSignalTags" style="display:none"></div>
           <!-- AI Insights 2×2 grid — populated by _renderCardInsightsGrid() -->
           <div class="card-insights-grid" id="cardInsightsGrid" style="display:none">
             <div class="ci-cell">
@@ -1267,6 +1269,25 @@
             <div class="cd-pop-cell">
               <span class="cd-pop-val" id="cdPopRoi">—</span>
               <span class="cd-pop-lbl">Grade ROI</span>
+            </div>
+          </div>
+          <!-- Price Movement — populated by renderLivePrice() -->
+          <div class="cd-section-hdr" id="cdPriceMovHdr" style="display:none">
+            <svg class="cd-section-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+            <span class="cd-section-title">Price Movement</span>
+          </div>
+          <div class="cd-price-mov-grid" id="cdPriceMov" style="display:none">
+            <div class="cd-pm-cell">
+              <span class="cd-pm-val" id="cdPm7d">—</span>
+              <span class="cd-pm-lbl">7 Day</span>
+            </div>
+            <div class="cd-pm-cell">
+              <span class="cd-pm-val" id="cdPm30d">—</span>
+              <span class="cd-pm-lbl">30 Day</span>
+            </div>
+            <div class="cd-pm-cell">
+              <span class="cd-pm-val" id="cdPmConv">—</span>
+              <span class="cd-pm-lbl">Conviction</span>
             </div>
           </div>
           <!-- Card Details accordion -->
@@ -2738,7 +2759,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260709p"></script>
+  <script src="app.js?v=20260709q"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

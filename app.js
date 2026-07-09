@@ -2868,6 +2868,52 @@ function recalcWithLivePrice(card) {
     }
   } catch (_) {}
 
+  // Price Movement section (7D / 30D / Conviction)
+  try {
+    const movGrid = document.getElementById('cdPriceMov');
+    const movHdr  = document.getElementById('cdPriceMovHdr');
+    if (movGrid) {
+      const curr  = livePrice.cmTrend > 0 ? livePrice.cmTrend : lp;
+      const pm7d  = livePrice.cmAvg7  > 0 ? (curr - livePrice.cmAvg7)  / livePrice.cmAvg7  * 100 : null;
+      const pm30d = livePrice.cmAvg30 > 0 ? (curr - livePrice.cmAvg30) / livePrice.cmAvg30 * 100 : null;
+      const el7d   = document.getElementById('cdPm7d');
+      const el30d  = document.getElementById('cdPm30d');
+      const elConv = document.getElementById('cdPmConv');
+      if (el7d) {
+        el7d.textContent = pm7d !== null ? (pm7d > 0 ? '+' : '') + pm7d.toFixed(1) + '%' : '—';
+        el7d.className = 'cd-pm-val' + (pm7d > 2 ? ' cd-val-green' : pm7d !== null && pm7d < -2 ? ' cd-val-red' : '');
+      }
+      if (el30d) {
+        el30d.textContent = pm30d !== null ? (pm30d > 0 ? '+' : '') + pm30d.toFixed(1) + '%' : '—';
+        el30d.className = 'cd-pm-val' + (pm30d > 2 ? ' cd-val-green' : pm30d !== null && pm30d < -2 ? ' cd-val-red' : '');
+      }
+      if (elConv) {
+        try {
+          const des = calcDesirability();
+          const conv = Math.round(des.total);
+          elConv.textContent = conv > 0 ? conv + '%' : '—';
+          elConv.className = 'cd-pm-val' + (conv >= 70 ? ' cd-val-green' : conv >= 50 ? '' : ' cd-val-yellow');
+        } catch { elConv.textContent = '—'; elConv.className = 'cd-pm-val'; }
+      }
+      // Append PRICE TREND tag once live data is in
+      try {
+        const tagsEl = document.getElementById('cdSignalTags');
+        if (tagsEl && !tagsEl.querySelector('.stag-trend')) {
+          const trend = pm7d ?? pm30d;
+          if (trend !== null && Math.abs(trend) > 3) {
+            const up = trend > 0;
+            tagsEl.innerHTML += `<span class="cd-stag stag-trend ${up ? 'stag-green' : 'stag-red'}">PRICE TREND ${up ? '↑' : '↓'}</span>`;
+            tagsEl.style.display = '';
+          }
+        }
+      } catch {}
+      if (pm7d !== null || pm30d !== null) {
+        movGrid.style.display = '';
+        if (movHdr) movHdr.style.display = '';
+      }
+    }
+  } catch (_) {}
+
   // Re-calculate pull cost
   let pullCost = 7.65;
   if (setsData && setsData[card.sc]) {
@@ -2992,9 +3038,13 @@ function selectCard(id) {
     _navSub.textContent = [_setName, card.cn ? '#' + card.cn : '', _year].filter(Boolean).join(' · ');
   }
 
-  // Reset insights grid until updateSignal populates it
+  // Reset insights grid + new sections until async data populates them
   const _insGrid = document.getElementById('cardInsightsGrid');
   if (_insGrid) _insGrid.style.display = 'none';
+  ['cdAiHdr','cdSignalTags','cdPopHdr','cdPopGrid','cdPriceMovHdr','cdPriceMov'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.display = 'none'; if (id === 'cdSignalTags') el.innerHTML = ''; }
+  });
 
   // Render language variant tabs
   try { _renderCardLangTabs(card); } catch (_) {}
@@ -3513,6 +3563,28 @@ function _renderCardInsightsGrid(card, signal, pullCost, desirability) {
   grid.style.display = 'grid';
   const aiHdr = document.getElementById('cdAiHdr');
   if (aiHdr) aiHdr.style.display = '';
+
+  // Signal tag pills
+  const tagsEl = document.getElementById('cdSignalTags');
+  if (tagsEl) {
+    const tags = [];
+    const d = desirability?.total || 0;
+    if (signal === 'STRONG BUY')      tags.push({label: 'STRONG BUY', cls: 'stag-green'});
+    else if (signal === 'BUY')        tags.push({label: 'BUY SIGNAL', cls: 'stag-green'});
+    else if (signal === 'SELL')       tags.push({label: 'SELL SIGNAL', cls: 'stag-red'});
+    else if (signal === 'GRADE')      tags.push({label: 'GRADE', cls: 'stag-green'});
+    else                              tags.push({label: 'HOLD', cls: 'stag-yellow'});
+    try {
+      const rawGBP = usdToGbp(getCurrentPrice(card) || 0);
+      const psa10GBP = usdToGbp(getPsa10Anchor(card).usd);
+      const ratio = rawGBP > 0 ? psa10GBP / rawGBP : 0;
+      if (ratio >= 2.5) tags.push({label: 'GRADE ROI', cls: 'stag-green'});
+    } catch {}
+    if (card.g != null && card.g * 100 >= 30) tags.push({label: 'POPULATION', cls: 'stag-green'});
+    if (d >= 70) tags.push({label: 'HIGH DEMAND', cls: 'stag-green'});
+    tagsEl.innerHTML = tags.map(t => `<span class="cd-stag ${t.cls}">${t.label}</span>`).join('');
+    tagsEl.style.display = '';
+  }
 }
 
 function _renderCardLangTabs(card) {
@@ -17427,6 +17499,24 @@ function buildAllHomeRecos() {
   };
 }
 
+const _CONV_PCT = {'must-buy': 88, 'buy': 73, 'worth-holding': 56, 'buy-if-pc': 41, 'skip': 22};
+
+function _recoSigTags(r) {
+  const tags = [];
+  if (r.signal === 'STRONG BUY') tags.push({l: 'STRONG BUY', c: 'rtag-g'});
+  else if (r.signal === 'BUY')   tags.push({l: 'BUY', c: 'rtag-g'});
+  else if (r.signal === 'SELL')  tags.push({l: 'SELL', c: 'rtag-r'});
+  const fx2 = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  if ((r.card.p10 || 0) > 0 && r.marketGBP > 0) {
+    const ratio = (r.card.p10 * fx2) / r.marketGBP;
+    if (ratio >= 2.5) tags.push({l: 'GRADE ROI', c: 'rtag-g'});
+  }
+  if ((r.card.g || 0) * 100 >= 30) tags.push({l: 'POPULATION', c: 'rtag-g'});
+  if (r.upsidePct > 10) tags.push({l: 'PRICE TREND', c: 'rtag-g'});
+  if (r.gemScore >= 2.0) tags.push({l: 'UNDERVALUED', c: 'rtag-y'});
+  return tags.slice(0, 3).map(t => `<span class="reco-stag ${t.c}">${t.l}</span>`).join('');
+}
+
 function _recoTileHtml(r) {
   const id = r.card.i;
   const imgSrc = (typeof getCardImg === 'function') ? getCardImg(r.card) : '';
@@ -17442,8 +17532,8 @@ function _recoTileHtml(r) {
   const watchCls   = r.onWatchlist ? 'reco-watch reco-watch-active' : 'reco-watch';
   const tier = r.convictionTier || 'buy';
   const tierLabel = _TIER_LABEL[tier] || 'Buy';
+  const conv = _CONV_PCT[tier] || 60;
   const pipBtn1 = `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgSrc || '')}" aria-label="Quick view" title="Quick view">⤢</button>`;
-  // Grade price ladder for cards with a PSA 10 anchor
   let gradeLadder1 = '';
   const p10USD1 = r.card.p10 || 0;
   if (p10USD1 > 0) {
@@ -17456,6 +17546,7 @@ function _recoTileHtml(r) {
     ? `<span class="taste-badge ${r.tasteScore >= TASTE_AUTO_ADD ? 'taste-hi' : r.tasteScore >= 45 ? 'taste-mid' : 'taste-lo'}" title="Likelihood you'd want this${r.tasteReasons?.length ? ' — ' + r.tasteReasons.join(', ') : ''}">◆ ${r.tasteScore}%</span>`
     : '';
   const forYou = r.tasteAdded ? `<span class="reco-foryou-tag">For you</span>` : '';
+  const sigTags = _recoSigTags(r);
   return `<div class="home-card-tile reco-tile${r.tasteAdded ? ' reco-tile-foryou' : ''}" data-id="${esc(id)}">
     ${img}
     <span class="home-card-signal reco-tier reco-tier-${esc(tier)}">${esc(tierLabel)}</span>
@@ -17470,6 +17561,8 @@ function _recoTileHtml(r) {
       <div class="home-card-name">${esc(r.card.n)}</div>
       <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}${gem}</div>
       <div class="home-card-sub">${upside}${tasteChip}${forYou}</div>
+      ${sigTags ? `<div class="reco-tags">${sigTags}</div>` : ''}
+      <div class="reco-conviction-row"><span class="reco-conv-label">CONVICTION</span><span class="reco-conv-pct">${conv}%</span></div>
       ${_cardScoreBadgeHtml(r.card)}
       ${gradeLadder1}
     </div>
@@ -17494,8 +17587,8 @@ function _recoStrategyTileHtml(r) {
   const displayPrice = r.strategyToday || r.marketGBP;
   const tier = r.convictionTier || 'buy';
   const tierLabel = _TIER_LABEL[tier] || 'Buy';
+  const conv2 = _CONV_PCT[tier] || 60;
   const pipBtn2 = `<button class="home-pip-trigger" data-pip-id="${esc(id)}" data-pip-img="${esc(imgSrc || '')}" aria-label="Quick view" title="Quick view">⤢</button>`;
-  // Grade price ladder — Raw → PSA 7 → PSA 8 → PSA 9 → PSA 10
   let gradeLadder = '';
   const p10USD = r.card.p10 || 0;
   if (p10USD > 0) {
@@ -17508,6 +17601,7 @@ function _recoStrategyTileHtml(r) {
       `<span class="reco-grade-pip">P10 ${fmtGBP(p10USD)}</span>` +
       `</div>`;
   }
+  const sigTags2 = _recoSigTags(r);
   return `<div class="home-card-tile reco-tile" data-id="${esc(id)}">
     ${img}
     <span class="home-card-signal reco-tier reco-tier-${esc(tier)}">${esc(tierLabel)}</span>
@@ -17522,6 +17616,8 @@ function _recoStrategyTileHtml(r) {
       <div class="home-card-name">${esc(r.card.n)}</div>
       <div class="home-card-price">${fmtGBPDirect(displayPrice)}${manual}${gem}</div>
       <div class="home-card-sub">${roiLine}</div>
+      ${sigTags2 ? `<div class="reco-tags">${sigTags2}</div>` : ''}
+      <div class="reco-conviction-row"><span class="reco-conv-label">CONVICTION</span><span class="reco-conv-pct">${conv2}%</span></div>
       ${gradeLadder}
     </div>
   </div>`;
