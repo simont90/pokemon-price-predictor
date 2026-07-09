@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260709j">
+  <link rel="stylesheet" href="style.css?v=20260709k">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -741,6 +741,19 @@
     <!-- Home Page -->
     <div class="page" id="pageHome" data-page="home" style="display:none">
       <div class="home-dashboard">
+
+        <!-- Market Brief banner (light mode only) -->
+        <div class="market-brief" id="marketBrief" onclick="go('know')">
+          <div class="market-brief-top">
+            <span class="market-brief-tag">TODAY'S MARKET BRIEF</span>
+            <span class="market-brief-date" id="marketBriefDate"></span>
+          </div>
+          <div class="market-brief-headline" id="marketBriefHeadline">Loading signal…</div>
+          <div class="market-brief-footer">
+            <span class="market-brief-index" id="marketBriefIndex"></span>
+            <button class="market-brief-open" type="button">Open →</button>
+          </div>
+        </div>
 
         <!-- Personalisation bar: currency + budget -->
         <div class="home-budget-bar">
@@ -2619,7 +2632,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260709j"></script>
+  <script src="app.js?v=20260709k"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

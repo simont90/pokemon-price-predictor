@@ -547,6 +547,7 @@ async function init() {
   setupPriceInsight();
   setupAiChat();
   setupTheme();
+  _setupMarketBrief();
   setupPageNav();
   setupUnderrated();
   setupPWANav();
@@ -16507,7 +16508,7 @@ function setupTheme() {
     }
   }
 
-  const stored = localStorage.getItem('theme-pref') || 'system';
+  const stored = localStorage.getItem('theme-pref') || 'light';
   applyTheme(stored);
 
   const btns = document.querySelectorAll('.theme-btn');
@@ -23119,4 +23120,51 @@ Be specific with GBP numbers. No filler. No preamble.`;
   } catch (e) {
     body.innerHTML = '<p style="color:var(--red,#f44336)">Error: ' + escStr(e?.message || e) + '</p>';
   }
+}
+
+// ---- Market Brief banner ----
+
+function _setupMarketBrief() {
+  const dateEl     = document.getElementById('marketBriefDate');
+  const headlineEl = document.getElementById('marketBriefHeadline');
+  const indexEl    = document.getElementById('marketBriefIndex');
+  if (!dateEl) return;
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  dateEl.textContent = dateStr;
+
+  // Populate after data loads
+  function _populate() {
+    if (!cardData || !cardData.length) return;
+    // Find the highest-signal card from recommendations cache or scan a sample
+    let topCard = null, topScore = -99;
+    const sample = cardData.slice(0, 3000);
+    for (const card of sample) {
+      try {
+        const s = _wtbCardSignal(card);
+        if (s && (s.signal === 'STRONG BUY' || s.signal === 'BUY') && s.score > topScore) {
+          topScore = s.score;
+          topCard  = card;
+        }
+      } catch (_) {}
+    }
+    if (!topCard) { headlineEl.textContent = 'Explore today\'s top signals in PokeKnow'; return; }
+
+    const setName = setsData?.[topCard.sc]?.name || topCard.sc || '';
+    const sig     = _wtbCardSignal(topCard);
+    const rawGBP  = usdToGbp(getCurrentPrice(topCard) || 0);
+    const priceTxt = rawGBP > 0 ? ' · ' + fmtGBPDirect(rawGBP) : '';
+    headlineEl.textContent = topCard.n + (setName ? ', ' + setName : '') + priceTxt;
+
+    const sigLabel = sig?.signal || 'BUY';
+    const sigScore = sig?.score ?? 0;
+    const arrow = sigScore > 0 ? '↑' : '↓';
+    indexEl.textContent = arrow + ' ' + sigLabel + ' · Signal score +' + sigScore;
+    if (indexEl) indexEl.style.color = sigLabel === 'STRONG BUY' ? 'var(--green,#00b67a)' : 'var(--accent,#f01478)';
+  }
+
+  // Try immediately, then after short delay for data load
+  _populate();
+  setTimeout(_populate, 2000);
 }
