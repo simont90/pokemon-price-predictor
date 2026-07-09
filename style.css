@@ -9456,35 +9456,94 @@ section.card .card-collapse-btn { padding: 10px; }
 }
 .btn-snapshot-trigger:hover { color: var(--accent); border-color: var(--accent); }
 
-/* Mobile: make card action buttons easier to tap */
+/* Mobile: card detail redesign — matches reference app layout */
 @media (max-width: 600px) {
-  /* Card name: full width above action buttons */
+  /* ── Nav bar: 2-row layout ── */
+  .card-nav-bar {
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 14px 16px 0;
+    gap: 8px;
+  }
+  .card-back-btn  { order: 0; flex-shrink: 0; }
+  .card-nav-title { order: 1; flex: 1; min-width: 0; }
+  .card-nav-actions { order: 2; flex-shrink: 0; }
+  /* Lang tabs: own full-width row beneath name */
+  .card-lang-tabs {
+    order: 3;
+    flex-basis: 100%;
+    margin-left: 0;
+    padding: 10px 0 10px;
+    border-top: 1px solid var(--border);
+    margin-top: 6px;
+    justify-content: flex-start;
+  }
+  /* Larger, readable nav name — wraps if needed */
+  .card-nav-name {
+    font-size: 18px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+  .card-nav-sub {
+    font-size: 12px;
+    white-space: normal;
+    margin-top: 3px;
+  }
+
+  /* ── Card image: big and prominent ── */
+  .card-thumb {
+    width: min(88%, 360px) !important;
+    height: auto !important;
+    object-fit: contain;
+  }
+  .card-images {
+    padding: 20px 0 16px;
+  }
+
+  /* ── Card name row: name full-width, 3 labelled action buttons below ── */
   .card-name-row {
     flex-wrap: wrap;
-    gap: 4px 6px;
+    gap: 10px 6px;
     margin-bottom: 10px;
-    align-items: center;
+    align-items: stretch;
   }
   .card-name-row h2 {
+    flex: 0 0 100%;  /* override flex:1 so flex-basis:100% wins */
     width: 100%;
-    font-size: 22px;
+    font-size: 22px !important; /* beat .card h2 { font-size:14px } below */
     font-weight: 700;
-    line-height: 1.15;
+    line-height: 1.2;
     letter-spacing: -0.01em;
     white-space: normal;
     order: -1;
+    overflow: visible;
+    text-overflow: unset;
   }
-  /* 44×44 touch targets for all card action buttons */
-  .add-portfolio-btn {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
+  /* Action buttons: column layout with label text */
+  .add-portfolio-btn:not(.card-nav-qbtn) {
+    flex: 1;
+    flex-direction: column;
+    width: auto;
+    height: auto;
+    min-height: 56px;
+    padding: 10px 6px 8px;
+    gap: 5px;
+    border-radius: 14px;
+    flex-shrink: 1;
+  }
+  .add-portfolio-btn:not(.card-nav-qbtn) svg {
+    width: 19px;
+    height: 19px;
     flex-shrink: 0;
   }
-  .add-portfolio-btn svg {
-    width: 18px;
-    height: 18px;
-  }
+  /* Labels via pseudo-elements */
+  #addCompareBtn::after  { content: 'Compare';  font-size: 9.5px; font-weight: 600; letter-spacing: 0.02em; }
+  #addPortfolioBtn::after { content: 'Add';      font-size: 9.5px; font-weight: 600; letter-spacing: 0.02em; }
+  #addBinderBtn::after   { content: 'Binder';   font-size: 9.5px; font-weight: 600; letter-spacing: 0.02em; }
+  /* In-collection state label overrides */
+  #addCompareBtn.in-portfolio::after  { content: 'Pinned'; }
+  #addPortfolioBtn.in-portfolio::after { content: 'Added'; }
+  #addBinderBtn.in-portfolio::after   { content: 'Listed'; }
 }
 
 /* ============================================================
@@ -14128,6 +14187,20 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   white-space: nowrap;
   margin-top: 2px;
 }
+/* Quick-action buttons in the nav bar (wishlist + AI) */
+.card-nav-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  align-items: center;
+}
+.card-nav-qbtn {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  flex-direction: row !important;
+}
 
 /* ── AI Insights 2×2 grid ─────────────────────────────────────── */
 .card-insights-grid {
@@ -14200,7 +14273,7 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   background: linear-gradient(135deg, rgba(61,214,140,0.08), rgba(61,214,140,0.02));
 }
 
-/* nav title must shrink when 4 lang tabs are present */
+/* nav title must shrink; overflow handled per-breakpoint */
 .card-nav-title { flex: 1; min-width: 0; overflow: hidden; }
 
 /* ── Language variant tabs (card detail nav bar) ── */
