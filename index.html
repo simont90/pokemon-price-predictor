@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260710a">
+  <link rel="stylesheet" href="style.css?v=20260710b">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1525,6 +1525,15 @@
           <div class="hold-market-context" id="holdMarketContext" style="display:none"></div>
           <div class="hold-override" id="holdOverride"></div>
           <div class="hold-cp-compare" id="holdCounterpartCompare" style="display:none"></div>
+          <!-- AI Strategy Facts — Card-Facts style narrative -->
+          <div class="hold-ai-facts" id="holdAiFacts" style="display:none">
+            <div class="haf-header">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.09 3.26L16.5 6.5l-3.26 1.09L12 11l-1.09-3.26L7.5 6.5l3.26-1.09z"/><path d="M19 14l.73 2.18L22 17l-2.18.73L19 20l-.73-2.18L16 17l2.18-.73z"/></svg>
+              <span class="haf-title">Strategy Analysis</span>
+              <span class="haf-subtitle">4 AI insights</span>
+            </div>
+            <div class="haf-body" id="hafBody"></div>
+          </div>
           <div class="hold-grid" id="holdGrid"></div>
           <div class="hold-outcomes" id="holdOutcomes"></div>
           <div class="hold-footnote-wrap">
@@ -2765,7 +2774,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260710a"></script>
+  <script src="app.js?v=20260710b"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

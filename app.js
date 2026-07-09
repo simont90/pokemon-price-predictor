@@ -3539,6 +3539,109 @@ async function _loadCardAiBrief(card) {
 }
 // ────────────────────────────────────────────────────────────────────
 
+// ══════════════════════════════════════════════════════════════════════
+// Hold Strategy AI Facts — Card-Facts-style narrative for each option
+// ══════════════════════════════════════════════════════════════════════
+
+const _holdFactsCache = new Map();
+
+const _HAF_SECTIONS = [
+  { key: 'RAW HOLD',       cls: 'haf-lbl-raw',    path: 'M3 3v18h18M7 16l4-4 4 4 4-4' },
+  { key: 'GRADE STRATEGY', cls: 'haf-lbl-grade',  path: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z' },
+  { key: 'MARKET CONTEXT', cls: 'haf-lbl-market', path: 'M3 17l4-4 4 4 4-6 4 2' },
+  { key: 'KEY RISK',       cls: 'haf-lbl-risk',   path: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01' },
+];
+
+function _parseHoldFacts(text) {
+  const _e = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  let html = '';
+  for (const sec of _HAF_SECTIONS) {
+    const rx = new RegExp(`\\[${sec.key}\\]\\s*([\\s\\S]*?)(?=\\n\\[|$)`, 'i');
+    const m = text.match(rx);
+    if (!m) continue;
+    const body = m[1].trim();
+    html += `<div class="haf-section">
+      <div class="haf-section-label ${sec.cls}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="${sec.path}"/></svg>
+        ${_e(sec.key)}
+      </div>
+      <p class="haf-section-text">${_e(body)}</p>
+    </div>`;
+  }
+  return html || `<p class="haf-section-text">${_e(text)}</p>`;
+}
+
+async function _loadHoldStrategyFacts(card, data) {
+  const wrap = document.getElementById('holdAiFacts');
+  const body = document.getElementById('hafBody');
+  if (!wrap || !body || !card) return;
+
+  const cacheKey = `${card.i}_${(data.rawGBP||0).toFixed(0)}_${(data.psaGBP||0).toFixed(0)}`;
+  if (_holdFactsCache.has(cacheKey)) {
+    body.innerHTML = _holdFactsCache.get(cacheKey);
+    wrap.style.display = '';
+    return;
+  }
+
+  const cfg = AI_PROVIDERS[aiGetProvider()];
+  if (!cfg) return;
+  if (!cfg.noKey && !aiGetKey()) return;
+
+  body.innerHTML = '<div class="haf-loading">Analysing strategy…</div>';
+  wrap.style.display = '';
+
+  const { rawGBP, psaGBP, gemRate, roiRaw, roiGrade, waitDisplay, winnerLabel, riskLevel } = data;
+
+  const systemPrompt = `You are a Pokémon TCG investment analyst writing for an advanced collector. Write a strategy breakdown in exactly 4 labelled sections using this format:
+
+[RAW HOLD]
+2–3 sentences here.
+
+[GRADE STRATEGY]
+2–3 sentences here.
+
+[MARKET CONTEXT]
+2–3 sentences here.
+
+[KEY RISK]
+2–3 sentences here.
+
+Rules: use £ for all prices. Be direct and specific. No markdown, no bullet points, no filler phrases.`;
+
+  const facts = [
+    `${card.n}${card.s ? ' · ' + card.s : ''}`,
+    `Raw: £${rawGBP.toFixed(2)}`,
+    psaGBP > 0 ? `PSA 10: £${psaGBP.toFixed(2)}` : null,
+    gemRate ? `Gem rate: ${(gemRate*100).toFixed(0)}%` : null,
+    roiRaw !== null ? `Raw 5yr ROI: ${roiRaw.toFixed(0)}%` : null,
+    roiGrade !== null ? `Grade 5yr ROI: ${roiGrade.toFixed(0)}%` : null,
+    waitDisplay ? `PSA wait (UK): ${waitDisplay}` : null,
+    winnerLabel ? `Recommended: ${winnerLabel}` : null,
+    riskLevel ? `Risk: ${riskLevel}` : null,
+  ].filter(Boolean).join(' · ');
+
+  try {
+    await aiStreamChat({
+      provider: aiGetProvider(),
+      key: aiGetKey(),
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: facts },
+      ],
+      onToken: () => {},
+      onDone: whole => {
+        const rendered = _parseHoldFacts(whole.trim());
+        body.innerHTML = rendered;
+        _holdFactsCache.set(cacheKey, rendered);
+        wrap.style.display = '';
+      },
+      onError: () => { wrap.style.display = 'none'; },
+    });
+  } catch { wrap.style.display = 'none'; }
+}
+
+// ────────────────────────────────────────────────────────────────────
+
 function _renderCardInsightsGrid(card, signal, pullCost, desirability) {
   const grid = document.getElementById('cardInsightsGrid');
   if (!grid || !card) return;
@@ -14322,6 +14425,24 @@ function renderHoldStrategy(card) {
     const des = calcDesirability();
     updateSignal(selectedCard, pullCost, des);
   }
+
+  // AI strategy facts — Card-Facts-style narrative (non-blocking)
+  const _rawStrat2  = strategies.find(s => s.key === 'raw');
+  const _gradeStrat = strategies.find(s => s.key === 'gamble') || strategies.find(s => s.key.startsWith('psa'));
+  setTimeout(() => {
+    try {
+      _loadHoldStrategyFacts(card, {
+        rawGBP:     rawUSD * fx,
+        psaGBP:     psa10Price * fx,
+        gemRate:    baseGemRate,
+        roiRaw:     _rawStrat2  ? _rawStrat2.roi  : null,
+        roiGrade:   _gradeStrat ? _gradeStrat.roi : null,
+        waitDisplay: gradingWaitDisplay,
+        winnerLabel: bestLongTermPick ? bestLongTermPick.label : null,
+        riskLevel:   bestLongTermPick ? bestLongTermPick.risk  : null,
+      });
+    } catch {}
+  }, 300);
 }
 
 // =============================================================

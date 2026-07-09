@@ -14614,3 +14614,66 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   text-align: right;
   word-break: break-word;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Hold Strategy — AI Facts (Card-Facts style narrative)
+   ══════════════════════════════════════════════════════════════════════ */
+.hold-ai-facts {
+  border-top: 1px solid var(--border);
+  padding: 16px 0 4px;
+  margin-bottom: 4px;
+}
+.haf-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+.haf-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+  flex: 1;
+}
+.haf-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.haf-loading {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+.haf-section {
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.haf-section:first-child { border-top: none; }
+.haf-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.haf-section-text {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--text);
+  margin: 0;
+}
+/* Section label colours */
+.haf-lbl-raw    { color: #6cb8ff; }
+.haf-lbl-grade  { color: #3dd68c; }
+.haf-lbl-market { color: var(--accent); }
+.haf-lbl-risk   { color: #ff6b6b; }
+[data-theme="light"] .haf-lbl-raw    { color: #1a6bbf; }
+[data-theme="light"] .haf-lbl-grade  { color: #00875a; }
+[data-theme="light"] .haf-lbl-market { color: #a86800; }
+[data-theme="light"] .haf-lbl-risk   { color: #cc2200; }
