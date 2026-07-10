@@ -4935,11 +4935,12 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 /* Stats header bar */
 .hold-stats-bar {
   display: flex;
-  background: var(--surface2, #1a1a1a);
   border-radius: 10px;
   overflow: hidden;
   margin-bottom: 12px;
 }
+[data-theme="dark"]  .hold-stats-bar { background: #1a1a1a; }
+[data-theme="light"] .hold-stats-bar { background: #f0f0f0; }
 .hold-stat-col {
   flex: 1;
   padding: 12px 10px;
@@ -14946,7 +14947,6 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   margin-bottom: 12px;
 }
 .haf-signal-card {
-  background: var(--surface2, #1a1a1a);
   border-radius: 10px;
   padding: 11px 12px 10px;
   display: flex;
@@ -14958,7 +14958,8 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .haf-sig-yes { background: rgba(61,214,140,.08);  }
 .haf-sig-no  { background: rgba(255,107,107,.07); }
 .haf-sig-mid { background: rgba(232,182,52,.07);  }
-[data-theme="light"] .haf-signal-card  { background: var(--surface2, #f5f5f5); }
+[data-theme="dark"]  .haf-signal-card  { background: #1a1a1a; }
+[data-theme="light"] .haf-signal-card  { background: #f0f0f0; }
 [data-theme="light"] .haf-sig-yes { background: rgba(0,135,90,.07); }
 [data-theme="light"] .haf-sig-no  { background: rgba(204,34,0,.06); }
 [data-theme="light"] .haf-sig-mid { background: rgba(168,104,0,.07); }
