@@ -1568,7 +1568,8 @@ function setupSearch() {
 let _searchLangFilter = 'all';
 function _searchLangPass(c) {
   if (_searchLangFilter === 'all') return true;
-  return _searchLangFilter === 'JP' ? c.lang === 'JP' : c.lang !== 'JP';
+  if (_searchLangFilter === 'EN') return !c.lang || c.lang === 'EN';
+  return c.lang === _searchLangFilter;
 }
 
 function doSearch(query) {
@@ -3609,6 +3610,7 @@ function _parseHoldFacts(text, data) {
       ${p.verdict ? `<div class="haf-sig-verdict ${vLblCls(p.verdict)}">${_e(p.verdict)}</div>` : ''}
       ${metric ? `<div class="haf-sig-metric">${_e(metric)}</div>` : ''}
       <div class="haf-sig-desc">${_e(p.desc)}</div>
+      <button class="haf-show-more" type="button">Show more</button>
     </div>`;
   }
   grid += '</div>';
@@ -3626,6 +3628,16 @@ function _parseHoldFacts(text, data) {
   return pills + grid + insight || `<p class="haf-section-text">${_e(text)}</p>`;
 }
 
+function _wireHafShowMore(container) {
+  container.querySelectorAll('.haf-show-more').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const desc = btn.previousElementSibling;
+      const expanded = desc.classList.toggle('haf-desc-expanded');
+      btn.textContent = expanded ? 'Show less' : 'Show more';
+    });
+  });
+}
+
 async function _loadHoldStrategyFacts(card, data) {
   const wrap = document.getElementById('holdAiFacts');
   const body = document.getElementById('hafBody');
@@ -3636,6 +3648,7 @@ async function _loadHoldStrategyFacts(card, data) {
   const cacheKey = `${card.i}_${(data.rawGBP||0).toFixed(0)}_${(data.psaGBP||0).toFixed(0)}_${data.roiGrade||0}_${_hasBudget ? _budgetGBP : 0}`;
   if (_holdFactsCache.has(cacheKey)) {
     body.innerHTML = _holdFactsCache.get(cacheKey);
+    _wireHafShowMore(body);
     wrap.style.display = '';
     return;
   }
@@ -3703,6 +3716,7 @@ Rules: use £ for all prices. Be direct and specific. No markdown, no bullet poi
       onDone: whole => {
         const rendered = _parseHoldFacts(whole.trim(), data);
         body.innerHTML = rendered;
+        _wireHafShowMore(body);
         _holdFactsCache.set(cacheKey, rendered);
         wrap.style.display = '';
       },
@@ -3831,8 +3845,8 @@ function _renderCardLangTabs(card) {
   const tabs = [
     { lang: 'EN', label: 'EN',    card: group.EN },
     { lang: 'JP', label: 'JP',    card: group.JP },
-    { lang: 'CN', label: '中文',  card: group.CN },
-    { lang: 'KR', label: '한국어', card: group.KR },
+    { lang: 'CN', label: 'CN', card: group.CN },
+    { lang: 'KR', label: 'KR', card: group.KR },
   ];
   let html = '';
   for (const t of tabs) {
