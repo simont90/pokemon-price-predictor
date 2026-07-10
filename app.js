@@ -24404,68 +24404,74 @@ function renderStandouts() {
   const dotsEl   = document.getElementById('soDots');
   if (!carousel) return;
 
-  if (!cardData) {
+  if (!cardData?.cards?.length) {
     carousel.innerHTML = '<div class="so-empty">Card database not loaded yet — please wait and try again.</div>';
     dotsEl.innerHTML = '';
     return;
   }
 
+  const maxBudgetGBP = getMaxBudgetGBP(); // 99999 = no limit
+  const hasLimit     = maxBudgetGBP < BUDGET_DEFAULT;
   const portfolioIds = new Set(portfolio.map(p => p.id).filter(Boolean));
   const wishlistIds  = new Set(wishlist.map(w => w.id).filter(Boolean));
-  // Only surface wishlist cards the user doesn't already own
-  const candidateIds = new Set([...wishlistIds].filter(id => !portfolioIds.has(id)));
-  const maxBudgetGBP = getMaxBudgetGBP(); // 99999 = no limit
+  const priceCache   = getPriceCache(); // memoised — one object lookup per card
 
-  if (candidateIds.size === 0) {
-    carousel.innerHTML = '<div class="so-empty">Add cards to your wishlist to see standouts.</div>';
-    dotsEl.innerHTML = '';
-    return;
+  // Update subtitle to reflect active grade and budget
+  const gradeLabel = _soGrade === 'psa10' ? 'PSA 10' : _soGrade === 'psa9' ? 'PSA 9' : 'Raw';
+  const subtitleEl = document.getElementById('soSubtitle');
+  if (subtitleEl) {
+    subtitleEl.textContent = hasLimit
+      ? `Standout ${gradeLabel} cards on the market within your £${maxBudgetGBP} per-card budget — ranked by grading premium and entry opportunity.`
+      : `Standout ${gradeLabel} cards on the market — ranked by grading premium and entry opportunity.`;
   }
 
   const scored = [];
-  for (const id of candidateIds) {
-    const card = getCardById(id);
-    if (!card) continue;
-    // Use cached live price if available, fall back to static card.p from the database
-    const pd        = getCachedPrice(id);
-    const rawUSD    = pd?.pcUngraded  || usdToGbp(card.p || 0) > 0 ? (pd?.pcUngraded  || card.p || 0) : 0;
-    const psa9USD   = pd?.pcPsa9      || 0;
-    const psa10USD  = pd?.pcPsa10     || 0;
-    const staticUSD = card.p || 0;
-    const effectiveRawUSD = rawUSD > 0 ? rawUSD : staticUSD;
-    if (effectiveRawUSD <= 0) continue;
-    const rawGBP   = usdToGbp(effectiveRawUSD);
-    // Skip cards over the per-card budget limit
-    if (maxBudgetGBP < BUDGET_DEFAULT && rawGBP > maxBudgetGBP) continue;
+  for (const card of cardData.cards) {
+    const id  = card.i;
+    const raw = priceCache[id];
+    const pd  = raw && _priceCacheIsValid(raw._ts) ? raw : null;
+    const rawUSD   = pd?.pcUngraded || card.p || 0;
+    if (rawUSD <= 0) continue;
+    const psa9USD  = pd?.pcPsa9  || 0;
+    const psa10USD = pd?.pcPsa10 || 0;
+    const rawGBP   = usdToGbp(rawUSD);
     const psa9GBP  = usdToGbp(psa9USD);
     const psa10GBP = usdToGbp(psa10USD);
-    // Score: prefer high PSA 10 multiple + strong absolute price
+
+    // Budget filter: apply to the selected grade's price
+    const gradePrice = _soGrade === 'psa10' ? psa10GBP : _soGrade === 'psa9' ? psa9GBP : rawGBP;
+    // PSA modes need actual cached price data — skip cards without it
+    if (_soGrade !== 'raw' && gradePrice <= 0) continue;
+    if (hasLimit && gradePrice > maxBudgetGBP) continue;
+
+    // Score: PSA 10 multiple × log(price) — favours high grading upside at accessible entry
     const psaMultiple = rawGBP > 0 && psa10GBP > 0 ? psa10GBP / rawGBP : 1;
     const score = psaMultiple * Math.log10(Math.max(rawGBP, psa10GBP, 1) + 10);
     scored.push({ card, pd, rawGBP, psa9GBP, psa10GBP, score,
-      inPortfolio: false, inWishlist: true });
+      inPortfolio: portfolioIds.has(id), inWishlist: wishlistIds.has(id) });
   }
 
   scored.sort((a, b) => b.score - a.score);
   const top = scored.slice(0, 12);
 
   if (top.length === 0) {
-    const budgetMsg = maxBudgetGBP < BUDGET_DEFAULT
-      ? ` within your £${maxBudgetGBP} per-card budget` : '';
-    carousel.innerHTML = `<div class="so-empty">No standout wishlist cards found${budgetMsg}. Try raising your Max per Card limit in the budget settings.</div>`;
+    const budgetMsg = hasLimit ? ` within your £${maxBudgetGBP} ${gradeLabel} budget` : '';
+    carousel.innerHTML = _soGrade !== 'raw'
+      ? `<div class="so-empty">No ${gradeLabel} price data available${budgetMsg}. Sync prices for cards you track, or switch to Raw.</div>`
+      : `<div class="so-empty">No standout cards found${budgetMsg}. Try raising your Max per Card limit in budget settings.</div>`;
     dotsEl.innerHTML = '';
     return;
   }
 
   carousel.innerHTML = top.map((item, i) => {
-    const { card, rawGBP, psa9GBP, psa10GBP, inPortfolio } = item;
+    const { card, rawGBP, psa9GBP, psa10GBP, inPortfolio, inWishlist } = item;
     const price    = _soPrice(item);
     const imgUrl   = _hiresUrl(getCardImg(card));
     const insight  = _standoutInsight(card, item);
-    const tagLabel = inPortfolio ? 'Owned' : 'Wishlist';
+    const tagLabel = inPortfolio ? 'Owned' : inWishlist ? 'Wishlist' : null;
     const tagColor = inPortfolio ? 'rgba(116,185,255,0.2)' : 'rgba(253,121,168,0.2)';
     const tagText  = inPortfolio ? '#74b9ff' : '#fd79a8';
-    const inWL     = wishlistIds.has(card.i);
+    const inWL     = inWishlist;
     return `<div class="so-card" data-so-i="${i}"
         data-raw="${rawGBP.toFixed(2)}"
         data-psa9="${psa9GBP.toFixed(2)}"
@@ -24474,7 +24480,7 @@ function renderStandouts() {
         ${imgUrl
           ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">`
           : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
-        <span class="so-tag" style="background:${tagColor};color:${tagText}">${tagLabel}</span>
+        ${tagLabel ? `<span class="so-tag" style="background:${tagColor};color:${tagText}">${tagLabel}</span>` : ''}
       </div>
       <div class="so-body">
         <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
@@ -24516,11 +24522,8 @@ function renderStandouts() {
       if (!btn) return;
       _soGrade = btn.dataset.grade;
       toggle.querySelectorAll('.sgt-btn').forEach(b => b.classList.toggle('active', b === btn));
-      document.querySelectorAll('.so-card').forEach(card => {
-        const price = parseFloat(card.dataset[_soGrade]) || parseFloat(card.dataset.raw) || 0;
-        const el = card.querySelector('.so-price-val');
-        if (el) el.textContent = price > 0 ? fmtGBPDirect(price) : '—';
-      });
+      // Re-render with the new grade's budget filter applied
+      renderStandouts();
     });
   }
 }
@@ -24535,18 +24538,17 @@ function _standoutInsight(card, item) {
   const { rawGBP, psa9GBP, psa10GBP, inPortfolio, inWishlist } = item;
   const mult10 = rawGBP > 0 && psa10GBP > 0 ? (psa10GBP / rawGBP) : 0;
   const mult9  = rawGBP > 0 && psa9GBP  > 0 ? (psa9GBP  / rawGBP) : 0;
+  const ownedTag = inPortfolio ? ' · Already owned.' : inWishlist ? ' · On your wishlist.' : '';
   if (mult10 >= 8)
-    return `Exceptional grading premium — PSA 10 trades at ${mult10.toFixed(1)}× raw (${fmtGBPDirect(psa10GBP)}). A high-grade slab commands serious collector attention.`;
+    return `Exceptional grading premium — PSA 10 at ${fmtGBPDirect(psa10GBP)} is ${mult10.toFixed(1)}× raw entry (${fmtGBPDirect(rawGBP)}).${ownedTag}`;
   if (mult10 >= 4)
-    return `Strong grading upside: PSA 10 at ${fmtGBPDirect(psa10GBP)} is ${mult10.toFixed(1)}× raw (${fmtGBPDirect(rawGBP)}). Worth grading if the copy is sharp.`;
+    return `Strong grading upside: PSA 10 at ${fmtGBPDirect(psa10GBP)} is ${mult10.toFixed(1)}× raw. Worth grading a sharp copy.${ownedTag}`;
   if (mult10 >= 2)
-    return `Modest grading premium of ${mult10.toFixed(1)}×. At ${fmtGBPDirect(rawGBP)} raw, grading at ~£25 still nets upside for a near-mint copy.`;
+    return `${mult10.toFixed(1)}× grading premium. At ${fmtGBPDirect(rawGBP)} raw, a near-mint copy grades profitably.${ownedTag}`;
   if (mult9 >= 2)
-    return `PSA 9 at ${fmtGBPDirect(psa9GBP)} — ${mult9.toFixed(1)}× raw. A solid path to a graded copy without chasing PSA 10 prices.`;
-  if (inPortfolio && rawGBP > 0)
-    return `In your collection at market value ${fmtGBPDirect(rawGBP)}. Monitor for grading windows when raw supply tightens.`;
+    return `PSA 9 at ${fmtGBPDirect(psa9GBP)} is ${mult9.toFixed(1)}× raw — a solid graded entry without chasing PSA 10 prices.${ownedTag}`;
   if (rawGBP > 0)
-    return `Wishlist card at ${fmtGBPDirect(rawGBP)} raw. ${rawGBP < 50 ? 'Entry price is accessible — watch for a dip to buy.' : 'Keep an eye on price history before committing.'}`;
+    return `${fmtGBPDirect(rawGBP)} raw. ${rawGBP < 30 ? 'Low entry point — accessible for bulk or NM singles.' : rawGBP < 100 ? 'Mid-range entry. Check condition before committing.' : 'Premium raw. Condition and pop report matter here.'}${ownedTag}`;
   return 'Sync live prices to unlock grade analysis for this card.';
 }
 

@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260711k">
+  <link rel="stylesheet" href="style.css?v=20260711l">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2551,7 +2551,7 @@
             <button class="sgt-btn" data-grade="psa10" type="button">PSA 10</button>
           </div>
         </div>
-        <p class="page-intro-sub">Cards from your collection and wishlist ranked by standout potential — grading premium, price momentum, and entry opportunity.</p>
+        <p class="page-intro-sub" id="soSubtitle">Standout cards on the market within your per-card budget — ranked by grading premium and entry opportunity.</p>
       </section>
       <div class="so-carousel" id="soCarousel"></div>
       <div class="so-dots" id="soDots"></div>
@@ -2866,7 +2866,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260711k"></script>
+  <script src="app.js?v=20260711l"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
