@@ -8087,6 +8087,8 @@ function renderCompare() {
   let verdict = null;
   if (both) verdict = computeCompareVerdict(a, b);
 
+  const langsDiffer = both && a.lang !== b.lang;
+
   body.innerHTML = `
     <div class="compare-grid">
       ${renderCompareSlot(0, a, b, verdict)}
@@ -8098,11 +8100,20 @@ function renderCompare() {
         <div>${verdict.summary}</div>
       </div>
     ` : ''}
+    ${both ? `
+      <div class="compare-merge-row">
+        <button class="compare-merge-btn" type="button">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3"/><polyline points="15 3 12 6 9 3"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Merge as counterparts
+        </button>
+        <div class="compare-merge-msg" id="compareMergeMsg" style="display:none"></div>
+      </div>
+    ` : ''}
   `;
 
   body.querySelectorAll('.compare-slot[data-id]').forEach(el => {
     el.addEventListener('click', (e) => {
-      if (e.target.closest('.compare-slot-remove')) return;
+      if (e.target.closest('.compare-slot-remove, .compare-lang-sel')) return;
       selectCard(el.dataset.id);
     });
   });
@@ -8115,6 +8126,14 @@ function renderCompare() {
       updateCompareButton();
     });
   });
+  body.querySelectorAll('.compare-lang-sel').forEach(sel => {
+    sel.addEventListener('change', e => {
+      e.stopPropagation();
+      const idx = parseInt(sel.dataset.slot);
+      if (compareSlots[idx]) { compareSlots[idx].lang = sel.value; saveCompare(); renderCompare(); }
+    });
+  });
+  body.querySelector('.compare-merge-btn')?.addEventListener('click', _mergeCPFromCompare);
 }
 
 function renderCompareSlot(idx, slot, other, verdict) {
@@ -8139,10 +8158,17 @@ function renderCompareSlot(idx, slot, other, verdict) {
     return predicate(slot, other) ? 'winner' : '';
   }
 
+  const langOpts = ['EN','JP','CN','KR'].map(l =>
+    `<option value="${l}"${slot.lang === l ? ' selected' : ''}>${l}</option>`
+  ).join('');
+
   return `
     <div class="compare-slot ${isWinner ? 'is-winner' : ''}" data-id="${slot.id}">
       <button class="compare-slot-remove" data-slot="${idx}" title="Remove">✕</button>
-      <div class="compare-slot-label">Slot ${slotLabel} · ${slot.lang === 'JP' ? '🇯🇵 Japanese' : '🇬🇧 English'}</div>
+      <div class="compare-slot-label">
+        Slot ${slotLabel}
+        <select class="compare-lang-sel" data-slot="${idx}">${langOpts}</select>
+      </div>
       <div class="compare-card-row">
         ${slot.img ? `<img class="compare-card-img" src="${_hiresUrl(slot.img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="compare-card-img"></div>'}
         <div class="compare-card-info">
@@ -8183,6 +8209,33 @@ function renderCompareSlot(idx, slot, other, verdict) {
       </div>
     </div>
   `;
+}
+
+function _mergeCPFromCompare() {
+  const a = compareSlots[0], b = compareSlots[1];
+  if (!a || !b) return;
+  if (a.lang === b.lang) {
+    const msgEl = $('compareMergeMsg');
+    if (msgEl) { msgEl.textContent = 'Select different languages for each slot before merging.'; msgEl.style.display = ''; }
+    return;
+  }
+  // Bidirectional counterpart override — works for any language pair
+  setCPOverride(a.id, b.id);
+  setCPOverride(b.id, a.id);
+  // For CN/KR also write a multi-lang link so the tab appears on the card
+  if (a.lang === 'CN' || a.lang === 'KR' || b.lang === 'CN' || b.lang === 'KR') {
+    const cardA = getCardById(a.id), cardB = getCardById(b.id);
+    if (cardA && cardB) {
+      setMLLink(cardA, cardB, b.lang);
+    }
+  }
+  const msgEl = $('compareMergeMsg');
+  if (msgEl) {
+    msgEl.textContent = `Linked: ${a.name} (${a.lang}) ↔ ${b.name} (${b.lang})`;
+    msgEl.className = 'compare-merge-msg compare-merge-ok';
+    msgEl.style.display = '';
+    setTimeout(() => { msgEl.style.display = 'none'; msgEl.className = 'compare-merge-msg'; }, 5000);
+  }
 }
 
 function computeCompareVerdict(a, b) {
