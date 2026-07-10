@@ -25274,9 +25274,11 @@ function _setupMarketBrief() {
     if (!cardData?.cards?.length) return;
     // Find the highest-signal card from recommendations cache or scan a sample
     let topCard = null, topScore = -99;
+    const maxBudget = getMaxBudgetGBP();
     const sample = cardData.cards.slice(0, 3000);
     for (const card of sample) {
       try {
+        if (maxBudget < BUDGET_DEFAULT && usdToGbp(getCurrentPrice(card) || 0) > maxBudget) continue;
         const s = _wtbCardSignal(card);
         if (s && (s.signal === 'STRONG BUY' || s.signal === 'BUY') && s.score > topScore) {
           topScore = s.score;
