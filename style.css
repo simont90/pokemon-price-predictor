@@ -15651,7 +15651,12 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 10px; margin-bottom: 8px;
 }
-.so-grade-toggle { display: flex; gap: 6px; }
+.so-grade-toggle {
+  display: flex; gap: 6px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; max-width: 100%; padding-bottom: 2px;
+}
+.so-grade-toggle::-webkit-scrollbar { display: none; }
 .sgt-btn {
   padding: 6px 14px; border: 1.5px solid var(--border); border-radius: 20px;
   background: var(--bg-raised); color: var(--text-dim);
