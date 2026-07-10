@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260710f">
+  <link rel="stylesheet" href="style.css?v=20260710g">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2015,8 +2015,8 @@
           <p class="mkt-footnote" id="marketplaceFootnote"></p>
         </section>
 
-        <!-- Rip or Buy -->
-        <section class="card rip-card" id="ripSection" data-tab-group="strategy" data-collapse-mobile="1" style="display:none">
+        <!-- Rip or Buy — hidden from Strategy tab; data still computed for AI analysis -->
+        <section class="card rip-card" id="ripSection" data-tab-group="strategy-hidden" data-collapse-mobile="1" style="display:none">
           <div class="rip-header">
             <h2>Rip or Buy?</h2>
             <div class="rip-verdict-badge" id="ripVerdict"></div>
@@ -2072,8 +2072,8 @@
           <button type="button" id="dealSaveHold" class="deal-save-btn" style="display:none">Save to Hold Strategy</button>
         </section>
 
-        <!-- 5-Year Forecast -->
-        <section class="card forecast-card" id="forecastSection" data-tab-group="strategy" data-collapse-mobile="1" style="display:none">
+        <!-- 5-Year Forecast — hidden from Strategy tab; data still computed for AI analysis -->
+        <section class="card forecast-card" id="forecastSection" data-tab-group="strategy-hidden" data-collapse-mobile="1" style="display:none">
           <h2>5-Year Price Forecast</h2>
           <p class="card-desc">Projected appreciation based on rarity, character, and market trends</p>
           <div class="fc-canvas-wrap">
@@ -2775,7 +2775,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260710f"></script>
+  <script src="app.js?v=20260710g"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
