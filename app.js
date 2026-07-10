@@ -4685,17 +4685,17 @@ function renderPriceHistory(history) {
     section.style.display = 'none';
     return;
   }
-  // Filter to entries that have a usable raw-price > 0
+  // Filter to entries that have at least one usable price
   const cleaned = history
-    .filter(h => h && h.date && (h['raw-price'] || h['psa-9-price']))
+    .filter(h => h && h.date && (h['raw-price'] || h['psa-9-price'] || h['psa-10-price']))
     .map(h => ({
       date: h.date,
-      raw: h['raw-price'] || 0,
-      psa9: h['psa-9-price'] || 0,
+      raw:   h['raw-price']    || 0,
+      psa9:  h['psa-9-price']  || 0,
       psa10: h['psa-10-price'] || 0,
-      vol: h['sales-volume'] || 0,
+      vol:   h['sales-volume'] || 0,
     }))
-    .filter(h => h.raw > 0)
+    .filter(h => h.raw > 0 || h.psa9 > 0 || h.psa10 > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   if (cleaned.length < 3) { section.style.display = 'none'; return; }
@@ -4705,7 +4705,7 @@ function renderPriceHistory(history) {
   $('phLoading').style.display = 'none';
   $('phContent').style.display = 'block';
 
-  // Reset to default 30d when a new card loads
+  // Reset to default 1M (30d) when a new card loads
   priceHistoryRange = 30;
   document.querySelectorAll('.phr-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.range === '30');
@@ -4772,7 +4772,8 @@ function drawAndAnnotatePriceHistory() {
   $('phSummary').innerHTML = verdict.summary;
 
   // ---- Draw chart ----
-  drawPriceChart($('priceHistChart'), data);
+  const activeSeries = drawPriceChart($('priceHistChart'), data);
+  _renderPhLegend($('phLegend'), activeSeries);
 }
 
 function computePriceVerdict({ d7, d30, d90, last, minP, maxP, avgP, fromLow, fromHigh }) {
@@ -4831,6 +4832,18 @@ function computePriceVerdict({ d7, d30, d90, last, minP, maxP, avgP, fromLow, fr
   };
 }
 
+function _phHexRgb(hex) {
+  return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
+}
+
+function _renderPhLegend(el, series) {
+  if (!el || !series?.length) return;
+  el.innerHTML = series.map(s =>
+    `<div class="ph-leg-item"><span class="ph-leg-dot" style="background:${s.color}"></span><span class="ph-leg-lbl">${s.label}</span></div>`
+  ).join('');
+}
+
+// Returns the active series array for the legend.
 function drawPriceChart(canvas, data) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
@@ -4840,81 +4853,120 @@ function drawPriceChart(canvas, data) {
   ctx.scale(dpr, dpr);
   const W = rect.width, H = rect.height;
   ctx.clearRect(0, 0, W, H);
-  if (data.length < 2) return;
+  if (data.length < 2) return [];
 
-  const pad = { l: 56, r: 18, t: 16, b: 26 };
+  const pad = { l: 60, r: 18, t: 16, b: 28 };
   const cw = W - pad.l - pad.r;
   const ch = H - pad.t - pad.b;
 
-  // Convert raw USD prices to GBP for display
-  const rates = data.map(d => d.raw * fxRate);
-  const minP = Math.min(...rates);
-  const maxP = Math.max(...rates);
+  // Build series — include only if ≥ 3 non-zero data points
+  const SERIES_DEF = [
+    { key: 'psa10', label: 'PSA 10', color: '#e8b634', lw: 2.0 },
+    { key: 'psa9',  label: 'PSA 9',  color: '#74b9ff', lw: 1.5 },
+    { key: 'raw',   label: 'Raw',    color: '#9b9fb0', lw: 1.5 },
+  ];
+  const series = SERIES_DEF.map(def => ({
+    ...def,
+    vals: data.map(d => d[def.key] > 0 ? d[def.key] * fxRate : null),
+  })).filter(s => s.vals.filter(v => v !== null).length >= 3);
+
+  if (!series.length) return [];
+
+  // Y range across all series
+  const allV = series.flatMap(s => s.vals.filter(v => v !== null));
+  const minP = Math.min(...allV), maxP = Math.max(...allV);
   const span = Math.max(maxP - minP, 0.01);
-  const yMin = minP - span * 0.10;
-  const yMax = maxP + span * 0.10;
+  const yMin = minP - span * 0.06;
+  const yMax = maxP + span * 0.12;
 
-  function x(i) { return pad.l + (i / (data.length - 1)) * cw; }
-  function y(v) { return pad.t + ch - ((v - yMin) / (yMax - yMin)) * ch; }
+  function xi(i)  { return pad.l + (i / (data.length - 1)) * cw; }
+  function yv(v)  { return v == null ? null : pad.t + ch - ((v - yMin) / (yMax - yMin)) * ch; }
+  function fmtY(v) { return v >= 1000 ? '£' + (v / 1000).toFixed(v >= 10000 ? 0 : 1) + 'k' : '£' + v.toFixed(v < 10 ? 2 : 0); }
 
-  // Gridlines + y-axis labels (4 horizontal divisions)
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  const isDark = document.documentElement.dataset.theme !== 'light';
+  const gridColor  = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)';
+  const labelColor = isDark ? '#777a8a' : '#9099a8';
+
+  // Gridlines + y-axis labels
   ctx.lineWidth = 1;
-  ctx.fillStyle = '#777a8a';
   ctx.font = '10px JetBrains Mono, monospace';
   ctx.textAlign = 'right';
   for (let i = 0; i <= 4; i++) {
     const gy = pad.t + (ch / 4) * i;
+    ctx.strokeStyle = gridColor;
     ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
-    const val = yMax - ((yMax - yMin) / 4) * i;
-    ctx.fillText('£' + val.toFixed(val < 10 ? 2 : 0), pad.l - 6, gy + 3);
+    ctx.fillStyle = labelColor;
+    ctx.fillText(fmtY(yMax - ((yMax - yMin) / 4) * i), pad.l - 5, gy + 3.5);
   }
 
-  // Filled area under curve (gradient)
-  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ch);
-  grad.addColorStop(0, 'rgba(232,182,52,0.25)');
-  grad.addColorStop(1, 'rgba(232,182,52,0.0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.moveTo(x(0), pad.t + ch);
-  data.forEach((d, i) => ctx.lineTo(x(i), y(d.raw * fxRate)));
-  ctx.lineTo(x(data.length - 1), pad.t + ch);
-  ctx.closePath();
-  ctx.fill();
+  // Draw each series (back-to-front: raw first, psa10 last so it's on top)
+  [...series].reverse().forEach((s, ri) => {
+    const isFront = ri === series.length - 1; // PSA 10 (or whatever is first in series)
 
-  // Price line
-  ctx.strokeStyle = '#e8b634';
-  ctx.lineWidth = 2;
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  data.forEach((d, i) => {
-    const px = x(i), py = y(d.raw * fxRate);
-    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-  });
-  ctx.stroke();
+    // Filled area under the top series only
+    if (isFront) {
+      const [r, g, b] = _phHexRgb(s.color);
+      const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ch);
+      grad.addColorStop(0, `rgba(${r},${g},${b},0.18)`);
+      grad.addColorStop(1, `rgba(${r},${g},${b},0.0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      let firstX = null, lastX = null, lastY = null;
+      s.vals.forEach((v, i) => {
+        if (v == null) return;
+        const px = xi(i), py = yv(v);
+        if (firstX == null) { ctx.moveTo(px, py); firstX = px; }
+        else ctx.lineTo(px, py);
+        lastX = px; lastY = py;
+      });
+      if (firstX != null) {
+        ctx.lineTo(lastX, pad.t + ch);
+        ctx.lineTo(firstX, pad.t + ch);
+        ctx.closePath(); ctx.fill();
+      }
+    }
 
-  // Latest point marker
-  const lastIdx = data.length - 1;
-  const lx = x(lastIdx), ly = y(data[lastIdx].raw * fxRate);
-  ctx.fillStyle = '#e8b634';
-  ctx.beginPath(); ctx.arc(lx, ly, 4, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(232,182,52,0.3)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(lx, ly, 8, 0, Math.PI * 2); ctx.stroke();
+    // Line — draw in segments, breaking at null gaps
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = s.lw;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath();
+    let inSegment = false;
+    s.vals.forEach((v, i) => {
+      if (v == null) { inSegment = false; return; }
+      const px = xi(i), py = yv(v);
+      if (!inSegment) { ctx.moveTo(px, py); inSegment = true; }
+      else ctx.lineTo(px, py);
+    });
+    ctx.stroke();
 
-  // X-axis date labels (start, mid, end)
-  ctx.fillStyle = '#777a8a';
-  ctx.font = '10px Space Grotesk, sans-serif';
-  ctx.textAlign = 'center';
-  const labelIdx = [0, Math.floor(data.length / 2), data.length - 1];
-  labelIdx.forEach(i => {
-    if (data[i]) {
-      const d = new Date(data[i].date);
-      const label = d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
-      ctx.fillText(label, x(i), H - 6);
+    // Dot at last non-null point
+    let lastNonNull = null, lastNonNullIdx = -1;
+    s.vals.forEach((v, i) => { if (v != null) { lastNonNull = v; lastNonNullIdx = i; } });
+    if (lastNonNull != null) {
+      const lx = xi(lastNonNullIdx), ly = yv(lastNonNull);
+      ctx.fillStyle = s.color;
+      ctx.beginPath(); ctx.arc(lx, ly, isFront ? 4 : 3, 0, Math.PI * 2); ctx.fill();
+      if (isFront) {
+        ctx.strokeStyle = s.color + '44';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(lx, ly, 7, 0, Math.PI * 2); ctx.stroke();
+      }
     }
   });
+
+  // X-axis date labels (start, mid, end)
+  ctx.fillStyle = labelColor;
+  ctx.font = '10px Space Grotesk, sans-serif';
+  ctx.textAlign = 'center';
+  [0, Math.floor(data.length / 2), data.length - 1].forEach(i => {
+    if (data[i]) {
+      const d = new Date(data[i].date);
+      ctx.fillText(d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }), xi(i), H - 8);
+    }
+  });
+
+  return series;
 }
 
 // Range button handler (bound once on init)

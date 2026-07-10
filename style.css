@@ -1147,7 +1147,11 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .phr-btn:hover { color: var(--text); border-color: var(--text-faint); }
 .phr-btn.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(232,182,52,0.4); }
 
-#priceHistChart { background: var(--bg-raised); border-radius: var(--radius-sm); margin: 0 0 12px; }
+#priceHistChart { background: var(--bg-raised); border-radius: var(--radius-sm); margin: 0 0 8px; }
+.ph-legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 12px; padding: 0 2px; }
+.ph-leg-item { display: flex; align-items: center; gap: 5px; }
+.ph-leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.ph-leg-lbl { font-size: 11px; color: var(--text-faint); font-family: var(--mono); }
 
 .ph-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
 .ph-stat { background: var(--bg-raised); padding: 10px 12px; border-radius: var(--radius-sm); text-align: center; }

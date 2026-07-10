@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260710v">
+  <link rel="stylesheet" href="style.css?v=20260710w">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1908,23 +1908,24 @@
             <h2>Price History</h2>
             <div class="ph-verdict" id="phVerdict"></div>
           </div>
-          <p class="card-desc">Daily raw market price — has it spiked, dropped, or stayed flat?</p>
+          <p class="card-desc">Per-grade price history — Raw, PSA 9, PSA 10 where available</p>
           <div class="ph-loading" id="phLoading">Loading price history…</div>
           <div class="ph-content" id="phContent" style="display:none">
             <div class="ph-current-row">
               <div class="ph-current">
-                <div class="ph-current-label">Current</div>
+                <div class="ph-current-label">Raw (ungraded)</div>
                 <div class="ph-current-value" id="phCurrent">—</div>
               </div>
               <div class="ph-deltas" id="phDeltas"></div>
             </div>
             <div class="ph-range" id="phRange">
-              <button data-range="30" class="phr-btn active">30d</button>
-              <button data-range="60" class="phr-btn">60d</button>
-              <button data-range="90" class="phr-btn">90d</button>
-              <button data-range="all" class="phr-btn">All</button>
+              <button data-range="30"  class="phr-btn active">1M</button>
+              <button data-range="90"  class="phr-btn">3M</button>
+              <button data-range="180" class="phr-btn">6M</button>
+              <button data-range="365" class="phr-btn">1Y</button>
             </div>
-            <canvas id="priceHistChart" width="500" height="220" style="width:100%;height:220px;"></canvas>
+            <canvas id="priceHistChart" width="500" height="240" style="width:100%;height:240px;"></canvas>
+            <div class="ph-legend" id="phLegend"></div>
             <div class="ph-stats" id="phStats"></div>
             <div class="ph-summary" id="phSummary"></div>
           </div>
@@ -2841,7 +2842,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260710v"></script>
+  <script src="app.js?v=20260710w"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
