@@ -490,21 +490,36 @@ async function init() {
       setsData = {};
     }
 
-    // Fetch exchange rate (small, non-blocking)
+    // Exchange rate: apply cached value immediately (zero network wait), refresh in background.
     try {
-      const fxR = await fetch('https://open.er-api.com/v6/latest/GBP').then(r => r.json());
-      if (fxR.rates?.USD) {
+      const _fxCached = JSON.parse(localStorage.getItem('pkm-fx-v1') || 'null');
+      if (_fxCached?.rates?.USD) {
         _currencyRates = {
           GBP: 1,
-          USD: fxR.rates.USD || 1.27,
-          EUR: fxR.rates.EUR || 1.17,
-          JPY: fxR.rates.JPY || 190,
-          AUD: fxR.rates.AUD || 2.01,
-          CAD: fxR.rates.CAD || 1.74,
+          USD: _fxCached.rates.USD || 1.27,
+          EUR: _fxCached.rates.EUR || 1.17,
+          JPY: _fxCached.rates.JPY || 190,
+          AUD: _fxCached.rates.AUD || 2.01,
+          CAD: _fxCached.rates.CAD || 1.74,
         };
-        fxRate = 1 / fxR.rates.USD; // USD→GBP for internal calcs
+        fxRate = 1 / _fxCached.rates.USD;
       }
-    } catch (e) { /* use default */ }
+    } catch (_e) {}
+    // Background refresh — does not block init.
+    fetch('https://open.er-api.com/v6/latest/GBP').then(r => r.json()).then(fxR => {
+      if (!fxR?.rates?.USD) return;
+      _currencyRates = {
+        GBP: 1,
+        USD: fxR.rates.USD || 1.27,
+        EUR: fxR.rates.EUR || 1.17,
+        JPY: fxR.rates.JPY || 190,
+        AUD: fxR.rates.AUD || 2.01,
+        CAD: fxR.rates.CAD || 1.74,
+      };
+      fxRate = 1 / fxR.rates.USD;
+      try { localStorage.setItem('pkm-fx-v1', JSON.stringify(fxR)); } catch {}
+      try { $('fxValue').textContent = `£${fxRate.toFixed(4)}`; } catch {}
+    }).catch(() => {});
 
     if (loadingText) loadingText.textContent = 'Initialising…';
 
@@ -582,6 +597,21 @@ async function init() {
   _setupHomePip();
   // Global 6AM GMT refresh: fetch live prices for all tracked cards once per day.
   setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 800);
+  // Seed price cache for tracked cards with no cached price — runs once per browser session.
+  if (!sessionStorage.getItem('_pkmSeedDone')) {
+    sessionStorage.setItem('_pkmSeedDone', '1');
+    setTimeout(() => {
+      try {
+        const cache = getPriceCache();
+        const uncached = psTrackedIds().filter(id => !cache[id]);
+        if (uncached.length > 0) {
+          const q = [...uncached];
+          const work = async () => { while (q.length) { try { await psRefreshOne(q.shift()); } catch {} } };
+          Promise.all(Array.from({ length: Math.min(PRICE_SYNC_CONCURRENCY, uncached.length) }, work)).catch(() => {});
+        }
+      } catch {}
+    }, 2500);
+  }
 }
 
 // Re-check the 6AM boundary whenever the tab regains focus — handles the case
@@ -1669,7 +1699,7 @@ function doSearch(query) {
     } catch (e) {}
     return `
     <div class="search-result-item${isJP ? ' jp-card' : isCN ? ' cn-card' : isKR ? ' kr-card' : ''}" data-id="${c.i}">
-      ${`<img class="search-result-img" src="${getCardImg(c)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">`}
+      ${`<img class="search-result-img" src="${_hiresUrl(getCardImg(c))}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">`}
       <div class="search-result-info">
         <div class="search-result-name">${langBadge}${esc(c.n)}${cpFlag}${jpNameLabel}</div>
         <div class="search-result-meta">

@@ -726,6 +726,7 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   display: flex;
   gap: 8px;
   margin: 8px 0 4px;
+  align-items: center;
 }
 .cg-ebay-input {
   flex: 1;
@@ -1146,7 +1147,7 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .phr-btn {
   background: var(--bg-raised); color: var(--text-muted); border: 1px solid var(--border);
   padding: 4px 12px; font-size: 11px; font-weight: 600; border-radius: 4px;
-  cursor: pointer; font-family: var(--mono);
+  cursor: pointer; font-family: var(--mono); white-space: nowrap;
 }
 .phr-btn:hover { color: var(--text); border-color: var(--text-faint); }
 .phr-btn.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(232,182,52,0.4); }
@@ -1458,7 +1459,7 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .vp-filter-btn {
   padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border);
   background: transparent; color: var(--text-muted); font-size: 12px;
-  cursor: pointer; transition: all 0.15s;
+  cursor: pointer; white-space: nowrap; transition: all 0.15s;
 }
 .vp-filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .vp-filter-btn:hover:not(.active) { border-color: var(--text-muted); }
@@ -1525,7 +1526,7 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .vp-signal.signal-strong-buy { background: rgba(34,197,94,0.15); color: #4ade80; }
 .vp-signal.signal-buy { background: rgba(34,197,94,0.1); color: #86efac; }
 .vp-psa10 { font-size: 11px; color: #4ade80; font-weight: 600; }
-.vp-live-tag { font-size: 8px; background: rgba(34,197,94,0.2); color: #4ade80; padding: 1px 4px; border-radius: 3px; font-weight: 700; vertical-align: middle; margin-left: 3px; letter-spacing: 0.5px; }
+.vp-live-tag { font-size: 10px; background: rgba(34,197,94,0.2); color: #4ade80; padding: 1px 4px; border-radius: 3px; font-weight: 700; vertical-align: middle; margin-left: 3px; letter-spacing: 0.5px; }
 .vp-reasons { font-size: 9px; color: var(--text-muted); margin-top: 2px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
 .vp-disclaimer { font-size: 10px; color: var(--text-faint); margin-top: 8px; text-align: center; }
 
@@ -3053,6 +3054,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   padding: 10px 14px;
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   font-family: inherit;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
@@ -3736,7 +3738,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .alerts-tab {
   background: none; border: none; padding: 8px 12px;
   font-family: var(--font); font-size: 12px; font-weight: 600;
-  color: var(--text-faint); cursor: pointer;
+  color: var(--text-faint); cursor: pointer; white-space: nowrap;
   border-bottom: 2px solid transparent; transition: all 0.15s;
 }
 .alerts-tab:hover { color: var(--text); }
@@ -7340,7 +7342,7 @@ section.card.is-collapsed { padding-bottom: 18px; }
 .sync-tab {
   background: transparent; border: none; color: var(--text-muted);
   font: 500 13px/1 'Space Grotesk', system-ui, sans-serif;
-  padding: 8px 16px; border-radius: 7px; cursor: pointer;
+  padding: 8px 16px; border-radius: 7px; cursor: pointer; white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 }
 .sync-tab:hover { color: var(--text); }
@@ -7917,7 +7919,7 @@ section.card .card-collapse-btn { padding: 10px; }
   padding: 5px 13px; border-radius: 20px;
   background: var(--bg-raised); border: 1px solid var(--border);
   color: var(--text-muted); font-size: 12px; font-weight: 600;
-  cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s;
+  cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .hva-sort-btn.active { background: var(--accent); border-color: var(--accent); color: #000; }
 .hva-sort-btn:hover:not(.active) { border-color: var(--accent); color: var(--text); }
@@ -8195,7 +8197,7 @@ section.card .card-collapse-btn { padding: 10px; }
   background: linear-gradient(135deg, rgba(30,33,50,0.9) 0%, rgba(10,11,20,0.9) 100%);
 }
 .home-card-info {
-  padding: 8px 10px 10px;
+  padding: 8px 10px;
   background: rgba(10,11,18,0.96);
   border-top: 1px solid rgba(255,255,255,0.09);
 }
@@ -8715,7 +8717,7 @@ section.card .card-collapse-btn { padding: 10px; }
 .reco-btn.reco-watch:hover,
 .reco-btn.reco-watch:active  { background: rgba(61,214,140,0.85); color: #072215; border-color: transparent; }
 .reco-manual-tag {
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -11531,7 +11533,7 @@ html { scroll-behavior: smooth; }
 .gm-sort-btn {
   background: var(--bg-raised); border: none; border-radius: 16px;
   font: 600 11px/1 var(--font-main); color: var(--text-muted);
-  padding: 6px 14px; cursor: pointer; transition: background 0.15s, color 0.15s;
+  padding: 6px 14px; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s;
 }
 .gm-sort-btn.gm-sort-active { background: var(--accent); color: #111; }
 .grade-modal-list {
@@ -12452,6 +12454,7 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
   font: 700 12px/1 var(--font-ui, 'Space Grotesk', sans-serif);
   letter-spacing: .04em;
   cursor: pointer;
+  white-space: nowrap;
   transition: background .15s, color .15s;
 }
 .vg-lang-btn.vg-lang-active { background: var(--accent, #e8b634); color: #000; }
@@ -12844,7 +12847,7 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
 }
 
 .binder-dex-lang {
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
   padding: 1px 4px;
   border-radius: 3px;
@@ -15038,7 +15041,7 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   margin-top: 5px;
 }
 .reco-conv-label {
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -15660,7 +15663,7 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .sgt-btn {
   padding: 6px 14px; border: 1.5px solid var(--border); border-radius: 20px;
   background: var(--bg-raised); color: var(--text-dim);
-  font-size: 12px; font-weight: 600; cursor: pointer;
+  font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
   transition: all 0.15s; -webkit-tap-highlight-color: transparent;
 }
 .sgt-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(232,182,52,0.1); }
