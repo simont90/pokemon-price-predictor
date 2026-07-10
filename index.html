@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260711n">
+  <link rel="stylesheet" href="style.css?v=20260711o">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2549,6 +2549,7 @@
             <button class="sgt-btn active" data-grade="raw" type="button">Raw</button>
             <button class="sgt-btn" data-grade="psa9" type="button">PSA 9</button>
             <button class="sgt-btn" data-grade="psa10" type="button">PSA 10</button>
+            <button class="sgt-btn sgt-btn--upgrade" data-grade="upgrade" type="button">Upgrade</button>
           </div>
         </div>
         <p class="page-intro-sub" id="soSubtitle">Standout cards on the market within your per-card budget — ranked by grading premium and entry opportunity.</p>
@@ -2866,7 +2867,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260711n"></script>
+  <script src="app.js?v=20260711o"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

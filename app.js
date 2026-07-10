@@ -24416,6 +24416,117 @@ function renderStandouts() {
   const portfolioIds = new Set(portfolio.map(p => p.id).filter(Boolean));
   const wishlistIds  = new Set(wishlist.map(w => w.id).filter(Boolean));
   const priceCache   = getPriceCache();
+  // — Upgrade tab: grading opportunity analysis for owned raw cards —
+  if (_soGrade === 'upgrade') {
+    const upSubEl = document.getElementById('soSubtitle');
+    if (upSubEl) upSubEl.textContent = 'Best grading opportunities from your collection — ranked by net profit after PSA grading fee.';
+
+    if (!portfolio.length) {
+      carousel.innerHTML = '<div class="so-empty">Add cards to your collection to see grading upgrade opportunities.</div>';
+      dotsEl.innerHTML = '';
+    } else {
+      const upgrades = [];
+      for (const entry of portfolio) {
+        const card = getCardById(entry.id);
+        if (!card) continue;
+        try {
+          const anchor = getPsa10Anchor(card);
+          const psa10USD = anchor.usd || 0;
+          if (psa10USD <= 0) continue;
+          const rawUSD = getCurrentPrice(card) || 0;
+          const rawGBP = usdToGbp(rawUSD);
+          const psa10GBP = psa10USD * fx;
+          if (psa10GBP <= rawGBP) continue;
+          const gradingFeeGBP = getUkGradingFeeGBP(psa10USD);
+          const gradingMatGBP = getGradingMaterialsCostGBP(card.i);
+          const allInCostGBP = gradingFeeGBP + gradingMatGBP;
+          const netUpliftGBP = psa10GBP - rawGBP - allInCostGBP;
+          if (netUpliftGBP <= 0) continue;
+          const hc = _getHoldCoreCached(card);
+          const gambleSt = hc?.ok ? hc.strategies?.find(s => s.key === 'gamble') : null;
+          const roi = (gambleSt && gambleSt.roi > 0) ? gambleSt.roi : (netUpliftGBP / allInCostGBP * 100);
+          upgrades.push({
+            card, rawGBP, psa10GBP, gradingFeeGBP, allInCostGBP, netUpliftGBP, roi,
+            gemRateFrac: card.g != null ? card.g : null,
+            waitDisplay: getUkGradingWaitDisplay(psa10USD),
+          });
+        } catch (_) {}
+      }
+
+      upgrades.sort((a, b) => b.netUpliftGBP - a.netUpliftGBP);
+      const upTop = upgrades.slice(0, 12);
+
+      if (upTop.length === 0) {
+        carousel.innerHTML = '<div class="so-empty">No grading opportunities found — cards need a PSA 10 price basis to calculate uplift.</div>';
+        dotsEl.innerHTML = '';
+      } else {
+        carousel.innerHTML = upTop.map((item, i) => {
+          const { card, rawGBP, psa10GBP, gradingFeeGBP, allInCostGBP, netUpliftGBP, gemRateFrac, waitDisplay } = item;
+          const imgUrl = _hiresUrl(getCardImg(card));
+          const gemPct = gemRateFrac != null ? (gemRateFrac * 100).toFixed(0) + '%' : null;
+          const gradeROI = netUpliftGBP / allInCostGBP;
+          const badgeClass = gradeROI >= 2 ? 'so-risk-low' : gradeROI >= 1 ? 'so-risk-med' : 'so-risk-high';
+          const badgeLabel = gradeROI >= 2 ? 'Strong case' : gradeROI >= 1 ? 'Worth grading' : 'Marginal';
+          return `<div class="so-card" data-so-i="${i}">
+            <div class="so-img-wrap">
+              ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
+              <span class="so-tag" style="background:rgba(116,185,255,0.2);color:#74b9ff">Owned</span>
+            </div>
+            <div class="so-body">
+              <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
+              <div class="so-set">${esc(card.s || '')}${card.cn ? ' · #' + esc(card.cn) : ''}</div>
+              <div class="so-strat-row">
+                <div class="so-strat-allin">
+                  <span class="so-strat-lbl">Raw → PSA 10</span>
+                  <span class="so-strat-price">${fmtGBPDirect(psa10GBP)}</span>
+                </div>
+                <div class="so-strat-roi" style="color:#34d399">+${fmtGBPDirect(netUpliftGBP)}</div>
+              </div>
+              <div class="so-strat-meta">
+                Grade fee ~${fmtGBPDirect(gradingFeeGBP)} · Wait ${waitDisplay}${gemPct ? ' · Gem ' + gemPct : ''}
+              </div>
+              <div class="so-strat-badges">
+                <span class="so-risk-badge ${badgeClass}">${badgeLabel}</span>
+                <span class="so-raw-price">Raw ${fmtGBPDirect(rawGBP)}</span>
+              </div>
+              <div class="so-actions">
+                <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+
+        dotsEl.innerHTML = upTop.map((_, i) =>
+          `<div class="so-dot${i === 0 ? ' active' : ''}" data-dot="${i}"></div>`
+        ).join('');
+
+        if (!carousel.dataset.scrollBound) {
+          carousel.dataset.scrollBound = '1';
+          carousel.addEventListener('scroll', () => {
+            const w = (carousel.querySelector('.so-card')?.offsetWidth || 1) + 16;
+            const idx = Math.round(carousel.scrollLeft / w);
+            dotsEl.querySelectorAll('.so-dot').forEach((d, i2) => d.classList.toggle('active', i2 === idx));
+          }, { passive: true });
+        }
+      }
+    }
+
+    // Wire grade toggle (idempotent — guard prevents double-binding)
+    const upToggle = document.getElementById('soGradeToggle');
+    if (upToggle && !upToggle.dataset.bound) {
+      upToggle.dataset.bound = '1';
+      upToggle.addEventListener('click', e => {
+        const btn = e.target.closest('[data-grade]');
+        if (!btn) return;
+        _soGrade = btn.dataset.grade;
+        upToggle.querySelectorAll('.sgt-btn').forEach(b => b.classList.toggle('active', b === btn));
+        renderStandouts();
+      });
+    }
+    return;
+  }
+  // — end Upgrade tab —
+
   const stratKey     = _soGrade === 'psa10' ? 'psa10' : _soGrade === 'psa9' ? 'psa9' : 'raw';
   const gradeLabel   = _soGrade === 'psa10' ? 'PSA 10' : _soGrade === 'psa9' ? 'PSA 9' : 'Raw';
 

@@ -15659,6 +15659,8 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   transition: all 0.15s; -webkit-tap-highlight-color: transparent;
 }
 .sgt-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(232,182,52,0.1); }
+.sgt-btn--upgrade { border-color: rgba(116,185,255,0.4); color: #74b9ff; }
+.sgt-btn--upgrade.active { border-color: #74b9ff; color: #74b9ff; background: rgba(116,185,255,0.12); }
 
 .so-carousel {
   display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
