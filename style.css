@@ -14842,6 +14842,11 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .hgd-winner-tie   { border-color: var(--text-muted); color: var(--text-muted); }
 .hgd-pos { color: #3dd68c; }
 .hgd-neg { color: #ff6b6b; }
+.hgd-budget-ok   { color: #3dd68c; font-size: 10px; }
+.hgd-budget-warn { color: var(--accent); font-size: 10px; }
+.hgd-over-budget { color: var(--accent); }
+[data-theme="light"] .hgd-budget-ok { color: #00875a; }
+[data-theme="light"] .hgd-over-budget { color: #a86800; }
 [data-theme="light"] .hgd-pos { color: #00875a; }
 [data-theme="light"] .hgd-neg { color: #cc2200; }
 [data-theme="light"] .hgd-winner-grade { border-color: #00875a; color: #00875a; }

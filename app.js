@@ -13677,7 +13677,7 @@ function renderHoldCounterpartCompare(card) {
   });
 }
 
-function _renderGradeDonut(container, card, rawEntryUSD, gradeCost, gradingFeeUSD, gradingMaterialsUSD, psa10Price, fx, gradeOutcomes, gradedStrategies) {
+function _renderGradeDonut(container, card, rawEntryUSD, gradeCost, gradingFeeUSD, gradingMaterialsUSD, psa10Price, fx, gradeOutcomes, gradedStrategies, rawProfitUSD, rawRoi) {
   if (!container || !card || !psa10Price) { if (container) container.style.display = 'none'; return; }
 
   const rawGBP  = rawEntryUSD * fx;
@@ -13686,7 +13686,7 @@ function _renderGradeDonut(container, card, rawEntryUSD, gradeCost, gradingFeeUS
 
   if (!rawGBP || rawGBP < 1) { container.style.display = 'none'; return; }
 
-  // ---- Current-price PSA 9 minimum scenario (for single-donut verdict) ----
+  // ---- Prices today ----
   const psa9MarketUSD     = estimateGradePrice(card, 9, psa10Price);
   const psa9NetGBP        = psa9MarketUSD * (1 - BUY_SELL_FRICTION) * fx;
   const psa9NowProfitGBP  = psa9NetGBP - costGBP;
@@ -13695,7 +13695,11 @@ function _renderGradeDonut(container, card, rawEntryUSD, gradeCost, gradingFeeUS
   const isProfitable9     = psa9NowProfitGBP >= 0;
   const isProfitable10    = psa10NowProfitGBP >= 0;
 
-  // ---- 5yr EV projections ----
+  // ---- Gem rate ----
+  const gemRatePct = Math.round(((typeof card.g === 'number' && card.g > 0) ? card.g : 0.2) * 100);
+  const GEM_THRESHOLD = 15; // below this grading is too risky
+
+  // ---- 5yr projections ----
   const o9  = gradeOutcomes?.find(o => o.grade === 9);
   const o10 = gradeOutcomes?.find(o => o.grade === 10);
   const rg9ProfitGBP  = (o9?.profitUSD  ?? 0) * fx;
@@ -13712,22 +13716,31 @@ function _renderGradeDonut(container, card, rawEntryUSD, gradeCost, gradingFeeUS
   const bg10ProfitGBP = bg10 ? bg10.profit * fx : 0;
   const bg10ROI       = bg10 ? bg10.roi    : 0;
 
-  // ---- Comparison badge ----
-  const diff9 = rg9ROI - bg9ROI;
-  const useDual = Math.abs(diff9) < 10; // show dual mini-donuts when returns are close
-  const winnerTag = diff9 >= 5  ? 'BUY RAW + GRADE WINS'
-    : diff9 <= -5 ? 'BUY GRADED WINS'
-    : 'COMPARABLE';
-  const winnerCls = diff9 >= 5  ? 'hgd-winner-grade'
-    : diff9 <= -5 ? 'hgd-winner-buy'
-    : 'hgd-winner-tie';
+  // Raw hold 5yr
+  const rawHoldProfitGBP = (rawProfitUSD ?? 0) * fx;
+  const rawHoldROI       = rawRoi ?? 0;
 
+  // ---- Budget ----
+  const budgetGBP   = getMaxBudgetGBP();
+  const hasBudget   = budgetGBP < 99000;
+  const overBudget  = v => hasBudget && v > budgetGBP;
+  const budgetNote  = v => hasBudget ? (v <= budgetGBP
+    ? `<span class="hgd-budget-ok">within budget</span>`
+    : `<span class="hgd-budget-warn">over budget (£${Math.round(budgetGBP)} max)</span>`) : '';
+
+  // ---- Scenario detection ----
+  const gradingViable = isProfitable9 && gemRatePct >= GEM_THRESHOLD;
+  const psa10Only     = !isProfitable9 && isProfitable10 && gemRatePct >= GEM_THRESHOLD;
+  // RAW_HOLD_BEST: low gem rate OR neither PSA 9 nor 10 profitable today
+  const rawHoldBest   = !gradingViable && !psa10Only;
+
+  // ---- Helpers ----
   const fmtS  = v => v >= 1000 ? `£${(v / 1000).toFixed(1)}k` : `£${Math.round(v)}`;
   const fmtPL = v => `${v >= 0 ? '+' : ''}${fmtGBPDirect(v)}`;
   const clsPL = v => v >= 0 ? 'hgd-pos' : 'hgd-neg';
   const roiClr = v => v >= 0 ? '#3dd68c' : '#ff6b6b';
 
-  // Shared arc generator for both single and mini-donut modes
+  // Shared arc generator
   const _arcs = (segs, cx, cy, r, sw) => {
     const C = 2 * Math.PI * r;
     const GAP = 4;
@@ -13745,147 +13758,229 @@ function _renderGradeDonut(container, card, rawEntryUSD, gradeCost, gradingFeeUS
     return html;
   };
 
-  let donutHtml, titleText, subtitleText, legendHtml;
-
-  if (useDual) {
-    // ---- DUAL MINI-DONUT MODE (options within 10 ROI pts) ----
-    titleText    = diff9 > 0 ? 'Close Call — Grade Gives a Slight Edge'
-      : diff9 < 0 ? 'Close Call — Buying Graded Slightly Ahead'
-      : 'Dead Heat — Either Path Works';
-    subtitleText = 'Returns within 10pts — see both paths side by side (5yr projection).';
-
-    // Left (Buy Raw + Grade): ring = 5yr sell at PSA9 outcome
-    const lTotal = Math.max(costGBP + rg9ProfitGBP, costGBP + 1);
-    const lSegs = [
-      { frac: rawGBP / lTotal,                      c: '#6cb8ff' },
-      { frac: feeGBP / lTotal,                      c: '#666'    },
-      { frac: Math.max(0, rg9ProfitGBP) / lTotal,  c: '#3dd68c' },
-    ];
-
-    // Right (Buy PSA 9 Slab): ring = 5yr sell
-    const rTotal = Math.max(bg9EntryGBP + bg9ProfitGBP, bg9EntryGBP + 1);
-    const rSegs = [
-      { frac: bg9EntryGBP / rTotal,                 c: '#6cb8ff' },
-      { frac: Math.max(0, bg9ProfitGBP) / rTotal,  c: '#3dd68c' },
-    ];
-
-    const lMini = `<svg class="hgd-mini-svg" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="70" cy="58" r="40" fill="none" stroke="var(--surface2,#333)" stroke-width="13"/>
-      ${_arcs(lSegs, 70, 58, 40, 13)}
-      <text x="70" y="53" text-anchor="middle" style="font-size:13px;font-weight:700;fill:${roiClr(rg9ROI)};font-family:'JetBrains Mono',monospace">${rg9ROI >= 0 ? '+' : ''}${rg9ROI.toFixed(0)}%</text>
-      <text x="70" y="65" text-anchor="middle" class="hgd-clbl">5YR ROI</text>
-    </svg>`;
-
-    const rMini = `<svg class="hgd-mini-svg" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="70" cy="58" r="40" fill="none" stroke="var(--surface2,#333)" stroke-width="13"/>
-      ${_arcs(rSegs, 70, 58, 40, 13)}
-      <text x="70" y="53" text-anchor="middle" style="font-size:13px;font-weight:700;fill:${roiClr(bg9ROI)};font-family:'JetBrains Mono',monospace">${bg9ROI >= 0 ? '+' : ''}${bg9ROI.toFixed(0)}%</text>
-      <text x="70" y="65" text-anchor="middle" class="hgd-clbl">5YR ROI</text>
-    </svg>`;
-
-    donutHtml = `
-      <div class="hgd-dual-wrap">
-        <div class="hgd-mini-col">
-          <div class="hgd-mini-head">Buy Raw + Grade</div>
-          <div class="hgd-mini-sub">Raw card + PSA fee</div>
-          ${lMini}
-          <div class="hgd-mini-stat"><span>Entry</span><span>${fmtGBPDirect(costGBP)}</span></div>
-          <div class="hgd-mini-stat"><span>5yr P&amp;L</span><span class="${clsPL(rg9ProfitGBP)}">${fmtPL(rg9ProfitGBP)}</span></div>
-          <div class="hgd-mini-stat"><span>PSA 9 today</span><span class="${clsPL(psa9NowProfitGBP)}">${fmtPL(psa9NowProfitGBP)}</span></div>
-        </div>
-        <div class="hgd-mini-col">
-          <div class="hgd-mini-head">Buy PSA 9 Slab</div>
-          <div class="hgd-mini-sub">eBay incl. UK shipping</div>
-          ${rMini}
-          <div class="hgd-mini-stat"><span>Entry</span><span>${fmtGBPDirect(bg9EntryGBP)}</span></div>
-          <div class="hgd-mini-stat"><span>5yr P&amp;L</span><span class="${clsPL(bg9ProfitGBP)}">${fmtPL(bg9ProfitGBP)}</span></div>
-          <div class="hgd-mini-stat"><span>No wait</span><span class="hgd-muted">Skip grading queue</span></div>
-        </div>
-      </div>`;
-
-    legendHtml = `<div class="hgd-legend">
-      <span class="hgd-leg-dot" style="background:#3dd68c"></span><span class="hgd-leg-lbl">5yr Profit</span>
-      <span class="hgd-leg-dot" style="background:#666"></span><span class="hgd-leg-lbl">Grading Fee (grade path only)</span>
-      <span class="hgd-leg-dot" style="background:#6cb8ff"></span><span class="hgd-leg-lbl">Entry Cost</span>
-    </div>`;
-
-  } else {
-    // ---- SINGLE BIG DONUT MODE (one option clearly wins) ----
-    titleText = diff9 >= 20 ? 'Grade It Yourself — Better 5yr Return'
-      : diff9 >= 5   ? 'Slight Edge: Buy Raw + Grade'
-      : diff9 >= -5  ? 'Grade vs Buy: Similar 5yr Returns'
-      : diff9 >= -20 ? 'Buy Graded Slightly Better'
-      : 'Skip the Queue — Buy Already Graded';
-    subtitleText = 'Does buying raw and grading make sense? PSA 9 is the minimum acceptable grade — ring shows if all-in cost is covered today.';
-
-    // Single donut: ring = PSA 9 current net resale (minimum case)
-    const donutTotal = Math.max(psa9NetGBP, 1);
-    const seg1 = Math.min(rawGBP, donutTotal);
-    const seg2 = Math.min(feeGBP, Math.max(0, donutTotal - seg1));
-    const seg3 = Math.max(0, donutTotal - seg1 - seg2);
-
+  // Single big donut builder (used for GRADE_PATH single-win and PSA10_ONLY)
+  const _singleDonut = (anchorNetGBP, centreLabel1, centreLabel2, seg1v, seg2v, seg3v, profitPositive) => {
     const cx = 110, cy = 100, r = 68, sw = 24;
-    const C   = 2 * Math.PI * r;
-    const GAP = 4;
-    const avail = C - 3 * GAP;
-    const s1 = (seg1 / donutTotal) * avail;
-    const s2 = (seg2 / donutTotal) * avail;
-    const s3 = (seg3 / donutTotal) * avail;
+    const C = 2 * Math.PI * r;
+    const GAP = 4, avail = C - 3 * GAP;
+    const dTotal = Math.max(anchorNetGBP, 1);
+    const s1 = (Math.min(seg1v, dTotal) / dTotal) * avail;
+    const s2 = (Math.min(seg2v, Math.max(0, dTotal - seg1v)) / dTotal) * avail;
+    const s3 = (Math.max(0, seg3v) / dTotal) * avail;
     const gapDeg = (GAP / C) * 360;
-    const s1deg  = (s1 / C) * 360;
-    const s2deg  = (s2 / C) * 360;
-    const rot1 = -90 + gapDeg / 2;
-    const rot2 = rot1 + s1deg + gapDeg;
-    const rot3 = rot2 + s2deg + gapDeg;
-
+    const s1deg = (s1 / C) * 360, s2deg = (s2 / C) * 360;
+    const rot1 = -90 + gapDeg / 2, rot2 = rot1 + s1deg + gapDeg, rot3 = rot2 + s2deg + gapDeg;
     const toXY = (deg, rad) => { const rd = (deg - 90) * Math.PI / 180; return [cx + rad * Math.cos(rd), cy + rad * Math.sin(rd)]; };
     const lr = r + sw / 2 + 14;
     const [lx1, ly1] = toXY((rot1 + 90) + s1deg / 2, lr);
     const [lx2, ly2] = toXY((rot2 + 90) + s2deg / 2, lr);
     const [lx3, ly3] = toXY((rot3 + 90) + ((s3 / C) * 360) / 2, lr);
     const ta = x => x < cx - 8 ? 'end' : x > cx + 8 ? 'start' : 'middle';
-
-    const centreColour = isProfitable9 ? '#3dd68c' : '#ff6b6b';
-    const centreVal    = isProfitable9 ? `+${fmtGBPDirect(psa9NowProfitGBP)}` : fmtGBPDirect(psa9NowProfitGBP);
-
-    donutHtml = `<svg class="hgd-svg" viewBox="0 0 220 200" xmlns="http://www.w3.org/2000/svg">
+    const profit = seg3v;
+    const centreCol = profitPositive ? '#3dd68c' : '#ff6b6b';
+    const centreVal = profitPositive ? `+${fmtGBPDirect(profit)}` : fmtGBPDirect(profit);
+    return `<svg class="hgd-svg" viewBox="0 0 220 200" xmlns="http://www.w3.org/2000/svg">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--surface2,#333)" stroke-width="${sw}"/>
       ${s1 > 1 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#6cb8ff" stroke-width="${sw}" stroke-dasharray="${s1.toFixed(2)} ${(C-s1).toFixed(2)}" transform="rotate(${rot1.toFixed(2)},${cx},${cy})"/>` : ''}
       ${s2 > 1 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#666" stroke-width="${sw}" stroke-dasharray="${s2.toFixed(2)} ${(C-s2).toFixed(2)}" transform="rotate(${rot2.toFixed(2)},${cx},${cy})"/>` : ''}
       ${s3 > 1 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#3dd68c" stroke-width="${sw}" stroke-dasharray="${s3.toFixed(2)} ${(C-s3).toFixed(2)}" transform="rotate(${rot3.toFixed(2)},${cx},${cy})"/>` : ''}
-      <text x="${cx}" y="${cy - 9}" text-anchor="middle" class="hgd-cval" style="fill:${centreColour}">${centreVal}</text>
-      <text x="${cx}" y="${cy + 6}" text-anchor="middle" class="hgd-clbl">AT PSA 9</text>
-      <text x="${cx}" y="${cy + 18}" text-anchor="middle" class="hgd-clbl">TODAY</text>
-      ${s1 > 24 ? `<text x="${lx1.toFixed(1)}" y="${(ly1 + 4).toFixed(1)}" text-anchor="${ta(lx1)}" class="hgd-arc-lbl">${fmtS(rawGBP)}</text>` : ''}
-      ${s2 > 24 ? `<text x="${lx2.toFixed(1)}" y="${(ly2 + 4).toFixed(1)}" text-anchor="${ta(lx2)}" class="hgd-arc-lbl">${fmtS(feeGBP)}</text>` : ''}
-      ${s3 > 24 ? `<text x="${lx3.toFixed(1)}" y="${(ly3 + 4).toFixed(1)}" text-anchor="${ta(lx3)}" class="hgd-arc-lbl">${fmtS(seg3)}</text>` : ''}
+      <text x="${cx}" y="${cy - 9}" text-anchor="middle" class="hgd-cval" style="fill:${centreCol}">${centreVal}</text>
+      <text x="${cx}" y="${cy + 6}" text-anchor="middle" class="hgd-clbl">${centreLabel1}</text>
+      <text x="${cx}" y="${cy + 18}" text-anchor="middle" class="hgd-clbl">${centreLabel2}</text>
+      ${s1 > 24 ? `<text x="${lx1.toFixed(1)}" y="${(ly1+4).toFixed(1)}" text-anchor="${ta(lx1)}" class="hgd-arc-lbl">${fmtS(seg1v)}</text>` : ''}
+      ${s2 > 24 ? `<text x="${lx2.toFixed(1)}" y="${(ly2+4).toFixed(1)}" text-anchor="${ta(lx2)}" class="hgd-arc-lbl">${fmtS(seg2v)}</text>` : ''}
+      ${s3 > 24 ? `<text x="${lx3.toFixed(1)}" y="${(ly3+4).toFixed(1)}" text-anchor="${ta(lx3)}" class="hgd-arc-lbl">${fmtS(Math.abs(seg3v))}</text>` : ''}
     </svg>`;
+  };
 
+  // Mini-donut builder
+  const _miniSvg = (segs, roiVal) => `<svg class="hgd-mini-svg" viewBox="0 0 140 120" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="70" cy="58" r="40" fill="none" stroke="var(--surface2,#333)" stroke-width="13"/>
+    ${_arcs(segs, 70, 58, 40, 13)}
+    <text x="70" y="53" text-anchor="middle" style="font-size:13px;font-weight:700;fill:${roiClr(roiVal)};font-family:'JetBrains Mono',monospace">${roiVal >= 0 ? '+' : ''}${roiVal.toFixed(0)}%</text>
+    <text x="70" y="65" text-anchor="middle" class="hgd-clbl">5YR ROI</text>
+  </svg>`;
+
+  let donutHtml, titleText, subtitleText, legendHtml, serviceLabel, winnerTag, winnerCls, verdictText, verdictCls;
+
+  // ================================================================
+  // SCENARIO A — GRADE_PATH: PSA 9 profitable today + gem rate OK
+  // ================================================================
+  if (gradingViable) {
+    serviceLabel = 'PSA Grading · Min. Grade PSA 9';
+    const diff9 = rg9ROI - bg9ROI;
+    const useDual = Math.abs(diff9) < 10;
+
+    winnerTag = diff9 >= 5 ? 'BUY RAW + GRADE WINS' : diff9 <= -5 ? 'BUY GRADED WINS' : 'COMPARABLE';
+    winnerCls = diff9 >= 5 ? 'hgd-winner-grade' : diff9 <= -5 ? 'hgd-winner-buy' : 'hgd-winner-tie';
+
+    if (isProfitable9) {
+      verdictText = `PSA 9 floor profitable today — grading makes sense on fundamentals`;
+      verdictCls  = 'hgd-verdict-ok';
+    } else {
+      verdictText = `PSA 9 falls £${Math.round(Math.abs(psa9NowProfitGBP))} short today — profitable only at PSA 10 (${gemRatePct}% gem rate)`;
+      verdictCls  = 'hgd-verdict-warn';
+    }
+
+    if (useDual) {
+      titleText    = diff9 > 0 ? 'Close Call — Grade Gives a Slight Edge'
+        : diff9 < 0 ? 'Close Call — Buying Graded Slightly Ahead' : 'Dead Heat — Either Path Works';
+      subtitleText = 'Returns within 10pts — both paths side by side (5yr projection).';
+
+      const lTotal = Math.max(costGBP + Math.max(0, rg9ProfitGBP), costGBP + 1);
+      const rTotal = Math.max(bg9EntryGBP + Math.max(0, bg9ProfitGBP), bg9EntryGBP + 1);
+
+      const lBudgetRow = hasBudget ? `<div class="hgd-mini-stat"><span>Budget</span><span>${budgetNote(costGBP)}</span></div>` : '';
+      const rBudgetRow = hasBudget ? `<div class="hgd-mini-stat"><span>Budget</span><span>${budgetNote(bg9EntryGBP)}</span></div>` : '';
+
+      donutHtml = `<div class="hgd-dual-wrap">
+        <div class="hgd-mini-col">
+          <div class="hgd-mini-head">Buy Raw + Grade</div>
+          <div class="hgd-mini-sub">Raw card + PSA fee</div>
+          ${_miniSvg([{ frac: rawGBP/lTotal, c:'#6cb8ff' },{ frac: feeGBP/lTotal, c:'#666' },{ frac: Math.max(0,rg9ProfitGBP)/lTotal, c:'#3dd68c' }], rg9ROI)}
+          <div class="hgd-mini-stat"><span>Entry</span><span>${fmtGBPDirect(costGBP)}</span></div>
+          <div class="hgd-mini-stat"><span>5yr P&amp;L</span><span class="${clsPL(rg9ProfitGBP)}">${fmtPL(rg9ProfitGBP)}</span></div>
+          <div class="hgd-mini-stat"><span>PSA 9 today</span><span class="${clsPL(psa9NowProfitGBP)}">${fmtPL(psa9NowProfitGBP)}</span></div>
+          ${lBudgetRow}
+        </div>
+        <div class="hgd-mini-col">
+          <div class="hgd-mini-head">Buy PSA 9 Slab</div>
+          <div class="hgd-mini-sub">eBay incl. UK shipping</div>
+          ${_miniSvg([{ frac: bg9EntryGBP/rTotal, c:'#6cb8ff' },{ frac: Math.max(0,bg9ProfitGBP)/rTotal, c:'#3dd68c' }], bg9ROI)}
+          <div class="hgd-mini-stat"><span>Entry</span><span>${fmtGBPDirect(bg9EntryGBP)}</span></div>
+          <div class="hgd-mini-stat"><span>5yr P&amp;L</span><span class="${clsPL(bg9ProfitGBP)}">${fmtPL(bg9ProfitGBP)}</span></div>
+          <div class="hgd-mini-stat"><span>No wait</span><span class="hgd-muted">Skip queue</span></div>
+          ${rBudgetRow}
+        </div>
+      </div>`;
+
+      legendHtml = `<div class="hgd-legend">
+        <span class="hgd-leg-dot" style="background:#3dd68c"></span><span class="hgd-leg-lbl">5yr Profit</span>
+        <span class="hgd-leg-dot" style="background:#666"></span><span class="hgd-leg-lbl">Grading Fee</span>
+        <span class="hgd-leg-dot" style="background:#6cb8ff"></span><span class="hgd-leg-lbl">Entry Cost</span>
+      </div>`;
+    } else {
+      titleText = diff9 >= 20 ? 'Grade It Yourself — Clearly Better 5yr Return'
+        : diff9 >= 5  ? 'Slight Edge: Buy Raw + Grade'
+        : diff9 >= -5 ? 'Grade vs Buy: Similar Returns'
+        : diff9 >= -20 ? 'Buy Graded Slightly Better'
+        : 'Skip the Queue — Buy Already Graded';
+      subtitleText = 'PSA 9 is the minimum acceptable grade — ring shows if all-in cost is covered today.';
+
+      const profit9today = isProfitable9 ? psa9NowProfitGBP : psa9NowProfitGBP;
+      donutHtml = _singleDonut(psa9NetGBP, 'AT PSA 9', 'TODAY', rawGBP, feeGBP, profit9today, isProfitable9);
+      legendHtml = `<div class="hgd-legend">
+        <span class="hgd-leg-dot" style="background:#3dd68c"></span><span class="hgd-leg-lbl">PSA 9 Profit</span>
+        <span class="hgd-leg-dot" style="background:#666"></span><span class="hgd-leg-lbl">Grading Cost</span>
+        <span class="hgd-leg-dot" style="background:#6cb8ff"></span><span class="hgd-leg-lbl">Raw Card Cost</span>
+      </div>`;
+    }
+
+  // ================================================================
+  // SCENARIO B — PSA10_ONLY: only PSA 10 profitable today, gem rate OK
+  // ================================================================
+  } else if (psa10Only) {
+    serviceLabel = 'PSA Grading · Target Grade PSA 10';
+
+    const diff10 = rg10ROI - bg10ROI;
+    winnerTag = diff10 >= 5 ? 'GRADE FOR PSA 10' : diff10 <= -5 ? 'BUY PSA 10 SLAB' : 'COMPARABLE';
+    winnerCls = diff10 >= 5 ? 'hgd-winner-grade' : diff10 <= -5 ? 'hgd-winner-buy' : 'hgd-winner-tie';
+
+    titleText    = `PSA 10 Is the Only Profitable Grade — ${gemRatePct}% Gem Rate`;
+    subtitleText = `PSA 9 is underwater today (${fmtPL(psa9NowProfitGBP)}). You need a gem to profit — ring shows if all-in cost is covered at PSA 10.`;
+
+    verdictText = `PSA 9 falls £${Math.round(Math.abs(psa9NowProfitGBP))} short — PSA 10 nets ${fmtPL(psa10NowProfitGBP)} today at ${gemRatePct}% gem rate`;
+    verdictCls  = 'hgd-verdict-warn';
+
+    // Single donut anchored to PSA 10 today
+    const p10profit = psa10NowProfitGBP;
+    donutHtml = _singleDonut(psa10NetGBP, 'AT PSA 10', 'TODAY', rawGBP, feeGBP, p10profit, isProfitable10);
     legendHtml = `<div class="hgd-legend">
-      <span class="hgd-leg-dot" style="background:#3dd68c"></span><span class="hgd-leg-lbl">PSA 9 Profit</span>
+      <span class="hgd-leg-dot" style="background:#3dd68c"></span><span class="hgd-leg-lbl">PSA 10 Profit</span>
       <span class="hgd-leg-dot" style="background:#666"></span><span class="hgd-leg-lbl">Grading Cost</span>
       <span class="hgd-leg-dot" style="background:#6cb8ff"></span><span class="hgd-leg-lbl">Raw Card Cost</span>
     </div>`;
+
+  // ================================================================
+  // SCENARIO C — RAW_HOLD_BEST: low gem rate or nothing profitable graded
+  // ================================================================
+  } else {
+    serviceLabel = 'Grading Risk Assessment';
+
+    // Pick best graded buy option for comparison (higher 5yr ROI)
+    const bestBuy = (bg10ROI >= bg9ROI && bg10EntryGBP > 0) ? { entry: bg10EntryGBP, profit: bg10ProfitGBP, roi: bg10ROI, grade: 10 }
+      : bg9EntryGBP > 0 ? { entry: bg9EntryGBP, profit: bg9ProfitGBP, roi: bg9ROI, grade: 9 }
+      : null;
+
+    const rawWins = !bestBuy || rawHoldROI >= (bestBuy?.roi ?? 0);
+    winnerTag = rawWins ? 'HOLD RAW WINS' : `BUY PSA ${bestBuy?.grade ?? 9} SLAB`;
+    winnerCls = rawWins ? 'hgd-winner-grade' : 'hgd-winner-buy';
+
+    if (gemRatePct < GEM_THRESHOLD) {
+      titleText    = `Low Gem Rate (${gemRatePct}%) — Grading Is Too Risky`;
+      subtitleText = 'With less than 1-in-7 cards hitting PSA 10, the expected value of grading is against you. Compare holding raw vs buying a graded slab instead.';
+      verdictText  = `Only ${gemRatePct}% gem rate — grading cost risk outweighs the upside. Hold raw or buy already graded.`;
+      verdictCls   = 'hgd-verdict-bad';
+    } else {
+      titleText    = 'Neither PSA 9 nor PSA 10 Profitable Today';
+      subtitleText = 'Grading makes this a long-term hold thesis only. Raw hold vs buying graded shows which 5yr path makes more sense.';
+      verdictText  = `PSA 9 (${fmtPL(psa9NowProfitGBP)}) and PSA 10 (${fmtPL(psa10NowProfitGBP)}) both underwater today — this is a 5yr thesis.`;
+      verdictCls   = 'hgd-verdict-bad';
+    }
+
+    const rawTotal = Math.max(rawGBP + Math.max(0, rawHoldProfitGBP), rawGBP + 1);
+    const rawSegs  = [{ frac: rawGBP/rawTotal, c:'#6cb8ff' },{ frac: Math.max(0,rawHoldProfitGBP)/rawTotal, c:'#3dd68c' }];
+
+    if (bestBuy) {
+      const bgTotal = Math.max(bestBuy.entry + Math.max(0, bestBuy.profit), bestBuy.entry + 1);
+      const bgSegs  = [{ frac: bestBuy.entry/bgTotal, c:'#6cb8ff' },{ frac: Math.max(0,bestBuy.profit)/bgTotal, c:'#3dd68c' }];
+
+      const lBudgetRow = hasBudget ? `<div class="hgd-mini-stat"><span>Budget</span><span>${budgetNote(rawGBP)}</span></div>` : '';
+      const rBudgetRow = hasBudget ? `<div class="hgd-mini-stat"><span>Budget</span><span>${budgetNote(bestBuy.entry)}</span></div>` : '';
+
+      donutHtml = `<div class="hgd-dual-wrap">
+        <div class="hgd-mini-col">
+          <div class="hgd-mini-head">Buy Raw + Hold</div>
+          <div class="hgd-mini-sub">No grading, hold unslabbed</div>
+          ${_miniSvg(rawSegs, rawHoldROI)}
+          <div class="hgd-mini-stat"><span>Entry</span><span>${fmtGBPDirect(rawGBP)}</span></div>
+          <div class="hgd-mini-stat"><span>5yr P&amp;L</span><span class="${clsPL(rawHoldProfitGBP)}">${fmtPL(rawHoldProfitGBP)}</span></div>
+          <div class="hgd-mini-stat"><span>No fee</span><span class="hgd-muted">No grading risk</span></div>
+          ${lBudgetRow}
+        </div>
+        <div class="hgd-mini-col">
+          <div class="hgd-mini-head">Buy PSA ${bestBuy.grade} Slab</div>
+          <div class="hgd-mini-sub">eBay incl. UK shipping</div>
+          ${_miniSvg(bgSegs, bestBuy.roi)}
+          <div class="hgd-mini-stat"><span>Entry</span><span>${fmtGBPDirect(bestBuy.entry)}</span></div>
+          <div class="hgd-mini-stat"><span>5yr P&amp;L</span><span class="${clsPL(bestBuy.profit)}">${fmtPL(bestBuy.profit)}</span></div>
+          <div class="hgd-mini-stat"><span>No wait</span><span class="hgd-muted">Skip grading queue</span></div>
+          ${rBudgetRow}
+        </div>
+      </div>`;
+    } else {
+      // No graded data — single raw hold donut
+      const rawTotal2 = Math.max(rawGBP + Math.max(0, rawHoldProfitGBP), rawGBP + 1);
+      const p10 = rawHoldProfitGBP;
+      donutHtml = _singleDonut(rawTotal2, '5YR RAW', 'HOLD', rawGBP, 0, p10, rawHoldProfitGBP >= 0);
+    }
+
+    legendHtml = `<div class="hgd-legend">
+      <span class="hgd-leg-dot" style="background:#3dd68c"></span><span class="hgd-leg-lbl">5yr Profit</span>
+      <span class="hgd-leg-dot" style="background:#6cb8ff"></span><span class="hgd-leg-lbl">Entry Cost</span>
+    </div>`;
   }
 
-  // ---- Verdict bar (always shown) ----
-  const gemRatePct = Math.round(((typeof card.g === 'number' && card.g > 0) ? card.g : 0.2) * 100);
-  let verdictText, verdictCls;
-  if (isProfitable9) {
-    verdictText = `PSA 9 floor profitable today — grading makes sense on fundamentals`;
-    verdictCls  = 'hgd-verdict-ok';
-  } else if (isProfitable10) {
-    verdictText = `PSA 9 falls £${Math.round(Math.abs(psa9NowProfitGBP))} short today — profitable only at PSA 10 (${gemRatePct}% gem rate)`;
-    verdictCls  = 'hgd-verdict-warn';
-  } else {
-    verdictText = `PSA 9 and PSA 10 both underwater today — grading is a 5yr hold thesis`;
-    verdictCls  = 'hgd-verdict-bad';
-  }
+  // ---- Comparison table (always shown) ----
+  const clsOB = v => overBudget(v) ? ' hgd-over-budget' : '';
+  const budgetRowGrade = hasBudget ? `<div class="hgd-stat-row"><span class="hgd-stat-lbl">Budget</span><span class="hgd-stat-val">${budgetNote(costGBP)}</span></div>` : '';
+  const budgetRowBg9   = hasBudget ? `<div class="hgd-stat-row"><span class="hgd-stat-lbl">Budget</span><span class="hgd-stat-val">${budgetNote(bg9EntryGBP)}</span></div>` : '';
+  const budgetRowBg10  = hasBudget ? `<div class="hgd-stat-row"><span class="hgd-stat-lbl">Budget</span><span class="hgd-stat-val">${budgetNote(bg10EntryGBP)}</span></div>` : '';
 
   container.style.display = '';
   container.innerHTML = `
     <div class="hgd-service-row">
-      <span class="hgd-service-lbl">PSA Grading · Min. Grade PSA 9</span>
+      <span class="hgd-service-lbl">${serviceLabel}</span>
       <span class="hgd-badge ${winnerCls}">${winnerTag}</span>
     </div>
     <div class="hgd-title">${titleText}</div>
@@ -13897,21 +13992,24 @@ function _renderGradeDonut(container, card, rawEntryUSD, gradeCost, gradingFeeUS
       <div class="hgd-compare-col">
         <div class="hgd-col-head">Buy Raw + Grade</div>
         <div class="hgd-col-sub">You source raw, pay PSA fee</div>
-        <div class="hgd-stat-row"><span class="hgd-stat-lbl">Entry cost</span><span class="hgd-stat-val">${fmtGBPDirect(costGBP)}</span></div>
+        <div class="hgd-stat-row"><span class="hgd-stat-lbl">Entry cost</span><span class="hgd-stat-val${clsOB(costGBP)}">${fmtGBPDirect(costGBP)}</span></div>
         <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 9 today</span><span class="hgd-stat-val ${clsPL(psa9NowProfitGBP)}">${fmtPL(psa9NowProfitGBP)}</span></div>
-        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 10 · 5yr</span><span class="hgd-stat-val ${clsPL(rg10ProfitGBP)}">${fmtPL(rg10ProfitGBP)} <span class="hgd-roi">${rg10ROI >= 0 ? '+' : ''}${rg10ROI.toFixed(0)}%</span></span></div>
+        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 10 today</span><span class="hgd-stat-val ${clsPL(psa10NowProfitGBP)}">${fmtPL(psa10NowProfitGBP)}</span></div>
+        <div class="hgd-stat-row"><span class="hgd-stat-lbl">Gem rate</span><span class="hgd-stat-val ${gemRatePct < GEM_THRESHOLD ? 'hgd-neg' : ''}">${gemRatePct}%</span></div>
         <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 9 · 5yr</span><span class="hgd-stat-val ${clsPL(rg9ProfitGBP)}">${fmtPL(rg9ProfitGBP)} <span class="hgd-roi">${rg9ROI >= 0 ? '+' : ''}${rg9ROI.toFixed(0)}%</span></span></div>
-        <div class="hgd-stat-row"><span class="hgd-stat-lbl">Wait</span><span class="hgd-stat-val hgd-muted">PSA queue + 5yr hold</span></div>
+        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 10 · 5yr</span><span class="hgd-stat-val ${clsPL(rg10ProfitGBP)}">${fmtPL(rg10ProfitGBP)} <span class="hgd-roi">${rg10ROI >= 0 ? '+' : ''}${rg10ROI.toFixed(0)}%</span></span></div>
+        ${budgetRowGrade}
       </div>
       <div class="hgd-divider"></div>
       <div class="hgd-compare-col">
         <div class="hgd-col-head">Buy Already Graded</div>
         <div class="hgd-col-sub">eBay slab incl. UK shipping</div>
-        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 9 entry</span><span class="hgd-stat-val">${fmtGBPDirect(bg9EntryGBP)}</span></div>
-        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 10 entry</span><span class="hgd-stat-val">${fmtGBPDirect(bg10EntryGBP)}</span></div>
-        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 9 · 5yr</span><span class="hgd-stat-val ${clsPL(bg9ProfitGBP)}">${fmtPL(bg9ProfitGBP)} <span class="hgd-roi">${bg9ROI >= 0 ? '+' : ''}${bg9ROI.toFixed(0)}%</span></span></div>
-        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 10 · 5yr</span><span class="hgd-stat-val ${clsPL(bg10ProfitGBP)}">${fmtPL(bg10ProfitGBP)} <span class="hgd-roi">${bg10ROI >= 0 ? '+' : ''}${bg10ROI.toFixed(0)}%</span></span></div>
-        <div class="hgd-stat-row"><span class="hgd-stat-lbl">Wait</span><span class="hgd-stat-val hgd-muted">5yr hold only</span></div>
+        <div class="hgd-stat-row"><span class="hgd-stat-lbl">Hold raw · 5yr</span><span class="hgd-stat-val ${clsPL(rawHoldProfitGBP)}">${fmtPL(rawHoldProfitGBP)} <span class="hgd-roi">${rawHoldROI >= 0 ? '+' : ''}${rawHoldROI.toFixed(0)}%</span></span></div>
+        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 9 entry</span><span class="hgd-stat-val${clsOB(bg9EntryGBP)}">${bg9EntryGBP > 0 ? fmtGBPDirect(bg9EntryGBP) : '—'}</span></div>
+        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 9 · 5yr</span><span class="hgd-stat-val ${clsPL(bg9ProfitGBP)}">${bg9EntryGBP > 0 ? fmtPL(bg9ProfitGBP) + ` <span class="hgd-roi">${bg9ROI >= 0 ? '+' : ''}${bg9ROI.toFixed(0)}%</span>` : '—'}</span></div>
+        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 10 entry</span><span class="hgd-stat-val${clsOB(bg10EntryGBP)}">${bg10EntryGBP > 0 ? fmtGBPDirect(bg10EntryGBP) : '—'}</span></div>
+        <div class="hgd-stat-row"><span class="hgd-stat-lbl">PSA 10 · 5yr</span><span class="hgd-stat-val ${clsPL(bg10ProfitGBP)}">${bg10EntryGBP > 0 ? fmtPL(bg10ProfitGBP) + ` <span class="hgd-roi">${bg10ROI >= 0 ? '+' : ''}${bg10ROI.toFixed(0)}%</span>` : '—'}</span></div>
+        ${budgetRowBg9}
       </div>
     </div>
   `;
@@ -14518,7 +14616,7 @@ function renderHoldStrategy(card) {
   }
 
   // ---------- Grade donut chart (Buy Raw + Grade vs Buy Graded comparison) ----------
-  _renderGradeDonut($('holdGradeDonut'), card, rawEntryUSD, gradeCost, gradingFeeUSD, gradingMaterialsUSD, psa10Price, fx, gradeOutcomes, gradedStrategies);
+  _renderGradeDonut($('holdGradeDonut'), card, rawEntryUSD, gradeCost, gradingFeeUSD, gradingMaterialsUSD, psa10Price, fx, gradeOutcomes, gradedStrategies, rawProfitUSD, rawRoi);
 
   // ---------- PSA grading outcome distribution ----------
   // Probability bar + P&L for each PSA grade outcome — always shown since
