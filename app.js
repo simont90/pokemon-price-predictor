@@ -6425,6 +6425,15 @@ function _buildUpgradeInsight(item, maxBudgetGBP, hasLimit) {
   return line;
 }
 
+function _buildMassGradeInsight(item) {
+  const { rawGBP, psa10GBP, multiplier, copiesNeeded, evProfitGBP, effectiveGemRate } = item;
+  const gemPct = (effectiveGemRate * 100).toFixed(0);
+  if (evProfitGBP >= 150) return `Compelling mass-grade target — ${copiesNeeded} copies at ${fmtGBPDirect(rawGBP)} gives a ${multiplier.toFixed(1)}× premium. Expected profit ~${fmtGBPDirect(evProfitGBP)} per PSA 10 after all costs.`;
+  if (evProfitGBP >= 50)  return `Solid volume play — ~${copiesNeeded} submissions per PSA 10 at ${gemPct}% gem rate. Net after costs and subgem recovery: ~${fmtGBPDirect(evProfitGBP)}.`;
+  if (evProfitGBP > 0)    return `Thin but positive EV — ${multiplier.toFixed(1)}× multiple and ~${copiesNeeded} copies needed per PSA 10 at ${gemPct}% gem rate. Scout for under-market raws to improve margin.`;
+  return `Tight EV at current raw prices — ${multiplier.toFixed(1)}× grading premium but ${copiesNeeded} copies needed at ${gemPct}% gem rate. Only viable if raw can be sourced below ${fmtGBPDirect(rawGBP)}.`;
+}
+
 function _toggleUpgradeFromSO(idx) {
   const item = _soUpgradeItems[idx];
   if (!item) return;
@@ -24645,6 +24654,30 @@ function _soRefreshIds() {
     vsScored.sort((a, b) => b.score - a.score);
     vsScored.slice(0, 20).forEach(s => ids.add(s.id));
   }
+  // Mass Grade tab: cheap raws with high PSA 10 multiples — top 20 by multiplier
+  const MG_RAW_CAP_GBP = 40;
+  const MG_MIN_MULT     = 5;
+  const mgFx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const mgScored = [];
+  for (const card of (cardData?.cards || [])) {
+    try {
+      const rawUSD = card.p || 0;
+      if (!rawUSD || rawUSD <= 0) continue;
+      const rawGBP = usdToGbp(rawUSD);
+      if (rawGBP > MG_RAW_CAP_GBP) continue;
+      const cr = cache[card.i];
+      const pd = cr && _priceCacheIsValid(cr._ts) ? cr : null;
+      const psa10USD = (card.p10 > 0 ? card.p10 : pd?.pcPsa10 > 0 ? pd.pcPsa10 : 0);
+      if (!psa10USD) continue;
+      const psa10GBP = psa10USD * mgFx;
+      const mult = rawGBP > 0 ? psa10GBP / rawGBP : 0;
+      if (mult < MG_MIN_MULT) continue;
+      mgScored.push({ id: card.i, mult });
+    } catch (_) {}
+  }
+  mgScored.sort((a, b) => b.mult - a.mult);
+  mgScored.slice(0, 20).forEach(s => ids.add(s.id));
+
   return [...ids].filter(Boolean);
 }
 
@@ -24844,6 +24877,168 @@ function renderStandouts() {
     return;
   }
   // — end Upgrade tab —
+
+  // — Mass Grade tab —
+  if (_soGrade === 'mass') {
+    const mgSubEl = document.getElementById('soSubtitle');
+    if (mgSubEl) mgSubEl.textContent = 'Low-cost raws with high PSA 10 multiples — ideal for buying in volume and grading to hit a PSA 10.';
+
+    const MG_RAW_CAP_GBP = 40;
+    const MG_MIN_MULT     = 5;
+    const MG_MIN_PSA10    = 50;  // minimum PSA 10 value in GBP to be worth grading
+
+    const mgCandidates = [];
+    for (const card of cardData.cards) {
+      try {
+        if (portfolioIds.has(card.i)) continue;
+        const rawUSD = getCurrentPrice(card) || card.p || 0;
+        if (!rawUSD || rawUSD <= 0) continue;
+        const rawGBP = usdToGbp(rawUSD);
+        if (rawGBP > MG_RAW_CAP_GBP) continue;
+
+        const cachedRaw = priceCache[card.i];
+        const pd = cachedRaw && _priceCacheIsValid(cachedRaw._ts) ? cachedRaw : null;
+        const psa10USD = getPsa10Anchor(card).usd || (pd?.pcPsa10 > 0 ? pd.pcPsa10 : 0);
+        if (!psa10USD || psa10USD <= 0) continue;
+        const psa10GBP = psa10USD * fx;
+        if (psa10GBP < MG_MIN_PSA10) continue;
+
+        const multiplier = rawGBP > 0 ? psa10GBP / rawGBP : 0;
+        if (multiplier < MG_MIN_MULT) continue;
+
+        const gradingFeeGBP = getUkGradingFeeGBP(psa10USD);
+        // Apply the same online-buy gem penalty the rest of the app uses
+        const baseGemRate    = (typeof card.g === 'number' && card.g > 0) ? card.g : DEFAULT_GEM_RATE;
+        const effectiveGemRate = baseGemRate * ONLINE_BUY_GEM_PENALTY;
+        const copiesNeeded   = Math.ceil(1 / effectiveGemRate);
+
+        // Subgem resale per non-10 submission (weighted by SUBGEM_DISTRIBUTION)
+        const psa9SaleGBP  = estimateGradePrice(card, 9, psa10USD) * fx * (1 - BUY_SELL_FRICTION);
+        const psa8SaleGBP  = estimateGradePrice(card, 8, psa10USD) * fx * (1 - BUY_SELL_FRICTION);
+        const psa7SaleGBP  = estimateGradePrice(card, 7, psa10USD) * fx * (1 - BUY_SELL_FRICTION);
+        const rawSaleGBP   = rawGBP * (1 - BUY_SELL_FRICTION);
+        const subgemPerSub = SUBGEM_DISTRIBUTION[9] * psa9SaleGBP
+                           + SUBGEM_DISTRIBUTION[8] * psa8SaleGBP
+                           + SUBGEM_DISTRIBUTION[7] * psa7SaleGBP
+                           + SUBGEM_DISTRIBUTION.rawLike * rawSaleGBP;
+
+        // Total outlay: every copy needs raw cost + grading fee
+        const perSubCostGBP   = rawGBP + gradingFeeGBP;
+        const totalOutlayGBP  = perSubCostGBP * copiesNeeded;
+        // Recovery from (copiesNeeded - 1) subgem slabs
+        const subgemRecovery  = subgemPerSub * (copiesNeeded - 1);
+        const netCostGBP      = totalOutlayGBP - subgemRecovery;
+        const psa10SaleGBP    = psa10GBP * (1 - BUY_SELL_FRICTION);
+        const evProfitGBP     = psa10SaleGBP - netCostGBP;
+
+        mgCandidates.push({
+          card, rawGBP, psa10GBP, multiplier, gradingFeeGBP,
+          effectiveGemRate, copiesNeeded, perSubCostGBP, totalOutlayGBP,
+          subgemRecovery, netCostGBP, evProfitGBP,
+          inWishlist: wishlistIds.has(card.i),
+        });
+      } catch (_) {}
+    }
+
+    mgCandidates.sort((a, b) => b.evProfitGBP - a.evProfitGBP);
+    const mgTop = mgCandidates.slice(0, 12);
+
+    if (mgTop.length === 0) {
+      carousel.innerHTML = '<div class="so-empty">No mass-grading candidates found — need cards with raw ≤ £40 and PSA 10 at 5× or more. Refresh prices to expand results.</div>';
+      dotsEl.innerHTML = '';
+    } else {
+      carousel.innerHTML = mgTop.map((item, i) => {
+        const { card, rawGBP, psa10GBP, multiplier, gradingFeeGBP, effectiveGemRate,
+                copiesNeeded, perSubCostGBP, totalOutlayGBP, subgemRecovery, netCostGBP,
+                evProfitGBP, inWishlist } = item;
+        const imgUrl     = _hiresUrl(getCardImg(card));
+        const gemPct     = (effectiveGemRate * 100).toFixed(0);
+        const profitColor = evProfitGBP >= 50 ? '#34d399' : evProfitGBP > 0 ? '#e8b634' : '#ef4444';
+        const insight    = _buildMassGradeInsight(item);
+        return `<div class="so-card" data-so-i="${i}">
+          <div class="so-img-wrap">
+            ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
+            <span class="so-tag" style="background:rgba(52,211,153,0.18);color:#34d399">Mass Grade</span>
+            ${inWishlist ? `<span class="so-tag" style="background:rgba(253,121,168,0.2);color:#fd79a8;top:auto;bottom:12px">Wishlist</span>` : ''}
+          </div>
+          <div class="so-body">
+            <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
+            <div class="so-set">${esc(card.s || '')}${card.cn ? ' · #' + esc(card.cn) : ''}</div>
+            <div class="so-mass-header">
+              <div class="so-mass-entry">
+                <span class="so-mass-entry-lbl">Raw per copy</span>
+                <span class="so-mass-entry-val">${fmtGBPDirect(rawGBP)}</span>
+              </div>
+              <div class="so-mass-mult">${multiplier.toFixed(1)}×</div>
+              <div class="so-mass-entry" style="text-align:right">
+                <span class="so-mass-entry-lbl">PSA 10 value</span>
+                <span class="so-mass-entry-val" style="color:var(--text)">${fmtGBPDirect(psa10GBP)}</span>
+              </div>
+            </div>
+            <div class="so-upgrade-scenarios">
+              <div class="so-upgrade-scenario">
+                <span class="so-upg-lbl">Copies for 1 PSA 10</span>
+                <span class="so-upg-val">~${copiesNeeded} at ${gemPct}% gem rate</span>
+              </div>
+              <div class="so-upgrade-scenario">
+                <span class="so-upg-lbl">Total outlay</span>
+                <span class="so-upg-val">${fmtGBPDirect(totalOutlayGBP)} <span class="so-upg-dim">(£${gradingFeeGBP} fee × ${copiesNeeded})</span></span>
+              </div>
+              <div class="so-upgrade-scenario">
+                <span class="so-upg-lbl">Subgem recovery</span>
+                <span class="so-upg-val">+${fmtGBPDirect(subgemRecovery)} <span class="so-upg-dim">from ${copiesNeeded - 1} lower grades</span></span>
+              </div>
+              <div class="so-upgrade-scenario" style="border-top:1px solid var(--border);padding-top:5px;margin-top:2px">
+                <span class="so-upg-lbl">Est. profit</span>
+                <span class="so-upg-val" style="color:${profitColor};font-weight:700">${evProfitGBP >= 0 ? '+' : ''}${fmtGBPDirect(evProfitGBP)}</span>
+              </div>
+            </div>
+            <div class="so-mass-insight">
+              <div class="so-mass-insight-lbl">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/></svg>
+                Mass Grade
+              </div>
+              <div class="so-mass-insight-txt">${esc(insight)}</div>
+            </div>
+            <div class="so-actions">
+              <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
+              ${!inWishlist
+                ? `<button class="so-btn-sec" onclick="toggleCardInWishlist('${esc(card.i)}')">+ Wishlist</button>`
+                : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+      dotsEl.innerHTML = mgTop.map((_, i) =>
+        `<div class="so-dot${i === 0 ? ' active' : ''}" data-dot="${i}"></div>`
+      ).join('');
+
+      if (!carousel.dataset.scrollBound) {
+        carousel.dataset.scrollBound = '1';
+        carousel.addEventListener('scroll', () => {
+          const w = (carousel.querySelector('.so-card')?.offsetWidth || 1) + 16;
+          const idx = Math.round(carousel.scrollLeft / w);
+          dotsEl.querySelectorAll('.so-dot').forEach((d, i2) => d.classList.toggle('active', i2 === idx));
+        }, { passive: true });
+      }
+    }
+
+    // Wire grade toggle (same pattern as other tabs)
+    const mgToggle = document.getElementById('soGradeToggle');
+    if (mgToggle && !mgToggle.dataset.bound) {
+      mgToggle.dataset.bound = '1';
+      mgToggle.addEventListener('click', e => {
+        const btn = e.target.closest('[data-grade]');
+        if (!btn) return;
+        _soGrade = btn.dataset.grade;
+        mgToggle.querySelectorAll('.sgt-btn').forEach(b => b.classList.toggle('active', b === btn));
+        renderStandouts();
+      });
+    }
+    return;
+  }
+  // — end Mass Grade tab —
 
   // — Vintage tab —
   if (_soGrade === 'vintage') {
