@@ -19112,7 +19112,7 @@ function _renderHomeTopPicks(force) {
     el.querySelectorAll('.tp-view-btn, .tp-row, .tp-featured').forEach(node => {
       node.addEventListener('click', e => {
         const id = node.dataset.id;
-        if (id) try { go('card', { card: id }); } catch(err) {}
+        if (id) { go('predict'); setTimeout(() => { try { selectCard(id); } catch(err) {} }, 80); }
       });
     });
   };
