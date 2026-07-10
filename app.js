@@ -746,19 +746,79 @@ function getInvestmentStars(card, desTot) {
     hint: 'Negligible growth expected · sub-£20 target zone' };
 }
 
+const _RARITY_LABELS = {
+  SIR:'Special Illustration Rare', SAR:'Special Art Rare', IR:'Illustration Rare',
+  AR:'Art Rare', UR:'Ultra Rare', SHR:'Shiny Hyper Rare', MHR:'Master Hyper Rare',
+  SHUR:'Shiny Ultra Rare', HR:'Hyper Rare', SR:'Secret Rare', RR:'Double Rare',
+  DR:'Double Rare', PR:'Promo', AS:'ACE SPEC', R:'Rare', U:'Uncommon', C:'Common',
+};
+
+function _buildStarRationale(card, desTot) {
+  const rc        = card.rc || _inferJPRarityRc(card);
+  const des       = typeof desTot === 'number' ? desTot : 5;
+  const charScore = getCharacterScore(card.n);
+  const displayName = card.n; // full card name as shown in the UI
+  const { stars } = getInvestmentStars(card, des);
+  const charTier  = charScore >= 9.0 ? 'S' : charScore >= 7.5 ? 'A' : charScore >= 5.5 ? 'B' : null;
+  const rarityLbl = _RARITY_LABELS[rc] || (rc ? rc : 'standard rarity');
+  const isPremiumRarity = PREMIUM_RARITIES.has(rc);
+  const isHighArtRarity = HIGH_ART_RARITIES.has(rc);
+  const tierLabel = charTier === 'S' ? 'S-tier (peak collector) character'
+                  : charTier === 'A' ? 'A-tier (high-demand) character'
+                  : charTier === 'B' ? 'B-tier (solid) character'
+                  : 'character with limited collector draw';
+
+  if (stars === 5)
+    return `${displayName} is an ${tierLabel} on a ${rarityLbl} — the rarest print tier with peak desirability (${des.toFixed(1)}/10). This combination drives the strongest long-term graded hold.`;
+
+  if (stars === 4)
+    return `${displayName} is an ${tierLabel} on a ${rarityLbl} with strong desirability (${des.toFixed(1)}/10). High-art prints at this character tier hold graded premiums well — watch entry timing at hype peaks.`;
+
+  if (stars === 3)
+    return `${displayName} is a ${tierLabel} on a ${rarityLbl} (desirability ${des.toFixed(1)}/10). Solid fundamentals for a long-term hold, but not a fast mover — priority is buying near the floor.`;
+
+  if (stars === 2) {
+    const rarityNote = isHighArtRarity ? rarityLbl : (rc === 'SR' ? 'Secret Rare' : 'Double Rare');
+    return `Qualifies on rarity (${rarityNote}) with a desirability of ${des.toFixed(1)}/10, but character and art tier limit the ceiling. Some collector interest — buy with a clear thesis rather than on momentum.`;
+  }
+
+  // 1★ — explain specifically what failed
+  const blocks = [];
+  if (!isHighArtRarity && rc !== 'SR' && rc !== 'RR') {
+    blocks.push(`${rarityLbl} (${rc || '?'}) doesn't qualify as high-art or Secret Rare`);
+  }
+  if (!charTier) {
+    blocks.push(`limited collector draw on this character`);
+  }
+  if (des < 3.0) {
+    blocks.push(`low desirability (${des.toFixed(1)}/10)`);
+  }
+  if (blocks.length === 0) {
+    return `Does not meet the combined character tier, rarity, and desirability thresholds for a higher rating. Graded premiums are unlikely to sustain long-term.`;
+  }
+  const reason = blocks.length === 1 ? blocks[0]
+    : blocks.slice(0, -1).join(', ') + ' and ' + blocks[blocks.length - 1];
+  if (charTier) {
+    return `Despite ${displayName}'s ${charTier}-tier character score, ${reason} — graded premiums are unlikely to sustain long-term.`;
+  }
+  return `Rated 1★: ${reason}. Graded premiums on this card are unlikely to sustain long-term value.`;
+}
+
 function renderStarRating(card, des) {
-  const el      = $('cardStarRating');
-  const iconsEl = $('cardStarIcons');
-  const tierEl  = $('cardStarTier');
-  const hintEl  = $('cardStarHint');
+  const el         = $('cardStarRating');
+  const iconsEl    = $('cardStarIcons');
+  const tierEl     = $('cardStarTier');
+  const hintEl     = $('cardStarHint');
+  const rationaleEl = $('cardStarRationale');
   if (!el || !card) return;
   const desVal = (des && typeof des === 'object') ? (des.total ?? 5) : (des ?? 5);
   const { stars, tier, hint, color } = getInvestmentStars(card, desVal);
-  if (!stars) { el.style.display = 'none'; return; }
+  if (!stars) { el.style.display = 'none'; if (rationaleEl) rationaleEl.textContent = ''; return; }
   el.style.display = 'flex';
   iconsEl.innerHTML = `<span style="color:${color}">${'★'.repeat(stars)}</span><span class="star-empty">${'★'.repeat(5 - stars)}</span>`;
   if (tierEl) tierEl.textContent = '';
   hintEl.textContent = hint;
+  if (rationaleEl) rationaleEl.textContent = _buildStarRationale(card, desVal);
 }
 
 // ---- Entry Timing Window ----

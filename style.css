@@ -340,6 +340,11 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
 .star-empty { color: rgba(255,255,255,0.15); }
 .star-tier { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; }
 .star-hint { font-size: 10.5px; color: var(--text-muted); }
+.star-rationale {
+  font-size: 11.5px; color: var(--text-dim); line-height: 1.55;
+  margin: 0 0 10px; padding: 0;
+}
+.star-rationale:empty { display: none; }
 .meta-series-tag { font-size: 10px; color: var(--text-faint); padding: 2px 8px; background: var(--bg-raised); border-radius: 4px; font-style: italic; }
 .card-links { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .card-link { font-size: 11px; color: var(--text-faint); text-decoration: none; display: inline-flex; align-items: center; gap: 3px; }
