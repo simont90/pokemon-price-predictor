@@ -3126,8 +3126,17 @@ function selectCard(id) {
     }
   }
   $('cardSet').textContent = card.s;
-  $('cardNumber').textContent = card.cn && card.ct ? `#${card.cn}/${card.ct}` : card.cn ? `#${card.cn}` : '';
+  const _cnText = card.cn && card.ct ? `#${card.cn}/${card.ct}` : card.cn ? `#${card.cn}` : '';
+  $('cardNumber').textContent = _cnText;
   $('cardNumber').style.display = card.cn ? '' : 'none';
+  $('cardNumber').style.cursor = card.cn ? 'pointer' : '';
+  $('cardNumber').onclick = card.cn ? () => {
+    const inp = $('searchInput');
+    if (!inp) return;
+    inp.value = _cnText;
+    go('predict');
+    setTimeout(() => { inp.focus(); doSearch(_cnText); }, 50);
+  } : null;
   $('cardRarity').textContent = card.r || 'Unknown';
   if (card.sr) {
     $('cardSeries').textContent = card.sr;
