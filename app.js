@@ -464,7 +464,10 @@ function decodeCardDB(raw) {
       if (extra.c) cards[i].ct = extra.c;
     }
   }
-  return { count: raw.count, cards };
+  // Strip sealed products (ETBs, booster boxes, tins, collection boxes, etc.)
+  // These come from PriceCharting with mc- prefixed IDs and are not single cards.
+  const filtered = cards.filter(c => c.i && !c.i.startsWith('mc-'));
+  return { count: filtered.length, cards: filtered };
 }
 
 async function init() {
