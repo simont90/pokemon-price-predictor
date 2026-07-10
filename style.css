@@ -14614,7 +14614,7 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   Hold Strategy — AI Facts (Card-Facts style narrative)
+   Hold Strategy — AI Strategy Analysis (signal-card layout)
    ══════════════════════════════════════════════════════════════════════ */
 .hold-ai-facts {
   border-top: 1px solid var(--border);
@@ -14625,7 +14625,7 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   display: flex;
   align-items: center;
   gap: 7px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 .haf-title {
   font-size: 11px;
@@ -14635,46 +14635,129 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   color: var(--text);
   flex: 1;
 }
-.haf-subtitle {
-  font-size: 11px;
-  color: var(--text-muted);
+.haf-subtitle { font-size: 11px; color: var(--text-muted); }
+.haf-loading  { font-size: 12px; color: var(--text-muted); font-style: italic; padding: 8px 0; }
+/* Verdict pills row */
+.haf-verdict-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
 }
-.haf-loading {
+.haf-vpill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.haf-vpill-yes { background: rgba(61,214,140,.14); color: #3dd68c; }
+.haf-vpill-no  { background: rgba(255,107,107,.12); color: #ff6b6b; }
+.haf-vpill-mid { background: rgba(232,182,52,.12);  color: var(--accent); }
+[data-theme="light"] .haf-vpill-yes { background: rgba(0,135,90,.10); color: #00875a; }
+[data-theme="light"] .haf-vpill-no  { background: rgba(204,34,0,.09); color: #cc2200; }
+[data-theme="light"] .haf-vpill-mid { background: rgba(168,104,0,.10); color: #a86800; }
+/* Signal card grid */
+.haf-signal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.haf-signal-card {
+  background: var(--surface2, #1a1a1a);
+  border-radius: 10px;
+  padding: 11px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+/* Last card spans full width when odd total */
+.haf-signal-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.haf-sig-yes { background: rgba(61,214,140,.08);  }
+.haf-sig-no  { background: rgba(255,107,107,.07); }
+.haf-sig-mid { background: rgba(232,182,52,.07);  }
+[data-theme="light"] .haf-signal-card  { background: var(--surface2, #f5f5f5); }
+[data-theme="light"] .haf-sig-yes { background: rgba(0,135,90,.07); }
+[data-theme="light"] .haf-sig-no  { background: rgba(204,34,0,.06); }
+[data-theme="light"] .haf-sig-mid { background: rgba(168,104,0,.07); }
+/* Card internals */
+.haf-sig-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+.haf-sig-cat {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex: 1;
+}
+.haf-sig-arrow { font-size: 13px; font-weight: 700; line-height: 1; }
+.haf-arrow-up   { color: #3dd68c; }
+.haf-arrow-down { color: #ff6b6b; }
+.haf-arrow-mid  { color: var(--accent); }
+[data-theme="light"] .haf-arrow-up   { color: #00875a; }
+[data-theme="light"] .haf-arrow-down { color: #cc2200; }
+.haf-sig-verdict {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: .02em;
+}
+.haf-verdict-yes { color: #3dd68c; }
+.haf-verdict-no  { color: #ff6b6b; }
+.haf-verdict-mid { color: var(--accent); }
+[data-theme="light"] .haf-verdict-yes { color: #00875a; }
+[data-theme="light"] .haf-verdict-no  { color: #cc2200; }
+[data-theme="light"] .haf-verdict-mid { color: #a86800; }
+.haf-sig-metric {
+  font-size: 10.5px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.haf-sig-desc {
   font-size: 12px;
+  line-height: 1.55;
   color: var(--text-muted);
-  font-style: italic;
-  padding: 8px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-.haf-section {
-  padding: 14px 0;
-  border-top: 1px solid var(--border);
+/* KEY INSIGHT callout */
+.haf-insight {
+  border-left: 3px solid var(--accent);
+  background: rgba(232,182,52,.07);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 14px 12px;
 }
-.haf-section:first-child { border-top: none; }
-.haf-section-label {
+.haf-insight-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.09em;
+  letter-spacing: .09em;
   text-transform: uppercase;
-  margin-bottom: 8px;
+  color: var(--accent);
+  margin-bottom: 7px;
 }
-.haf-section-text {
+.haf-insight-body {
   font-size: 13.5px;
-  line-height: 1.7;
+  line-height: 1.65;
   color: var(--text);
   margin: 0;
 }
-/* Section label colours */
-.haf-lbl-raw    { color: #6cb8ff; }
-.haf-lbl-grade  { color: #3dd68c; }
-.haf-lbl-market { color: var(--accent); }
-.haf-lbl-risk   { color: #ff6b6b; }
-[data-theme="light"] .haf-lbl-raw    { color: #1a6bbf; }
-[data-theme="light"] .haf-lbl-grade  { color: #00875a; }
-[data-theme="light"] .haf-lbl-market { color: #a86800; }
-[data-theme="light"] .haf-lbl-risk   { color: #cc2200; }
+[data-theme="light"] .haf-insight { background: rgba(168,104,0,.06); }
 
 /* ── Hold Strategy — Grade Donut Chart ──────────────────────── */
 .hold-grade-donut {

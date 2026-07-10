@@ -3552,23 +3552,78 @@ const _HAF_SECTIONS = [
   { key: 'BOTTOM LINE', cls: 'haf-lbl-risk',   path: 'M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
 ];
 
-function _parseHoldFacts(text) {
+function _parseHoldFacts(text, data) {
   const _e = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-  let html = '';
+
+  // Parse sections + extract verdict
+  const parsed = {};
   for (const sec of _HAF_SECTIONS) {
     const rx = new RegExp(`\\[${sec.key}\\]\\s*([\\s\\S]*?)(?=\\n\\[|$)`, 'i');
     const m = text.match(rx);
     if (!m) continue;
     const body = m[1].trim();
-    html += `<div class="haf-section">
-      <div class="haf-section-label ${sec.cls}">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="${sec.path}"/></svg>
-        ${_e(sec.key)}
+    const vMatch = body.match(/^(YES|NO|BORDERLINE)\s*[—–\-]?\s*/i);
+    parsed[sec.key] = {
+      verdict: vMatch ? vMatch[1].toUpperCase() : null,
+      desc:    vMatch ? body.slice(vMatch[0].length).trim() : body,
+      sec,
+    };
+  }
+
+  const vArrow   = v => v === 'YES' ? '↑' : v === 'NO' ? '↓' : '→';
+  const vArrCls  = v => v === 'YES' ? 'haf-arrow-up' : v === 'NO' ? 'haf-arrow-down' : 'haf-arrow-mid';
+  const vCardCls = v => v === 'YES' ? 'haf-sig-yes' : v === 'NO' ? 'haf-sig-no' : 'haf-sig-mid';
+  const vLblCls  = v => v === 'YES' ? 'haf-verdict-yes' : v === 'NO' ? 'haf-verdict-no' : 'haf-verdict-mid';
+  const vPillCls = v => v === 'YES' ? 'haf-vpill-yes' : v === 'NO' ? 'haf-vpill-no' : 'haf-vpill-mid';
+
+  // Per-card metric from data
+  const metrics = {
+    'BUY RAW':    data?.rawRoi    != null ? `${data.rawRoi >= 0 ? '+' : ''}${data.rawRoi}% · 5yr hold` : null,
+    'GRADE IT':   data?.roiGrade  != null ? `${data.roiGrade >= 0 ? '+' : ''}${data.roiGrade}% · PSA 5yr EV` : null,
+    'BUY GRADED': data?.psa9Roi   != null ? `PSA 9: ${data.psa9Roi >= 0 ? '+' : ''}${data.psa9Roi}%  PSA 10: ${data.psa10Roi >= 0 ? '+' : ''}${data.psa10Roi}%` : null,
+  };
+
+  // Verdict pills summary row
+  const SIGNAL_KEYS = ['BUY RAW', 'GRADE IT', 'BUY GRADED'];
+  let pills = '<div class="haf-verdict-pills">';
+  for (const key of SIGNAL_KEYS) {
+    const p = parsed[key];
+    if (!p) continue;
+    const pcls = vPillCls(p.verdict);
+    pills += `<span class="haf-vpill ${pcls}">${_e(key)} ${p.verdict ? vArrow(p.verdict) : ''}</span>`;
+  }
+  pills += '</div>';
+
+  // 3 signal cards in 2-col grid
+  let grid = '<div class="haf-signal-grid">';
+  for (const sec of _HAF_SECTIONS.slice(0, 3)) {
+    const p = parsed[sec.key];
+    if (!p) continue;
+    const metric = metrics[sec.key];
+    grid += `<div class="haf-signal-card ${vCardCls(p.verdict)}">
+      <div class="haf-sig-head">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="${sec.path}"/></svg>
+        <span class="haf-sig-cat">${_e(sec.key)}</span>
+        ${p.verdict ? `<span class="haf-sig-arrow ${vArrCls(p.verdict)}">${vArrow(p.verdict)}</span>` : ''}
       </div>
-      <p class="haf-section-text">${_e(body)}</p>
+      ${p.verdict ? `<div class="haf-sig-verdict ${vLblCls(p.verdict)}">${_e(p.verdict)}</div>` : ''}
+      ${metric ? `<div class="haf-sig-metric">${_e(metric)}</div>` : ''}
+      <div class="haf-sig-desc">${_e(p.desc)}</div>
     </div>`;
   }
-  return html || `<p class="haf-section-text">${_e(text)}</p>`;
+  grid += '</div>';
+
+  // BOTTOM LINE → KEY INSIGHT callout
+  const bl = parsed['BOTTOM LINE'];
+  const insight = bl ? `<div class="haf-insight">
+    <div class="haf-insight-head">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="${_HAF_SECTIONS[3].path}"/></svg>
+      KEY INSIGHT
+    </div>
+    <p class="haf-insight-body">${_e(bl.desc)}</p>
+  </div>` : '';
+
+  return pills + grid + insight || `<p class="haf-section-text">${_e(text)}</p>`;
 }
 
 async function _loadHoldStrategyFacts(card, data) {
@@ -3640,7 +3695,7 @@ Rules: use £ for all prices. Be direct and specific. No markdown, no bullet poi
       ],
       onToken: () => {},
       onDone: whole => {
-        const rendered = _parseHoldFacts(whole.trim());
+        const rendered = _parseHoldFacts(whole.trim(), data);
         body.innerHTML = rendered;
         _holdFactsCache.set(cacheKey, rendered);
         wrap.style.display = '';
