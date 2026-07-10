@@ -406,6 +406,7 @@ let _priorityFetchRelease = null;
 let lastModelPriceUSD = 0; // Last result from predictPrice — used by inline deal checks
 let _holdWinnerKey = null;  // Winner key from last renderHoldStrategy run — drives owned-card badge
 let _holdWinnerDesc = '';   // One-line summary of the winner — shown in signal section
+let _mktGradeRows  = null;  // Last computed grade rows from renderMarketplaceScan — used by insight refresh
 
 // ---- Portfolio (persisted to localStorage) ----
 let portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
@@ -3006,6 +3007,7 @@ function selectCard(id) {
   selectedCard = card;
   _holdWinnerKey = null;  // reset until renderHoldStrategy runs for this card
   _holdWinnerDesc = '';
+  _mktGradeRows  = null;
 
   // Taste engine: score this searched card; strong matches auto-join the
   // home recommendations (deferred so it never delays the card render).
@@ -11687,6 +11689,55 @@ function renderMarketplaceCpChip(card, section) {
   }
 }
 
+function _renderMktStratInsight() {
+  const siEl = document.getElementById('mktStratInsight');
+  if (!siEl || !_mktGradeRows) return;
+  const rows = _mktGradeRows;
+  const sk   = _holdWinnerKey;
+  const rawRow = rows.find(r => r.g === 'raw');
+
+  let stratLabel = null;
+  let entryRow   = rows[0];
+  if      (sk === 'raw')              { stratLabel = 'Buy Raw + Hold';      entryRow = rawRow || rows[0]; }
+  else if (sk === 'gamble')           { stratLabel = 'Buy Raw + Grade PSA'; entryRow = rawRow || rows[0]; }
+  else if (sk === 'ace')              { stratLabel = 'Buy Raw + Grade ACE'; entryRow = rawRow || rows[0]; }
+  else if (sk?.startsWith('psa')) {
+    const gn = parseInt(sk.replace('psa', ''));
+    stratLabel = `Buy PSA ${gn} Slab`;
+    entryRow = rows.find(r => r.g === gn) || rows[0];
+  }
+
+  const _esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  let bodyHtml;
+  if (!sk) {
+    bodyHtml = `<span class="mkt-si-cta">Open the Strategy tab for a full 5yr hold analysis and grading recommendation.</span>`;
+  } else if (sk === 'none') {
+    bodyHtml = `<span class="mkt-si-cta">No clear winner in Hold Strategy — hold what you have and watch the price.</span>`;
+  } else {
+    const descLine  = _holdWinnerDesc
+      ? `<span class="mkt-si-desc">${_esc(_holdWinnerDesc)}</span>` : '';
+    const entryLine = entryRow
+      ? `<span class="mkt-si-entry">Best market entry: <strong>${entryRow.label}</strong> at ${fmtGBP(entryRow.todayUSD)} · deal score ${entryRow.score}/100</span>`
+      : '';
+    bodyHtml = `<span class="mkt-si-rec">${_esc(stratLabel)}</span>${descLine}${entryLine}`;
+  }
+
+  siEl.innerHTML = `
+    <div class="mkt-strat-insight">
+      <div class="mkt-si-top">
+        <span class="mkt-si-head">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          STRATEGY INSIGHT
+        </span>
+        <button class="mkt-si-jump" type="button">View Strategy ↓</button>
+      </div>
+      <div class="mkt-si-body">${bodyHtml}</div>
+    </div>`;
+  siEl.querySelector('.mkt-si-jump')?.addEventListener('click', () => {
+    document.querySelector('.ptab[data-ptab="strategy"]')?.click();
+  });
+}
+
 function renderMarketplaceScan(card, pullCost, desirability) {
   const section = $('marketplaceSection');
   if (!section || !card) return;
@@ -11775,10 +11826,13 @@ function renderMarketplaceScan(card, pullCost, desirability) {
 
   const topRow = rows[0];
   $('marketplaceFootnote').innerHTML = `
-    Best place to hunt right now: <strong>${topRow.label}</strong> at ${fmtGBP(topRow.todayUSD)} (deal score ${topRow.score}/100).
-    Each search link is pre-filtered to <strong>max price = model fair value</strong>, so any listing you see is at or below the model.
-    Cardmarket prices in EUR; UK eBay in GBP. Direct Cardmarket + TCGplayer product links resolve in the background via pokemontcg.io.
+    Each search link is pre-filtered to <strong>max price = model fair value</strong>.
+    Cardmarket prices in EUR; UK eBay in GBP. Direct Cardmarket + TCGplayer product links resolve via pokemontcg.io.
   `;
+
+  // Store rows so _renderMktStratInsight can be called from renderHoldStrategy too
+  _mktGradeRows = rows;
+  _renderMktStratInsight();
 
   // Fire-and-forget: resolve direct product page URLs from pokemontcg.io and
   // swap the Cardmarket + TCGplayer search links for product-page links. Also
@@ -14456,6 +14510,9 @@ function renderHoldStrategy(card) {
   } else {
     _holdWinnerDesc = '';
   }
+
+  // Refresh the Market tab's strategy insight now that we have the winner
+  _renderMktStratInsight();
 
   // Unified "Smart move" recommendation across all strategies (PSA + ACE + raw + graded).
   const recEl = $('holdRecommendation');
