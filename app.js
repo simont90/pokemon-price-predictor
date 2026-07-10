@@ -3233,6 +3233,7 @@ function selectCard(id) {
   updateWishlistButton();
   updateFullArtBinderButton();
   updateCompareButton();
+  _loadMapQ(); _syncMappingBtnState();
   renderCounterpartFlag(card);
   renderPsaGradeRange(card, pullCost, des.total);
   renderAceGradingSection();
@@ -7986,6 +7987,7 @@ function setupCompare() {
     if (e.key === 'Escape' && $('comparePanel')?.style.display !== 'none') closeComparePanel();
   });
   $('addCompareBtn').addEventListener('click', toggleCardInCompare);
+  $('addMappingBtn')?.addEventListener('click', () => { if (selectedCard) toggleCardInMapQ(selectedCard); });
   renderCompare();
 }
 
@@ -21010,7 +21012,7 @@ function setupPageNav() {
     }
     if (page === 'home') { renderHomeDashboard(); _syncOnHomeNav(); }
     if (page === 'binder') { try { renderBinderPage(); } catch(e) {} }
-    if (page === 'tools') { try { updateToolsDupeBadge(); } catch(e) {} }
+    if (page === 'tools') { try { updateToolsDupeBadge(); _loadMapQ(); _updateMapQBadge(); } catch(e) {} }
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
     if (page === 'vintage') { try { renderVintagePage(); } catch(e) {} }
     if (page === 'know') { try { _pknOnNavigate(); } catch(e) {} }
@@ -21220,6 +21222,160 @@ function setupPageNav() {
 // =============================================================
 // Tools page — inner tab bar (Price Sync / Duplicates)
 // =============================================================
+// =============================================================
+// Card Mapping queue — device-local, not synced
+// =============================================================
+const MAP_Q_KEY = 'map-queue-v1';
+let _mapQ = [];
+
+function _loadMapQ() {
+  try { _mapQ = JSON.parse(localStorage.getItem(MAP_Q_KEY) || '[]'); } catch { _mapQ = []; }
+}
+function _saveMapQ() {
+  try { localStorage.setItem(MAP_Q_KEY, JSON.stringify(_mapQ)); } catch {}
+}
+function _updateMapQBadge() {
+  const badge = $('toolsMapBadge');
+  if (!badge) return;
+  if (_mapQ.length > 0) { badge.textContent = _mapQ.length; badge.style.display = ''; }
+  else { badge.style.display = 'none'; }
+}
+function _syncMappingBtnState() {
+  const btn = $('addMappingBtn');
+  if (!btn || !selectedCard) return;
+  const inQ = _mapQ.some(x => x.id === selectedCard.i);
+  btn.classList.toggle('add-portfolio-btn--active', inQ);
+  btn.title = inQ ? 'Remove from Card Mapping queue' : 'Add to Card Mapping queue';
+}
+
+function toggleCardInMapQ(card) {
+  _loadMapQ();
+  const idx = _mapQ.findIndex(x => x.id === card.i);
+  if (idx >= 0) {
+    _mapQ.splice(idx, 1);
+  } else {
+    _mapQ.push({ id: card.i, lang: card.lang || 'EN' });
+  }
+  _saveMapQ();
+  _updateMapQBadge();
+  _syncMappingBtnState();
+  // Refresh panel if it's open
+  const mp = document.getElementById('toolsMappingPanel');
+  if (mp && mp.style.display !== 'none') _renderMappingPanel();
+}
+
+function _renderMappingPanel() {
+  _loadMapQ();
+  const mount = $('toolsMappingMount');
+  if (!mount) return;
+  if (!_mapQ.length) {
+    mount.innerHTML = `
+      <div class="map-empty">
+        <p>No cards queued. Open any card and tap the <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> icon to add it here.</p>
+        <p class="map-empty-hint">Add an EN card, then its JP counterpart. Set their languages below and click Link.</p>
+      </div>`;
+    return;
+  }
+  const langOpts = (selected) => ['EN','JP','CN','KR'].map(l =>
+    `<option value="${l}"${l === selected ? ' selected' : ''}>${l}</option>`
+  ).join('');
+
+  // Group into pairs: (0,1), (2,3), ...
+  let html = `<div class="map-queue-header">
+    <span class="map-queue-count">${_mapQ.length} card${_mapQ.length !== 1 ? 's' : ''} queued</span>
+    <button class="map-clear-btn" id="mapClearBtn" type="button">Clear all</button>
+  </div><div class="map-pairs-list">`;
+
+  for (let i = 0; i < _mapQ.length; i += 2) {
+    const a = _mapQ[i];
+    const b = _mapQ[i + 1] || null;
+    const cardA = getCardById(a.id);
+    const cardB = b ? getCardById(b.id) : null;
+    const numA = cardA?.cn ? (cardA.ct ? `${cardA.cn}/${cardA.ct}` : cardA.cn) : '';
+    const numB = cardB?.cn ? (cardB.ct ? `${cardB.cn}/${cardB.ct}` : cardB.cn) : '';
+    const imgA = cardA ? getCardImg(cardA) : '';
+    const imgB = cardB ? getCardImg(cardB) : '';
+
+    html += `<div class="map-pair" data-pair-idx="${i}">
+      <div class="map-pair-slot" data-slot-idx="${i}">
+        ${imgA ? `<img class="map-card-thumb" src="${esc(imgA)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="map-card-thumb map-card-thumb--missing"></div>'}
+        <div class="map-slot-info">
+          <div class="map-slot-name">${esc(cardA?.n || a.id)}</div>
+          <div class="map-slot-set">${esc(cardA?.s || '')}${numA ? ' · #' + esc(numA) : ''}</div>
+        </div>
+        <select class="map-lang-sel" data-slot="${i}" aria-label="Language">${langOpts(a.lang)}</select>
+        <button class="map-remove-btn" data-remove-id="${esc(a.id)}" type="button" aria-label="Remove">×</button>
+      </div>`;
+
+    if (b) {
+      const sameLang = a.lang === b.lang;
+      html += `
+      <div class="map-pair-slot" data-slot-idx="${i + 1}">
+        ${imgB ? `<img class="map-card-thumb" src="${esc(imgB)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="map-card-thumb map-card-thumb--missing"></div>'}
+        <div class="map-slot-info">
+          <div class="map-slot-name">${esc(cardB?.n || b.id)}</div>
+          <div class="map-slot-set">${esc(cardB?.s || '')}${numB ? ' · #' + esc(numB) : ''}</div>
+        </div>
+        <select class="map-lang-sel" data-slot="${i + 1}" aria-label="Language">${langOpts(b.lang)}</select>
+        <button class="map-remove-btn" data-remove-id="${esc(b.id)}" type="button" aria-label="Remove">×</button>
+      </div>
+      <div class="map-pair-footer">
+        ${sameLang
+          ? `<span class="map-pair-warn">Select different languages to link.</span>`
+          : `<button class="map-link-btn" data-pair="${i}" type="button">⇔ Link as counterparts</button>`
+        }
+      </div>`;
+    } else {
+      html += `<div class="map-pair-footer map-pair-footer--waiting">Waiting — add one more card to complete this pair.</div>`;
+    }
+    html += `</div>`;
+  }
+  html += '</div>';
+  mount.innerHTML = html;
+
+  // Wire events
+  mount.querySelector('#mapClearBtn')?.addEventListener('click', () => {
+    _mapQ = []; _saveMapQ(); _updateMapQBadge(); _syncMappingBtnState(); _renderMappingPanel();
+  });
+  mount.querySelectorAll('.map-lang-sel').forEach(sel => {
+    sel.addEventListener('change', () => {
+      _loadMapQ();
+      const idx = parseInt(sel.dataset.slot);
+      if (_mapQ[idx]) { _mapQ[idx].lang = sel.value; _saveMapQ(); _renderMappingPanel(); }
+    });
+  });
+  mount.querySelectorAll('.map-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _loadMapQ();
+      _mapQ = _mapQ.filter(x => x.id !== btn.dataset.removeId);
+      _saveMapQ(); _updateMapQBadge(); _syncMappingBtnState(); _renderMappingPanel();
+    });
+  });
+  mount.querySelectorAll('.map-link-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pairIdx = parseInt(btn.dataset.pair);
+      _loadMapQ();
+      const a = _mapQ[pairIdx], b = _mapQ[pairIdx + 1];
+      if (!a || !b || a.lang === b.lang) return;
+      // Authoritative override — clears any stale links automatically via setCPOverride
+      setCPOverride(a.id, b.id);
+      setCPOverride(b.id, a.id);
+      if (a.lang === 'CN' || a.lang === 'KR' || b.lang === 'CN' || b.lang === 'KR') {
+        const cardA = getCardById(a.id), cardB = getCardById(b.id);
+        if (cardA && cardB) setMLLink(cardA, cardB, b.lang);
+      }
+      _mapQ.splice(pairIdx, 2);
+      _saveMapQ(); _updateMapQBadge(); _syncMappingBtnState(); _renderMappingPanel();
+      // Flash confirmation
+      const flash = document.createElement('div');
+      flash.className = 'map-link-flash';
+      flash.textContent = `Linked: ${a.lang} ↔ ${b.lang}`;
+      mount.prepend(flash);
+      setTimeout(() => flash.remove(), 2500);
+    });
+  });
+}
+
 function setupToolsTabs() {
   const bar = document.querySelector('.tools-inner-tab-bar');
   if (!bar) return;
@@ -21234,10 +21390,13 @@ function setupToolsTabs() {
     const syncPanel    = document.getElementById('toolsSyncPanel');
     const dupesPanel   = document.getElementById('toolsDupesPanel');
     const accountPanel = document.getElementById('toolsAccountPanel');
+    const mappingPanel = document.getElementById('toolsMappingPanel');
     if (syncPanel)    syncPanel.style.display    = tab === 'sync'    ? '' : 'none';
     if (dupesPanel)   dupesPanel.style.display   = tab === 'dupes'   ? '' : 'none';
     if (accountPanel) accountPanel.style.display = tab === 'account' ? '' : 'none';
-    if (tab === 'dupes') renderToolsDuplicates();
+    if (mappingPanel) mappingPanel.style.display = tab === 'mapping' ? '' : 'none';
+    if (tab === 'dupes')   renderToolsDuplicates();
+    if (tab === 'mapping') _renderMappingPanel();
   });
 }
 

@@ -11569,9 +11569,116 @@ html { scroll-behavior: smooth; }
   line-height: 16px;
   vertical-align: middle;
 }
+.tools-map-badge {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 0 5px;
+  line-height: 16px;
+  vertical-align: middle;
+}
 
 /* Duplicate rows */
 #toolsDupesMount { padding: 0 12px 40px; }
+
+/* ================================================================
+   Card Mapping panel
+   ================================================================ */
+#toolsMappingMount { padding: 0 12px 40px; }
+.map-empty { padding: 24px 0; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+.map-empty svg { vertical-align: middle; stroke: var(--accent); }
+.map-empty-hint { font-size: 12px; margin-top: 6px; color: var(--text-faint); }
+
+.map-queue-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.map-queue-count { font-size: 12px; color: var(--text-muted); }
+.map-clear-btn {
+  font-size: 11px; color: var(--text-faint); background: none; border: none;
+  cursor: pointer; padding: 4px 8px; border-radius: var(--radius-sm);
+  font-family: inherit;
+}
+.map-clear-btn:hover { color: #ef5350; background: rgba(239,83,80,0.08); }
+
+.map-pairs-list { display: flex; flex-direction: column; gap: 16px; }
+
+.map-pair {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.map-pair-slot {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+}
+.map-pair-slot + .map-pair-slot {
+  border-top: 1px dashed var(--border);
+}
+.map-card-thumb {
+  width: 40px; height: 56px;
+  object-fit: cover; border-radius: 3px;
+  flex-shrink: 0; background: var(--bg-hover);
+}
+.map-card-thumb--missing { background: var(--bg-hover); }
+.map-slot-info { flex: 1; min-width: 0; }
+.map-slot-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map-slot-set  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.map-lang-sel {
+  flex-shrink: 0;
+  background: var(--bg-input, var(--bg-raised));
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px; font-weight: 600;
+  padding: 4px 6px; cursor: pointer;
+  font-family: inherit;
+  appearance: none; -webkit-appearance: none;
+  width: 52px; text-align: center;
+}
+.map-remove-btn {
+  flex-shrink: 0; background: none; border: none;
+  color: var(--text-faint); cursor: pointer;
+  font-size: 18px; line-height: 1; padding: 2px 4px;
+  border-radius: 4px;
+}
+.map-remove-btn:hover { color: #ef5350; background: rgba(239,83,80,0.08); }
+
+.map-pair-footer {
+  padding: 8px 12px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.map-pair-footer--waiting {
+  font-size: 11px; color: var(--text-faint); font-style: italic;
+}
+.map-pair-warn { font-size: 11px; color: #fb923c; }
+.map-link-btn {
+  background: var(--accent); color: var(--bg);
+  border: none; border-radius: var(--radius-sm);
+  padding: 6px 14px; font-size: 12px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+  transition: background 0.15s, transform 0.1s;
+}
+.map-link-btn:hover { background: var(--accent-hover); }
+.map-link-btn:active { transform: scale(0.97); }
+
+.map-link-flash {
+  background: rgba(52, 211, 153, 0.15);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  color: #34d399;
+  border-radius: var(--radius-sm);
+  padding: 8px 14px; font-size: 12px; font-weight: 600;
+  margin-bottom: 12px; text-align: center;
+  animation: mapFlashIn 0.2s ease;
+}
+@keyframes mapFlashIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.add-portfolio-btn--active svg { stroke: var(--accent); }
 
 .dupe-section-hd {
   font-size: 11px;
