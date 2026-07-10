@@ -24412,70 +24412,76 @@ function renderStandouts() {
 
   const maxBudgetGBP = getMaxBudgetGBP(); // 99999 = no limit
   const hasLimit     = maxBudgetGBP < BUDGET_DEFAULT;
+  const fx           = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
   const portfolioIds = new Set(portfolio.map(p => p.id).filter(Boolean));
   const wishlistIds  = new Set(wishlist.map(w => w.id).filter(Boolean));
-  const priceCache   = getPriceCache(); // memoised — one object lookup per card
+  const priceCache   = getPriceCache();
+  const stratKey     = _soGrade === 'psa10' ? 'psa10' : _soGrade === 'psa9' ? 'psa9' : 'raw';
+  const gradeLabel   = _soGrade === 'psa10' ? 'PSA 10' : _soGrade === 'psa9' ? 'PSA 9' : 'Raw';
 
-  // Update subtitle to reflect active grade and budget
-  const gradeLabel = _soGrade === 'psa10' ? 'PSA 10' : _soGrade === 'psa9' ? 'PSA 9' : 'Raw';
+  // Update subtitle
   const subtitleEl = document.getElementById('soSubtitle');
   if (subtitleEl) {
     subtitleEl.textContent = hasLimit
-      ? `Standout ${gradeLabel} cards on the market within your £${maxBudgetGBP} per-card budget — ranked by grading premium and entry opportunity.`
-      : `Standout ${gradeLabel} cards on the market — ranked by grading premium and entry opportunity.`;
+      ? `Best ${gradeLabel} buys within your £${maxBudgetGBP} per-card budget — ranked by 5yr projected ROI.`
+      : `Best ${gradeLabel} buys on the market — ranked by 5yr projected ROI.`;
   }
 
   const scored = [];
   for (const card of cardData.cards) {
-    const id  = card.i;
-    const raw = priceCache[id];
-    const pd  = raw && _priceCacheIsValid(raw._ts) ? raw : null;
-    const rawUSD   = pd?.pcUngraded || card.p || 0;
-    if (rawUSD <= 0) continue;
-    const psa9USD  = pd?.pcPsa9  || 0;
-    const psa10USD = pd?.pcPsa10 || 0;
-    const rawGBP   = usdToGbp(rawUSD);
-    const psa9GBP  = usdToGbp(psa9USD);
-    const psa10GBP = usdToGbp(psa10USD);
+    try {
+      // Quick pre-filter: skip cards with no PSA price basis at all
+      const cachedRaw = priceCache[card.i];
+      const pd = cachedRaw && _priceCacheIsValid(cachedRaw._ts) ? cachedRaw : null;
+      if (!card.p10 && !pd?.pcPsa10) continue;
 
-    // Budget filter: apply to the selected grade's price
-    const gradePrice = _soGrade === 'psa10' ? psa10GBP : _soGrade === 'psa9' ? psa9GBP : rawGBP;
-    // PSA modes need actual cached price data — skip cards without it
-    if (_soGrade !== 'raw' && gradePrice <= 0) continue;
-    if (hasLimit && gradePrice > maxBudgetGBP) continue;
+      const hc = _getHoldCoreCached(card);
+      if (!hc.ok || !hc.strategies?.length) continue;
 
-    // Score: PSA 10 multiple × log(price) — favours high grading upside at accessible entry
-    const psaMultiple = rawGBP > 0 && psa10GBP > 0 ? psa10GBP / rawGBP : 1;
-    const score = psaMultiple * Math.log10(Math.max(rawGBP, psa10GBP, 1) + 10);
-    scored.push({ card, pd, rawGBP, psa9GBP, psa10GBP, score,
-      inPortfolio: portfolioIds.has(id), inWishlist: wishlistIds.has(id) });
+      const strat = hc.strategies.find(s => s.key === stratKey);
+      if (!strat || strat.roi <= 0) continue;
+
+      const todayGBP = strat.today * fx;
+      if (todayGBP <= 0) continue;
+      if (hasLimit && todayGBP > maxBudgetGBP) continue;
+
+      scored.push({
+        card,
+        strat,
+        todayGBP,
+        yr5GBP:      strat.yr5 * fx,
+        profitGBP:   strat.profit * fx,
+        roi:         strat.roi,
+        risk:        strat.risk || 'med',
+        rawGBP:      usdToGbp(card.p || pd?.pcUngraded || 0),
+        inPortfolio: portfolioIds.has(card.i),
+        inWishlist:  wishlistIds.has(card.i),
+      });
+    } catch (_) {}
   }
 
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => b.roi - a.roi);
   const top = scored.slice(0, 12);
 
   if (top.length === 0) {
-    const budgetMsg = hasLimit ? ` within your £${maxBudgetGBP} ${gradeLabel} budget` : '';
-    carousel.innerHTML = _soGrade !== 'raw'
-      ? `<div class="so-empty">No ${gradeLabel} price data available${budgetMsg}. Sync prices for cards you track, or switch to Raw.</div>`
-      : `<div class="so-empty">No standout cards found${budgetMsg}. Try raising your Max per Card limit in budget settings.</div>`;
+    const budgetMsg = hasLimit ? ` within your £${maxBudgetGBP} budget` : '';
+    carousel.innerHTML = `<div class="so-empty">No ${gradeLabel} strategy data available${budgetMsg}. Cards need a PSA 10 price basis — sync prices for cards you track to expand results.</div>`;
     dotsEl.innerHTML = '';
     return;
   }
 
   carousel.innerHTML = top.map((item, i) => {
-    const { card, rawGBP, psa9GBP, psa10GBP, inPortfolio, inWishlist } = item;
-    const price    = _soPrice(item);
-    const imgUrl   = _hiresUrl(getCardImg(card));
-    const insight  = _standoutInsight(card, item);
-    const tagLabel = inPortfolio ? 'Owned' : inWishlist ? 'Wishlist' : null;
-    const tagColor = inPortfolio ? 'rgba(116,185,255,0.2)' : 'rgba(253,121,168,0.2)';
-    const tagText  = inPortfolio ? '#74b9ff' : '#fd79a8';
-    const inWL     = inWishlist;
-    return `<div class="so-card" data-so-i="${i}"
-        data-raw="${rawGBP.toFixed(2)}"
-        data-psa9="${psa9GBP.toFixed(2)}"
-        data-psa10="${psa10GBP.toFixed(2)}">
+    const { card, strat, todayGBP, yr5GBP, profitGBP, roi, risk, rawGBP, inPortfolio, inWishlist } = item;
+    const imgUrl    = _hiresUrl(getCardImg(card));
+    const tagLabel  = inPortfolio ? 'Owned' : inWishlist ? 'Wishlist' : null;
+    const tagColor  = inPortfolio ? 'rgba(116,185,255,0.2)' : 'rgba(253,121,168,0.2)';
+    const tagText   = inPortfolio ? '#74b9ff' : '#fd79a8';
+    const roiColor  = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : roi >= 20 ? 'var(--text)' : 'var(--text-muted)';
+    const riskClass = risk === 'low' ? 'so-risk-low' : risk === 'high' ? 'so-risk-high' : 'so-risk-med';
+    const riskLabel = risk === 'low' ? 'Low risk' : risk === 'high' ? 'High risk' : 'Med risk';
+    const stratLbl  = stratKey === 'raw' ? 'Buy Raw' : `Buy ${gradeLabel}`;
+    const inWL      = inWishlist;
+    return `<div class="so-card" data-so-i="${i}">
       <div class="so-img-wrap">
         ${imgUrl
           ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">`
@@ -24484,11 +24490,20 @@ function renderStandouts() {
       </div>
       <div class="so-body">
         <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
-        <div class="so-set">${esc(card.s || '')}${card.num ? ' · #' + esc(card.num) : ''}</div>
-        <div class="so-price so-price-val">${price > 0 ? fmtGBPDirect(price) : '—'}</div>
-        <div class="so-insight">
-          <div class="so-insight-lbl">AI Insight</div>
-          <div class="so-insight-txt">${esc(insight)}</div>
+        <div class="so-set">${esc(card.s || '')}${card.cn ? ' · #' + esc(card.cn) : ''}</div>
+        <div class="so-strat-row">
+          <div class="so-strat-allin">
+            <span class="so-strat-lbl">${stratLbl}</span>
+            <span class="so-strat-price">${fmtGBPDirect(todayGBP)}</span>
+          </div>
+          <div class="so-strat-roi" style="color:${roiColor}">+${Math.round(roi)}%</div>
+        </div>
+        <div class="so-strat-meta">
+          5yr target ${fmtGBPDirect(yr5GBP)} · profit ${profitGBP >= 0 ? '+' : ''}${fmtGBPDirect(profitGBP)}
+        </div>
+        <div class="so-strat-badges">
+          <span class="so-risk-badge ${riskClass}">${riskLabel}</span>
+          ${rawGBP > 0 && stratKey !== 'raw' ? `<span class="so-raw-price">Raw ${fmtGBPDirect(rawGBP)}</span>` : ''}
         </div>
         <div class="so-actions">
           <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
