@@ -14820,6 +14820,22 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   margin-left: 4px;
 }
 .hgd-muted { color: var(--text-muted) !important; font-weight: 400 !important; font-size: 10.5px !important; }
+/* Verdict bar below donut ring */
+.hgd-verdict {
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 7px 12px;
+  margin: 8px 0 4px;
+  line-height: 1.35;
+  text-align: center;
+}
+.hgd-verdict-ok   { background: rgba(61,214,140,0.12); color: #3dd68c; }
+.hgd-verdict-warn { background: rgba(255,203,5,0.10);  color: var(--accent); }
+.hgd-verdict-bad  { background: rgba(255,107,107,0.12); color: #ff6b6b; }
+[data-theme="light"] .hgd-verdict-ok   { background: rgba(0,135,90,0.10);  color: #00875a; }
+[data-theme="light"] .hgd-verdict-warn { background: rgba(168,104,0,0.10); color: #a86800; }
+[data-theme="light"] .hgd-verdict-bad  { background: rgba(204,34,0,0.10);  color: #cc2200; }
 /* Winner badge colours */
 .hgd-winner-grade { border-color: #3dd68c; color: #3dd68c; }
 .hgd-winner-buy   { border-color: var(--accent); color: var(--accent); }
