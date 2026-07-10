@@ -11752,32 +11752,25 @@ function renderMarketplaceScan(card, pullCost, desirability) {
   // so users can scan a grade and jump to the right marketplace in one motion.
   const grid = $('marketplaceGrades');
   if (grid) {
-    grid.innerHTML = rows.map((r, idx) => `
-      <div class="mkt-grade-card" data-mkt-row="${idx}" data-grade="${r.label}">
-        <div class="mkt-grade-summary">
-          <div class="mkt-grade-head">
-            <span class="mkt-grade-label">${r.label}</span>
-            <span class="mkt-pill ${dealClass(r.score)}" title="Deal score \u2014 higher means more attractive hunting ground">${r.score}/100</span>
-          </div>
-          <div class="mkt-grade-metrics">
-            <div class="mkt-grade-metric">
-              <span class="mkt-grade-metric-label">Fair value</span>
-              <span class="mkt-money">${fmtGBP(r.todayUSD)}</span>
-            </div>
-            <div class="mkt-grade-metric">
-              <span class="mkt-grade-metric-label">5yr target</span>
-              <span class="mkt-money mkt-yr5">${fmtGBP(r.yr5USD)}</span>
-            </div>
-          </div>
+    grid.innerHTML = `<div class="mkt-grow-rows">${rows.map((r, idx) => `
+      <div class="mkt-grow-row${idx === 0 ? ' mkt-grow-top' : ''}" data-mkt-row="${idx}" data-grade="${r.label}">
+        <div class="mkt-grow-left">
+          <span class="mkt-grow-lbl">${r.label}</span>
+          <span class="mkt-gpill ${dealClass(r.score)}" title="Deal score \u2014 higher is more attractive">${r.score}</span>
         </div>
-        <div class="mkt-grade-links">
-          <a class="mkt-link mkt-uk"  href="${esc(r.ebayUk)}"     target="_blank" rel="noopener"><span class="mkt-link-src src-uk">eBay UK</span><span class="mkt-link-go">Search \u2192</span></a>
-          <a class="mkt-link mkt-us"  href="${esc(r.ebayUs)}"     target="_blank" rel="noopener"><span class="mkt-link-src src-us">eBay US</span><span class="mkt-link-go">Search \u2192</span></a>
-          <a class="mkt-link mkt-cm  mkt-cm-cell"  href="${esc(r.cardmarket)}" target="_blank" rel="noopener"><span class="mkt-link-src src-cm">Cardmarket</span><span class="mkt-link-go">Search \u2192</span></a>
-          <a class="mkt-link mkt-tcg mkt-tcg-cell" href="${esc(r.tcgplayer)}"  target="_blank" rel="noopener"><span class="mkt-link-src src-tcg">TCGplayer</span><span class="mkt-link-go">Search \u2192</span></a>
+        <div class="mkt-grow-vals">
+          <span class="mkt-grow-now">${fmtGBP(r.todayUSD)}</span>
+          <span class="mkt-grow-sep">\u2192</span>
+          <span class="mkt-grow-5yr">${fmtGBP(r.yr5USD)}</span>
+        </div>
+        <div class="mkt-grow-links">
+          <a class="mkt-chip src-uk"               href="${esc(r.ebayUk)}"     target="_blank" rel="noopener" title="Search eBay UK">UK<span class="mkt-link-go"> \u2197</span></a>
+          <a class="mkt-chip src-us"               href="${esc(r.ebayUs)}"     target="_blank" rel="noopener" title="Search eBay US">US<span class="mkt-link-go"> \u2197</span></a>
+          <a class="mkt-chip src-cm  mkt-cm-cell"  href="${esc(r.cardmarket)}" target="_blank" rel="noopener" title="Search Cardmarket">CM<span class="mkt-link-go"> \u2197</span></a>
+          <a class="mkt-chip src-tcg mkt-tcg-cell" href="${esc(r.tcgplayer)}"  target="_blank" rel="noopener" title="Search TCGplayer">TCP<span class="mkt-link-go"> \u2197</span></a>
         </div>
       </div>
-    `).join('');
+    `).join('')}</div>`;
   }
 
   const topRow = rows[0];
@@ -11828,8 +11821,10 @@ async function upgradeMarketplaceLinks(card, rows) {
       a.setAttribute('href', data.cardmarketUrl);
       a.classList.add('mkt-direct');
       a.title = 'Direct product page on Cardmarket';
-      const go = a.querySelector('.mkt-link-go');
-      if (go) go.textContent = 'Product page \u2192';
+      if (!a.classList.contains('mkt-chip')) {
+        const go = a.querySelector('.mkt-link-go');
+        if (go) go.textContent = 'Product page \u2192';
+      }
     });
   }
   if (data.tcgplayerUrl) {
@@ -11837,8 +11832,10 @@ async function upgradeMarketplaceLinks(card, rows) {
       a.setAttribute('href', data.tcgplayerUrl);
       a.classList.add('mkt-direct');
       a.title = 'Direct product page on TCGplayer';
-      const go = a.querySelector('.mkt-link-go');
-      if (go) go.textContent = 'Product page \u2192';
+      if (!a.classList.contains('mkt-chip')) {
+        const go = a.querySelector('.mkt-link-go');
+        if (go) go.textContent = 'Product page \u2192';
+      }
     });
   }
 
