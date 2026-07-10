@@ -6380,6 +6380,43 @@ function setupUpgradesList() {
 
 let _soUpgradeItems = []; // cache so onclick can reference by index
 
+function _buildUpgradeInsight(item, maxBudgetGBP, hasLimit) {
+  const { card, rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, risk, gemRateFrac, onlyFitsIfSellRaw } = item;
+  const mult = rawGBP > 0 ? psa10GBP / rawGBP : 0;
+  const gemPct = gemRateFrac != null ? Math.round(gemRateFrac * 100) : null;
+  const parts = [];
+
+  // PSA 10 premium
+  if (mult >= 8)       parts.push(`Exceptional grading premium — PSA 10 trades at ${mult.toFixed(1)}× raw. This card carries a serious collector premium in slab form.`);
+  else if (mult >= 4)  parts.push(`Strong grading premium — PSA 10 at ${mult.toFixed(1)}× raw. Worthwhile uplift for a long-term hold.`);
+  else if (mult >= 2)  parts.push(`Moderate grading premium — ${mult.toFixed(1)}× raw. Reasonable uplift if you're bullish on this card.`);
+  else                 parts.push(`Modest grading premium — only ${mult.toFixed(1)}× raw. The slab may not justify the outlay unless you're a long-term holder.`);
+
+  // ROI outlook
+  if (roi >= 100)      parts.push(`Model projects +${Math.round(roi)}% over 5 years — one of the stronger PSA 10 holds in your collection.`);
+  else if (roi >= 60)  parts.push(`5yr model: +${Math.round(roi)}%. Solid return if the card holds its trajectory.`);
+  else if (roi >= 30)  parts.push(`5yr model: +${Math.round(roi)}%. Modest but positive outlook.`);
+  else                 parts.push(`5yr model: +${Math.round(roi)}%. Limited upside — consider whether PSA 10 is the right allocation here.`);
+
+  // Gem rate
+  if (gemPct != null) {
+    if (gemPct >= 40)      parts.push(`${gemPct}% gem rate — PSA grades cleanly, easy to sell.`);
+    else if (gemPct >= 20) parts.push(`${gemPct}% gem rate — typical for the set.`);
+    else if (gemPct >= 10) parts.push(`${gemPct}% gem rate — noticeably tough to grade; pop is thin, which can support price.`);
+    else                   parts.push(`${gemPct}% gem rate — very hard to find a PSA 10, which explains part of the premium but makes resale unpredictable.`);
+  }
+
+  // Budget note
+  if (onlyFitsIfSellRaw && hasLimit) {
+    parts.push(`Budget: at your £${maxBudgetGBP} cap the ${fmtGBPDirect(psa10GBP)} outright cost is over budget — this only fits if you sell your raw copy first (net ${fmtGBPDirect(netUpgradeCostGBP)}).`);
+  } else if (!hasLimit || psa10GBP <= maxBudgetGBP) {
+    // No budget issue — mention both paths briefly
+    parts.push(`You can buy the slab outright at ${fmtGBPDirect(psa10GBP)}, or sell your raw copy (${fmtGBPDirect(rawGBP)}) first to bring the net outlay down to ${fmtGBPDirect(netUpgradeCostGBP)}.`);
+  }
+
+  return parts.join(' ');
+}
+
 function _toggleUpgradeFromSO(idx) {
   const item = _soUpgradeItems[idx];
   if (!item) return;
@@ -24523,9 +24560,9 @@ function renderStandouts() {
           const rawGBP = usdToGbp(rawUSD);
           const psa10GBP = psa10USD * fx;
           if (psa10GBP <= rawGBP) continue;
-          // Net cost to upgrade: buy slab, sell raw copy
           const netUpgradeCostGBP = Math.max(0, psa10GBP - rawGBP);
-          // Use the PSA 10 hold strategy for ROI projection
+          // Budget: exclude only if even net cost (after selling raw) exceeds limit
+          if (hasLimit && netUpgradeCostGBP > maxBudgetGBP) continue;
           const hc = _getHoldCoreCached(card);
           const psa10Strat = hc?.ok ? hc.strategies?.find(s => s.key === 'psa10') : null;
           if (!psa10Strat || psa10Strat.roi <= 0) continue;
@@ -24535,6 +24572,9 @@ function renderStandouts() {
             yr5GBP: psa10Strat.yr5 * fx,
             profitGBP: psa10Strat.profit * fx,
             risk: psa10Strat.risk || 'med',
+            gemRateFrac: card.g != null ? card.g : null,
+            // Flag when outright buy exceeds budget but sell-raw route doesn't
+            onlyFitsIfSellRaw: hasLimit && psa10GBP > maxBudgetGBP,
           });
         } catch (_) {}
       }
@@ -24548,12 +24588,13 @@ function renderStandouts() {
         dotsEl.innerHTML = '';
       } else {
         carousel.innerHTML = upTop.map((item, i) => {
-          const { card, rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, profitGBP, risk } = item;
-          const imgUrl   = _hiresUrl(getCardImg(card));
-          const roiColor = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : 'var(--text)';
+          const { card, rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, profitGBP, risk, gemRateFrac, onlyFitsIfSellRaw } = item;
+          const imgUrl    = _hiresUrl(getCardImg(card));
+          const roiColor  = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : 'var(--text)';
           const riskClass = risk === 'low' ? 'so-risk-low' : risk === 'high' ? 'so-risk-high' : 'so-risk-med';
           const riskLabel = risk === 'low' ? 'Low risk' : risk === 'high' ? 'High risk' : 'Med risk';
           const inUpgrades = upgradesList.some(u => u.id === card.i);
+          const insight   = _buildUpgradeInsight(item, maxBudgetGBP, hasLimit);
           return `<div class="so-card" data-so-i="${i}">
             <div class="so-img-wrap">
               ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
@@ -24561,7 +24602,7 @@ function renderStandouts() {
             </div>
             <div class="so-body">
               <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
-              <div class="so-set">${esc(card.s || '')}${card.cn ? ' · #' + esc(card.cn) : ''}</div>
+              <div class="so-set">${esc(card.s || '')}${card.cn ? ' \xb7 #' + esc(card.cn) : ''}</div>
               <div class="so-strat-row">
                 <div class="so-strat-allin">
                   <span class="so-strat-lbl">Buy PSA 10</span>
@@ -24569,12 +24610,23 @@ function renderStandouts() {
                 </div>
                 <div class="so-strat-roi" style="color:${roiColor}">+${Math.round(roi)}%</div>
               </div>
-              <div class="so-strat-meta">
-                Net upgrade ${fmtGBPDirect(netUpgradeCostGBP)} after selling raw · 5yr target ${fmtGBPDirect(yr5GBP)}
+              <div class="so-upgrade-scenarios">
+                <div class="so-upgrade-scenario">
+                  <span class="so-upg-lbl">Keep raw</span>
+                  <span class="so-upg-val">${fmtGBPDirect(psa10GBP)} outright${onlyFitsIfSellRaw ? ' <span class="so-upg-over">over budget</span>' : ''}</span>
+                </div>
+                <div class="so-upgrade-scenario">
+                  <span class="so-upg-lbl">Sell raw</span>
+                  <span class="so-upg-val">${fmtGBPDirect(netUpgradeCostGBP)} net &nbsp;<span class="so-upg-dim">sell at ${fmtGBPDirect(rawGBP)}</span></span>
+                </div>
+              </div>
+              <div class="so-strat-meta">5yr target ${fmtGBPDirect(yr5GBP)} &nbsp;&middot;&nbsp; profit +${fmtGBPDirect(profitGBP)}</div>
+              <div class="so-insight">
+                <div class="so-insight-lbl">AI Analysis</div>
+                <div class="so-insight-txt">${esc(insight)}</div>
               </div>
               <div class="so-strat-badges">
                 <span class="so-risk-badge ${riskClass}">${riskLabel}</span>
-                <span class="so-raw-price">Raw ${fmtGBPDirect(rawGBP)}</span>
               </div>
               <div class="so-actions">
                 <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>

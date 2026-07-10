@@ -15760,6 +15760,24 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   border-color: var(--accent); color: var(--accent);
   background: rgba(232,182,52,0.1);
 }
+.so-upgrade-scenarios {
+  display: flex; flex-direction: column; gap: 5px;
+  background: var(--bg); border-radius: 10px; border: 1px solid var(--border);
+  padding: 9px 12px;
+}
+.so-upgrade-scenario {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+}
+.so-upg-lbl {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-faint); flex-shrink: 0; min-width: 54px;
+}
+.so-upg-val { font-size: 12px; color: var(--text); text-align: right; }
+.so-upg-dim { color: var(--text-faint); }
+.so-upg-over {
+  font-size: 10px; font-weight: 700; color: #ef4444;
+  background: rgba(239,68,68,0.12); border-radius: 4px; padding: 1px 5px; margin-left: 4px;
+}
 
 /* Upgrades panel item */
 .upgrades-item {
