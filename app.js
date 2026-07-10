@@ -3489,8 +3489,10 @@ async function _loadCardAiBrief(card) {
   const txt  = document.getElementById('cdAiBriefText');
   if (!wrap || !txt || !card) return;
 
-  // Use cached result if same card
-  const cached = _aiBriefCache.get(card.i);
+  // Cache key includes budget so it regenerates if budget changes
+  const _briefBudget = getMaxBudgetGBP();
+  const _briefCacheKey = `${card.i}_${_briefBudget < BUDGET_DEFAULT ? _briefBudget : 0}`;
+  const cached = _aiBriefCache.get(_briefCacheKey);
   if (cached) { txt.innerHTML = cached; wrap.style.display = ''; return; }
 
   // Require at least the worker-based Claude (no user key needed)
@@ -3511,9 +3513,27 @@ async function _loadCardAiBrief(card) {
   const ratio    = rawGBP > 0 && psa10GBP > 0 ? (psa10GBP / rawGBP).toFixed(1) : null;
   const lang     = card.lang === 'JP' ? 'Japanese' : 'English';
 
-  const systemPrompt = `You are a sharp Pokémon TCG investment analyst writing for a collector who already understands the hobby. Write exactly 2 short sentences — no headers, no bullet points, no markdown formatting. First sentence: what makes this card worth attention (or not) right now. Second sentence: a specific action — whether to buy, hold, or grade, and at what price. Use £ prices. Be direct.`;
+  const budgetGBP  = getMaxBudgetGBP();
+  const hasBudget  = budgetGBP < BUDGET_DEFAULT;
+  const overBudget = hasBudget && rawGBP > budgetGBP;
 
-  const facts = [`${card.n} · ${setName}${card.cn ? ' #' + card.cn : ''}`, `${lang}`, `Rarity: ${card.r || 'unknown'}`, `Raw: £${rawGBP.toFixed(2)}`, psa10GBP > 0 ? `PSA 10: £${psa10GBP.toFixed(2)} (${ratio}× uplift)` : null, gemStr ? `Gem rate: ${gemStr}` : null].filter(Boolean);
+  let systemPrompt;
+  if (overBudget) {
+    systemPrompt = `You are a sharp Pokémon TCG investment analyst writing for a collector who already understands the hobby. This card is OVER BUDGET — the collector has a £${budgetGBP.toFixed(0)} per card limit but the raw price is £${rawGBP.toFixed(2)}. Write exactly 3 short sentences — no headers, no bullet points, no markdown formatting. First sentence: what makes this card genuinely special (or not) — the core investment case. Second sentence: a frank assessment of whether the budget exception is worth it — if the card has exceptional demand resilience, scarcity, or long-term ceiling, argue why this could be a one-off; if not, say so plainly. Third sentence: a specific action recommendation at a price point, or tell them to skip it and watch for a cheaper entry. Use £ prices. Be direct and honest about the budget tension.`;
+  } else {
+    systemPrompt = `You are a sharp Pokémon TCG investment analyst writing for a collector who already understands the hobby. Write exactly 2 short sentences — no headers, no bullet points, no markdown formatting. First sentence: what makes this card worth attention (or not) right now. Second sentence: a specific action — whether to buy, hold, or grade, and at what price. Use £ prices. Be direct.`;
+  }
+
+  const facts = [
+    `${card.n} · ${setName}${card.cn ? ' #' + card.cn : ''}`,
+    lang,
+    `Rarity: ${card.r || 'unknown'}`,
+    `Raw: £${rawGBP.toFixed(2)}`,
+    psa10GBP > 0 ? `PSA 10: £${psa10GBP.toFixed(2)} (${ratio}× uplift)` : null,
+    gemStr ? `Gem rate: ${gemStr}` : null,
+    hasBudget ? `Collector budget: £${budgetGBP.toFixed(0)} per card` : null,
+    overBudget ? `OVER BUDGET by £${(rawGBP - budgetGBP).toFixed(0)}` : null,
+  ].filter(Boolean);
 
   let full = '';
   const _e = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -3533,7 +3553,7 @@ async function _loadCardAiBrief(card) {
       onDone: whole => {
         const rendered = _e(whole.trim());
         txt.innerHTML = rendered;
-        _aiBriefCache.set(card.i, rendered);
+        _aiBriefCache.set(_briefCacheKey, rendered);
         wrap.style.display = '';
       },
       onError: () => { wrap.style.display = 'none'; },
