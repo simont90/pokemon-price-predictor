@@ -490,36 +490,21 @@ async function init() {
       setsData = {};
     }
 
-    // Exchange rate: apply cached value immediately (zero network wait), refresh in background.
+    // Fetch exchange rate (small, non-blocking)
     try {
-      const _fxCached = JSON.parse(localStorage.getItem('pkm-fx-v1') || 'null');
-      if (_fxCached?.rates?.USD) {
+      const fxR = await fetch('https://open.er-api.com/v6/latest/GBP').then(r => r.json());
+      if (fxR.rates?.USD) {
         _currencyRates = {
           GBP: 1,
-          USD: _fxCached.rates.USD || 1.27,
-          EUR: _fxCached.rates.EUR || 1.17,
-          JPY: _fxCached.rates.JPY || 190,
-          AUD: _fxCached.rates.AUD || 2.01,
-          CAD: _fxCached.rates.CAD || 1.74,
+          USD: fxR.rates.USD || 1.27,
+          EUR: fxR.rates.EUR || 1.17,
+          JPY: fxR.rates.JPY || 190,
+          AUD: fxR.rates.AUD || 2.01,
+          CAD: fxR.rates.CAD || 1.74,
         };
-        fxRate = 1 / _fxCached.rates.USD;
+        fxRate = 1 / fxR.rates.USD; // USD→GBP for internal calcs
       }
-    } catch (_e) {}
-    // Background refresh — does not block init.
-    fetch('https://open.er-api.com/v6/latest/GBP').then(r => r.json()).then(fxR => {
-      if (!fxR?.rates?.USD) return;
-      _currencyRates = {
-        GBP: 1,
-        USD: fxR.rates.USD || 1.27,
-        EUR: fxR.rates.EUR || 1.17,
-        JPY: fxR.rates.JPY || 190,
-        AUD: fxR.rates.AUD || 2.01,
-        CAD: fxR.rates.CAD || 1.74,
-      };
-      fxRate = 1 / fxR.rates.USD;
-      try { localStorage.setItem('pkm-fx-v1', JSON.stringify(fxR)); } catch {}
-      try { $('fxValue').textContent = `£${fxRate.toFixed(4)}`; } catch {}
-    }).catch(() => {});
+    } catch (e) { /* use default */ }
 
     if (loadingText) loadingText.textContent = 'Initialising…';
 
@@ -597,21 +582,6 @@ async function init() {
   _setupHomePip();
   // Global 6AM GMT refresh: fetch live prices for all tracked cards once per day.
   setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 800);
-  // Seed price cache for tracked cards with no cached price — runs once per browser session.
-  if (!sessionStorage.getItem('_pkmSeedDone')) {
-    sessionStorage.setItem('_pkmSeedDone', '1');
-    setTimeout(() => {
-      try {
-        const cache = getPriceCache();
-        const uncached = psTrackedIds().filter(id => !cache[id]);
-        if (uncached.length > 0) {
-          const q = [...uncached];
-          const work = async () => { while (q.length) { try { await psRefreshOne(q.shift()); } catch {} } };
-          Promise.all(Array.from({ length: Math.min(PRICE_SYNC_CONCURRENCY, uncached.length) }, work)).catch(() => {});
-        }
-      } catch {}
-    }, 2500);
-  }
 }
 
 // Re-check the 6AM boundary whenever the tab regains focus — handles the case
