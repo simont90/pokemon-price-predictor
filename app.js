@@ -24755,6 +24755,9 @@ function renderStandouts() {
   const scored = [];
   for (const card of cardData.cards) {
     try {
+      // Skip cards already owned — Upgrade tab is the right place for those
+      if (portfolioIds.has(card.i)) continue;
+
       // Quick pre-filter: skip cards with no PSA price basis at all
       const cachedRaw = priceCache[card.i];
       const pd = cachedRaw && _priceCacheIsValid(cachedRaw._ts) ? cachedRaw : null;
@@ -24779,7 +24782,6 @@ function renderStandouts() {
         roi:         strat.roi,
         risk:        strat.risk || 'med',
         rawGBP:      usdToGbp(card.p || pd?.pcUngraded || 0),
-        inPortfolio: portfolioIds.has(card.i),
         inWishlist:  wishlistIds.has(card.i),
       });
     } catch (_) {}
@@ -24796,23 +24798,19 @@ function renderStandouts() {
   }
 
   carousel.innerHTML = top.map((item, i) => {
-    const { card, strat, todayGBP, yr5GBP, profitGBP, roi, risk, rawGBP, inPortfolio, inWishlist } = item;
+    const { card, strat, todayGBP, yr5GBP, profitGBP, roi, risk, rawGBP, inWishlist } = item;
     const imgUrl    = _hiresUrl(getCardImg(card));
-    const tagLabel  = inPortfolio ? 'Owned' : inWishlist ? 'Wishlist' : null;
-    const tagColor  = inPortfolio ? 'rgba(116,185,255,0.2)' : 'rgba(253,121,168,0.2)';
-    const tagText   = inPortfolio ? '#74b9ff' : '#fd79a8';
     const roiColor  = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : roi >= 20 ? 'var(--text)' : 'var(--text-muted)';
     const riskClass = risk === 'low' ? 'so-risk-low' : risk === 'high' ? 'so-risk-high' : 'so-risk-med';
     const riskLabel = risk === 'low' ? 'Low risk' : risk === 'high' ? 'High risk' : 'Med risk';
     const stratLbl  = stratKey === 'raw' ? 'Buy Raw' : `Buy ${gradeLabel}`;
-    const inWL      = inWishlist;
     const insight   = _buildStandoutKeyInsight(item, stratKey, gradeLabel);
     return `<div class="so-card" data-so-i="${i}">
       <div class="so-img-wrap">
         ${imgUrl
           ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">`
           : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
-        ${tagLabel ? `<span class="so-tag" style="background:${tagColor};color:${tagText}">${tagLabel}</span>` : ''}
+        ${inWishlist ? `<span class="so-tag" style="background:rgba(253,121,168,0.2);color:#fd79a8">Wishlist</span>` : ''}
       </div>
       <div class="so-body">
         <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
@@ -24837,7 +24835,7 @@ function renderStandouts() {
         </div>
         <div class="so-actions">
           <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
-          ${!inWL && !inPortfolio
+          ${!inWishlist
             ? `<button class="so-btn-sec" onclick="toggleCardInWishlist('${esc(card.i)}')">+ Wishlist</button>`
             : ''}
         </div>
