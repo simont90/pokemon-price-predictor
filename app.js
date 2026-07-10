@@ -7887,14 +7887,18 @@ function _markGlobalRefreshed() {
   localStorage.setItem(GLOBAL_REFRESH_KEY, String(Date.now()));
 }
 
-// All card IDs worth refreshing: tracked (portfolio/wishlist/watchlist) + binder + anything
-// already in the price cache so previously-browsed cards stay current too.
+// All card IDs for the 6AM refresh: every card in the database so the full
+// catalogue has fresh prices by the time the user opens the app each morning.
+// Falls back to tracked+cached cards only if cardData hasn't loaded yet.
 function _allRefreshIds() {
+  if (cardData?.cards?.length) {
+    return cardData.cards.map(c => c?.i).filter(Boolean);
+  }
   const ids = new Set();
-  try { (portfolio  || []).forEach(p => p && p.id && ids.add(p.id)); } catch {}
-  try { (wishlist   || []).forEach(w => w && w.id && ids.add(w.id)); } catch {}
-  try { (watchlist  || []).forEach(w => w && w.id && ids.add(w.id)); } catch {}
-  try { (fullArtBinder || []).forEach(b => b && b.id && ids.add(b.id)); } catch {}
+  try { (portfolio     || []).forEach(p => p?.id  && ids.add(p.id));  } catch {}
+  try { (wishlist      || []).forEach(w => w?.id  && ids.add(w.id));  } catch {}
+  try { (watchlist     || []).forEach(w => w?.id  && ids.add(w.id));  } catch {}
+  try { (fullArtBinder || []).forEach(b => b?.id  && ids.add(b.id));  } catch {}
   try { Object.keys(getPriceCache()).forEach(id => ids.add(id)); } catch {}
   return [...ids].filter(Boolean);
 }
@@ -7907,7 +7911,7 @@ async function _globalSilentRefresh() {
   if (!ids.length) return;
   _globalRefreshRunning = true;
   const queue = [...ids];
-  const CONCURRENCY = 4;
+  const CONCURRENCY = PRICE_SYNC_CONCURRENCY; // 8 concurrent — balances speed vs rate limits
   async function worker() {
     while (queue.length > 0) {
       await _priorityFetchDone; // pause while a card's live price is loading
@@ -24504,6 +24508,89 @@ function _vgRefresh(el, changedId) {
 // ── Standouts page ────────────────────────────────────────────────────────────
 
 let _soGrade = 'raw'; // current grade filter for standouts carousel
+
+// Collect card IDs relevant to all 4 Standouts tabs (top 20 per tab + portfolio).
+function _soRefreshIds() {
+  const ids = new Set();
+  // Upgrade tab: portfolio cards with a PSA 10 anchor
+  for (const entry of (portfolio || [])) {
+    const card = getCardById(entry.id);
+    if (!card) continue;
+    const anchor = getPsa10Anchor(card);
+    if (anchor && anchor.usd > 0) ids.add(card.i);
+  }
+  // Raw / PSA 9 / PSA 10 tabs: score all cards and take top 20 per tab
+  if (!cardData?.cards?.length) return [...ids];
+  const cache = getPriceCache();
+  for (const stratKey of ['raw', 'psa9', 'psa10']) {
+    const scored = [];
+    for (const card of cardData.cards) {
+      const cr = cache[card.i];
+      const pd = cr && _priceCacheIsValid(cr._ts) ? cr : null;
+      if (!card.p10 && !pd?.pcPsa10) continue;
+      const hc = _getHoldCoreCached(card);
+      if (!hc.ok) continue;
+      const strat = hc.strategies?.find(s => s.key === stratKey);
+      if (!strat || strat.roi <= 0) continue;
+      scored.push({ id: card.i, roi: strat.roi });
+    }
+    scored.sort((a, b) => b.roi - a.roi);
+    scored.slice(0, 20).forEach(s => ids.add(s.id));
+  }
+  return [...ids].filter(Boolean);
+}
+
+let _soRefreshRunning = false;
+async function _soRefreshPrices() {
+  if (_soRefreshRunning) return;
+  const ids = _soRefreshIds();
+  if (!ids.length) return;
+  _soRefreshRunning = true;
+
+  const btn    = document.getElementById('soRefreshBtn');
+  const popup  = document.getElementById('soProgressPopup');
+  const fill   = document.getElementById('soProgressBarFill');
+  const countEl = document.getElementById('soProgressCount');
+  const etaEl  = document.getElementById('soProgressEta');
+
+  if (btn) { btn.disabled = true; btn.textContent = '↻ Refreshing…'; }
+  if (popup) popup.style.display = 'block';
+
+  const total = ids.length;
+  let done = 0;
+  const startMs = Date.now();
+
+  function _updateSoProgress() {
+    const pct = Math.round(done / total * 100);
+    if (fill)    fill.style.width    = pct + '%';
+    if (countEl) countEl.textContent = `${done} / ${total}`;
+    if (etaEl && done > 0) {
+      const rate = done / ((Date.now() - startMs) / 1000);
+      const secs = Math.ceil((total - done) / rate);
+      etaEl.textContent = secs > 1 ? `~${secs}s remaining` : 'almost done…';
+    }
+  }
+  _updateSoProgress();
+
+  const queue = [...ids];
+  async function _soWorker() {
+    while (queue.length > 0) {
+      const id = queue.shift();
+      if (!id) break;
+      try { await psRefreshOne(id); } catch {}
+      done++;
+      _updateSoProgress();
+    }
+  }
+  await Promise.all(Array.from({ length: 6 }, _soWorker));
+
+  _soRefreshRunning = false;
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Prices'; }
+  if (fill)    fill.style.width    = '100%';
+  if (countEl) countEl.textContent = `${total} / ${total}`;
+  if (etaEl)   etaEl.textContent   = 'complete';
+  setTimeout(() => { if (popup) popup.style.display = 'none'; renderStandouts(); }, 1500);
+}
 
 function renderStandouts() {
   const carousel = document.getElementById('soCarousel');
