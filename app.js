@@ -19243,6 +19243,8 @@ function _renderHomeDailyBrief() {
       ...portfolio.map(p => p.id), ...wishlist.map(w => w.id),
       ...(typeof watchlist !== 'undefined' ? watchlist.map(w => w.id) : []),
     ]);
+    const briefBudgetGBP = getMaxBudgetGBP();
+    const briefHasBudget = briefBudgetGBP < BUDGET_DEFAULT;
     const movers = [];
     let idxBase = 0, idxLive = 0;
     for (const [id, e] of Object.entries(cache)) {
@@ -19254,6 +19256,8 @@ function _renderHomeDailyBrief() {
       if (Math.abs(pct) > 200) continue; // bad data
       if (trackedIds.has(id)) { idxBase += c.p; idxLive += live; }
       if (Math.abs(pct) < 2) continue;   // noise
+      // Exclude cards above budget unless the user already tracks them
+      if (briefHasBudget && !trackedIds.has(id) && usdToGbp(live) > briefBudgetGBP) continue;
       movers.push({ c, live, pct, tracked: trackedIds.has(id) });
     }
     const rank = (a, b) => (b.tracked - a.tracked) || Math.abs(b.pct) - Math.abs(a.pct);
@@ -19289,7 +19293,10 @@ function _renderHomeDailyBrief() {
 
   // 2. Today's picks — hottest buy from the reco engine, sell check on owned cards
   try {
-    const hot = _recoCached?.general?.[0];
+    const _bBudget = getMaxBudgetGBP();
+    const _bHasBudget = _bBudget < BUDGET_DEFAULT;
+    // Pick the first reco within budget (or first overall if no budget set)
+    const hot = _recoCached?.general?.find(r => !_bHasBudget || r.marketGBP <= _bBudget) ?? null;
     let picksHtml = '';
     if (hot) {
       picksHtml += rowHTML(hot.card, `<div class="brief-main">
