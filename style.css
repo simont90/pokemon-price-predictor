@@ -15675,6 +15675,25 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   background: var(--bg-raised); border: 1px solid var(--border);
   display: flex; flex-direction: column;
 }
+
+/* Tablet: 2-col grid, no carousel */
+@media (min-width: 640px) {
+  .so-carousel {
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    overflow-x: visible; scroll-snap-type: none;
+    padding: 16px 20px 20px;
+  }
+  .so-card { flex: none; width: 100%; }
+  .so-dots { display: none; }
+}
+/* Desktop: 3-col */
+@media (min-width: 1024px) {
+  .so-carousel { grid-template-columns: repeat(3, 1fr); gap: 18px; }
+}
+/* Wide desktop: 4-col */
+@media (min-width: 1440px) {
+  .so-carousel { grid-template-columns: repeat(4, 1fr); }
+}
 .so-img-wrap {
   position: relative; background: var(--bg);
   padding: 20px; display: flex; justify-content: center; align-items: flex-end;
