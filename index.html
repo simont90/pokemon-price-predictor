@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260710y">
+  <link rel="stylesheet" href="style.css?v=20260710z">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -98,23 +98,6 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
             <span class="btn-label">Search</span>
           </button>
-          <!-- Liquid Glass tint control (OS 27) -->
-          <button class="portfolio-toggle glass-tint-btn" id="glassTintBtn" title="Liquid Glass: Default — click to change">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 20h20L12 2z"/><path d="M8.5 20l3.5-9 3.5 9" opacity="0.5"/></svg>
-            <span class="btn-label">Glass</span>
-          </button>
-          <!-- theme picker -->
-          <div class="theme-picker" id="themePicker" role="group" aria-label="Theme">
-            <button class="theme-btn" data-theme-val="system" title="System theme" aria-label="System theme">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20"/></svg>
-            </button>
-            <button class="theme-btn" data-theme-val="dark" title="Dark theme" aria-label="Dark theme">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            </button>
-            <button class="theme-btn" data-theme-val="light" title="Light theme" aria-label="Light theme">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-            </button>
-          </div>
         </div>
       </div>
       <!-- ⋮ popup menu — mobile only -->
@@ -190,25 +173,6 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <span>Budget</span>
         <span class="page-nav-sub">Aug – Dec 2026</span>
-      </button>
-      <button class="page-nav-btn" data-page="vintage" type="button">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <span>Vintage</span>
-        <span class="page-nav-sub">WOTC 1999 – 2003</span>
-      </button>
-      <button class="page-nav-btn page-nav-ask" id="aiChatBtn" data-page="know" type="button" aria-label="PokeKnow">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10.5"/>
-          <line x1="1.5" y1="12" x2="8.8" y2="12"/>
-          <line x1="15.2" y1="12" x2="22.5" y2="12"/>
-          <circle cx="12" cy="12" r="3.2"/>
-          <path d="M10.39 10.09 A2.5 2.5 0 0 0 13.61 10.09" stroke-width="1.3" fill="none"/>
-          <path d="M9.11 8.55 A4.5 4.5 0 0 0 14.89 8.55" stroke-width="1.1" stroke-opacity="0.65" fill="none"/>
-          <path d="M7.83 7.02 A6.5 6.5 0 0 0 16.17 7.02" stroke-width="0.9" stroke-opacity="0.32" fill="none"/>
-          <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"><animate attributeName="r" values="1.5;2.0;1.5" dur="2.8s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0.35;1" dur="2.8s" repeatCount="indefinite"/></circle>
-        </svg>
-        <span>PokeKnow</span>
-        <span class="page-nav-sub">Search &amp; AI</span>
       </button>
       <div class="nav-ctx-sep" id="navCtxSep" aria-hidden="true"></div>
       <button class="nav-ctx-btn" id="navFilterCtx" type="button" aria-label="Filter">
@@ -2338,6 +2302,33 @@
       <div id="toolsDupesPanel" style="display:none">
         <div id="toolsDupesMount"></div>
       </div>
+      <div class="tools-display-section">
+        <div class="tools-display-label">Display</div>
+        <div class="tools-display-row">
+          <span class="tools-display-name">Theme</span>
+          <div class="theme-picker" id="themePicker" role="group" aria-label="Theme">
+            <button class="theme-btn" data-theme-val="system" title="System theme" aria-label="System theme">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20"/></svg>
+              <span>System</span>
+            </button>
+            <button class="theme-btn" data-theme-val="dark" title="Dark theme" aria-label="Dark theme">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <span>Dark</span>
+            </button>
+            <button class="theme-btn" data-theme-val="light" title="Light theme" aria-label="Light theme">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              <span>Light</span>
+            </button>
+          </div>
+        </div>
+        <div class="tools-display-row">
+          <span class="tools-display-name">Glass effect</span>
+          <button class="glass-tint-btn" id="glassTintBtn" title="Liquid Glass: Default — click to cycle">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 20h20L12 2z"/><path d="M8.5 20l3.5-9 3.5 9" opacity="0.5"/></svg>
+            <span id="glassTintLabel">Default</span>
+          </button>
+        </div>
+      </div>
     </div><!-- /#pageTools -->
 
     <!-- Full Art Binder dedicated page -->
@@ -2838,7 +2829,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260710y"></script>
+  <script src="app.js?v=20260710z"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

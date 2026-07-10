@@ -11473,6 +11473,18 @@ html { scroll-behavior: smooth; }
    ============================================================ */
 .tools-inner-tab-bar { margin: 0 0 16px; padding: 0 16px; }
 
+.tools-display-section { margin: 24px 16px 8px; padding: 14px 16px; background: var(--bg-raised); border-radius: var(--radius); }
+.tools-display-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 14px; }
+.tools-display-row { display: flex; align-items: center; justify-content: space-between; min-height: 36px; }
+.tools-display-row + .tools-display-row { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
+.tools-display-name { font-size: 13px; color: var(--text); }
+.tools-display-section .theme-picker { display: flex; gap: 4px; }
+.tools-display-section .theme-btn { display: flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text-faint); font-size: 12px; cursor: pointer; transition: all 0.15s; }
+.tools-display-section .theme-btn:hover { color: var(--text); border-color: var(--text-faint); }
+.tools-display-section .theme-btn.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(232,182,52,0.4); }
+.tools-display-section .glass-tint-btn { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text-faint); font-size: 12px; cursor: pointer; transition: all 0.15s; }
+.tools-display-section .glass-tint-btn:hover { color: var(--text); border-color: var(--text-faint); }
+
 .tools-dupe-badge {
   display: inline-block;
   background: #ef5350;
