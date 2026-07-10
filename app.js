@@ -24412,41 +24412,47 @@ function renderStandouts() {
 
   const portfolioIds = new Set(portfolio.map(p => p.id).filter(Boolean));
   const wishlistIds  = new Set(wishlist.map(w => w.id).filter(Boolean));
-  const allIds = new Set([...portfolioIds, ...wishlistIds]);
+  // Only surface wishlist cards the user doesn't already own
+  const candidateIds = new Set([...wishlistIds].filter(id => !portfolioIds.has(id)));
+  const maxBudgetGBP = getMaxBudgetGBP(); // 99999 = no limit
 
-  if (allIds.size === 0) {
-    carousel.innerHTML = '<div class="so-empty">Add cards to your collection or wishlist to see standouts.</div>';
+  if (candidateIds.size === 0) {
+    carousel.innerHTML = '<div class="so-empty">Add cards to your wishlist to see standouts.</div>';
     dotsEl.innerHTML = '';
     return;
   }
 
   const scored = [];
-  for (const id of allIds) {
+  for (const id of candidateIds) {
     const card = getCardById(id);
     if (!card) continue;
     // Use cached live price if available, fall back to static card.p from the database
-    const pd       = getCachedPrice(id);
-    const rawUSD   = pd?.pcUngraded  || usdToGbp(card.p || 0) > 0 ? (pd?.pcUngraded  || card.p || 0) : 0;
-    const psa9USD  = pd?.pcPsa9      || 0;
-    const psa10USD = pd?.pcPsa10     || 0;
+    const pd        = getCachedPrice(id);
+    const rawUSD    = pd?.pcUngraded  || usdToGbp(card.p || 0) > 0 ? (pd?.pcUngraded  || card.p || 0) : 0;
+    const psa9USD   = pd?.pcPsa9      || 0;
+    const psa10USD  = pd?.pcPsa10     || 0;
     const staticUSD = card.p || 0;
     const effectiveRawUSD = rawUSD > 0 ? rawUSD : staticUSD;
     if (effectiveRawUSD <= 0) continue;
     const rawGBP   = usdToGbp(effectiveRawUSD);
+    // Skip cards over the per-card budget limit
+    if (maxBudgetGBP < BUDGET_DEFAULT && rawGBP > maxBudgetGBP) continue;
     const psa9GBP  = usdToGbp(psa9USD);
     const psa10GBP = usdToGbp(psa10USD);
     // Score: prefer high PSA 10 multiple + strong absolute price
     const psaMultiple = rawGBP > 0 && psa10GBP > 0 ? psa10GBP / rawGBP : 1;
     const score = psaMultiple * Math.log10(Math.max(rawGBP, psa10GBP, 1) + 10);
     scored.push({ card, pd, rawGBP, psa9GBP, psa10GBP, score,
-      inPortfolio: portfolioIds.has(id), inWishlist: wishlistIds.has(id) });
+      inPortfolio: false, inWishlist: true });
   }
 
   scored.sort((a, b) => b.score - a.score);
   const top = scored.slice(0, 12);
 
   if (top.length === 0) {
-    carousel.innerHTML = '<div class="so-empty">Add cards to your collection or wishlist to see standouts.</div>';
+    const budgetMsg = maxBudgetGBP < BUDGET_DEFAULT
+      ? ` within your £${maxBudgetGBP} per-card budget` : '';
+    carousel.innerHTML = `<div class="so-empty">No standout wishlist cards found${budgetMsg}. Try raising your Max per Card limit in the budget settings.</div>`;
     dotsEl.innerHTML = '';
     return;
   }
