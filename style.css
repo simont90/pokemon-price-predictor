@@ -3016,6 +3016,26 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .pcov-pick-btn:hover { background: var(--accent-hover); }
 .pcov-pick-btn:active { transform: scale(0.97); }
 
+.cpov-card-thumb {
+  width: 48px;
+  height: 68px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--bg-hover);
+}
+.cpov-match-score {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.cpov-score-strong { background: rgba(52, 211, 153, 0.18); color: #34d399; }
+.cpov-score-good   { background: rgba(232, 182, 52, 0.18); color: var(--accent); }
+.cpov-score-ok     { background: rgba(251, 146, 60, 0.18); color: #fb923c; }
+.cpov-score-weak   { background: rgba(148, 163, 184, 0.12); color: var(--text-muted); }
+
 /* ================================================================
    Manual Add modal — tabs + custom-card form
    ================================================================ */

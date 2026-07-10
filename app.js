@@ -9358,45 +9358,49 @@ function runCPOverrideSearch() {
     });
   }
 
-  // Boost cards in the same auto-bucket (likely correct family)
+  // Score and sort: same-family bucket gets a +50 boost on top of the ML score
   const myKey = counterpartByCard.get(_cpovCard.i);
-  pool.sort((a, b) => {
-    const ak = counterpartByCard.get(a.i) === myKey ? 1 : 0;
-    const bk = counterpartByCard.get(b.i) === myKey ? 1 : 0;
-    if (ak !== bk) return bk - ak;
-    // Then by name match closeness
-    const an = a.n === _cpovCard.n ? 1 : 0;
-    const bn = b.n === _cpovCard.n ? 1 : 0;
-    if (an !== bn) return bn - an;
-    return 0;
+  const scored = pool.map(c => {
+    let s = scoreCounterpartMatch(_cpovCard, c);
+    if (counterpartByCard.get(c.i) === myKey) s += 50;
+    return { c, s };
   });
+  scored.sort((a, b) => b.s - a.s);
 
-  pool = pool.slice(0, 30);
-  if (!pool.length) {
+  const top = scored.slice(0, 30);
+  if (!top.length) {
     status.className = 'ql-status error';
     status.textContent = `No ${wantLang} cards match "${q}". Try a different query.`;
     $('cpovResults').innerHTML = '';
     return;
   }
   status.className = 'ql-status';
-  status.textContent = `Showing ${pool.length} ${wantLang} candidate${pool.length === 1 ? '' : 's'}. Pick the right one.`;
-  $('cpovResults').innerHTML = pool.map(renderCPOverrideCard).join('');
+  status.textContent = `Showing ${top.length} ${wantLang} candidate${top.length === 1 ? '' : 's'}. Pick the right one.`;
+  $('cpovResults').innerHTML = top.map(({ c, s }) => renderCPOverrideCard(c, s)).join('');
   $('cpovResults').querySelectorAll('.cpov-pick').forEach(b => {
     b.addEventListener('click', () => applyCPOverride(b.dataset.id));
   });
 }
 
-function renderCPOverrideCard(c) {
+function renderCPOverrideCard(c, rawScore) {
   const lang = c.lang === 'JP' ? 'JP' : 'EN';
   const langBadge = lang === 'JP' ? '<span class="lang-jp">JP</span>' : '<span class="lang-en">EN</span>';
   const num = c.cn ? (c.ct ? `${c.cn}/${c.ct}` : c.cn) : '';
+  const imgSrc = getCardImg(c);
+  const pct = Math.min(100, Math.round(((rawScore || 0) / 200) * 100));
+  const scoreClass = pct >= 75 ? 'cpov-score-strong' : pct >= 50 ? 'cpov-score-good' : pct >= 25 ? 'cpov-score-ok' : 'cpov-score-weak';
+  const scoreLabel = pct >= 75 ? 'Strong match' : pct >= 50 ? 'Good match' : pct >= 25 ? 'Possible match' : 'Weak match';
   return `
     <div class="ql-card">
       <div class="ql-card-head">
+        <img class="cpov-card-thumb" src="${esc(imgSrc)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">
         <div class="ql-card-title">
           <div class="ql-card-name">${esc(c.n)}</div>
           <div class="ql-card-set">${esc(c.s || '')}${num ? ' · #' + esc(num) : ''}${c.r ? ' · ' + esc(c.r) : ''}</div>
-          <div class="ql-card-meta">${langBadge}</div>
+          <div class="ql-card-meta">
+            ${langBadge}
+            ${rawScore != null ? `<span class="cpov-match-score ${scoreClass}">${pct}% · ${scoreLabel}</span>` : ''}
+          </div>
         </div>
         <div class="ql-card-actions">
           <button class="pcov-pick-btn cpov-pick" data-id="${esc(c.i)}">Use this match</button>
