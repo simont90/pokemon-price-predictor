@@ -13838,8 +13838,18 @@ function computeHoldCore(card) {
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
 
   // Strategies 3-12 — Buy graded at each PSA tier (1–10)
+  // Prefer live PriceCharting grade prices over ratio-based estimates when available.
+  const _hcLp = (typeof livePrice !== 'undefined' && livePrice && selectedCard && card.i === selectedCard.i)
+    ? livePrice
+    : ((typeof getCachedPrice === 'function') ? (getCachedPrice(card.i) || {}) : {});
   const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
-    const baseUSD = estimateGradePrice(card, g, psa10Price);
+    const liveUSD = g === 9 ? (_hcLp.pcPsa9 > 0 ? _hcLp.pcPsa9 : _hcLp.pcGrade9 > 0 ? _hcLp.pcGrade9 : 0)
+                  : g === 8 ? (_hcLp.pcPsa8 > 0 ? _hcLp.pcPsa8 : 0)
+                  : g === 7 ? (_hcLp.pcPsa7 > 0 ? _hcLp.pcPsa7 : 0)
+                  : g === 6 ? (_hcLp.pcPsa6 > 0 ? _hcLp.pcPsa6 : 0)
+                  : g === 5 ? (_hcLp.pcPsa5 > 0 ? _hcLp.pcPsa5 : 0)
+                  : 0;
+    const baseUSD = liveUSD > 0 ? liveUSD : estimateGradePrice(card, g, psa10Price);
     const slabShipUSD = estimateUkSlabShipping(baseUSD * fx) / fx;
     const today = baseUSD + slabShipUSD;
     const yr5 = projectGradePrice(card, g, baseUSD, 5);
@@ -14672,9 +14682,19 @@ function renderHoldStrategy(card) {
 
   // ----- Strategies 3-6: Buy (or Keep) graded at each PSA tier -----
   // Always computed — PSA 1–10 tiles appear alongside ACE and raw.
+  // Prefer live PriceCharting grade prices over ratio-based estimates when available.
+  const _rhsLp = (livePrice && selectedCard && card.i === selectedCard.i)
+    ? livePrice
+    : (getCachedPrice(card.i) || {});
   const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
     const isOwnedSlab = slabAcq && slabAcq.grade === g;
-    const baseUSD = estimateGradePrice(card, g, psa10Price);
+    const liveUSD_r = g === 9 ? (_rhsLp.pcPsa9 > 0 ? _rhsLp.pcPsa9 : _rhsLp.pcGrade9 > 0 ? _rhsLp.pcGrade9 : 0)
+                    : g === 8 ? (_rhsLp.pcPsa8 > 0 ? _rhsLp.pcPsa8 : 0)
+                    : g === 7 ? (_rhsLp.pcPsa7 > 0 ? _rhsLp.pcPsa7 : 0)
+                    : g === 6 ? (_rhsLp.pcPsa6 > 0 ? _rhsLp.pcPsa6 : 0)
+                    : g === 5 ? (_rhsLp.pcPsa5 > 0 ? _rhsLp.pcPsa5 : 0)
+                    : 0;
+    const baseUSD = liveUSD_r > 0 ? liveUSD_r : estimateGradePrice(card, g, psa10Price);
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
     // For owned slabs: cost basis is what was paid; projections still anchor to current market.
     const today = isOwnedSlab ? slabAcq.costGBP / fx : baseUSD + slabShipGBP / fx;
