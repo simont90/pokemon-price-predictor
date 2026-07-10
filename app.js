@@ -22170,8 +22170,14 @@ function _syncHmpBadges() {
 
 (function _initHmpBadgeObserver() {
   const ids = ['portfolioCount','wishlistCount','binderCount','alertsCount','compareCount'];
-  const container = document.getElementById('portfolioPanel')?.closest('.app') || document.body;
-  new MutationObserver(_syncHmpBadges).observe(container, { childList: true, subtree: true, characterData: true });
+  const obs = new MutationObserver(_syncHmpBadges);
+  // Observe only the badge count elements themselves — not the whole body.
+  // A broad subtree+characterData observer fires on every DOM text change
+  // during init() and locks the main thread.
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) obs.observe(el, { childList: true, characterData: true, subtree: true });
+  });
 })();
 
 function setupCardLinksToggle() {
