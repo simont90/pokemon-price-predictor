@@ -24416,13 +24416,13 @@ function renderStandouts() {
   const portfolioIds = new Set(portfolio.map(p => p.id).filter(Boolean));
   const wishlistIds  = new Set(wishlist.map(w => w.id).filter(Boolean));
   const priceCache   = getPriceCache();
-  // — Upgrade tab: grading opportunity analysis for owned raw cards —
+  // — Upgrade tab: buy a PSA 10 slab of a card you already own raw —
   if (_soGrade === 'upgrade') {
     const upSubEl = document.getElementById('soSubtitle');
-    if (upSubEl) upSubEl.textContent = 'Best grading opportunities from your collection — ranked by net profit after PSA grading fee.';
+    if (upSubEl) upSubEl.textContent = 'Cards you own raw where buying the PSA 10 slab makes sense — ranked by 5yr projected ROI.';
 
     if (!portfolio.length) {
-      carousel.innerHTML = '<div class="so-empty">Add cards to your collection to see grading upgrade opportunities.</div>';
+      carousel.innerHTML = '<div class="so-empty">Add cards to your collection to see upgrade opportunities.</div>';
       dotsEl.innerHTML = '';
     } else {
       const upgrades = [];
@@ -24437,56 +24437,55 @@ function renderStandouts() {
           const rawGBP = usdToGbp(rawUSD);
           const psa10GBP = psa10USD * fx;
           if (psa10GBP <= rawGBP) continue;
-          const gradingFeeGBP = getUkGradingFeeGBP(psa10USD);
-          const gradingMatGBP = getGradingMaterialsCostGBP(card.i);
-          const allInCostGBP = gradingFeeGBP + gradingMatGBP;
-          const netUpliftGBP = psa10GBP - rawGBP - allInCostGBP;
-          if (netUpliftGBP <= 0) continue;
+          // Net cost to upgrade: buy slab, sell raw copy
+          const netUpgradeCostGBP = Math.max(0, psa10GBP - rawGBP);
+          // Use the PSA 10 hold strategy for ROI projection
           const hc = _getHoldCoreCached(card);
-          const gambleSt = hc?.ok ? hc.strategies?.find(s => s.key === 'gamble') : null;
-          const roi = (gambleSt && gambleSt.roi > 0) ? gambleSt.roi : (netUpliftGBP / allInCostGBP * 100);
+          const psa10Strat = hc?.ok ? hc.strategies?.find(s => s.key === 'psa10') : null;
+          if (!psa10Strat || psa10Strat.roi <= 0) continue;
           upgrades.push({
-            card, rawGBP, psa10GBP, gradingFeeGBP, allInCostGBP, netUpliftGBP, roi,
-            gemRateFrac: card.g != null ? card.g : null,
-            waitDisplay: getUkGradingWaitDisplay(psa10USD),
+            card, rawGBP, psa10GBP, netUpgradeCostGBP,
+            roi: psa10Strat.roi,
+            yr5GBP: psa10Strat.yr5 * fx,
+            profitGBP: psa10Strat.profit * fx,
+            risk: psa10Strat.risk || 'med',
           });
         } catch (_) {}
       }
 
-      upgrades.sort((a, b) => b.netUpliftGBP - a.netUpliftGBP);
+      upgrades.sort((a, b) => b.roi - a.roi);
       const upTop = upgrades.slice(0, 12);
 
       if (upTop.length === 0) {
-        carousel.innerHTML = '<div class="so-empty">No grading opportunities found — cards need a PSA 10 price basis to calculate uplift.</div>';
+        carousel.innerHTML = '<div class="so-empty">No upgrade opportunities found — cards need a PSA 10 price basis to compare.</div>';
         dotsEl.innerHTML = '';
       } else {
         carousel.innerHTML = upTop.map((item, i) => {
-          const { card, rawGBP, psa10GBP, gradingFeeGBP, allInCostGBP, netUpliftGBP, gemRateFrac, waitDisplay } = item;
+          const { card, rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, profitGBP, risk } = item;
           const imgUrl = _hiresUrl(getCardImg(card));
-          const gemPct = gemRateFrac != null ? (gemRateFrac * 100).toFixed(0) + '%' : null;
-          const gradeROI = netUpliftGBP / allInCostGBP;
-          const badgeClass = gradeROI >= 2 ? 'so-risk-low' : gradeROI >= 1 ? 'so-risk-med' : 'so-risk-high';
-          const badgeLabel = gradeROI >= 2 ? 'Strong case' : gradeROI >= 1 ? 'Worth grading' : 'Marginal';
+          const roiColor  = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : 'var(--text)';
+          const riskClass = risk === 'low' ? 'so-risk-low' : risk === 'high' ? 'so-risk-high' : 'so-risk-med';
+          const riskLabel = risk === 'low' ? 'Low risk' : risk === 'high' ? 'High risk' : 'Med risk';
           return `<div class="so-card" data-so-i="${i}">
             <div class="so-img-wrap">
               ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
-              <span class="so-tag" style="background:rgba(116,185,255,0.2);color:#74b9ff">Owned</span>
+              <span class="so-tag" style="background:rgba(116,185,255,0.2);color:#74b9ff">Owned raw</span>
             </div>
             <div class="so-body">
               <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
               <div class="so-set">${esc(card.s || '')}${card.cn ? ' · #' + esc(card.cn) : ''}</div>
               <div class="so-strat-row">
                 <div class="so-strat-allin">
-                  <span class="so-strat-lbl">Raw → PSA 10</span>
+                  <span class="so-strat-lbl">Buy PSA 10</span>
                   <span class="so-strat-price">${fmtGBPDirect(psa10GBP)}</span>
                 </div>
-                <div class="so-strat-roi" style="color:#34d399">+${fmtGBPDirect(netUpliftGBP)}</div>
+                <div class="so-strat-roi" style="color:${roiColor}">+${Math.round(roi)}%</div>
               </div>
               <div class="so-strat-meta">
-                Grade fee ~${fmtGBPDirect(gradingFeeGBP)} · Wait ${waitDisplay}${gemPct ? ' · Gem ' + gemPct : ''}
+                Net upgrade ${fmtGBPDirect(netUpgradeCostGBP)} after selling raw · 5yr target ${fmtGBPDirect(yr5GBP)}
               </div>
               <div class="so-strat-badges">
-                <span class="so-risk-badge ${badgeClass}">${badgeLabel}</span>
+                <span class="so-risk-badge ${riskClass}">${riskLabel}</span>
                 <span class="so-raw-price">Raw ${fmtGBPDirect(rawGBP)}</span>
               </div>
               <div class="so-actions">
