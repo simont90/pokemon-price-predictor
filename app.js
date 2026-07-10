@@ -6380,6 +6380,38 @@ function setupUpgradesList() {
 
 let _soUpgradeItems = []; // cache so onclick can reference by index
 
+function _buildStandoutKeyInsight(item, stratKey, gradeLabel) {
+  const { card, todayGBP, yr5GBP, profitGBP, roi, risk, rawGBP } = item;
+  const yr = new Date().getFullYear() + 5;
+  const gemPct = card.g != null ? Math.round(card.g * 100) : null;
+
+  // Line 1: 5yr projection
+  let line1;
+  if (roi >= 100) line1 = `Exceptional outlook — model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
+  else if (roi >= 60) line1 = `Strong ${gradeLabel} hold — model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
+  else if (roi >= 30) line1 = `Solid projection: +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
+  else line1 = `Model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
+
+  // Line 2: contextual detail
+  let line2 = '';
+  if (stratKey === 'raw') {
+    const psa10GBP = card.p10 ? usdToGbp(card.p10) : 0;
+    const mult = psa10GBP > 0 && todayGBP > 0 ? (psa10GBP / todayGBP) : 0;
+    if (mult >= 5 && gemPct != null && gemPct >= 15) line2 = `PSA 10 trades at ${mult.toFixed(1)}× raw — grading could amplify returns significantly.`;
+    else if (risk === 'low') line2 = 'Low risk entry with consistent collector demand.';
+    else if (risk === 'high') line2 = 'Higher volatility — position sizing recommended.';
+  } else if (stratKey === 'psa9') {
+    if (gemPct != null && gemPct < 15) line2 = `${gemPct}% gem rate makes PSA 9 the more accessible slab — solid demand across collectors.`;
+    else line2 = 'PSA 9 offers a balanced risk/reward between raw entry and the PSA 10 premium.';
+  } else if (stratKey === 'psa10') {
+    if (gemPct != null && gemPct <= 10) line2 = `${gemPct}% gem rate keeps PSA 10 supply tight — scarcity underpins the premium.`;
+    else if (gemPct != null && gemPct >= 35) line2 = `${gemPct}% gem rate — grades cleanly with broad collector appeal.`;
+    else line2 = 'Strong collector demand supports the PSA 10 premium long-term.';
+  }
+
+  return line2 ? `${line1} ${line2}` : line1;
+}
+
 function _buildUpgradeInsight(item, maxBudgetGBP, hasLimit) {
   const { card, rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, risk, gemRateFrac, onlyFitsIfSellRaw } = item;
   const mult = rawGBP > 0 ? psa10GBP / rawGBP : 0;
@@ -24621,9 +24653,9 @@ function renderStandouts() {
                 </div>
               </div>
               <div class="so-strat-meta">5yr target ${fmtGBPDirect(yr5GBP)} &nbsp;&middot;&nbsp; profit +${fmtGBPDirect(profitGBP)}</div>
-              <div class="so-insight">
-                <div class="so-insight-lbl">AI Analysis</div>
-                <div class="so-insight-txt">${esc(insight)}</div>
+              <div class="so-key-insight">
+                <div class="so-key-insight-lbl"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>Key Insight</div>
+                <div class="so-key-insight-txt">${esc(insight)}</div>
               </div>
               <div class="so-strat-badges">
                 <span class="so-risk-badge ${riskClass}">${riskLabel}</span>
@@ -24732,6 +24764,7 @@ function renderStandouts() {
     const riskLabel = risk === 'low' ? 'Low risk' : risk === 'high' ? 'High risk' : 'Med risk';
     const stratLbl  = stratKey === 'raw' ? 'Buy Raw' : `Buy ${gradeLabel}`;
     const inWL      = inWishlist;
+    const insight   = _buildStandoutKeyInsight(item, stratKey, gradeLabel);
     return `<div class="so-card" data-so-i="${i}">
       <div class="so-img-wrap">
         ${imgUrl
@@ -24751,6 +24784,10 @@ function renderStandouts() {
         </div>
         <div class="so-strat-meta">
           5yr target ${fmtGBPDirect(yr5GBP)} · profit ${profitGBP >= 0 ? '+' : ''}${fmtGBPDirect(profitGBP)}
+        </div>
+        <div class="so-key-insight">
+          <div class="so-key-insight-lbl"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>Key Insight</div>
+          <div class="so-key-insight-txt">${esc(insight)}</div>
         </div>
         <div class="so-strat-badges">
           <span class="so-risk-badge ${riskClass}">${riskLabel}</span>

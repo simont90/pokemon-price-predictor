@@ -15743,6 +15743,19 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 5px;
 }
 .so-insight-txt { font-size: 13px; line-height: 1.55; color: var(--text); }
+
+.so-key-insight {
+  background: rgba(253,121,168,0.07);
+  border: 1px solid rgba(253,121,168,0.18);
+  border-left: 3px solid #fd79a8;
+  border-radius: 10px; padding: 10px 13px;
+}
+.so-key-insight-lbl {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 700; color: #fd79a8;
+  letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 5px;
+}
+.so-key-insight-txt { font-size: 12px; line-height: 1.55; color: var(--text); }
 .so-actions { display: flex; gap: 8px; }
 .so-btn-main {
   flex: 1; padding: 11px; border-radius: 12px;
