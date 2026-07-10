@@ -2462,7 +2462,11 @@ async function fetchFreshPriceData(card, { skipCollectrics = false } = {}) {
       }
     } else {
       console.warn('TCGPlayer secondary fetch failed:', enSettled.reason);
-      if (priceData.pcUngraded <= 0 && !getTcgOverride(card.i)) throw enSettled.reason;
+      // Only throw if PriceCharting also came back empty — if we have any
+      // graded price data (pcPsa10, pcGrade9, etc.) the card is usable
+      // even without a TCGPlayer/Cardmarket raw price.
+      const _hasGradeData = priceData.pcPsa10 > 0 || priceData.pcGrade9 > 0 || priceData.pcPsa9 > 0;
+      if (priceData.pcUngraded <= 0 && !_hasGradeData && !getTcgOverride(card.i)) throw enSettled.reason;
     }
   }
 
