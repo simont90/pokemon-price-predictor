@@ -14583,79 +14583,66 @@ function renderHoldStrategy(card) {
     : 7;
   const _hiddenGradeNums = new Set([1, 2, 3, 4, 5, 6].filter(g => g < _ltpGradeNum));
 
-  grid.innerHTML = strategies.filter(s => !s.na).map(s => {
+  // ---- Stats header bar ----
+  const _bestROI   = bestLongTermPick ? bestLongTermPick.roi : null;
+  const _rawEntGBP = rawEntryUSD * fx;
+  const _fmtStat   = v => v >= 1000 ? `£${(v/1000).toFixed(1)}k` : `£${Math.round(v)}`;
+
+  const statsBar = `<div class="hold-stats-bar">
+    <div class="hold-stat-col">
+      <div class="hold-stat-lbl">Raw Entry</div>
+      <div class="hold-stat-val">${_fmtStat(_rawEntGBP)}</div>
+    </div>
+    <div class="hold-stat-col">
+      <div class="hold-stat-lbl">PSA Fee</div>
+      <div class="hold-stat-val">${_fmtStat(gradingFeeGBP)}</div>
+    </div>
+    <div class="hold-stat-col">
+      <div class="hold-stat-lbl">Best ROI</div>
+      <div class="hold-stat-val ${_bestROI != null && _bestROI >= 0 ? 'hold-pos' : 'hold-neg'}">${_bestROI != null ? (_bestROI >= 0 ? '+' : '') + _bestROI.toFixed(1) + '%' : '—'}</div>
+    </div>
+  </div>
+  <div class="hold-opps-label">STRATEGIES · 5YR OUTLOOK</div>`;
+
+  // ---- Strategy rows ----
+  const _roiArrow  = roi => roi >= 5 ? '↗' : roi >= -5 ? '→' : '↘';
+  const _roiArrCls = roi => roi >= 5 ? 'hold-pos' : roi >= -5 ? 'hold-flat' : 'hold-neg';
+
+  const rows = strategies.filter(s => !s.na).map(s => {
     const todayGBP_tile = s.today * fx;
-    const isOverBudget = _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
-    const isWinner = bestLongTermPick && s.key === bestLongTermPick.key && !isOverBudget;
-    const gradeNum = s.key.startsWith('psa') ? parseInt(s.key.replace('psa', '')) : null;
-    const isCollapsed = gradeNum !== null && _hiddenGradeNums.has(gradeNum);
-    const verdict = s.roi >= 80 ? { c: 'hold-v-strong', t: 'Strong hold' }
-                  : s.roi >= 40 ? { c: 'hold-v-good',   t: 'Worth holding' }
-                  : s.roi >= 15 ? { c: 'hold-v-fair',   t: 'Fair' }
-                  : s.roi >= 0  ? { c: 'hold-v-flat',   t: 'Flat' }
-                  :               { c: 'hold-v-skip',   t: 'Skip' };
-    const riskLabel = s.risk === 'low' ? 'Low risk' : s.risk === 'med' ? 'Medium risk' : 'High risk';
-    const profitSign = s.profit >= 0 ? '+' : '−';
-    return `
-      <div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${verdict.c} ${s.overridden ? 'hold-tile-overridden' : ''} ${isCollapsed ? 'hold-tile-collapsed' : ''}"${isCollapsed ? ' style="display:none"' : ''}>
-        ${isOverBudget ? '<div class="hold-over-budget-tag">Above budget</div>' : (isWinner ? '<div class="hold-winner-tag">\u2605 Best long-term pick</div>' : '')}
-        ${s.overridden ? `<div class="hold-tile-override-tag" title="${s.marketOverrideGBP != null ? 'Current market price — ROI uses your acquisition cost' : 'Using your manual market price'}">${s.marketOverrideGBP != null ? 'Mkt' : 'Override'} £${(+s.overrideGBP).toFixed(2)}</div>` : ''}
-        <div class="hold-tile-head">
-          <div class="hold-tile-title">${s.label}</div>
-          <div class="hold-tile-desc">${s.desc}</div>
-        </div>
-        <div class="hold-tile-row">
-          <span class="hold-tile-k">${(s.isOwnedSlab || s.marketNowGBP != null) ? 'Your cost (paid)' : `Today${s.overridden ? ' <span class="hold-tile-ov">(override)</span>' : ''}`}</span>
-          <span class="hold-tile-v">${fmtGBP(s.today)}</span>
-        </div>
-        ${s.marketNowGBP != null ? `
-        <div class="hold-tile-row hold-tile-sub">
-          <span class="hold-tile-k">· Market now</span>
-          <span class="hold-tile-v">${fmtGBPDirect(s.marketNowGBP)} <span class="${s.currentGrowthGBP >= 0 ? 'hold-pos' : 'hold-neg'}" style="font-size:10px">${s.currentGrowthPct >= 0 ? '+' : ''}${s.currentGrowthPct.toFixed(0)}% already</span></span>
-        </div>` : ''}
-        ${s.isOwnedSlab && s.slabMarketGBP != null ? `
-        <div class="hold-tile-row hold-tile-sub">
-          <span class="hold-tile-k">· Market now</span>
-          <span class="hold-tile-v">${fmtGBPDirect(s.slabMarketGBP)} <span class="${s.slabGainGBP >= 0 ? 'hold-pos' : 'hold-neg'}" style="font-size:10px">${s.slabGainGBP >= 0 ? '+' : ''}${fmtGBPDirect(Math.abs(s.slabGainGBP))}</span></span>
-        </div>` : ''}
-        ${s.slabShipGBP > 0 ? `
-        <div class="hold-tile-row hold-tile-sub">
-          <span class="hold-tile-k">· Card price</span>
-          <span class="hold-tile-v">${fmtGBP(s.today - s.slabShipGBP / fx)}</span>
-        </div>
-        <div class="hold-tile-row hold-tile-sub">
-          <span class="hold-tile-k">· Est. UK shipping</span>
-          <span class="hold-tile-v">+£${Math.abs(s.slabShipGBP).toFixed(0)}</span>
-        </div>` : ''}
-        <div class="hold-tile-row">
-          <span class="hold-tile-k">5yr target</span>
-          <span class="hold-tile-v hold-tile-target">${fmtGBP(s.yr5)}</span>
-        </div>
-        <div class="hold-tile-row">
-          <span class="hold-tile-k">Profit (net of fees)</span>
-          <span class="hold-tile-v ${s.profit >= 0 ? 'hold-pos' : 'hold-neg'}">${profitSign}${fmtGBP(Math.abs(s.profit))}</span>
-        </div>
-        <div class="hold-tile-row">
-          <span class="hold-tile-k">ROI</span>
-          <span class="hold-tile-v ${s.roi >= 0 ? 'hold-pos' : 'hold-neg'}">${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</span>
-        </div>
-        ${s.waitMonths ? `
-        <div class="hold-tile-row hold-tile-warn">
-          <span class="hold-tile-k">Wait</span>
-          <span class="hold-tile-v">~${s.waitDisplay || s.waitMonths.toFixed(1) + ' mo'} locked</span>
-        </div>` : ''}
-        ${s.lossProb !== undefined && s.lossProb > 0 ? `
-        <div class="hold-tile-row hold-tile-warn">
-          <span class="hold-tile-k">Loss case</span>
-          <span class="hold-tile-v hold-neg">${(s.lossProb*100).toFixed(0)}% chance · −${fmtGBP(Math.abs(s.lossEV))}</span>
-        </div>` : ''}
-        <div class="hold-tile-foot">
+    const isOverBudget  = _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
+    const isWinner      = bestLongTermPick && s.key === bestLongTermPick.key && !isOverBudget;
+    const gradeNum      = s.key.startsWith('psa') ? parseInt(s.key.replace('psa', '')) : null;
+    const isCollapsed   = gradeNum !== null && _hiddenGradeNums.has(gradeNum);
+    const profitSign    = s.profit >= 0 ? '+' : '−';
+    const riskLabel     = s.risk === 'low' ? 'Low risk' : s.risk === 'med' ? 'Med risk' : 'High risk';
+
+    const entryCtx = s.isOwnedSlab  ? `Paid ${fmtGBPDirect(todayGBP_tile)}`
+                   : s.marketNowGBP != null ? `${fmtGBPDirect(todayGBP_tile)} · now ${fmtGBPDirect(s.marketNowGBP)}`
+                   : `${fmtGBPDirect(todayGBP_tile)} all-in`;
+    const waitStr  = s.waitMonths ? ` · ~${s.waitDisplay || Math.round(s.waitMonths) + ' mo'}` : '';
+    const lossStr  = (s.lossProb > 0) ? `<span class="hold-row-loss">${(s.lossProb*100).toFixed(0)}% loss case</span>` : '';
+
+    return `<div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${s.overridden ? 'hold-tile-overridden' : ''} ${isCollapsed ? 'hold-tile-collapsed' : ''}"${isCollapsed ? ' style="display:none"' : ''}>
+      ${isOverBudget ? '<div class="hold-over-budget-tag">Above budget</div>' : (isWinner ? '<div class="hold-winner-tag">★ Best pick</div>' : '')}
+      ${s.overridden ? `<div class="hold-tile-override-tag" title="Price override">${s.marketOverrideGBP != null ? 'Mkt' : 'Override'} £${(+s.overrideGBP).toFixed(2)}</div>` : ''}
+      <div class="hold-row-inner">
+        <div class="hold-row-left">
+          <span class="hold-row-label">${s.label}</span>
+          <span class="hold-row-cost">${entryCtx}${waitStr}</span>
           <span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>
-          <span class="hold-verdict ${verdict.c}">${verdict.t}</span>
+          ${lossStr}
+        </div>
+        <div class="hold-row-right">
+          <div class="hold-row-roi ${_roiArrCls(s.roi)}">${_roiArrow(s.roi)} ${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</div>
+          <div class="hold-row-profit ${s.profit >= 0 ? 'hold-pos' : 'hold-neg'}">Profit ${profitSign}${fmtGBP(Math.abs(s.profit))}</div>
+          <div class="hold-row-target">5yr ${fmtGBP(s.yr5)}</div>
         </div>
       </div>
-    `;
-  }).join('') + (_hiddenGradeNums.size > 0
+    </div>`;
+  }).join('');
+
+  grid.innerHTML = statsBar + rows + (_hiddenGradeNums.size > 0
     ? `<button class="hold-grade-toggle-btn" id="holdGradeToggleBtn" data-ltp="${_ltpGradeNum}" data-expanded="0">Show PSA 1–${_ltpGradeNum - 1} ▾</button>`
     : '');
 
