@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260710u">
+  <link rel="stylesheet" href="style.css?v=20260710v">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -116,6 +116,48 @@
             </button>
           </div>
         </div>
+      </div>
+      <!-- ⋮ popup menu — mobile only -->
+      <div id="hdrPopup" class="hdr-popup" role="menu" aria-hidden="true">
+        <div class="hdr-popup-sec">TOOLS</div>
+        <button class="hdr-popup-item" id="hmpCollection" type="button">
+          <span class="hdr-popup-label">My Collection</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#74b9ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
+        </button>
+        <button class="hdr-popup-item" id="hmpWishlist" type="button">
+          <span class="hdr-popup-label">Wishlist</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fd79a8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        </button>
+        <button class="hdr-popup-item" id="hmpAlerts" type="button">
+          <span class="hdr-popup-label">Alerts</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ff7675" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </button>
+        <button class="hdr-popup-item" id="hmpCompare" type="button">
+          <span class="hdr-popup-label">Compare</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a29bfe" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+        </button>
+        <button class="hdr-popup-item" id="hmpLookup" type="button">
+          <span class="hdr-popup-label">Quick Lookup</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#636e72" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        <div class="hdr-popup-divider"></div>
+        <div class="hdr-popup-sec">GO TO</div>
+        <button class="hdr-popup-item" data-hmp-page="discover" type="button">
+          <span class="hdr-popup-label">Discover</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fdcb6e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+        </button>
+        <button class="hdr-popup-item" data-hmp-page="budget" type="button">
+          <span class="hdr-popup-label">Budget</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#00b894" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        </button>
+        <button class="hdr-popup-item" data-hmp-page="vintage" type="button">
+          <span class="hdr-popup-label">Vintage</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6c5ce7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </button>
+        <button class="hdr-popup-item" data-hmp-page="know" type="button">
+          <span class="hdr-popup-label">PokeKnow</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e17055" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
       </div>
     </header>
 
@@ -2799,7 +2841,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260710u"></script>
+  <script src="app.js?v=20260710v"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
