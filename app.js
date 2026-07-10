@@ -6181,19 +6181,26 @@ function drawPortfolioGrowthChart() {
   // Canvas setup
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const W = canvas.offsetWidth || 340;
-  const H = 185;
+  const W = Math.max(canvas.offsetWidth || 0, 280);
+  const H = 200;
   canvas.width  = W * dpr;
   canvas.height = H * dpr;
+  canvas.style.height = H + 'px';
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, W, H);
 
-  const allVals = [currentGBP, ...opt, ...(hasCostBasis ? [costBasisGBP] : [])];
-  const maxP = Math.max(...allVals) * 1.18;
-  const rawMin = Math.min(hasCostBasis ? costBasisGBP : currentGBP, ...con);
-  const minP = rawMin * 0.88;
+  // Theme-aware colours
+  const isDark   = document.documentElement.dataset.theme !== 'light';
+  const gridCol  = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
+  const labelCol = isDark ? '#6b6e80' : '#8090a8';
+  const bgFill   = isDark ? 'rgba(232,182,52,0.08)' : 'rgba(232,182,52,0.12)';
 
-  const pad = { l: 62, r: 22, t: 22, b: 34 };
+  const allVals = [currentGBP, ...opt, ...(hasCostBasis ? [costBasisGBP] : [])];
+  const maxP = Math.max(...allVals) * 1.20;
+  const rawMin = Math.min(hasCostBasis ? costBasisGBP : currentGBP, ...con);
+  const minP = rawMin * 0.85;
+
+  const pad = { l: 60, r: 24, t: 28, b: 36 };
   const cw  = W - pad.l - pad.r;
   const ch  = H - pad.t - pad.b;
   const xAt = yr => pad.l + (yr / 5) * cw;
@@ -6204,21 +6211,21 @@ function drawPortfolioGrowthChart() {
   for (let i = 0; i <= 4; i++) {
     const gv = minP + (maxP - minP) * (i / 4);
     const gy = yAt(gv);
-    ctx.strokeStyle = '#25283a';
+    ctx.strokeStyle = gridCol;
     ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
-    ctx.fillStyle = '#555768';
+    ctx.fillStyle = labelCol;
     ctx.font = '10px JetBrains Mono, monospace';
     ctx.textAlign = 'right';
     const lbl = gv >= 1000 ? `£${(gv / 1000).toFixed(1)}k` : `£${Math.round(gv)}`;
-    ctx.fillText(lbl, pad.l - 5, gy + 4);
+    ctx.fillText(lbl, pad.l - 6, gy + 4);
   }
 
   // X labels
   ctx.font = '10px Space Grotesk, sans-serif';
-  ctx.fillStyle = '#555768';
+  ctx.fillStyle = labelCol;
   ctx.textAlign = 'center';
   for (let yr = 0; yr <= 5; yr++) {
-    ctx.fillText(yr === 0 ? 'Now' : `${yr}yr`, xAt(yr), H - 7);
+    ctx.fillText(yr === 0 ? 'Now' : `${yr}yr`, xAt(yr), H - 8);
   }
 
   // Cost-basis reference line
@@ -6237,7 +6244,7 @@ function drawPortfolioGrowthChart() {
   }
 
   // Con–opt band fill
-  ctx.fillStyle = 'rgba(232,182,52,0.07)';
+  ctx.fillStyle = bgFill;
   ctx.beginPath();
   ctx.moveTo(xAt(0), yAt(currentGBP));
   for (let i = 0; i < 5; i++) ctx.lineTo(xAt(i + 1), yAt(opt[i]));
@@ -24194,17 +24201,19 @@ function renderStandouts() {
 
   const scored = [];
   for (const id of allIds) {
-    const card = cardData[id];
+    const card = getCardById(id);
     if (!card) continue;
-    const pd = getCachedPrice(id);
-    if (!pd) continue;
-    const rawUSD  = pd.pcUngraded || 0;
-    const psa9USD = pd.pcPsa9     || 0;
-    const psa10USD= pd.pcPsa10    || 0;
-    if (rawUSD <= 0 && psa9USD <= 0 && psa10USD <= 0) continue;
-    const rawGBP  = usdToGbp(rawUSD);
-    const psa9GBP = usdToGbp(psa9USD);
-    const psa10GBP= usdToGbp(psa10USD);
+    // Use cached live price if available, fall back to static card.p from the database
+    const pd       = getCachedPrice(id);
+    const rawUSD   = pd?.pcUngraded  || usdToGbp(card.p || 0) > 0 ? (pd?.pcUngraded  || card.p || 0) : 0;
+    const psa9USD  = pd?.pcPsa9      || 0;
+    const psa10USD = pd?.pcPsa10     || 0;
+    const staticUSD = card.p || 0;
+    const effectiveRawUSD = rawUSD > 0 ? rawUSD : staticUSD;
+    if (effectiveRawUSD <= 0) continue;
+    const rawGBP   = usdToGbp(effectiveRawUSD);
+    const psa9GBP  = usdToGbp(psa9USD);
+    const psa10GBP = usdToGbp(psa10USD);
     // Score: prefer high PSA 10 multiple + strong absolute price
     const psaMultiple = rawGBP > 0 && psa10GBP > 0 ? psa10GBP / rawGBP : 1;
     const score = psaMultiple * Math.log10(Math.max(rawGBP, psa10GBP, 1) + 10);
@@ -24216,7 +24225,7 @@ function renderStandouts() {
   const top = scored.slice(0, 12);
 
   if (top.length === 0) {
-    carousel.innerHTML = '<div class="so-empty">Sync prices first to unlock grade analysis signals.</div>';
+    carousel.innerHTML = '<div class="so-empty">Add cards to your collection or wishlist to see standouts.</div>';
     dotsEl.innerHTML = '';
     return;
   }
@@ -25033,10 +25042,10 @@ function _setupMarketBrief() {
 
   // Populate after data loads
   function _populate() {
-    if (!cardData || !cardData.length) return;
+    if (!cardData?.cards?.length) return;
     // Find the highest-signal card from recommendations cache or scan a sample
     let topCard = null, topScore = -99;
-    const sample = cardData.slice(0, 3000);
+    const sample = cardData.cards.slice(0, 3000);
     for (const card of sample) {
       try {
         const s = _wtbCardSignal(card);
