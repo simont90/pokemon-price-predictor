@@ -6381,72 +6381,23 @@ function setupUpgradesList() {
 let _soUpgradeItems = []; // cache so onclick can reference by index
 
 function _buildStandoutKeyInsight(item, stratKey, gradeLabel) {
-  const { card, todayGBP, yr5GBP, profitGBP, roi, risk, rawGBP } = item;
+  const { card, todayGBP, yr5GBP, roi, risk } = item;
   const yr = new Date().getFullYear() + 5;
-  const gemPct = card.g != null ? Math.round(card.g * 100) : null;
-
-  // Line 1: 5yr projection
-  let line1;
-  if (roi >= 100) line1 = `Exceptional outlook — model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
-  else if (roi >= 60) line1 = `Strong ${gradeLabel} hold — model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
-  else if (roi >= 30) line1 = `Solid projection: +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
-  else line1 = `Model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
-
-  // Line 2: contextual detail
-  let line2 = '';
-  if (stratKey === 'raw') {
-    const psa10GBP = card.p10 ? usdToGbp(card.p10) : 0;
-    const mult = psa10GBP > 0 && todayGBP > 0 ? (psa10GBP / todayGBP) : 0;
-    if (mult >= 5 && gemPct != null && gemPct >= 15) line2 = `PSA 10 trades at ${mult.toFixed(1)}× raw — grading could amplify returns significantly.`;
-    else if (risk === 'low') line2 = 'Low risk entry with consistent collector demand.';
-    else if (risk === 'high') line2 = 'Higher volatility — position sizing recommended.';
-  } else if (stratKey === 'psa9') {
-    if (gemPct != null && gemPct < 15) line2 = `${gemPct}% gem rate makes PSA 9 the more accessible slab — solid demand across collectors.`;
-    else line2 = 'PSA 9 offers a balanced risk/reward between raw entry and the PSA 10 premium.';
-  } else if (stratKey === 'psa10') {
-    if (gemPct != null && gemPct <= 10) line2 = `${gemPct}% gem rate keeps PSA 10 supply tight — scarcity underpins the premium.`;
-    else if (gemPct != null && gemPct >= 35) line2 = `${gemPct}% gem rate — grades cleanly with broad collector appeal.`;
-    else line2 = 'Strong collector demand supports the PSA 10 premium long-term.';
-  }
-
-  return line2 ? `${line1} ${line2}` : line1;
+  if (roi >= 100) return `Exceptional outlook — model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
+  if (roi >= 60)  return `Strong ${gradeLabel} hold — +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
+  if (roi >= 30)  return `Solid projection: +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
+  return `Model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
 }
 
 function _buildUpgradeInsight(item, maxBudgetGBP, hasLimit) {
-  const { card, rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, risk, gemRateFrac, onlyFitsIfSellRaw } = item;
-  const mult = rawGBP > 0 ? psa10GBP / rawGBP : 0;
-  const gemPct = gemRateFrac != null ? Math.round(gemRateFrac * 100) : null;
-  const parts = [];
-
-  // PSA 10 premium
-  if (mult >= 8)       parts.push(`Exceptional grading premium — PSA 10 trades at ${mult.toFixed(1)}× raw. This card carries a serious collector premium in slab form.`);
-  else if (mult >= 4)  parts.push(`Strong grading premium — PSA 10 at ${mult.toFixed(1)}× raw. Worthwhile uplift for a long-term hold.`);
-  else if (mult >= 2)  parts.push(`Moderate grading premium — ${mult.toFixed(1)}× raw. Reasonable uplift if you're bullish on this card.`);
-  else                 parts.push(`Modest grading premium — only ${mult.toFixed(1)}× raw. The slab may not justify the outlay unless you're a long-term holder.`);
-
-  // ROI outlook
-  if (roi >= 100)      parts.push(`Model projects +${Math.round(roi)}% over 5 years — one of the stronger PSA 10 holds in your collection.`);
-  else if (roi >= 60)  parts.push(`5yr model: +${Math.round(roi)}%. Solid return if the card holds its trajectory.`);
-  else if (roi >= 30)  parts.push(`5yr model: +${Math.round(roi)}%. Modest but positive outlook.`);
-  else                 parts.push(`5yr model: +${Math.round(roi)}%. Limited upside — consider whether PSA 10 is the right allocation here.`);
-
-  // Gem rate
-  if (gemPct != null) {
-    if (gemPct >= 40)      parts.push(`${gemPct}% gem rate — PSA grades cleanly, easy to sell.`);
-    else if (gemPct >= 20) parts.push(`${gemPct}% gem rate — typical for the set.`);
-    else if (gemPct >= 10) parts.push(`${gemPct}% gem rate — noticeably tough to grade; pop is thin, which can support price.`);
-    else                   parts.push(`${gemPct}% gem rate — very hard to find a PSA 10, which explains part of the premium but makes resale unpredictable.`);
-  }
-
-  // Budget note
+  const { rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, onlyFitsIfSellRaw } = item;
+  const yr   = new Date().getFullYear() + 5;
+  const mult = rawGBP > 0 ? (psa10GBP / rawGBP).toFixed(1) : '?';
+  let line = `PSA 10 at ${mult}× raw — model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
   if (onlyFitsIfSellRaw && hasLimit) {
-    parts.push(`Budget: at your £${maxBudgetGBP} cap the ${fmtGBPDirect(psa10GBP)} outright cost is over budget — this only fits if you sell your raw copy first (net ${fmtGBPDirect(netUpgradeCostGBP)}).`);
-  } else if (!hasLimit || psa10GBP <= maxBudgetGBP) {
-    // No budget issue — mention both paths briefly
-    parts.push(`You can buy the slab outright at ${fmtGBPDirect(psa10GBP)}, or sell your raw copy (${fmtGBPDirect(rawGBP)}) first to bring the net outlay down to ${fmtGBPDirect(netUpgradeCostGBP)}.`);
+    line += ` Only fits budget if raw is sold first (net ${fmtGBPDirect(netUpgradeCostGBP)}).`;
   }
-
-  return parts.join(' ');
+  return line;
 }
 
 function _toggleUpgradeFromSO(idx) {
