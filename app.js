@@ -11689,6 +11689,28 @@ function renderMarketplaceCpChip(card, section) {
   }
 }
 
+function _mktRowHint(r, sk) {
+  const roi5pct = r.todayUSD > 0 ? Math.round((r.yr5USD - r.todayUSD) / r.todayUSD * 100) : null;
+  const roiStr  = roi5pct != null ? `+${roi5pct}% 5yr ROI` : '';
+
+  const isWinner = sk && sk !== 'none' && (
+    ((sk === 'raw' || sk === 'gamble' || sk === 'ace') && r.g === 'raw') ||
+    (sk?.startsWith('psa') && r.g === parseInt(sk.replace('psa', '')))
+  );
+  const star = isWinner ? '★ Hold pick · ' : '';
+
+  if (r.g === 'raw') {
+    if (isWinner && sk === 'gamble') return `★ Hold pick · Buy raw and grade PSA · ${roiStr}`;
+    if (isWinner && sk === 'ace')    return `★ Hold pick · Buy raw and grade ACE · ${roiStr}`;
+    return `${star}Cheapest entry · ${roiStr} holding ungraded`;
+  }
+  if (r.g === 10) return `${star}Peak value ceiling · ${roiStr}`;
+  if (r.g === 9)  return `${star}Best supply vs price · ${roiStr}`;
+  if (r.g === 8)  return `${star}Mid-tier entry · wider availability · ${roiStr}`;
+  if (r.g === 7)  return `${star}Budget entry point · lowest ceiling · ${roiStr}`;
+  return roiStr;
+}
+
 function _renderMktStratInsight() {
   const siEl = document.getElementById('mktStratInsight');
   if (!siEl || !_mktGradeRows) return;
@@ -11736,6 +11758,16 @@ function _renderMktStratInsight() {
   siEl.querySelector('.mkt-si-jump')?.addEventListener('click', () => {
     document.querySelector('.ptab[data-ptab="strategy"]')?.click();
   });
+
+  // Refresh per-row hints now that the winner key is known
+  const gradesEl = document.getElementById('marketplaceGrades');
+  if (gradesEl && sk) {
+    gradesEl.querySelectorAll('.mkt-grow-row').forEach(rowEl => {
+      const rowData = _mktGradeRows?.find(r => r.label === rowEl.dataset.grade);
+      const hint = rowEl.querySelector('.mkt-grow-hint');
+      if (rowData && hint) hint.textContent = _mktRowHint(rowData, sk);
+    });
+  }
 }
 
 function renderMarketplaceScan(card, pullCost, desirability) {
@@ -11820,6 +11852,7 @@ function renderMarketplaceScan(card, pullCost, desirability) {
           <a class="mkt-chip src-cm  mkt-cm-cell"  href="${esc(r.cardmarket)}" target="_blank" rel="noopener" title="Search Cardmarket">CM<span class="mkt-link-go"> \u2197</span></a>
           <a class="mkt-chip src-tcg mkt-tcg-cell" href="${esc(r.tcgplayer)}"  target="_blank" rel="noopener" title="Search TCGplayer">TCP<span class="mkt-link-go"> \u2197</span></a>
         </div>
+        <span class="mkt-grow-hint">${_mktRowHint(r, _holdWinnerKey)}</span>
       </div>
     `).join('')}</div>`;
   }

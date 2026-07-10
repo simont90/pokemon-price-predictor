@@ -4000,6 +4000,12 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   .mkt-grow-links { margin-left: auto; }
 }
 
+.mkt-grow-hint {
+  width: 100%; margin-top: -3px; padding-bottom: 1px;
+  font-size: 10.5px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* ── Strategy insight callout below grade rows ── */
 .mkt-strat-insight {
   margin-top: 8px; padding: 10px 13px 11px;
