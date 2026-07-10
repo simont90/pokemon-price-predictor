@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260711d">
+  <link rel="stylesheet" href="style.css?v=20260711e">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -116,6 +116,10 @@
         </button>
         <div class="hdr-popup-divider"></div>
         <div class="hdr-popup-sec">GO TO</div>
+        <button class="hdr-popup-item" data-hmp-page="tools" type="button">
+          <span class="hdr-popup-label">Tools</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#74b9ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        </button>
         <button class="hdr-popup-item" data-hmp-page="discover" type="button">
           <span class="hdr-popup-label">Discover</span>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fdcb6e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
@@ -145,25 +149,14 @@
         <span class="page-nav-sub">Collection · Wishlist · Alerts</span>
       </button>
       <button class="page-nav-btn" data-page="predict" type="button">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2.5"/><rect x="6.5" y="4.5" width="11" height="8" rx="1"/><circle cx="12" cy="17" r="2"/></svg>
         <span>Cards</span>
         <span class="page-nav-sub">Search · analyse a card</span>
       </button>
       <button class="page-nav-btn" data-page="discover" type="button">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.39 4.84L20 8l-4 3.9.94 5.5L12 14.77 7.06 17.4 8 11.9 4 8l5.61-1.16L12 2z"/></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
         <span>Discover</span>
         <span class="page-nav-sub">Underrated picks · scans</span>
-      </button>
-      <button class="page-nav-btn" data-page="tools" type="button">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-        <span>Tools</span>
-        <span class="page-nav-sub">Price sync · settings</span>
-      </button>
-
-      <button class="page-nav-btn" data-page="budget" type="button">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        <span>Budget</span>
-        <span class="page-nav-sub">Aug – Dec 2026</span>
       </button>
       <button class="page-nav-btn" data-page="standouts" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -2300,6 +2293,7 @@
       <div class="predict-tab-bar tools-inner-tab-bar" role="tablist" aria-label="Tools sections">
         <button class="ptab ptab-active" data-toolstab="sync" role="tab" aria-selected="true">Price Sync</button>
         <button class="ptab" data-toolstab="dupes" role="tab" aria-selected="false">Duplicates&nbsp;<span class="tools-dupe-badge" id="toolsDupeBadge" style="display:none">0</span></button>
+        <button class="ptab" data-toolstab="account" role="tab" aria-selected="false">Account</button>
       </div>
       <div id="toolsSyncPanel">
         <!-- (priceSyncSection and how-card get moved here on init) -->
@@ -2307,6 +2301,9 @@
       </div>
       <div id="toolsDupesPanel" style="display:none">
         <div id="toolsDupesMount"></div>
+      </div>
+      <div id="toolsAccountPanel" style="display:none">
+        <!-- auth content moved here on init -->
       </div>
       <div class="tools-display-section">
         <div class="tools-display-label">Display</div>
@@ -2862,7 +2859,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260711d"></script>
+  <script src="app.js?v=20260711e"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

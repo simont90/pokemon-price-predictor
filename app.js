@@ -20895,6 +20895,11 @@ function setupPageNav() {
     if (ps) toolsMount.appendChild(ps);
     if (how) toolsMount.appendChild(how);
   }
+  const toolsAccountPanel = document.getElementById('toolsAccountPanel');
+  if (toolsAccountPanel) {
+    const authContent = document.querySelector('.sync-tab-account');
+    if (authContent) toolsAccountPanel.appendChild(authContent);
+  }
 
   // --- Wire the tab buttons + hash routing --------------------------
   const buttons = Array.from(document.querySelectorAll('.page-nav-btn[data-page]'));
@@ -21157,10 +21162,12 @@ function setupToolsTabs() {
       b.classList.toggle('ptab-active', b === btn);
       b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
     });
-    const syncPanel  = document.getElementById('toolsSyncPanel');
-    const dupesPanel = document.getElementById('toolsDupesPanel');
-    if (syncPanel)  syncPanel.style.display  = tab === 'sync'  ? '' : 'none';
-    if (dupesPanel) dupesPanel.style.display = tab === 'dupes' ? '' : 'none';
+    const syncPanel    = document.getElementById('toolsSyncPanel');
+    const dupesPanel   = document.getElementById('toolsDupesPanel');
+    const accountPanel = document.getElementById('toolsAccountPanel');
+    if (syncPanel)    syncPanel.style.display    = tab === 'sync'    ? '' : 'none';
+    if (dupesPanel)   dupesPanel.style.display   = tab === 'dupes'   ? '' : 'none';
+    if (accountPanel) accountPanel.style.display = tab === 'account' ? '' : 'none';
     if (tab === 'dupes') renderToolsDuplicates();
   });
 }
