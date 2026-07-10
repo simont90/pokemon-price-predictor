@@ -475,16 +475,19 @@ async function init() {
       if (loadingText) loadingText.textContent = 'Decoding card database...';
       cardData = decodeCardDB(CARD_DB_RAW);
     } else {
-      // Fallback: fetch if script tags didn't load
-      if (loadingText) loadingText.textContent = 'Loading card database...';
-      const raw = await fetchWithRetry('data/cards-expanded.json');
-      cardData = decodeCardDB(raw);
+      // Script tag failed to load — reload to re-fetch the data file
+      if (loadingText) {
+        loadingText.textContent = 'Tap to reload';
+        loadingText.style.cursor = 'pointer';
+      }
+      document.getElementById('loadingOverlay').onclick = () => location.reload();
+      return;
     }
 
     if (typeof SETS_DB_RAW !== 'undefined') {
       setsData = SETS_DB_RAW;
     } else {
-      setsData = await fetchWithRetry('data/sets-expanded.json');
+      setsData = {};
     }
 
     // Fetch exchange rate (small, non-blocking)
