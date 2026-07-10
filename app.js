@@ -530,6 +530,7 @@ async function init() {
   setupInputs();
   setupPortfolio();
   setupWishlist();
+  setupUpgradesList();
   _setupCardAiOverlay();
   setupFullArtBinder();
   setupCompare();
@@ -6315,6 +6316,91 @@ function drawPortfolioGrowthChart() {
 // =============================================================
 let wishlist = JSON.parse(localStorage.getItem('pkm-wishlist') || '[]');
 
+// ── Upgrades list ──────────────────────────────────────────────────────────
+const UPGRADES_KEY = 'pkm-upgrades-v1';
+let upgradesList = JSON.parse(localStorage.getItem(UPGRADES_KEY) || '[]');
+
+function saveUpgradesList() {
+  try { localStorage.setItem(UPGRADES_KEY, JSON.stringify(upgradesList)); } catch {}
+}
+
+function renderUpgradesPanel() {
+  const listEl  = document.getElementById('upgradesList');
+  const totalEl = document.getElementById('upgradesTotal');
+  const badge   = document.getElementById('hmpUpgradesBadge');
+  if (!listEl) return;
+  if (badge) { badge.textContent = upgradesList.length; badge.style.display = upgradesList.length > 0 ? 'inline-flex' : 'none'; }
+  if (totalEl) totalEl.textContent = upgradesList.length + ' card' + (upgradesList.length !== 1 ? 's' : '');
+  if (upgradesList.length === 0) {
+    listEl.innerHTML = '<div class="portfolio-empty">No upgrade targets yet. Go to Standouts → Upgrade tab and tap “+ Upgrades” to add cards.</div>';
+    return;
+  }
+  listEl.innerHTML = upgradesList.map(u => {
+    const img = u.img || '';
+    const psa10Str = u.psa10GBP ? fmtGBPDirect(u.psa10GBP) : '—';
+    const netStr   = u.netUpgradeCostGBP ? fmtGBPDirect(u.netUpgradeCostGBP) : null;
+    const roiStr   = u.roi ? '+' + Math.round(u.roi) + '%' : null;
+    return `<div class="upgrades-item" data-id="${esc(u.id)}">
+      ${img ? `<img class="wishlist-item-img" src="${esc(_hiresUrl(img))}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="wishlist-item-img"></div>'}
+      <div class="wishlist-item-info">
+        <div class="wishlist-item-name">${esc(u.name)}</div>
+        <div class="wishlist-item-meta">${esc(u.set || '')}${u.cn ? ' \xb7 #' + esc(u.cn) : ''}</div>
+        <div class="upgrades-item-prices">
+          <span class="upgrades-psa10">PSA 10 ${psa10Str}</span>
+          ${netStr ? `<span class="upgrades-net">Net ${netStr}</span>` : ''}
+          ${roiStr ? `<span class="upgrades-roi">${roiStr} 5yr</span>` : ''}
+        </div>
+      </div>
+      <div class="upgrades-item-actions">
+        <button class="wi-view-btn" onclick="selectCard('${esc(u.id)}');go('predict')">View</button>
+        <button class="upgrades-remove-btn" data-id="${esc(u.id)}" title="Remove">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setupUpgradesList() {
+  document.getElementById('hmpUpgrades')?.addEventListener('click', () => {
+    toggleSidePanel('upgradesPanel');
+    document.getElementById('hdrPopup')?.classList.remove('hmp-open');
+  });
+  document.getElementById('upgradesClose')?.addEventListener('click', () => {
+    document.getElementById('upgradesPanel').style.display = 'none';
+  });
+  document.getElementById('upgradesList')?.addEventListener('click', e => {
+    const btn = e.target.closest('.upgrades-remove-btn');
+    if (!btn) return;
+    upgradesList = upgradesList.filter(u => u.id !== btn.dataset.id);
+    saveUpgradesList();
+    renderUpgradesPanel();
+    renderStandouts();
+  });
+  renderUpgradesPanel();
+}
+
+let _soUpgradeItems = []; // cache so onclick can reference by index
+
+function _toggleUpgradeFromSO(idx) {
+  const item = _soUpgradeItems[idx];
+  if (!item) return;
+  const { card, rawGBP, psa10GBP, netUpgradeCostGBP, roi } = item;
+  const inList = upgradesList.some(u => u.id === card.i);
+  if (inList) {
+    upgradesList = upgradesList.filter(u => u.id !== card.i);
+  } else {
+    upgradesList.push({
+      id: card.i, name: card.n, set: card.s, cn: card.cn || '',
+      img: getCardImg(card), lang: card.lang || 'EN',
+      psa10GBP, rawGBP, netUpgradeCostGBP, roi,
+      addedDate: new Date().toISOString(),
+    });
+  }
+  saveUpgradesList();
+  renderUpgradesPanel();
+  renderStandouts();
+}
+// ── end Upgrades list ──────────────────────────────────────────────────────
+
 let fullArtBinder = JSON.parse(localStorage.getItem('pkm-fullart-binder-v1') || '[]');
 // Per-card species overrides — keyed by card ID, value is the override species string.
 // Synced (pkm- prefix), so corrections carry across devices.
@@ -6483,7 +6569,7 @@ function setupWishlist() {
 
 function toggleSidePanel(id) {
   if (id === 'comparePanel') { openComparePanel(); return; }
-  ['portfolioPanel', 'wishlistPanel', 'alertsPanel', 'binderPanel'].forEach(p => {
+  ['portfolioPanel', 'wishlistPanel', 'upgradesPanel', 'alertsPanel', 'binderPanel'].forEach(p => {
     const el = document.getElementById(p);
     if (!el) return;
     el.style.display = p === id ? (el.style.display === 'none' ? 'block' : 'none') : 'none';
@@ -24425,7 +24511,7 @@ function renderStandouts() {
       carousel.innerHTML = '<div class="so-empty">Add cards to your collection to see upgrade opportunities.</div>';
       dotsEl.innerHTML = '';
     } else {
-      const upgrades = [];
+      const upCandidates = [];
       for (const entry of portfolio) {
         const card = getCardById(entry.id);
         if (!card) continue;
@@ -24443,7 +24529,7 @@ function renderStandouts() {
           const hc = _getHoldCoreCached(card);
           const psa10Strat = hc?.ok ? hc.strategies?.find(s => s.key === 'psa10') : null;
           if (!psa10Strat || psa10Strat.roi <= 0) continue;
-          upgrades.push({
+          upCandidates.push({
             card, rawGBP, psa10GBP, netUpgradeCostGBP,
             roi: psa10Strat.roi,
             yr5GBP: psa10Strat.yr5 * fx,
@@ -24453,8 +24539,9 @@ function renderStandouts() {
         } catch (_) {}
       }
 
-      upgrades.sort((a, b) => b.roi - a.roi);
-      const upTop = upgrades.slice(0, 12);
+      upCandidates.sort((a, b) => b.roi - a.roi);
+      const upTop = upCandidates.slice(0, 12);
+      _soUpgradeItems = upTop;
 
       if (upTop.length === 0) {
         carousel.innerHTML = '<div class="so-empty">No upgrade opportunities found — cards need a PSA 10 price basis to compare.</div>';
@@ -24462,10 +24549,11 @@ function renderStandouts() {
       } else {
         carousel.innerHTML = upTop.map((item, i) => {
           const { card, rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, profitGBP, risk } = item;
-          const imgUrl = _hiresUrl(getCardImg(card));
-          const roiColor  = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : 'var(--text)';
+          const imgUrl   = _hiresUrl(getCardImg(card));
+          const roiColor = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : 'var(--text)';
           const riskClass = risk === 'low' ? 'so-risk-low' : risk === 'high' ? 'so-risk-high' : 'so-risk-med';
           const riskLabel = risk === 'low' ? 'Low risk' : risk === 'high' ? 'High risk' : 'Med risk';
+          const inUpgrades = upgradesList.some(u => u.id === card.i);
           return `<div class="so-card" data-so-i="${i}">
             <div class="so-img-wrap">
               ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
@@ -24490,6 +24578,7 @@ function renderStandouts() {
               </div>
               <div class="so-actions">
                 <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
+                <button class="so-btn-sec${inUpgrades ? ' so-upgrade-saved' : ''}" onclick="_toggleUpgradeFromSO(${i})">${inUpgrades ? '✓ Saved' : '+ Upgrades'}</button>
               </div>
             </div>
           </div>`;

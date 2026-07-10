@@ -15756,6 +15756,34 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
+.so-upgrade-saved {
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(232,182,52,0.1);
+}
+
+/* Upgrades panel item */
+.upgrades-item {
+  display: grid; grid-template-columns: 48px 1fr auto;
+  align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+}
+.upgrades-item:last-child { border-bottom: none; }
+.upgrades-item .wishlist-item-img { width: 48px; height: 68px; object-fit: contain; border-radius: 4px; }
+.upgrades-item-prices { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; align-items: center; }
+.upgrades-psa10 { font-size: 12px; font-weight: 700; color: var(--accent); }
+.upgrades-net   { font-size: 11px; color: var(--text-muted); }
+.upgrades-roi   { font-size: 11px; color: #34d399; font-weight: 600; }
+.upgrades-item-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.wi-view-btn {
+  padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  background: var(--accent); color: #000; border: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; white-space: nowrap;
+}
+.upgrades-remove-btn {
+  background: none; border: none; color: var(--text-faint);
+  font-size: 13px; cursor: pointer; padding: 2px 4px;
+  -webkit-tap-highlight-color: transparent;
+}
 
 .so-dots { display: flex; justify-content: center; gap: 6px; padding: 10px 0 24px; }
 .so-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--border); transition: all 0.25s; }

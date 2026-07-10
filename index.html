@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260711q">
+  <link rel="stylesheet" href="style.css?v=20260711r">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -97,6 +97,10 @@
         <button class="hdr-popup-item" id="hmpWishlist" type="button">
           <span class="hdr-popup-label">Wishlist <span class="hmp-badge" id="hmpWishlistBadge" style="display:none"></span></span>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fd79a8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        </button>
+        <button class="hdr-popup-item" id="hmpUpgrades" type="button">
+          <span class="hdr-popup-label">Upgrades <span class="hmp-badge" id="hmpUpgradesBadge" style="display:none"></span></span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e8b634" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
         </button>
         <button class="hdr-popup-item" id="hmpBinder" type="button">
           <span class="hdr-popup-label">Full Art Binder <span class="hmp-badge" id="hmpBinderBadge" style="display:none"></span></span>
@@ -240,6 +244,20 @@
       </div>
       <div class="portfolio-list" id="wishlistList">
         <div class="portfolio-empty">No wishlisted cards yet. Open a card and tap the heart icon to add it. Set a target price to get a BUY alert when the market drops below it.</div>
+      </div>
+    </section>
+
+    <!-- Upgrades Panel (slide-in) -->
+    <section class="portfolio-panel upgrades-panel" id="upgradesPanel" style="display:none">
+      <div class="portfolio-header">
+        <h2>Upgrades <span class="wishlist-sub">PSA 10 slab targets</span></h2>
+        <div class="portfolio-actions">
+          <span class="portfolio-total" id="upgradesTotal">0 cards</span>
+          <button class="portfolio-close" id="upgradesClose">&#x2715;</button>
+        </div>
+      </div>
+      <div class="portfolio-list" id="upgradesList">
+        <div class="portfolio-empty">No upgrade targets yet. Go to Standouts → Upgrade tab and tap "+ Upgrades" to add cards.</div>
       </div>
     </section>
 
@@ -2867,7 +2885,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260711q"></script>
+  <script src="app.js?v=20260711r"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
