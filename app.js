@@ -22611,6 +22611,24 @@ function setupCardEditToggle() {
     const open = items.classList.toggle('edit-open');
     toggle.querySelector('.cet-chev').style.transform = open ? 'rotate(180deg)' : '';
   });
+
+  document.getElementById('linkRefreshSignals')?.addEventListener('click', () => {
+    if (!selectedCard) return;
+    const btn = document.getElementById('linkRefreshSignals');
+    // Bust both caches for this card so everything recomputes from scratch
+    _sigCache.delete(selectedCard.i);
+    _hcCache.delete(selectedCard.i);
+    if (btn) { btn.textContent = 'Refreshing…'; btn.disabled = true; }
+    // Small delay so the price-fetch promise can settle if one is in flight
+    setTimeout(() => {
+      try { updateAll(); } catch {}
+      try { renderHoldStrategy(selectedCard); } catch {}
+      if (btn) {
+        btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> Refresh signals &amp; strategy';
+        btn.disabled = false;
+      }
+    }, 150);
+  });
 }
 
 // =============================================================================
