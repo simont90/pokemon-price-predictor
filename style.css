@@ -14475,6 +14475,191 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 }
 .mlink-search-back:hover { color: var(--text); }
 
+/* ── Top Picks section ──────────────────────────────────────── */
+/* Featured card */
+.tp-featured {
+  padding: 14px 14px 10px;
+  cursor: pointer;
+}
+.tp-feat-top { margin-bottom: 10px; }
+.tp-feat-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .05em;
+}
+.tp-badge-buy  { background: rgba(74,222,128,.15); color: #4ade80; }
+.tp-badge-sell { background: rgba(248,113,113,.15); color: #f87171; }
+
+.tp-feat-body {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.tp-feat-img {
+  width: 90px;
+  height: 120px;
+  object-fit: contain;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: rgba(255,255,255,.04);
+}
+.tp-feat-img-blank { background: rgba(255,255,255,.04); }
+.tp-feat-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tp-feat-set {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+.tp-feat-name {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+.tp-feat-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tp-feat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+/* Signal tags — shared by featured and rows */
+.tp-sig-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+.tp-tag-pos { background: rgba(74,222,128,.12); color: #4ade80; }
+.tp-tag-neg { background: rgba(248,113,113,.12); color: #f87171; }
+
+/* Stat boxes row */
+.tp-feat-stats {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.tp-stat-box {
+  flex: 1;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+[data-theme="dark"]  .tp-stat-box { background: rgba(255,255,255,.05); }
+[data-theme="light"] .tp-stat-box { background: rgba(0,0,0,.04); }
+.tp-stat-lbl {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.tp-stat-val {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.tp-conv-pos { color: #4ade80; }
+.tp-conv-neg { color: #f87171; }
+
+/* View Card button */
+.tp-view-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--accent);
+  color: #111;
+  transition: opacity .15s;
+}
+.tp-view-btn:active { opacity: .8; }
+
+/* List rows */
+.tp-list { border-top: 1px solid var(--border); }
+.tp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .1s;
+}
+.tp-row:last-child { border-bottom: none; }
+.tp-row:active { background: rgba(255,255,255,.04); }
+.tp-row-rank {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 18px;
+  text-align: center;
+}
+.tp-row-img {
+  width: 44px;
+  height: 60px;
+  object-fit: contain;
+  border-radius: 5px;
+  flex-shrink: 0;
+  background: rgba(255,255,255,.04);
+}
+.tp-row-img-blank { background: rgba(255,255,255,.04); }
+.tp-row-info { flex: 1; min-width: 0; }
+.tp-row-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-row-set {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-row-price {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.tp-trend-up { color: #4ade80; font-size: 11px; }
+.tp-trend-dn { color: #f87171; font-size: 11px; }
+.tp-row-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
 /* ── Home reco tile: signal tags + conviction ── */
 .reco-tags {
   display: flex;

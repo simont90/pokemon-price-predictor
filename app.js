@@ -10528,7 +10528,7 @@ function _homeTabActivate(groupId, tab) {
 }
 
 function _initHomeTabs() {
-  ['hTabColl', 'hTabWW', 'hTabReco', 'hTabBuy'].forEach(groupId => {
+  ['hTabTopPicks', 'hTabColl', 'hTabWW', 'hTabReco', 'hTabBuy'].forEach(groupId => {
     const group = document.getElementById(groupId);
     if (!group || group._wired) return;
     group._wired = true;
@@ -18810,6 +18810,210 @@ function _renderHomeAcePicks() {
   });
 }
 
+// ── Top Picks ─────────────────────────────────────────────────────────────────
+let _topPicksCache = null;
+
+function _tpConviction(score) {
+  return Math.min(95, Math.max(25, 60 + score * 8));
+}
+
+function _tpSignalTags(item, mode) {
+  const { signal, score, upsidePct, card, marketGBP } = item;
+  const fx2 = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const tags = [];
+  if (mode === 'buy') {
+    if (signal === 'STRONG BUY' || signal === 'BUY') tags.push({ l: 'SENTIMENT', pos: true });
+    if (upsidePct > 10)                              tags.push({ l: 'PRICE TREND', pos: true });
+    if (score >= 3)                                  tags.push({ l: 'TECHNICAL', pos: true });
+    if ((card.p10 || 0) > 0 && (card.p10 * fx2) / marketGBP > 2.5)
+                                                     tags.push({ l: 'GRADING ROI', pos: true });
+    if ((card.g || 0) < 0.10 && card.g != null)     tags.push({ l: 'POPULATION', pos: true });
+    if (score >= 4)                                  tags.push({ l: 'VOLUME', pos: true });
+  } else {
+    tags.push({ l: 'SENTIMENT', pos: false });
+    if (upsidePct < -5)                              tags.push({ l: 'PRICE TREND', pos: false });
+    if ((card.g || 0) >= 0.25)                       tags.push({ l: 'POPULATION', pos: false });
+    if ((card.p10 || 0) > 0 && (card.p10 * fx2) / marketGBP < 1.8)
+                                                     tags.push({ l: 'GRADING ROI', pos: false });
+    if (score <= -3)                                 tags.push({ l: 'TECHNICAL', pos: false });
+  }
+  return tags.slice(0, 5);
+}
+
+function _tpFeaturedHtml(item, mode) {
+  const { card, signal, score, reasons, marketGBP, upsidePct, convictionTier } = item;
+  const id = card.i;
+  const imgSrc = (typeof getCardImg === 'function') ? getCardImg(card) : '';
+  const img = imgSrc
+    ? `<img class="tp-feat-img" src="${esc(imgSrc)}" alt="" loading="lazy" onerror="this.style.opacity='0.1'">`
+    : `<div class="tp-feat-img tp-feat-img-blank"></div>`;
+  const isBuy = mode === 'buy';
+  const conv = isBuy
+    ? (_CONV_PCT[convictionTier] || _tpConviction(score))
+    : _tpConviction(-score);
+  const convCls = isBuy ? 'tp-conv-pos' : 'tp-conv-neg';
+  const setName = (typeof setsData !== 'undefined' && setsData[card.sc]?.n) || card.s || card.sc || '';
+  const lang = card.lang === 'JP' ? 'JAPANESE ' : '';
+  const desc = (typeof signalSentence === 'function')
+    ? signalSentence(signal, reasons || [], false)
+    : (reasons || []).slice(0, 2).join('. ');
+  const tags = _tpSignalTags(item, mode);
+  const tagHtml = tags.map(t =>
+    `<span class="tp-sig-tag ${t.pos ? 'tp-tag-pos' : 'tp-tag-neg'}">${t.l}</span>`
+  ).join('');
+  const badgeCls = isBuy ? 'tp-badge-buy' : 'tp-badge-sell';
+  const badgeTxt = isBuy ? '★ TOP BUY' : '★ TOP SELL';
+
+  return `<div class="tp-featured" data-id="${esc(id)}">
+    <div class="tp-feat-top">
+      <span class="tp-feat-badge ${badgeCls}">${badgeTxt}</span>
+    </div>
+    <div class="tp-feat-body">
+      ${img}
+      <div class="tp-feat-info">
+        <div class="tp-feat-set">${esc((lang + setName).toUpperCase())}</div>
+        <div class="tp-feat-name">${esc(card.n)}</div>
+        <div class="tp-feat-desc">${esc(desc)}</div>
+        <div class="tp-feat-tags">${tagHtml}</div>
+      </div>
+    </div>
+    <div class="tp-feat-stats">
+      <div class="tp-stat-box">
+        <div class="tp-stat-lbl">CONVICTION</div>
+        <div class="tp-stat-val ${convCls}">${conv}%</div>
+      </div>
+      <div class="tp-stat-box">
+        <div class="tp-stat-lbl">PRICE</div>
+        <div class="tp-stat-val">${fmtGBPDirect(marketGBP)}</div>
+      </div>
+    </div>
+    <button class="tp-view-btn" data-id="${esc(id)}">↗ View Card</button>
+  </div>`;
+}
+
+function _tpRowHtml(item, rank, mode) {
+  const { card, signal, score, marketGBP, upsidePct } = item;
+  const id = card.i;
+  const imgSrc = (typeof getCardImg === 'function') ? getCardImg(card) : '';
+  const img = imgSrc
+    ? `<img class="tp-row-img" src="${esc(imgSrc)}" alt="" loading="lazy" onerror="this.style.opacity='0.1'">`
+    : `<div class="tp-row-img tp-row-img-blank"></div>`;
+  const setName = (typeof setsData !== 'undefined' && setsData[card.sc]?.n) || card.s || card.sc || '';
+  const tags = _tpSignalTags(item, mode);
+  const tagHtml = tags.slice(0, 3).map(t =>
+    `<span class="tp-sig-tag ${t.pos ? 'tp-tag-pos' : 'tp-tag-neg'}">${t.l}</span>`
+  ).join('');
+  const trendTxt = upsidePct > 8 && upsidePct < 300
+    ? `<span class="tp-trend-up">↑ ${upsidePct.toFixed(0)}% upside</span>`
+    : upsidePct < -8
+    ? `<span class="tp-trend-dn">↓ ${Math.abs(upsidePct).toFixed(0)}% overvalued</span>`
+    : '';
+  return `<div class="tp-row" data-id="${esc(id)}">
+    <span class="tp-row-rank">${rank}</span>
+    ${img}
+    <div class="tp-row-info">
+      <div class="tp-row-name">${esc(card.n)}</div>
+      <div class="tp-row-set">${esc(setName)}</div>
+      <div class="tp-row-price">${fmtGBPDirect(marketGBP)}${trendTxt ? ' ' + trendTxt : ''}</div>
+      <div class="tp-row-tags">${tagHtml}</div>
+    </div>
+  </div>`;
+}
+
+function _buildTopAvoidPicks() {
+  if (!cardData?.cards) return [];
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+  const wishIds  = new Set(wishlist.map(w => w.id));
+  const watchIds = new Set(watchlist.map(w => w.id));
+  const picks = [];
+
+  for (const c of cardData.cards) {
+    if (!c.rc || !c.sc) continue; // skip sealed products
+    const marketUSD = _recoStaticPrice(c);
+    if (!marketUSD || marketUSD < 8) continue;
+
+    let pullCost = 7.65;
+    if (setsData?.[c.sc]) {
+      const rarity = setsData[c.sc].rarities?.[c.rc];
+      if (rarity?.pullRate > 0) {
+        pullCost = (Math.round(1 / rarity.pullRate) * (rarity.count || 1)) / 100;
+      }
+    }
+
+    const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(c, pullCost) : { total: 5 };
+    const sig = (typeof computeSignal === 'function') ? computeSignal(c, pullCost, des.total) : null;
+    if (!sig || sig.signal !== 'SELL') continue;
+
+    const modelUSD = (typeof predictPrice === 'function') ? (predictPrice(pullCost, des.total).priceUSD || 0) : 0;
+    const upsidePct = modelUSD > 0 ? ((modelUSD - marketUSD) / marketUSD * 100) : 0;
+    const priority = wishIds.has(c.i) ? 2 : watchIds.has(c.i) ? 1 : 0;
+
+    picks.push({
+      card: c,
+      signal: sig.signal,
+      score: sig.score,
+      reasons: sig.reasons,
+      marketUSD,
+      marketGBP: marketUSD * fx,
+      upsidePct,
+      priority,
+    });
+  }
+
+  return picks
+    .sort((a, b) => (b.priority - a.priority) || (a.score - b.score))
+    .slice(0, 10);
+}
+
+function _renderHomeTopPicks(force) {
+  const buyEl   = document.getElementById('homeTopPicksBuy');
+  const avoidEl = document.getElementById('homeTopPicksAvoid');
+  if (!buyEl && !avoidEl) return;
+  if (!cardData?.cards) return;
+
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+
+  const renderPanel = (el, picks, mode) => {
+    if (!picks.length) {
+      el.innerHTML = `<div class="home-empty">No ${mode === 'buy' ? 'buy' : 'avoid'} picks right now.</div>`;
+      return;
+    }
+    const [featured, ...rest] = picks;
+    const rows = rest.slice(0, 6).map((item, i) => _tpRowHtml(item, i + 2, mode)).join('');
+    el.innerHTML = _tpFeaturedHtml(featured, mode)
+      + (rows ? `<div class="tp-list">${rows}</div>` : '');
+    el.querySelectorAll('.tp-view-btn, .tp-row, .tp-featured').forEach(node => {
+      node.addEventListener('click', e => {
+        const id = node.dataset.id;
+        if (id) try { go('card', { card: id }); } catch(err) {}
+      });
+    });
+  };
+
+  if (force || !_topPicksCache) {
+    _topPicksCache = null;
+    try {
+      const all = buildAllHomeRecos();
+      // Filter to cards with meaningful prices (≥ £15) and sort strong buys first
+      const buyPicks = (all.general || [])
+        .filter(r => r.marketGBP >= 15 && r.card.rc && r.card.sc)
+        .sort((a, b) => {
+          const tierRank = { 'must-buy': 3, 'buy': 2, 'worth-holding': 1 };
+          const tDiff = (tierRank[b.convictionTier] || 0) - (tierRank[a.convictionTier] || 0);
+          return tDiff || (b.score + b.gemScore * 1.5) - (a.score + a.gemScore * 1.5);
+        })
+        .slice(0, 10);
+      const avoidPicks = _buildTopAvoidPicks();
+      _topPicksCache = { buy: buyPicks, avoid: avoidPicks };
+    } catch(e) {}
+  }
+
+  if (_topPicksCache) {
+    if (buyEl)   renderPanel(buyEl,   _topPicksCache.buy,   'buy');
+    if (avoidEl) renderPanel(avoidEl, _topPicksCache.avoid, 'avoid');
+  }
+}
+
 function renderHomeDashboard() {
   _renderHomeCollection();
   _renderHomeCombinedWishlist();
@@ -18820,6 +19024,7 @@ function renderHomeDashboard() {
   _renderHomeReco(); // use cache if valid; savePortfolio/Wishlist/Watchlist null it on change
   try { _renderHomeVintage(); } catch(e) {}
   try { _renderHomeDailyBrief(); } catch(e) {}
+  try { _renderHomeTopPicks(); } catch(e) {}
 }
 
 // ── Daily Brief — one-glance market summary at the top of Home ──────────────
@@ -20544,6 +20749,7 @@ function setupPageNav() {
   setupHomeViewAll();
   setupHomeScrollControls();
   document.getElementById('homeRecoRefresh')?.addEventListener('click', () => _renderHomeReco(true));
+  document.getElementById('homeTopPicksRefresh')?.addEventListener('click', () => { _topPicksCache = null; _renderHomeTopPicks(true); });
   document.getElementById('homeRefreshAll')?.addEventListener('click', () => {
     const btn = document.getElementById('homeRefreshAll');
     if (btn) { btn.classList.add('spinning'); setTimeout(() => btn.classList.remove('spinning'), 600); }
