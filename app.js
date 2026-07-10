@@ -982,6 +982,11 @@ function getCPOverrides() {
 }
 function setCPOverride(cardId, otherId) {
   const all = getCPOverrides();
+  // If cardId was previously mapped to a different card, clear that card's
+  // reverse pointer — otherwise the old target still "sees" cardId as its
+  // counterpart even after it has been remapped.
+  const prev = all[cardId];
+  if (prev && prev !== otherId && all[prev] === cardId) delete all[prev];
   all[cardId] = otherId;
   try { localStorage.setItem(CP_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
 }
