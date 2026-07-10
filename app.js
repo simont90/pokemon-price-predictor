@@ -6402,6 +6402,15 @@ function _buildStandoutKeyInsight(item, stratKey, gradeLabel) {
   return `Model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
 }
 
+function _buildVintageInsight(item) {
+  const { strat, yr5GBP, roi } = item;
+  const yr = new Date().getFullYear() + 5;
+  const gradeStr = strat.key === 'raw' ? 'Raw' : strat.label.replace('Buy ', '');
+  if (roi >= 100) return `Exceptional vintage find — ${gradeStr} entry. Model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
+  if (roi >= 60)  return `Strong vintage hold — ${gradeStr} is the best risk-adjusted entry at +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
+  return `${gradeStr} offers best entry — model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
+}
+
 function _buildUpgradeInsight(item, maxBudgetGBP, hasLimit) {
   const { rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, onlyFitsIfSellRaw } = item;
   const yr   = new Date().getFullYear() + 5;
@@ -15438,6 +15447,14 @@ function psUpdateStats() {
       ? `${fCount} cached card${fCount === 1 ? '' : 's'} priced under £5`
       : 'No cached cards under £5';
   }
+
+  const unviewedHint = document.getElementById('psUntrackedUnviewedHint');
+  if (unviewedHint) {
+    const uvCount = psUntrackedUnviewedIds().length;
+    unviewedHint.textContent = uvCount
+      ? `${uvCount.toLocaleString()} card${uvCount === 1 ? '' : 's'} never fetched — expands Standouts + Underrated data`
+      : 'All cards in the database have been fetched at least once';
+  }
 }
 
 function psLog(line, kind) {
@@ -15480,7 +15497,7 @@ function psHideProgress() {
 }
 
 function psSetButtonsDisabled(disabled) {
-  ['psRefreshSelected', 'psRefreshCollection', 'psRefreshBinder', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psRefreshVintagePSA', 'psRefreshUnderFiver', 'psClearCache', 'psManualGo', 'livePriceRefresh']
+  ['psRefreshSelected', 'psRefreshCollection', 'psRefreshBinder', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psRefreshVintagePSA', 'psRefreshUnderFiver', 'psRefreshUntrackedUnviewed', 'psClearCache', 'psManualGo', 'livePriceRefresh']
     .forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -15654,6 +15671,16 @@ function psCacheIdsUnderFiver() {
     .map(([id]) => id);
 }
 
+// IDs of cards that have never been fetched: not in portfolio/wishlist/watchlist AND not in price cache
+function psUntrackedUnviewedIds() {
+  if (!cardData?.cards?.length) return [];
+  const cache = getPriceCache();
+  const tracked = new Set(psTrackedIds());
+  return cardData.cards
+    .map(c => c?.i)
+    .filter(id => id && !tracked.has(id) && !cache[id]);
+}
+
 function setupPriceSync() {
   const sel = id => document.getElementById(id);
   if (!sel('priceSyncSection')) return;
@@ -15702,6 +15729,10 @@ function setupPriceSync() {
   sel('psRefreshUnderFiver')?.addEventListener('click', () => {
     const ids = psCacheIdsUnderFiver();
     psBatchRefresh(ids, 'Refresh prices under £5');
+  });
+  sel('psRefreshUntrackedUnviewed')?.addEventListener('click', () => {
+    const ids = psUntrackedUnviewedIds();
+    psBatchRefresh(ids, 'Refresh untracked + unviewed cards');
   });
   sel('psManualGo')?.addEventListener('click', psManualRefresh);
   sel('psManualInput')?.addEventListener('keydown', e => {
@@ -24570,6 +24601,29 @@ function _soRefreshIds() {
     scored.sort((a, b) => b.roi - a.roi);
     scored.slice(0, 20).forEach(s => ids.add(s.id));
   }
+  // Vintage tab: top 20 best-strategy WOTC cards
+  if (typeof _vintageSets === 'function') {
+    const vinSets = new Set([
+      ..._vintageSets().map(s => s.code),
+      ...((typeof _vintageJPSets === 'function') ? _vintageJPSets().map(s => s.code) : []),
+    ]);
+    const vsScored = [];
+    for (const card of cardData.cards) {
+      if (!vinSets.has(card.sc)) continue;
+      const cr = cache[card.i];
+      const pd = cr && _priceCacheIsValid(cr._ts) ? cr : null;
+      if (!card.p10 && !pd?.pcPsa10) continue;
+      const hc = _getHoldCoreCached(card);
+      if (!hc.ok) continue;
+      const best = (hc.strategies || [])
+        .filter(s => s.roi > 0 && !['gamble', 'ace'].includes(s.key))
+        .sort((a, b) => (b.riskAdjusted || 0) - (a.riskAdjusted || 0))[0];
+      if (!best) continue;
+      vsScored.push({ id: card.i, score: best.riskAdjusted || 0 });
+    }
+    vsScored.sort((a, b) => b.score - a.score);
+    vsScored.slice(0, 20).forEach(s => ids.add(s.id));
+  }
   return [...ids].filter(Boolean);
 }
 
@@ -24769,6 +24823,124 @@ function renderStandouts() {
     return;
   }
   // — end Upgrade tab —
+
+  // — Vintage tab —
+  if (_soGrade === 'vintage') {
+    const vSubEl = document.getElementById('soSubtitle');
+    if (vSubEl) vSubEl.textContent = hasLimit
+      ? `Best WOTC-era (1999–2003) buys within your £${maxBudgetGBP} budget — optimal grade ranked by risk-adjusted ROI.`
+      : 'Best entry for WOTC-era (1999–2003) cards across Raw and all PSA grades — ranked by risk-adjusted 5yr ROI.';
+
+    const vintageSets = new Set([
+      ...((typeof _vintageSets === 'function' ? _vintageSets() : []).map(s => s.code)),
+      ...((typeof _vintageJPSets === 'function' ? _vintageJPSets() : []).map(s => s.code)),
+    ]);
+
+    const vsScored = [];
+    for (const card of cardData.cards) {
+      try {
+        if (portfolioIds.has(card.i)) continue;
+        if (!vintageSets.has(card.sc)) continue;
+        const cr = priceCache[card.i];
+        const pd = cr && _priceCacheIsValid(cr._ts) ? cr : null;
+        if (!card.p10 && !pd?.pcPsa10) continue;
+        const hc = _getHoldCoreCached(card);
+        if (!hc.ok || !hc.strategies?.length) continue;
+        const eligible = hc.strategies
+          .filter(s => s.roi > 0 && s.riskAdjusted != null && !['gamble', 'ace'].includes(s.key));
+        if (!eligible.length) continue;
+        eligible.sort((a, b) => (b.riskAdjusted || 0) - (a.riskAdjusted || 0));
+        const bestStrat = eligible[0];
+        const todayGBP = bestStrat.today * fx;
+        if (todayGBP <= 0) continue;
+        if (hasLimit && todayGBP > maxBudgetGBP) continue;
+        vsScored.push({
+          card, strat: bestStrat, todayGBP,
+          yr5GBP:    bestStrat.yr5 * fx,
+          profitGBP: bestStrat.profit * fx,
+          roi:       bestStrat.roi,
+          risk:      bestStrat.risk || 'med',
+          inWishlist: wishlistIds.has(card.i),
+        });
+      } catch (_) {}
+    }
+
+    vsScored.sort((a, b) => (b.strat.riskAdjusted || 0) - (a.strat.riskAdjusted || 0));
+    const vsTop = vsScored.slice(0, 12);
+
+    if (vsTop.length === 0) {
+      const budgetMsg = hasLimit ? ` within your £${maxBudgetGBP} budget` : '';
+      carousel.innerHTML = `<div class="so-empty">No vintage standouts found${budgetMsg}. Use "Refresh Prices" to pull data for WOTC-era cards.</div>`;
+      dotsEl.innerHTML = '';
+    } else {
+      carousel.innerHTML = vsTop.map((item, i) => {
+        const { card, strat, todayGBP, yr5GBP, profitGBP, roi, risk, inWishlist } = item;
+        const imgUrl    = _hiresUrl(getCardImg(card));
+        const roiColor  = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : 'var(--text)';
+        const riskClass = risk === 'low' ? 'so-risk-low' : risk === 'high' ? 'so-risk-high' : 'so-risk-med';
+        const riskLabel = risk === 'low' ? 'Low risk' : risk === 'high' ? 'High risk' : 'Med risk';
+        const insight   = _buildVintageInsight(item);
+        return `<div class="so-card" data-so-i="${i}">
+          <div class="so-img-wrap">
+            ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
+            ${inWishlist
+              ? `<span class="so-tag" style="background:rgba(253,121,168,0.2);color:#fd79a8">Wishlist</span>`
+              : `<span class="so-tag" style="background:rgba(232,182,52,0.15);color:#e8b634">WOTC</span>`}
+          </div>
+          <div class="so-body">
+            <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
+            <div class="so-set">${esc(card.s || '')}${card.cn ? ' \xb7 #' + esc(card.cn) : ''}</div>
+            <div class="so-strat-row">
+              <div class="so-strat-allin">
+                <span class="so-strat-lbl">${esc(strat.label)}</span>
+                <span class="so-strat-price">${fmtGBPDirect(todayGBP)}</span>
+              </div>
+              <div class="so-strat-roi" style="color:${roiColor}">+${Math.round(roi)}%</div>
+            </div>
+            <div class="so-strat-meta">5yr target ${fmtGBPDirect(yr5GBP)} \xb7 profit ${profitGBP >= 0 ? '+' : ''}${fmtGBPDirect(profitGBP)}</div>
+            <div class="so-key-insight">
+              <div class="so-key-insight-lbl"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>Key Insight</div>
+              <div class="so-key-insight-txt">${esc(insight)}</div>
+            </div>
+            <div class="so-strat-badges">
+              <span class="so-risk-badge ${riskClass}">${riskLabel}</span>
+            </div>
+            <div class="so-actions">
+              <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
+              ${!inWishlist ? `<button class="so-btn-sec" onclick="toggleCardInWishlist('${esc(card.i)}')">+ Wishlist</button>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+      dotsEl.innerHTML = vsTop.map((_, i) =>
+        `<div class="so-dot${i === 0 ? ' active' : ''}" data-dot="${i}"></div>`
+      ).join('');
+
+      if (!carousel.dataset.scrollBound) {
+        carousel.dataset.scrollBound = '1';
+        carousel.addEventListener('scroll', () => {
+          const w = (carousel.querySelector('.so-card')?.offsetWidth || 1) + 16;
+          const idx = Math.round(carousel.scrollLeft / w);
+          dotsEl.querySelectorAll('.so-dot').forEach((d, i2) => d.classList.toggle('active', i2 === idx));
+        }, { passive: true });
+      }
+    }
+
+    const vToggle = document.getElementById('soGradeToggle');
+    if (vToggle && !vToggle.dataset.bound) {
+      vToggle.dataset.bound = '1';
+      vToggle.addEventListener('click', e => {
+        const btn = e.target.closest('[data-grade]');
+        if (!btn) return;
+        _soGrade = btn.dataset.grade;
+        vToggle.querySelectorAll('.sgt-btn').forEach(b => b.classList.toggle('active', b === btn));
+        renderStandouts();
+      });
+    }
+    return;
+  }
+  // — end Vintage tab —
 
   const stratKey     = _soGrade === 'psa10' ? 'psa10' : _soGrade === 'psa9' ? 'psa9' : 'raw';
   const gradeLabel   = _soGrade === 'psa10' ? 'PSA 10' : _soGrade === 'psa9' ? 'PSA 9' : 'Raw';
