@@ -3631,7 +3631,9 @@ async function _loadHoldStrategyFacts(card, data) {
   const body = document.getElementById('hafBody');
   if (!wrap || !body || !card) return;
 
-  const cacheKey = `${card.i}_${(data.rawGBP||0).toFixed(0)}_${(data.psaGBP||0).toFixed(0)}_${data.roiGrade||0}`;
+  const _budgetGBP  = getMaxBudgetGBP();
+  const _hasBudget  = _budgetGBP < BUDGET_DEFAULT;
+  const cacheKey = `${card.i}_${(data.rawGBP||0).toFixed(0)}_${(data.psaGBP||0).toFixed(0)}_${data.roiGrade||0}_${_hasBudget ? _budgetGBP : 0}`;
   if (_holdFactsCache.has(cacheKey)) {
     body.innerHTML = _holdFactsCache.get(cacheKey);
     wrap.style.display = '';
@@ -3655,32 +3657,36 @@ async function _loadHoldStrategyFacts(card, data) {
     fc5yrConGBP, fc5yrExpGBP, fc5yrOptGBP,
   } = data;
 
+  // How many raw submissions a collector must expect to make before hitting PSA 10 once.
+  const copiesNeeded = (gemRatePct != null && gemRatePct > 0) ? Math.ceil(100 / gemRatePct) : null;
+
   const systemPrompt = `You are a Pokémon TCG investment analyst writing for an advanced collector. Evaluate every strategy for this card using exactly 4 labelled sections:
 
 [BUY RAW]
 Is buying and holding the raw (ungraded) card worth it? State YES, NO, or BORDERLINE and give the reason. If pack pull data is provided, compare the rip cost vs buying the single and state which is cheaper. 2–3 sentences.
 
 [GRADE IT]
-Is Buy Raw + Grade PSA worth it? Is Buy Raw + Grade ACE worth it? State which (if either) makes sense and why. 2–3 sentences.
+Is Buy Raw + Grade PSA worth it? Is Buy Raw + Grade ACE worth it? IMPORTANT: The 5yr ROI and profit shown for "Buy Raw + Grade PSA" are probability-weighted expected values across all grade outcomes — they are not guaranteed returns from a single submission. At a low gem rate (below 30%), most submissions will not hit PSA 10; factor in how many copies must be submitted on average to get one PSA 10 (provided in the data). If the gem rate is below 25% and grading fees consume the practical upside, say so clearly. State which grading path (if either) makes sense. 2–3 sentences.
 
 [BUY GRADED]
-Which pre-slabbed PSA grades make sense to buy? Evaluate PSA 7, 8, 9, and 10 — name each and state whether it is worth buying and why. 2–3 sentences.
+Which pre-slabbed PSA grades make sense to buy? Evaluate PSA 7, 8, 9, and 10 — name each and state whether it is worth buying and why. If the collector has a budget constraint, flag any grade that exceeds it. 2–3 sentences.
 
 [BOTTOM LINE]
-One clear recommendation: exactly what should this collector do. Mention the 5yr price forecast range if provided. State the single biggest risk. 2–3 sentences.
+One clear recommendation: exactly what should this collector do. CRITICAL: this must be fully consistent with your evaluations in [BUY RAW], [GRADE IT], and [BUY GRADED] — if you said grading is poor value, do not recommend "Buy Raw + Grade" here. If a budget is stated and the ideal strategy exceeds it, say so and give the best in-budget alternative explicitly. Mention the 5yr price forecast range if provided. State the single biggest risk. 2–3 sentences.
 
-Rules: use £ for all prices. Be direct and specific. No markdown, no bullet points, no filler phrases.`;
+Rules: use £ for all prices. Be direct and specific. No markdown, no bullet points, no filler phrases. All four sections must tell a coherent story — never contradict yourself between sections.`;
 
   const lines = [
     `${card.n}${card.s ? ' · ' + card.s : ''}`,
+    _hasBudget ? `Collector budget: £${_budgetGBP} per card` : null,
     rawGBP != null ? `Buy Raw: £${Math.round(rawGBP)} entry (buy single), 5yr ROI ${rawRoi ?? '?'}%, 5yr profit £${rawProfit5 ?? '?'}` : null,
     (ripPacksNeeded != null && ripPackCostGBP != null) ? `Pack Rip to hit this card: ~${ripPacksNeeded} packs at £${ripPackCostGBP}/pack${ripNetCostGBP != null ? `, net rip cost ~£${ripNetCostGBP}` : ''}` : null,
-    gradeEntryGBP != null ? `Buy Raw + Grade PSA: £${gradeEntryGBP} all-in (raw + £${gradingFeeGBP ?? '?'} grading fee), ${gemRatePct ?? '?'}% gem rate, ${lossProb ?? '?'}% loss chance, 5yr ROI ${roiGrade ?? '?'}%, 5yr profit £${grade5yr ?? '?'}, PSA UK wait ${waitDisplay ?? '?'}` : null,
+    gradeEntryGBP != null ? `Buy Raw + Grade PSA: £${gradeEntryGBP} all-in (raw + £${gradingFeeGBP ?? '?'} grading fee), ${gemRatePct ?? '?'}% gem rate${copiesNeeded != null ? ` (expect ~${copiesNeeded} submissions per PSA 10)` : ''}, ${lossProb ?? '?'}% loss chance, 5yr ROI ${roiGrade ?? '?'}% (probability-weighted EV, not guaranteed), 5yr profit £${grade5yr ?? '?'} (EV), PSA UK wait ${waitDisplay ?? '?'}` : null,
     aceRoi != null ? `Buy Raw + Grade ACE ${aceTier}: £${aceFeeGBP} grading fee (~${aceWait}), 5yr ROI ${aceRoi}%, 5yr profit £${ace5yr ?? '?'}` : null,
-    psa7GBP != null  ? `Buy PSA 7:  £${psa7GBP} entry (incl. UK shipping), 5yr ROI ${psa7Roi}%`  : null,
-    psa8GBP != null  ? `Buy PSA 8:  £${psa8GBP} entry (incl. UK shipping), 5yr ROI ${psa8Roi}%`  : null,
-    psa9GBP != null  ? `Buy PSA 9:  £${psa9GBP} entry (incl. UK shipping), 5yr ROI ${psa9Roi}%`  : null,
-    psa10GBP != null ? `Buy PSA 10: £${psa10GBP} entry (incl. UK shipping), 5yr ROI ${psa10Roi}%` : null,
+    psa7GBP != null  ? `Buy PSA 7:  £${psa7GBP} entry (incl. UK shipping), 5yr ROI ${psa7Roi}%${_hasBudget && psa7GBP > _budgetGBP ? ' [OVER BUDGET]' : ''}`  : null,
+    psa8GBP != null  ? `Buy PSA 8:  £${psa8GBP} entry (incl. UK shipping), 5yr ROI ${psa8Roi}%${_hasBudget && psa8GBP > _budgetGBP ? ' [OVER BUDGET]' : ''}`  : null,
+    psa9GBP != null  ? `Buy PSA 9:  £${psa9GBP} entry (incl. UK shipping), 5yr ROI ${psa9Roi}%${_hasBudget && psa9GBP > _budgetGBP ? ' [OVER BUDGET]' : ''}`  : null,
+    psa10GBP != null ? `Buy PSA 10: £${psa10GBP} entry (incl. UK shipping), 5yr ROI ${psa10Roi}%${_hasBudget && psa10GBP > _budgetGBP ? ' [OVER BUDGET]' : ''}` : null,
     winnerLabel ? `System recommendation: ${winnerLabel}` : null,
     (fc5yrConGBP != null && fc5yrExpGBP != null && fc5yrOptGBP != null) ? `5yr price forecast (raw): conservative £${fc5yrConGBP}, expected £${fc5yrExpGBP}, optimistic £${fc5yrOptGBP}` : null,
   ].filter(Boolean).join('\n');
