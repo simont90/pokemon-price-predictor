@@ -4985,6 +4985,21 @@ function initPriceHistoryControls() {
     priceHistoryRange = btn.dataset.range === 'all' ? 'all' : parseInt(btn.dataset.range);
     drawAndAnnotatePriceHistory();
   });
+
+  const expandBtn = $('phExpandBtn');
+  if (expandBtn && !expandBtn.dataset.bound) {
+    expandBtn.dataset.bound = '1';
+    expandBtn.addEventListener('click', () => {
+      if (!selectedCard) return;
+      const pd = livePrice || getCachedPrice(selectedCard.i);
+      const raw  = pd?.pcUngraded  > 0 ? fmtGBP(pd.pcUngraded)  : 'N/A';
+      const psa9 = pd?.pcPsa9      > 0 ? fmtGBP(pd.pcPsa9)      : 'N/A';
+      const psa10= pd?.pcPsa10     > 0 ? fmtGBP(pd.pcPsa10)     : 'N/A';
+      const prompt = `Deep strategic analysis for ${selectedCard.n} (${selectedCard.s || ''}).\nPrices — Raw: ${raw}, PSA 9: ${psa9}, PSA 10: ${psa10}.\nIs this a hold, grade, or sell situation? What does the current price history tell us about momentum and timing?`;
+      go('know');
+      setTimeout(() => { try { aiSubmit(prompt); } catch(e) {} }, 350);
+    });
+  }
 }
 
 function drawListingChart(canvas, history) {
@@ -20889,6 +20904,8 @@ function setupPageNav() {
     budget: document.getElementById('pageBudget'),
     vintage: document.getElementById('pageVintage'),
     know: document.getElementById('pageKnow'),
+    standouts: document.getElementById('pageStandouts'),
+    analysis: document.getElementById('pageAnalysis'),
   };
 
   function go(page) {
@@ -20920,6 +20937,8 @@ function setupPageNav() {
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
     if (page === 'vintage') { try { renderVintagePage(); } catch(e) {} }
     if (page === 'know') { try { _pknOnNavigate(); } catch(e) {} }
+    if (page === 'standouts') { try { renderStandouts(); } catch(e) {} }
+    if (page === 'analysis') { try { renderAiAnalysisPage(); } catch(e) {} }
     // URL + title: cards get their own address (#cardId); other pages reset to page hash
     if (page === 'predict' && selectedCard) {
       try { history.replaceState({ cardId: selectedCard.i }, '', '#' + selectedCard.i); } catch(e) {}
@@ -24130,6 +24149,280 @@ function _vgRefresh(el, changedId) {
     }
   }
   window.scrollTo(0, y);
+}
+
+// ── Standouts page ────────────────────────────────────────────────────────────
+
+let _soGrade = 'raw'; // current grade filter for standouts carousel
+
+function renderStandouts() {
+  const carousel = document.getElementById('soCarousel');
+  const dotsEl   = document.getElementById('soDots');
+  if (!carousel) return;
+
+  if (!cardData) {
+    carousel.innerHTML = '<div class="so-empty">Card database not loaded yet — please wait and try again.</div>';
+    dotsEl.innerHTML = '';
+    return;
+  }
+
+  const portfolioIds = new Set(portfolio.map(p => p.id).filter(Boolean));
+  const wishlistIds  = new Set(wishlist.map(w => w.id).filter(Boolean));
+  const allIds = new Set([...portfolioIds, ...wishlistIds]);
+
+  if (allIds.size === 0) {
+    carousel.innerHTML = '<div class="so-empty">Add cards to your collection or wishlist to see standouts.</div>';
+    dotsEl.innerHTML = '';
+    return;
+  }
+
+  const scored = [];
+  for (const id of allIds) {
+    const card = cardData[id];
+    if (!card) continue;
+    const pd = getCachedPrice(id);
+    if (!pd) continue;
+    const rawUSD  = pd.pcUngraded || 0;
+    const psa9USD = pd.pcPsa9     || 0;
+    const psa10USD= pd.pcPsa10    || 0;
+    if (rawUSD <= 0 && psa9USD <= 0 && psa10USD <= 0) continue;
+    const rawGBP  = usdToGbp(rawUSD);
+    const psa9GBP = usdToGbp(psa9USD);
+    const psa10GBP= usdToGbp(psa10USD);
+    // Score: prefer high PSA 10 multiple + strong absolute price
+    const psaMultiple = rawGBP > 0 && psa10GBP > 0 ? psa10GBP / rawGBP : 1;
+    const score = psaMultiple * Math.log10(Math.max(rawGBP, psa10GBP, 1) + 10);
+    scored.push({ card, pd, rawGBP, psa9GBP, psa10GBP, score,
+      inPortfolio: portfolioIds.has(id), inWishlist: wishlistIds.has(id) });
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, 12);
+
+  if (top.length === 0) {
+    carousel.innerHTML = '<div class="so-empty">Sync prices first to unlock grade analysis signals.</div>';
+    dotsEl.innerHTML = '';
+    return;
+  }
+
+  carousel.innerHTML = top.map((item, i) => {
+    const { card, rawGBP, psa9GBP, psa10GBP, inPortfolio } = item;
+    const price    = _soPrice(item);
+    const imgUrl   = _hiresUrl(getCardImg(card));
+    const insight  = _standoutInsight(card, item);
+    const tagLabel = inPortfolio ? 'Owned' : 'Wishlist';
+    const tagColor = inPortfolio ? 'rgba(116,185,255,0.2)' : 'rgba(253,121,168,0.2)';
+    const tagText  = inPortfolio ? '#74b9ff' : '#fd79a8';
+    const inWL     = wishlistIds.has(card.i);
+    return `<div class="so-card" data-so-i="${i}"
+        data-raw="${rawGBP.toFixed(2)}"
+        data-psa9="${psa9GBP.toFixed(2)}"
+        data-psa10="${psa10GBP.toFixed(2)}">
+      <div class="so-img-wrap">
+        ${imgUrl
+          ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">`
+          : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
+        <span class="so-tag" style="background:${tagColor};color:${tagText}">${tagLabel}</span>
+      </div>
+      <div class="so-body">
+        <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
+        <div class="so-set">${esc(card.s || '')}${card.num ? ' · #' + esc(card.num) : ''}</div>
+        <div class="so-price so-price-val">${price > 0 ? fmtGBPDirect(price) : '—'}</div>
+        <div class="so-insight">
+          <div class="so-insight-lbl">AI Insight</div>
+          <div class="so-insight-txt">${esc(insight)}</div>
+        </div>
+        <div class="so-actions">
+          <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
+          ${!inWL && !inPortfolio
+            ? `<button class="so-btn-sec" onclick="toggleCardInWishlist('${esc(card.i)}')">+ Wishlist</button>`
+            : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  dotsEl.innerHTML = top.map((_, i) =>
+    `<div class="so-dot${i === 0 ? ' active' : ''}" data-dot="${i}"></div>`
+  ).join('');
+
+  if (!carousel.dataset.scrollBound) {
+    carousel.dataset.scrollBound = '1';
+    carousel.addEventListener('scroll', () => {
+      const w = (carousel.querySelector('.so-card')?.offsetWidth || 1) + 16;
+      const idx = Math.round(carousel.scrollLeft / w);
+      dotsEl.querySelectorAll('.so-dot').forEach((d, i) => d.classList.toggle('active', i === idx));
+    }, { passive: true });
+  }
+
+  // Wire grade toggle
+  const toggle = document.getElementById('soGradeToggle');
+  if (toggle && !toggle.dataset.bound) {
+    toggle.dataset.bound = '1';
+    toggle.addEventListener('click', e => {
+      const btn = e.target.closest('[data-grade]');
+      if (!btn) return;
+      _soGrade = btn.dataset.grade;
+      toggle.querySelectorAll('.sgt-btn').forEach(b => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('.so-card').forEach(card => {
+        const price = parseFloat(card.dataset[_soGrade]) || parseFloat(card.dataset.raw) || 0;
+        const el = card.querySelector('.so-price-val');
+        if (el) el.textContent = price > 0 ? fmtGBPDirect(price) : '—';
+      });
+    });
+  }
+}
+
+function _soPrice(item) {
+  if (_soGrade === 'psa10') return item.psa10GBP || item.rawGBP;
+  if (_soGrade === 'psa9')  return item.psa9GBP  || item.rawGBP;
+  return item.rawGBP;
+}
+
+function _standoutInsight(card, item) {
+  const { rawGBP, psa9GBP, psa10GBP, inPortfolio, inWishlist } = item;
+  const mult10 = rawGBP > 0 && psa10GBP > 0 ? (psa10GBP / rawGBP) : 0;
+  const mult9  = rawGBP > 0 && psa9GBP  > 0 ? (psa9GBP  / rawGBP) : 0;
+  if (mult10 >= 8)
+    return `Exceptional grading premium — PSA 10 trades at ${mult10.toFixed(1)}× raw (${fmtGBPDirect(psa10GBP)}). A high-grade slab commands serious collector attention.`;
+  if (mult10 >= 4)
+    return `Strong grading upside: PSA 10 at ${fmtGBPDirect(psa10GBP)} is ${mult10.toFixed(1)}× raw (${fmtGBPDirect(rawGBP)}). Worth grading if the copy is sharp.`;
+  if (mult10 >= 2)
+    return `Modest grading premium of ${mult10.toFixed(1)}×. At ${fmtGBPDirect(rawGBP)} raw, grading at ~£25 still nets upside for a near-mint copy.`;
+  if (mult9 >= 2)
+    return `PSA 9 at ${fmtGBPDirect(psa9GBP)} — ${mult9.toFixed(1)}× raw. A solid path to a graded copy without chasing PSA 10 prices.`;
+  if (inPortfolio && rawGBP > 0)
+    return `In your collection at market value ${fmtGBPDirect(rawGBP)}. Monitor for grading windows when raw supply tightens.`;
+  if (rawGBP > 0)
+    return `Wishlist card at ${fmtGBPDirect(rawGBP)} raw. ${rawGBP < 50 ? 'Entry price is accessible — watch for a dip to buy.' : 'Keep an eye on price history before committing.'}`;
+  return 'Sync live prices to unlock grade analysis for this card.';
+}
+
+// ── AI Analysis page ───────────────────────────────────────────────────────────
+
+function renderAiAnalysisPage() {
+  const body = document.getElementById('aiAnalysisBody');
+  if (!body) return;
+
+  const pCards = portfolio
+    .map(p => ({ card: cardData?.[p.id], pd: getCachedPrice(p.id), p }))
+    .filter(x => x.card);
+  const wCards = wishlist
+    .map(w => ({ card: cardData?.[w.id], pd: getCachedPrice(w.id), w }))
+    .filter(x => x.card);
+
+  if (pCards.length === 0 && wCards.length === 0) {
+    body.innerHTML = '<div class="aia-empty">Add cards to your collection or wishlist to generate analysis.</div>';
+    return;
+  }
+
+  // Portfolio value
+  const totalRaw = pCards.reduce((s, x) => s + usdToGbp(x.pd?.pcUngraded || 0), 0);
+  const withPrices = pCards.filter(x => (x.pd?.pcUngraded || 0) > 0).length;
+
+  // Top grading opportunities (collection cards with high PSA 10 multiple)
+  const gradingOps = pCards
+    .filter(x => x.pd?.pcPsa10 > 0 && x.pd?.pcUngraded > 0)
+    .map(x => ({ ...x, mult: x.pd.pcPsa10 / x.pd.pcUngraded }))
+    .sort((a, b) => b.mult - a.mult)
+    .slice(0, 5);
+
+  // Wishlist priorities (by price asc, within budget)
+  const budget = getMaxBudgetGBP();
+  const wPriority = wCards
+    .filter(x => x.pd?.pcUngraded > 0)
+    .map(x => ({ ...x, rawGBP: usdToGbp(x.pd.pcUngraded) }))
+    .filter(x => budget >= 99999 || x.rawGBP <= budget)
+    .sort((a, b) => a.rawGBP - b.rawGBP)
+    .slice(0, 5);
+
+  const statsHTML = `
+    <div class="aia-stats-grid">
+      <div class="aia-stat">
+        <div class="aia-stat-lbl">Collection</div>
+        <div class="aia-stat-val">${pCards.length}</div>
+        <div class="aia-stat-sub">${withPrices} with live prices</div>
+      </div>
+      <div class="aia-stat">
+        <div class="aia-stat-lbl">Portfolio value</div>
+        <div class="aia-stat-val">${totalRaw > 0 ? fmtGBPDirect(totalRaw) : '—'}</div>
+        <div class="aia-stat-sub">raw market total</div>
+      </div>
+      <div class="aia-stat">
+        <div class="aia-stat-lbl">Wishlist</div>
+        <div class="aia-stat-val">${wCards.length}</div>
+        <div class="aia-stat-sub">${wPriority.length} within budget</div>
+      </div>
+      <div class="aia-stat">
+        <div class="aia-stat-lbl">Grade ops</div>
+        <div class="aia-stat-val">${gradingOps.length}</div>
+        <div class="aia-stat-sub">PSA 10 premium ≥2×</div>
+      </div>
+    </div>`;
+
+  const gradingHTML = gradingOps.length === 0 ? '' : `
+    <div class="aia-section">
+      <div class="aia-section-hd">Top Grading Opportunities</div>
+      ${gradingOps.map(x => {
+        const img = _hiresUrl(getCardImg(x.card));
+        const raw = fmtGBPDirect(usdToGbp(x.pd.pcUngraded));
+        const psa10 = fmtGBPDirect(usdToGbp(x.pd.pcPsa10));
+        return `<div class="aia-item" onclick="selectCard('${esc(x.card.i)}');go('predict')">
+          ${img ? `<img class="aia-item-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="aia-item-img"></div>'}
+          <div class="aia-item-body">
+            <div class="aia-item-name">${esc(x.card.n)}</div>
+            <div class="aia-item-sub">${esc(x.card.s || '')}</div>
+          </div>
+          <div>
+            <div class="aia-item-val">${x.mult.toFixed(1)}×</div>
+            <div class="aia-item-sub2">${raw} → ${psa10}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  const wishlistHTML = wPriority.length === 0 ? '' : `
+    <div class="aia-section">
+      <div class="aia-section-hd">Wishlist Priorities${budget < 99999 ? ' · Budget £' + budget : ''}</div>
+      ${wPriority.map(x => {
+        const img = _hiresUrl(getCardImg(x.card));
+        return `<div class="aia-item" onclick="selectCard('${esc(x.card.i)}');go('predict')">
+          ${img ? `<img class="aia-item-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="aia-item-img"></div>'}
+          <div class="aia-item-body">
+            <div class="aia-item-name">${esc(x.card.n)}</div>
+            <div class="aia-item-sub">${esc(x.card.s || '')}</div>
+          </div>
+          <div>
+            <div class="aia-item-val">${fmtGBPDirect(x.rawGBP)}</div>
+            <div class="aia-item-sub2">raw</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  const ctaHTML = `
+    <div class="aia-cta-row">
+      <button class="aia-cta-btn" id="aiaDeepDiveBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.09 3.26L16.5 6.5l-3.26 1.09L12 11l-1.09-3.26L7.5 6.5l3.26-1.09z"/><path d="M19 14l.73 2.18L22 17l-2.18.73L19 20l-.73-2.18L16 17l2.18-.73z"/></svg>
+        Get AI Recommendations
+      </button>
+    </div>`;
+
+  body.innerHTML = statsHTML + gradingHTML + wishlistHTML + ctaHTML;
+
+  document.getElementById('aiaDeepDiveBtn')?.addEventListener('click', () => {
+    const topCards = gradingOps.slice(0, 3).map(x => `${x.card.n} (${x.mult.toFixed(1)}× PSA premium)`).join(', ');
+    const wishStr  = wPriority.slice(0, 3).map(x => `${x.card.n} at ${fmtGBPDirect(x.rawGBP)}`).join(', ');
+    const prompt = [
+      `Strategic portfolio analysis request.`,
+      `My collection: ${pCards.length} cards, raw market value ~${fmtGBPDirect(totalRaw)}.`,
+      gradingOps.length > 0 ? `Top grading opportunities (PSA 10 premium): ${topCards}.` : '',
+      wPriority.length > 0 ? `Top wishlist targets: ${wishStr}.` : '',
+      `Give me: (1) top 3 grading decisions with reasoning, (2) any cards to consider selling, (3) one tactical recommendation for the next 30 days.`,
+    ].filter(Boolean).join(' ');
+    go('know');
+    setTimeout(() => { try { aiSubmit(prompt); } catch(e) {} }, 350);
+  });
 }
 
 // ── PokeKnow page helpers ─────────────────────────────────────────────────────

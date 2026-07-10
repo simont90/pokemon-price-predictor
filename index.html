@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260711a">
+  <link rel="stylesheet" href="style.css?v=20260711b">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -164,6 +164,16 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <span>Budget</span>
         <span class="page-nav-sub">Aug – Dec 2026</span>
+      </button>
+      <button class="page-nav-btn" data-page="standouts" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span>Standouts</span>
+        <span class="page-nav-sub">Top picks · Grade signals</span>
+      </button>
+      <button class="page-nav-btn" data-page="analysis" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.09 3.26L16.5 6.5l-3.26 1.09L12 11l-1.09-3.26L7.5 6.5l3.26-1.09z"/><path d="M19 14l.73 2.18L22 17l-2.18.73L19 20l-.73-2.18L16 17l2.18-.73z"/><circle cx="5" cy="19" r="1"/></svg>
+        <span>AI Analysis</span>
+        <span class="page-nav-sub">Portfolio intelligence</span>
       </button>
       <div class="nav-ctx-sep" id="navCtxSep" aria-hidden="true"></div>
       <button class="nav-ctx-btn" id="navFilterCtx" type="button" aria-label="Filter">
@@ -1857,7 +1867,12 @@
         <section class="card pricehist-card" id="priceHistSection" data-tab-group="market" data-collapse-mobile="1" style="display:none">
           <div class="ph-header">
             <h2>Price History</h2>
-            <div class="ph-verdict" id="phVerdict"></div>
+            <div class="ph-header-right">
+              <div class="ph-verdict" id="phVerdict"></div>
+              <button class="ph-expand-btn" id="phExpandBtn" title="AI deep dive">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12v9H3V3h9"/><path d="M16 3h5v5"/><path d="M21 3l-9 9"/></svg>
+              </button>
+            </div>
           </div>
           <p class="card-desc">Per-grade price history — Raw, PSA 9, PSA 10 where available</p>
           <div class="ph-loading" id="phLoading">Loading price history…</div>
@@ -2520,6 +2535,33 @@
     <!-- AI conversation -->
     <div class="ai-chat-messages" id="aiChatMessages"></div>
     </div><!-- /#pageKnow -->
+
+    <!-- ==== Standouts Page ==== -->
+    <div class="page" id="pageStandouts" data-page="standouts" style="display:none">
+      <section class="page-intro so-page-intro">
+        <div class="so-title-row">
+          <h2 class="page-intro-title">Standouts</h2>
+          <div class="so-grade-toggle" id="soGradeToggle">
+            <button class="sgt-btn active" data-grade="raw" type="button">Raw</button>
+            <button class="sgt-btn" data-grade="psa9" type="button">PSA 9</button>
+            <button class="sgt-btn" data-grade="psa10" type="button">PSA 10</button>
+          </div>
+        </div>
+        <p class="page-intro-sub">Cards from your collection and wishlist ranked by standout potential — grading premium, price momentum, and entry opportunity.</p>
+      </section>
+      <div class="so-carousel" id="soCarousel"></div>
+      <div class="so-dots" id="soDots"></div>
+    </div><!-- /#pageStandouts -->
+
+    <!-- ==== AI Analysis Page ==== -->
+    <div class="page" id="pageAnalysis" data-page="analysis" style="display:none">
+      <section class="page-intro">
+        <h2 class="page-intro-title">AI Analysis</h2>
+        <p class="page-intro-sub">Strategic intelligence across your collection and wishlist.</p>
+      </section>
+      <div id="aiAnalysisBody"></div>
+    </div><!-- /#pageAnalysis -->
+
   </div><!-- /#app -->
 
   <!-- Floating Filter Button -->
@@ -2820,7 +2862,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260711a"></script>
+  <script src="app.js?v=20260711b"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
