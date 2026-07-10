@@ -4061,21 +4061,24 @@ function drawForecastChart(canvas, fc, hoverYear = null) {
   // Store state for interactive hover
   _fcState = { fc, W, H, pad, cw, current, minP, maxP, x, y };
 
-  ctx.strokeStyle = '#2a2d3a';
+  const _isDark = document.documentElement.dataset.theme !== 'light';
+  const _gridCol  = _isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
+  const _labelCol = _isDark ? '#6b6e80' : '#8a90a2';
+  ctx.strokeStyle = _gridCol;
   ctx.lineWidth = 1;
   const gridCount = 4;
   for (let i = 0; i <= gridCount; i++) {
     const gp = minP + (maxP - minP) * (i / gridCount);
     const gy = y(gp);
     ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
-    ctx.fillStyle = '#555768';
+    ctx.fillStyle = _labelCol;
     ctx.font = '11px JetBrains Mono, monospace';
     ctx.textAlign = 'right';
     ctx.fillText(`£${Math.round(gp).toLocaleString()}`, pad.l - 8, gy + 4);
   }
 
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#555768';
+  ctx.fillStyle = _labelCol;
   ctx.font = '11px Space Grotesk, sans-serif';
   for (let yr = 0; yr <= 5; yr++) {
     ctx.fillText(yr === 0 ? 'Now' : `${yr}yr`, x(yr), H - 8);
@@ -22108,6 +22111,7 @@ function setupHeaderMenu() {
   // Overlay action items
   document.getElementById('hmpCollection')?.addEventListener('click', () => { close(); document.getElementById('portfolioToggle')?.click(); });
   document.getElementById('hmpWishlist')?.addEventListener('click',   () => { close(); document.getElementById('wishlistToggle')?.click(); });
+  document.getElementById('hmpBinder')?.addEventListener('click',     () => { close(); go('binder'); });
   document.getElementById('hmpAlerts')?.addEventListener('click',     () => { close(); document.getElementById('alertsToggle')?.click(); });
   document.getElementById('hmpCompare')?.addEventListener('click',    () => { close(); document.getElementById('compareToggle')?.click(); });
   document.getElementById('hmpLookup')?.addEventListener('click',     () => { close(); document.getElementById('quickLookupToggle')?.click(); });
@@ -22117,6 +22121,36 @@ function setupHeaderMenu() {
     item.addEventListener('click', () => { close(); go(item.dataset.hmpPage); });
   });
 }
+
+// Sync popup badge counts from the hidden header buttons to the popup labels.
+// Called by a MutationObserver so it runs automatically whenever any count changes.
+function _syncHmpBadges() {
+  const pairs = [
+    ['portfolioCount', 'hmpCollectionBadge'],
+    ['wishlistCount',  'hmpWishlistBadge'],
+    ['binderCount',    'hmpBinderBadge'],
+    ['alertsCount',    'hmpAlertsBadge'],
+    ['compareCount',   'hmpCompareBadge'],
+  ];
+  for (const [srcId, dstId] of pairs) {
+    const src = document.getElementById(srcId);
+    const dst = document.getElementById(dstId);
+    if (!src || !dst) continue;
+    const n = parseInt(src.textContent) || 0;
+    dst.textContent = n;
+    dst.style.display = n > 0 ? 'inline-flex' : 'none';
+  }
+  // Show/hide notification dot on hamburger when any count > 0
+  const total = pairs.reduce((s, [id]) => s + (parseInt(document.getElementById(id)?.textContent) || 0), 0);
+  const menuBtn = document.getElementById('headerMenuBtn');
+  if (menuBtn) menuBtn.classList.toggle('has-badge', total > 0);
+}
+
+(function _initHmpBadgeObserver() {
+  const ids = ['portfolioCount','wishlistCount','binderCount','alertsCount','compareCount'];
+  const container = document.getElementById('portfolioPanel')?.closest('.app') || document.body;
+  new MutationObserver(_syncHmpBadges).observe(container, { childList: true, subtree: true, characterData: true });
+})();
 
 function setupCardLinksToggle() {
   const toggle = document.getElementById('cardLinksToggle');
