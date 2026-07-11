@@ -19975,6 +19975,7 @@ async function _homeAutoRefresh() {
   try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
   try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); _renderHomeAcePicks(); } catch {}
   try { _renderHomeReco(true); } catch {}
+  try { if (typeof psUpdateStats === 'function') psUpdateStats(); } catch {}
 }
 
 function _homeItemClick(id) {
