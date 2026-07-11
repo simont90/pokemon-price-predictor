@@ -15752,6 +15752,10 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .so-risk-med  { background: rgba(251,191,36,0.15);  color: #fbbf24; }
 .so-risk-high { background: rgba(239,68,68,0.15);   color: #ef4444; }
 .so-raw-price { font-size: 11px; color: var(--text-faint); }
+.so-gem-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 20px;
+}
 
 .so-insight {
   background: var(--bg); border-radius: 12px; padding: 13px 15px;

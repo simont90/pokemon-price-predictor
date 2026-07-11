@@ -6480,6 +6480,16 @@ function setupUpgradesList() {
 
 let _soUpgradeItems = []; // cache so onclick can reference by index
 
+function _soGemBadge(card) {
+  const measured = card.g != null;
+  const g = measured ? card.g : DEFAULT_GEM_RATE;
+  const pct = (g * 100).toFixed(0);
+  const color = g >= 0.30 ? '#34d399' : g >= 0.15 ? '#fbbf24' : '#fb923c';
+  const bg    = g >= 0.30 ? 'rgba(52,211,153,0.12)' : g >= 0.15 ? 'rgba(251,191,36,0.12)' : 'rgba(251,146,60,0.12)';
+  const title = `PSA 10 gem rate${measured ? '' : ' (estimated default)'}`;
+  return `<span class="so-gem-badge" style="background:${bg};color:${color}" title="${title}">${pct}% gem${measured ? '' : '*'}</span>`;
+}
+
 function _buildStandoutKeyInsight(item, stratKey, gradeLabel) {
   const { card, todayGBP, yr5GBP, roi, risk } = item;
   const yr = new Date().getFullYear() + 5;
@@ -24969,6 +24979,7 @@ function renderStandouts() {
               </div>
               <div class="so-strat-badges">
                 <span class="so-risk-badge ${riskClass}">${riskLabel}</span>
+                ${_soGemBadge(card)}
               </div>
               <div class="so-actions">
                 <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
@@ -25131,6 +25142,9 @@ function renderStandouts() {
               </div>
               <div class="so-mass-insight-txt">${esc(insight)}</div>
             </div>
+            <div class="so-strat-badges">
+              ${_soGemBadge(card)}
+            </div>
             <div class="so-actions">
               <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
               ${!inWishlist
@@ -25245,6 +25259,7 @@ function renderStandouts() {
             <div class="so-sw-header">
               <span class="so-sw-tier ${tierClass}">${charTier}-tier</span>
               <span class="so-sw-rarity">${esc(card.r || card.rc || '')}</span>
+              ${_soGemBadge(card)}
             </div>
             <div class="so-upgrade-scenarios">
               <div class="so-upgrade-scenario">
@@ -25380,6 +25395,7 @@ function renderStandouts() {
             </div>
             <div class="so-strat-badges">
               <span class="so-risk-badge ${riskClass}">${riskLabel}</span>
+              ${_soGemBadge(card)}
             </div>
             <div class="so-actions">
               <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
@@ -25509,6 +25525,7 @@ function renderStandouts() {
         <div class="so-strat-badges">
           <span class="so-risk-badge ${riskClass}">${riskLabel}</span>
           ${rawGBP > 0 && stratKey !== 'raw' ? `<span class="so-raw-price">Raw ${fmtGBPDirect(rawGBP)}</span>` : ''}
+          ${_soGemBadge(card)}
         </div>
         <div class="so-actions">
           <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
