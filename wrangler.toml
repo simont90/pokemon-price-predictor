@@ -1,0 +1,8 @@
+name = "pokemon-marketplace"
+main = "worker-paste-this.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "SYNC_KV"
+id = "6488eeadb6924bab9e71c36627c1658a"

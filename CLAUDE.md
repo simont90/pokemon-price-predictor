@@ -29,9 +29,9 @@ budget-conscious, advanced JS/Node developer, deep Pokémon TCG knowledge.
 |---|---|---|
 | Web app source | `github.com/simont90/pokemon-price-predictor` | Push to `main` → GitHub Pages auto-publishes |
 | Live URL | `https://simont90.github.io/pokemon-price-predictor/` | Cache-busted via `?v=<buster>` querystring |
-| Cloudflare Worker source | This repo: `worker-paste-this.js` | **Manual paste** into Cloudflare dashboard (NOT wrangler). The full source lives separately at `~/dev/pokemon-marketplace-worker/src/index.js` on the owner's Mac and a mirror in the Perplexity sandbox. `worker-paste-this.js` in this repo is always the current paste-ready copy. |
+| Cloudflare Worker source | This repo: `worker-paste-this.js` + `wrangler.toml` | Deployed via `npx wrangler deploy` from repo root. Cloudflare removed the dashboard inline editor. |
 | Worker live URL | `https://pokemon-marketplace.simontariq.workers.dev` | Routes: `/search`, `/sync`, `/mcp`, `/health` |
-| KV namespace | Cloudflare → `pokemon-sync`, bound to worker as `SYNC_KV` | Holds per-user snapshots keyed `sync:<pair-code>` |
+| KV namespace | Cloudflare → `pokemon-sync`, bound to worker as `SYNC_KV` (id: `6488eeadb6924bab9e71c36627c1658a`) | Holds per-user snapshots keyed `sync:<pair-code>` |
 
 ---
 
@@ -44,7 +44,8 @@ style.css               # Single stylesheet, ~5k lines.
 data/cards-db.js        # 26k+ Pokémon cards (EN + JP), static.
 data/sets-db.js         # Set metadata (release date, pack counts, etc.).
 data/pokedex-db.js      # National Pokédex: normalised species name (EN + JP) → dex number.
-worker-paste-this.js    # Latest Cloudflare Worker source — paste this into the dashboard.
+worker-paste-this.js    # Latest Cloudflare Worker source — deploy via `npx wrangler deploy`.
+wrangler.toml           # Wrangler config: worker name, KV binding. Do not store secrets here.
 CLAUDE.md               # This file.
 ```
 
@@ -104,9 +105,9 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
 
 1. Edit `worker-paste-this.js`.
 2. Commit + push to GitHub (so the next session sees the latest).
-3. Tell the owner: "Paste the latest `worker-paste-this.js` into your
-   Cloudflare worker → Save and Deploy." There is no automated CI for the
-   worker — it lives behind the dashboard.
+3. Deploy: `npx wrangler deploy` from the repo root (wrangler.toml is checked in).
+   - Wrangler is authenticated via OAuth; credentials in `~/.wrangler/config/default.toml`.
+   - The Cloudflare dashboard no longer has an inline editor — wrangler is the only deploy path.
 4. Verify after deploy: `curl https://pokemon-marketplace.simontariq.workers.dev/health` returns `ok`.
 
 **Worker routes (do not break these):**
@@ -210,8 +211,9 @@ For worker changes:
 
 ## Common pitfalls (do not repeat)
 
-- **Don't use `wrangler deploy`.** The owner deploys via dashboard paste
-  only. The repo is not a wrangler project.
+- **Worker secrets** (`EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`) are set in the
+  Cloudflare dashboard under Workers → pokemon-marketplace → Settings → Variables.
+  Do not put them in `wrangler.toml` or commit them.
 - **Don't fetch a card image from `pokemontcg.io` without graceful
   fallback.** Many JP cards have no image; show a placeholder.
 - **Don't store API keys in the client.** All third-party API calls go
