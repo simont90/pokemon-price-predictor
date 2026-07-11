@@ -355,11 +355,11 @@ function getPriceCache() {
 function setCachedPrice(cardId, data) {
   const cache = getPriceCache();
   cache[cardId] = { ...data, _ts: Date.now() };
-  // Prune old entries (keep max 500)
+  // Prune oldest entries (keep max 2000; price data is small so this is safe in localStorage)
   const keys = Object.keys(cache);
-  if (keys.length > 500) {
+  if (keys.length > 2000) {
     const sorted = keys.sort((a, b) => (cache[a]._ts || 0) - (cache[b]._ts || 0));
-    sorted.slice(0, keys.length - 500).forEach(k => delete cache[k]);
+    sorted.slice(0, keys.length - 2000).forEach(k => delete cache[k]);
   }
   try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache)); } catch {}
   // Mark as ever-fetched so the "untracked" count falls even after cache eviction
