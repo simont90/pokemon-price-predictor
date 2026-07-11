@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260712y">
+  <link rel="stylesheet" href="style.css?v=20260712z">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2196,7 +2196,10 @@
         <!-- Price Sync — refresh cached prices for selected, tracked, or every card -->
         <section class="card price-sync-card" id="priceSyncSection">
           <div class="section-header">
-            <h2><span class="ps-icon">⟳</span> Price Sync</h2>
+            <div class="ps-header-row">
+              <h2><span class="ps-icon">⟳</span> Price Sync</h2>
+              <button id="psStatsRefreshBtn" class="ps-stats-refresh-btn" title="Refresh stats">↻</button>
+            </div>
             <p class="ps-subtitle">Pull fresh prices from PriceCharting · TCGPlayer · Cardmarket. Prices stay current until 6AM the next morning or a forced refresh.</p>
           </div>
           <div class="ps-stats" id="psStats">
@@ -3027,7 +3030,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260712y"></script>
+  <script src="app.js?v=20260712z"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

@@ -16046,6 +16046,13 @@ function setupPriceSync() {
   psUpdateStats();
   // Keep stats / "last sync" label live
   setInterval(psUpdateStats, 30 * 1000);
+
+  // Manual stats refresh button
+  document.getElementById('psStatsRefreshBtn')?.addEventListener('click', function() {
+    psUpdateStats();
+    this.classList.add('spinning');
+    this.addEventListener('animationend', () => this.classList.remove('spinning'), { once: true });
+  });
 }
 
 // =============================================================

@@ -5483,6 +5483,15 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .price-sync-card { padding: 22px; }
 .price-sync-card .section-header { margin-bottom: 16px; }
 .price-sync-card .section-header h2 { display: flex; align-items: center; gap: 8px; font-size: 18px; margin: 0 0 4px 0; }
+.ps-header-row { display: flex; align-items: center; gap: 10px; }
+.ps-stats-refresh-btn {
+  background: none; border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-muted); font-size: 16px; line-height: 1;
+  padding: 2px 7px; cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.ps-stats-refresh-btn:hover { color: var(--accent); border-color: var(--accent); }
+.ps-stats-refresh-btn.spinning { animation: ps-spin 0.5s linear; }
+@keyframes ps-spin { to { transform: rotate(360deg); } }
 .ps-icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; border-radius: 8px;
