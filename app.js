@@ -15678,17 +15678,34 @@ function psShowProgress(label, total) {
   if (!wrap) return;
   wrap.style.display = 'block';
   document.getElementById('psProgressLabel').textContent = label;
-  document.getElementById('psProgressCounter').textContent = `0 / ${total}`;
+  document.getElementById('psProgressCounter').textContent = `0 / ${total.toLocaleString()}`;
   document.getElementById('psProgressFill').style.width = '0%';
   document.getElementById('psProgressCurrent').textContent = '';
+  const etaEl = document.getElementById('psProgressEta');
+  if (etaEl) etaEl.textContent = '';
 }
 function psUpdateProgress(done, total, currentLabel) {
   const wrap = document.getElementById('psProgress');
   if (!wrap) return;
-  document.getElementById('psProgressCounter').textContent = `${done} / ${total}`;
+  document.getElementById('psProgressCounter').textContent = `${done.toLocaleString()} / ${total.toLocaleString()}`;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   document.getElementById('psProgressFill').style.width = pct + '%';
   if (currentLabel != null) document.getElementById('psProgressCurrent').textContent = currentLabel;
+  // ETA — only show after a few cards so the rate estimate is meaningful
+  const etaEl = document.getElementById('psProgressEta');
+  if (etaEl && done > 4 && _psState.startMs) {
+    const elapsed = (Date.now() - _psState.startMs) / 1000;
+    const rate = done / elapsed; // cards per second
+    const remSecs = rate > 0 ? Math.round((total - done) / rate) : 0;
+    if (remSecs > 0) {
+      const h = Math.floor(remSecs / 3600);
+      const m = Math.floor((remSecs % 3600) / 60);
+      const s = remSecs % 60;
+      etaEl.textContent = h > 0 ? `~${h}h ${m}m left` : m > 0 ? `~${m}m ${s}s left` : `~${s}s left`;
+    } else {
+      etaEl.textContent = '';
+    }
+  }
 }
 function psHideProgress() {
   const wrap = document.getElementById('psProgress');
@@ -15756,11 +15773,11 @@ async function psBatchRefresh(ids, label) {
     psLog(`Nothing to refresh for "${label}".`, 'warn');
     return;
   }
-  _psState = { running: true, cancel: false, done: 0, total: ids.length };
+  _psState = { running: true, cancel: false, done: 0, total: ids.length, startMs: Date.now() };
   psSetButtonsDisabled(true);
   psClearLog();
   psShowProgress(label, ids.length);
-  psLog(`Starting ${label} · ${ids.length} card${ids.length === 1 ? '' : 's'}`, 'info');
+  psLog(`Starting ${label} · ${ids.length.toLocaleString()} card${ids.length === 1 ? '' : 's'}`, 'info');
 
   let okCount = 0, errCount = 0;
   let cursor = 0;
@@ -15782,6 +15799,8 @@ async function psBatchRefresh(ids, label) {
         psLog(`✗ ${labelText} · ${result.error}`, 'err');
       }
       psUpdateProgress(_psState.done, _psState.total, '');
+      // Refresh hint counts every 50 cards so the "never fetched" number tracks live
+      if (_psState.done % 50 === 0) try { psUpdateStats(); } catch {}
     }
   });
   await Promise.all(workers);

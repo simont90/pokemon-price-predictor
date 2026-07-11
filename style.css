@@ -5565,6 +5565,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .ps-progress-label { font-weight: 600; color: var(--text); flex: 1; }
 .ps-progress-counter { font-family: var(--mono); color: var(--accent); font-size: 12px; font-weight: 600; }
+.ps-progress-eta { font-family: var(--mono); color: var(--text-dim); font-size: 11px; }
 .ps-cancel {
   background: transparent; border: 1px solid var(--border); color: var(--text-muted);
   font-size: 11px; padding: 4px 10px; border-radius: 5px; cursor: pointer;
