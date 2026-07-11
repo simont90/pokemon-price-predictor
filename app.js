@@ -585,6 +585,8 @@ async function init() {
   _setupHomePip();
   // Global 6AM GMT refresh: fetch live prices for all tracked cards once per day.
   setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 800);
+  // Hydrate price cache from worker cron warm-up (prices pre-fetched at 3AM UTC).
+  setTimeout(() => { try { _hydrateFromPriceWarm(); } catch {} }, 2000);
   // Daily 3AM local refresh: silently fill in untracked + unviewed cards.
   setTimeout(() => { try { _autoRefreshUntrackedIfDue(); } catch {} }, 5000);
 }
@@ -8124,6 +8126,42 @@ function _autoRefreshUntrackedIfDue() {
   // Mark before starting so a page reload mid-run doesn't re-trigger today.
   localStorage.setItem(AUTO_REFRESH_UNTRACKED_KEY, String(Date.now()));
   psBatchRefresh(ids, 'Auto-refresh: untracked cards (daily)');
+}
+
+// ── Worker cron price warm-up hydration ────────────────────────────────────
+// The Cloudflare Worker runs a scheduled cron at 3 AM UTC that pre-fetches
+// PriceCharting prices for all tracked cards and stores them in KV.
+// On app load we pull that blob and merge it into the local price cache —
+// so prices are already fresh before the user does anything.
+async function _hydrateFromPriceWarm() {
+  const pairCode = syncGetPairCode();
+  if (!pairCode) return;
+  const endpoint = syncGetEndpoint();
+  if (!endpoint) return;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch(`${endpoint}/price-warm?key=${encodeURIComponent(pairCode)}`, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return;
+    const { prices } = await r.json();
+    if (!prices || typeof prices !== 'object') return;
+    const cache = getPriceCache();
+    let count = 0;
+    for (const [cardId, price] of Object.entries(prices)) {
+      // Only overwrite if the warm entry is newer than what we have
+      if (!cache[cardId] || (price._ts || 0) > (cache[cardId]._ts || 0)) {
+        cache[cardId] = price;
+        count++;
+      }
+    }
+    if (count > 0) {
+      _priceCache = cache;
+      try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache)); } catch {}
+    }
+  } catch {
+    clearTimeout(t);
+  }
 }
 
 // ── Binder background pre-fetch ────────────────────────────────────────────

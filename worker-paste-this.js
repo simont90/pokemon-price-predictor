@@ -847,6 +847,7 @@ async function handle(request, env) {
   if (url.pathname === '/ai/chat' && request.method === 'POST') return handleAiChat(request, env);
   if (url.pathname === '/ai/query') return handleAiQuery(request, env, url);
   if (url.pathname === '/tcg-price') return handleTcgPrice(request, url);
+  if (url.pathname === '/price-warm') return handlePriceWarm(request, env, url);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 
   const q = url.searchParams.get('q') || '';
@@ -1671,6 +1672,152 @@ Always cite the star rating and entry timing when recommending buy/hold/sell. Be
 }
 
 
+// ---- Cron: background price warm-up ----------------------------------------
+// Scheduled at 0 3 * * * (3 AM UTC) via Cloudflare → Worker → Triggers →
+// Cron Triggers. Fetches PriceCharting prices for every tracked card
+// (portfolio + wishlist + watchlist) from all known pair-code snapshots and
+// stores the result in KV so the app can hydrate on first load without waiting.
+//
+// The Worker makes direct server-to-server requests to PriceCharting —
+// no CORS proxy needed — so this is more reliable than the browser path.
+
+const PC_WARM_CONCURRENCY  = 10;
+const PC_WARM_MAX_PER_USER = 300; // cap so a huge collection doesn't time out
+const PC_WARM_KV_TTL       = 25 * 3600; // 25 h — expires before the next cron run
+
+function _warmBuildPCQuery(card) {
+  const name    = (card.n || card.name || '').replace(/\s*\(JP\)/, '').replace(/\s*#\d+/, '').trim();
+  const setName = (card.s || card.setName || card.set || '').replace(/\s*\(.*?\)/g, '').trim();
+  const num     = card.cn || card.cardNumber || '';
+  const langTag = (card.lang || '').toUpperCase() === 'JP' ? 'japanese' : '';
+  return [setName, name, num, langTag].filter(Boolean).join(' ').trim();
+}
+
+function _warmScorePCProduct(product, card) {
+  const pName = (product.productName || '').toLowerCase();
+  const pCons = (product.consoleName || '').toLowerCase();
+  const cName = (card.n || card.name || '').toLowerCase().replace(/\s*\(jp\)/, '').trim();
+  const setName = (card.s || card.setName || card.set || '').toLowerCase();
+  const isJP = (card.lang || '').toUpperCase() === 'JP';
+  let score = 0;
+  if (isJP && !pCons.includes('japanese')) score -= 50;
+  if (!isJP && pCons.includes('japanese')) score -= 50;
+  if (setName && pCons.includes(setName)) score += 40;
+  const cTokens = cName.split(/\s+/).filter(t => t.length > 1);
+  const pTokens = pName.split(/\s+/).filter(t => t.length > 1);
+  for (const t of cTokens) if (pTokens.includes(t)) score += 8;
+  for (const dt of ['mega', 'shiny', 'gold', 'reverse', 'shadowless', 'first', 'edition', 'holo']) {
+    if (pTokens.includes(dt) && !cTokens.includes(dt)) score -= 12;
+  }
+  score -= Math.min(pTokens.filter(t => !cTokens.includes(t) && !['pokemon', 'card', 'tcg', 'japanese', '#'].includes(t)).length, 4) * 3;
+  if (card.cn || card.cardNumber) {
+    const cardNum = String(card.cn || card.cardNumber).replace(/^0+/, '');
+    if (new RegExp(`#?0*${cardNum}\\b`).test(pName)) score += 25;
+    else score -= 8;
+  }
+  return score;
+}
+
+function _warmParsePC(s) {
+  if (!s) return 0;
+  return parseFloat(String(s).replace(/[^0-9.]/g, '')) || 0;
+}
+
+async function _warmFetchPCCard(card) {
+  const q = _warmBuildPCQuery(card);
+  if (!q) return null;
+  const pcUrl = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(q)}&format=json`;
+  let resp;
+  try {
+    resp = await fetch(pcUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PokemonPricePredictor/1.0)', Accept: 'application/json' },
+    });
+  } catch { return null; }
+  if (!resp.ok) return null;
+  let data;
+  try { data = await resp.json(); } catch { return null; }
+  const products = data.products || [];
+  if (!products.length) return null;
+  for (const p of products) p._score = _warmScorePCProduct(p, card);
+  products.sort((a, b) => b._score - a._score);
+  const best = products[0];
+  if (best._score < 10) return null; // too uncertain
+  return {
+    pcUngraded: _warmParsePC(best.price1),
+    pcPsa10:    _warmParsePC(best.price2),
+    pcGrade9:   _warmParsePC(best.price3),
+    market:     _warmParsePC(best.price1),
+    mid:        _warmParsePC(best.price1),
+    pcName:     best.productName || '',
+    pcConsole:  best.consoleName || '',
+    pcId:       best.id || '',
+    source:     'pricecharting',
+    _ts:        Date.now(),
+  };
+}
+
+function _warmSnapKey(snap, key) {
+  if (!snap?.data?.[key]) return [];
+  try { return JSON.parse(snap.data[key]) || []; } catch { return []; }
+}
+
+async function handleCronRefresh(env) {
+  if (!env.SYNC_KV) return;
+  let listed;
+  try { listed = await env.SYNC_KV.list({ prefix: 'sync:' }); } catch { return; }
+  for (const { name: kvKey } of (listed.keys || [])) {
+    const pairCode = kvKey.slice('sync:'.length);
+    if (!PAIR_CODE_REGEX.test(pairCode)) continue;
+    let snap;
+    try {
+      const raw = await env.SYNC_KV.get(kvKey);
+      if (!raw) continue;
+      snap = JSON.parse(raw);
+    } catch { continue; }
+    const allCards = [
+      ..._warmSnapKey(snap, 'pkm-portfolio'),
+      ..._warmSnapKey(snap, 'pkm-wishlist'),
+      ..._warmSnapKey(snap, 'pkm-watchlist-v1'),
+    ];
+    const cardMap = new Map();
+    for (const card of allCards) {
+      const id = card.i || card.id || card.cardId;
+      if (id && !cardMap.has(id)) cardMap.set(id, card);
+    }
+    const cards = [...cardMap.entries()].slice(0, PC_WARM_MAX_PER_USER);
+    if (!cards.length) continue;
+    const priceMap = {};
+    let ci = 0;
+    await Promise.all(Array.from({ length: Math.min(PC_WARM_CONCURRENCY, cards.length) }, async () => {
+      while (ci < cards.length) {
+        const [cardId, card] = cards[ci++];
+        try {
+          const price = await _warmFetchPCCard(card);
+          if (price && price.pcUngraded > 0) priceMap[cardId] = price;
+        } catch {}
+      }
+    }));
+    if (Object.keys(priceMap).length > 0) {
+      await env.SYNC_KV.put(
+        `price-warm:${pairCode}`,
+        JSON.stringify({ ts: Date.now(), prices: priceMap }),
+        { expirationTtl: PC_WARM_KV_TTL },
+      );
+    }
+  }
+}
+
+// GET /price-warm?key=<pairCode> — returns the pre-warmed price map for this user.
+async function handlePriceWarm(request, env, url) {
+  const ch = corsHeaders(request);
+  if (!env.SYNC_KV) return _jsonResp(503, { error: 'Not configured' }, ch);
+  const key = (url.searchParams.get('key') || '').trim();
+  if (!PAIR_CODE_REGEX.test(key)) return _jsonResp(400, { error: 'Invalid key' }, ch);
+  const raw = await env.SYNC_KV.get(`price-warm:${key}`);
+  if (!raw) return _jsonResp(200, { prices: {}, ts: 0 }, ch);
+  return new Response(raw, { headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' } });
+}
+
 export default {
   async fetch(request, env, ctx) {
     try { return await handle(request, env); }
@@ -1679,5 +1826,8 @@ export default {
         status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
       });
     }
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(handleCronRefresh(env));
   },
 };
