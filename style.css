@@ -7555,6 +7555,8 @@ section.card.is-collapsed { padding-bottom: 18px; }
 }
 .qs-code-hint { font-size: 11px; color: var(--text-muted); text-align: center; }
 .qs-copy-btn { font-size: 0.8em; padding: 4px 12px; margin-top: 2px; }
+.qs-personal-actions { display: flex; gap: 8px; margin-top: 6px; }
+.qs-personal-actions .sync-btn { flex: 1; justify-content: center; font-size: 0.82em; }
 .qs-divider {
   text-align: center; position: relative;
   color: var(--text-dim); font-size: 0.8em;

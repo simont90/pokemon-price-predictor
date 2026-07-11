@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260712t">
+  <link rel="stylesheet" href="style.css?v=20260712u">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -292,10 +292,37 @@
           <button class="sync-tab" data-tab="cloud" type="button" role="tab">Cloud sync</button>
         </div>
 
-        <!-- Tab 0: Quick Sync — one-shot transfer, no account needed -->
+        <!-- Tab 0: Quick Sync — persistent personal code + one-shot transfer -->
         <div class="sync-tab-content sync-tab-quick is-active" data-tab="quick">
-          <p class="sync-intro">Send your collection to another device in seconds. Generate a code here, then enter it on the other device.</p>
-          <div class="qs-block">
+          <!-- Personal Sync Code (set once, use on every device) -->
+          <div id="qsPersonalSetup" class="qs-block">
+            <div class="qs-block-label">Your Sync Code</div>
+            <p class="sync-intro" style="margin:0 0 8px">Set a personal code once. Enter it on all your devices and tap Sync — data merges both ways.</p>
+            <button class="sync-btn sync-btn-primary qs-gen-btn" id="qsPersonalGenBtn" type="button">Generate my sync code</button>
+            <div class="qs-divider" style="margin:10px 0"><span>or enter one you have</span></div>
+            <div class="sync-field">
+              <input id="qsPersonalSetInput" type="text" class="sync-input qs-code-input"
+                     placeholder="XXXX-XXXX" maxlength="9" autocomplete="off"
+                     inputmode="text" autocapitalize="characters">
+            </div>
+            <button class="sync-btn sync-btn-ghost" id="qsPersonalSetSaveBtn" type="button" disabled>Use this code</button>
+          </div>
+          <div id="qsPersonalActive" class="qs-block" style="display:none">
+            <div class="qs-block-label">Your Sync Code</div>
+            <div class="qs-code-wrap">
+              <div class="qs-code" id="qsPersonalCodeDisplay">—</div>
+              <div class="qs-code-hint">Enter this code on your other devices and tap Sync</div>
+            </div>
+            <button class="sync-btn sync-btn-primary qs-gen-btn" id="qsPersonalSyncBtn" type="button">Sync now</button>
+            <div class="sync-cloud-log" id="qsPersonalLog"></div>
+            <div class="qs-personal-actions">
+              <button class="sync-btn sync-btn-ghost" id="qsPersonalCopyBtn" type="button">Copy code</button>
+              <button class="sync-btn sync-btn-ghost" id="qsPersonalChangeBtn" type="button">Change code</button>
+            </div>
+          </div>
+          <div class="qs-divider" id="qsPersonalDivider" style="display:none"><span>or transfer once</span></div>
+          <!-- One-time transfer -->
+          <div class="qs-block" id="qsOnceBlock" style="display:none">
             <div class="qs-block-label">Send from this device</div>
             <button class="sync-btn sync-btn-primary qs-gen-btn" id="qsGenBtn" type="button">Generate code</button>
             <div class="qs-code-wrap" id="qsCodeWrap" style="display:none">
@@ -305,8 +332,8 @@
             </div>
             <div class="sync-cloud-log" id="qsSendLog"></div>
           </div>
-          <div class="qs-divider"><span>or</span></div>
-          <div class="qs-block">
+          <div class="qs-divider" id="qsOnceDivider" style="display:none"><span>or</span></div>
+          <div class="qs-block" id="qsReceiveBlock" style="display:none">
             <div class="qs-block-label">Receive on this device</div>
             <div class="sync-field">
               <label for="qsCodeInput">Code from another device</label>
@@ -2380,8 +2407,35 @@
         <div id="toolsMappingMount"></div>
       </div>
       <div id="toolsQsPanel" style="display:none">
-        <p class="sync-intro">Send your collection to another device in seconds. Generate a code here, then enter it on the other device.</p>
-        <div class="qs-block">
+        <!-- Personal Sync Code (set once, use on every device) -->
+        <div id="tqsPersonalSetup" class="qs-block">
+          <div class="qs-block-label">Your Sync Code</div>
+          <p class="sync-intro" style="margin:0 0 8px">Set a personal code once. Enter it on all your devices and tap Sync — data merges both ways.</p>
+          <button class="sync-btn sync-btn-primary qs-gen-btn" id="tqsPersonalGenBtn" type="button">Generate my sync code</button>
+          <div class="qs-divider" style="margin:10px 0"><span>or enter one you have</span></div>
+          <div class="sync-field">
+            <input id="tqsPersonalSetInput" type="text" class="sync-input qs-code-input"
+                   placeholder="XXXX-XXXX" maxlength="9" autocomplete="off"
+                   inputmode="text" autocapitalize="characters">
+          </div>
+          <button class="sync-btn sync-btn-ghost" id="tqsPersonalSetSaveBtn" type="button" disabled>Use this code</button>
+        </div>
+        <div id="tqsPersonalActive" class="qs-block" style="display:none">
+          <div class="qs-block-label">Your Sync Code</div>
+          <div class="qs-code-wrap">
+            <div class="qs-code" id="tqsPersonalCodeDisplay">—</div>
+            <div class="qs-code-hint">Enter this code on your other devices and tap Sync</div>
+          </div>
+          <button class="sync-btn sync-btn-primary qs-gen-btn" id="tqsPersonalSyncBtn" type="button">Sync now</button>
+          <div class="sync-cloud-log" id="tqsPersonalLog"></div>
+          <div class="qs-personal-actions">
+            <button class="sync-btn sync-btn-ghost" id="tqsPersonalCopyBtn" type="button">Copy code</button>
+            <button class="sync-btn sync-btn-ghost" id="tqsPersonalChangeBtn" type="button">Change code</button>
+          </div>
+        </div>
+        <div class="qs-divider" id="tqsPersonalDivider" style="display:none"><span>or transfer once</span></div>
+        <!-- One-time transfer -->
+        <div class="qs-block" id="tqsOnceBlock" style="display:none">
           <div class="qs-block-label">Send from this device</div>
           <button class="sync-btn sync-btn-primary qs-gen-btn" id="tqsGenBtn" type="button">Generate code</button>
           <div class="qs-code-wrap" id="tqsCodeWrap" style="display:none">
@@ -2391,8 +2445,8 @@
           </div>
           <div class="sync-cloud-log" id="tqsSendLog"></div>
         </div>
-        <div class="qs-divider"><span>or</span></div>
-        <div class="qs-block">
+        <div class="qs-divider" id="tqsOnceDivider" style="display:none"><span>or</span></div>
+        <div class="qs-block" id="tqsReceiveBlock" style="display:none">
           <div class="qs-block-label">Receive on this device</div>
           <div class="sync-field">
             <label for="tqsCodeInput">Code from another device</label>
@@ -2973,7 +3027,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260712t"></script>
+  <script src="app.js?v=20260712u"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

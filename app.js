@@ -23594,6 +23594,126 @@ function _qsGenCode() {
   return s.slice(0, 4) + '-' + s.slice(4);
 }
 
+const PERSONAL_SYNC_KEY = 'pkm-qs-personal-v1'; // device-local, not synced
+
+function _wirePersonalSync(pfx) {
+  const $ = id => document.getElementById(id);
+  const setup       = $(pfx + 'PersonalSetup');
+  const active      = $(pfx + 'PersonalActive');
+  const divider     = $(pfx + 'PersonalDivider');
+  const onceBlock   = $(pfx + 'OnceBlock');
+  const onceDivider = $(pfx + 'OnceDivider');
+  const rcvBlock    = $(pfx + 'ReceiveBlock');
+  const genBtn      = $(pfx + 'PersonalGenBtn');
+  const setInput    = $(pfx + 'PersonalSetInput');
+  const setSaveBtn  = $(pfx + 'PersonalSetSaveBtn');
+  const codeDisplay = $(pfx + 'PersonalCodeDisplay');
+  const syncBtn     = $(pfx + 'PersonalSyncBtn');
+  const log         = $(pfx + 'PersonalLog');
+  const copyBtn     = $(pfx + 'PersonalCopyBtn');
+  const changeBtn   = $(pfx + 'PersonalChangeBtn');
+  if (!setup) return;
+
+  function _log(msg, kind) {
+    if (!log) return;
+    log.textContent = msg;
+    log.className = 'sync-cloud-log' + (kind ? ' sync-log-' + kind : '');
+  }
+  function _stored() {
+    try { return localStorage.getItem(PERSONAL_SYNC_KEY) || ''; } catch { return ''; }
+  }
+  function _save(code) {
+    try { localStorage.setItem(PERSONAL_SYNC_KEY, code); } catch {}
+  }
+  function _clear() {
+    try { localStorage.removeItem(PERSONAL_SYNC_KEY); } catch {}
+  }
+  function _render() {
+    const code = _stored();
+    const hasCode = code.length >= 8;
+    setup.style.display       = hasCode ? 'none' : '';
+    active.style.display      = hasCode ? '' : 'none';
+    if (divider)     divider.style.display     = hasCode ? '' : 'none';
+    if (onceBlock)   onceBlock.style.display   = hasCode ? '' : 'none';
+    if (onceDivider) onceDivider.style.display = hasCode ? '' : 'none';
+    if (rcvBlock)    rcvBlock.style.display    = hasCode ? '' : 'none';
+    if (codeDisplay && hasCode) codeDisplay.textContent = code.slice(0, 4) + '-' + code.slice(4);
+  }
+  _render();
+
+  genBtn?.addEventListener('click', () => {
+    _save(_qsGenCode().replace(/-/g, ''));
+    _render();
+  });
+
+  setInput?.addEventListener('input', () => {
+    let v = setInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (v.length > 8) v = v.slice(0, 8);
+    setInput.value = v.length > 4 ? v.slice(0, 4) + '-' + v.slice(4) : v;
+    if (setSaveBtn) setSaveBtn.disabled = v.length < 8;
+  });
+
+  setSaveBtn?.addEventListener('click', () => {
+    const code = setInput.value.replace(/-/g, '');
+    if (code.length < 8) return;
+    _save(code);
+    if (setInput) setInput.value = '';
+    if (setSaveBtn) setSaveBtn.disabled = true;
+    _render();
+  });
+
+  syncBtn?.addEventListener('click', async () => {
+    const code = _stored();
+    if (!code) return;
+    syncBtn.disabled = true;
+    syncBtn.textContent = 'Syncing…';
+    _log('', '');
+    try {
+      const key = _qsKey(code);
+      const endpoint = _qsEndpoint();
+      // Pull first so we merge remote changes before pushing
+      const getRes = await fetch(`${endpoint}/sync?key=${encodeURIComponent(key)}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!getRes.ok) throw new Error(`Pull failed: HTTP ${getRes.status}`);
+      const j = await getRes.json();
+      if (j && j.data) syncApplyPayload(j, 'merge');
+      // Push the now-merged local snapshot
+      const putRes = await fetch(`${endpoint}/sync?key=${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        body: JSON.stringify(syncBuildPayload()),
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!putRes.ok) throw new Error(`Push failed: HTTP ${putRes.status}`);
+      _log('Synced.', 'ok');
+      try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
+      try { if (typeof renderWishlist  === 'function') renderWishlist();  } catch {}
+    } catch (e) {
+      _log(`Failed: ${e.message}`, 'err');
+    } finally {
+      syncBtn.disabled = false;
+      syncBtn.textContent = 'Sync now';
+    }
+  });
+
+  copyBtn?.addEventListener('click', () => {
+    const code = _stored();
+    if (!code) return;
+    navigator.clipboard?.writeText(code.slice(0, 4) + '-' + code.slice(4)).then(() => {
+      if (copyBtn) { copyBtn.textContent = 'Copied'; setTimeout(() => { copyBtn.textContent = 'Copy code'; }, 1500); }
+    }).catch(() => {});
+  });
+
+  changeBtn?.addEventListener('click', () => {
+    _clear();
+    if (setInput) setInput.value = '';
+    if (setSaveBtn) setSaveBtn.disabled = true;
+    _log('', '');
+    _render();
+  });
+}
+
 function _wireQsGroup(pfx) {
   const $ = id => document.getElementById(id);
   const genBtn      = $(pfx + 'GenBtn');
@@ -23686,8 +23806,10 @@ function _wireQsGroup(pfx) {
 }
 
 function setupQuickSync() {
-  _wireQsGroup('qs');   // sync panel (⊙ icon → Quick Sync tab)
-  _wireQsGroup('tqs');  // Tools → Quick Sync tab
+  _wirePersonalSync('qs');   // sync panel — personal persistent code
+  _wirePersonalSync('tqs');  // Tools — personal persistent code
+  _wireQsGroup('qs');        // sync panel — one-time transfer
+  _wireQsGroup('tqs');       // Tools — one-time transfer
 }
 
 function syncBindOnce() {
