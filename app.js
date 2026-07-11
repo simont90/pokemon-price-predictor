@@ -15839,6 +15839,11 @@ async function psBatchRefresh(ids, label) {
     const rate = _psState.done / ((Date.now() - _psState.startMs) / 1000);
     if (rate > 0) try { localStorage.setItem('pkm-ps-rate', JSON.stringify({ rate, ts: Date.now() })); } catch {}
   }
+  // Final definitive flush of the seen set — guarantees localStorage matches in-memory
+  // even if individual per-card writes failed silently (e.g. transient quota pressure)
+  if (_priceSeen && _priceSeen.size > 0) {
+    try { localStorage.setItem(PRICE_SEEN_KEY, JSON.stringify([..._priceSeen])); } catch {}
+  }
   psUpdateStats();
   psHideProgress();
   psSetButtonsDisabled(false);
@@ -22951,6 +22956,7 @@ const SYNC_KEYS = [
   'pkm-ace-prices-v1',           // ACE Grading sold prices by grade per card
   'pkm-vintage-v1',              // Vintage page targets (WOTC-era PSA hunt list)
   'pkm-dupe-dismissed-v1',        // Dismissed duplicate / counterpart pairs
+  'pkm-price-seen-v1',           // Ever-fetched card IDs (persists across cache evictions)
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
@@ -23056,6 +23062,8 @@ function syncApplyPayload(payload, mode) {
     if (typeof acquisitions !== 'undefined') acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}');
     if (typeof binderSpeciesOverrides !== 'undefined') binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species-overrides-v1') || '{}');
     if (typeof binderPairings !== 'undefined') binderPairings = JSON.parse(localStorage.getItem('pkm-binder-pairings-v1') || '{}');
+    // Reset seen set so next getPriceSeen() re-reads from localStorage (may have merged remote IDs)
+    _priceSeen = null;
   } catch {}
   // Re-inject user-added cards that arrived from another device, then rebuild
   // the search index so they appear immediately without a page reload.
