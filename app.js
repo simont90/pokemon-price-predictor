@@ -22962,6 +22962,7 @@ const SYNC_KEYS = [
   'pkm-vintage-v1',              // Vintage page targets (WOTC-era PSA hunt list)
   'pkm-dupe-dismissed-v1',        // Dismissed duplicate / counterpart pairs
   'pkm-price-seen-v1',           // Ever-fetched card IDs (persists across cache evictions)
+  'pkm-live-prices-v5',         // Actual price cache (synced so both devices start warm)
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
@@ -23067,8 +23068,9 @@ function syncApplyPayload(payload, mode) {
     if (typeof acquisitions !== 'undefined') acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}');
     if (typeof binderSpeciesOverrides !== 'undefined') binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species-overrides-v1') || '{}');
     if (typeof binderPairings !== 'undefined') binderPairings = JSON.parse(localStorage.getItem('pkm-binder-pairings-v1') || '{}');
-    // Reset seen set so next getPriceSeen() re-reads from localStorage (may have merged remote IDs)
+    // Reset seen set and price cache so next read re-reads from localStorage (may have merged remote data)
     _priceSeen = null;
+    _priceCache = null;
   } catch {}
   // Re-inject user-added cards that arrived from another device, then rebuild
   // the search index so they appear immediately without a page reload.
@@ -23689,6 +23691,7 @@ function _wirePersonalSync(pfx) {
       _log('Synced.', 'ok');
       try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
       try { if (typeof renderWishlist  === 'function') renderWishlist();  } catch {}
+      try { if (typeof psUpdateStats   === 'function') psUpdateStats();   } catch {}
     } catch (e) {
       _log(`Failed: ${e.message}`, 'err');
     } finally {
