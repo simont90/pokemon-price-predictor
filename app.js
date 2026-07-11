@@ -585,6 +585,8 @@ async function init() {
   _setupHomePip();
   // Global 6AM GMT refresh: fetch live prices for all tracked cards once per day.
   setTimeout(() => { try { _globalRefreshIfDue(); } catch {} }, 800);
+  // Daily 3AM local refresh: silently fill in untracked + unviewed cards.
+  setTimeout(() => { try { _autoRefreshUntrackedIfDue(); } catch {} }, 5000);
 }
 
 // Re-check the 6AM boundary whenever the tab regains focus — handles the case
@@ -592,11 +594,15 @@ async function init() {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     try { _globalRefreshIfDue(); } catch {}
+    try { _autoRefreshUntrackedIfDue(); } catch {}
   }
 });
 // Periodic check every 5 minutes so the refresh fires even if the tab stays
-// open across 6AM without any user interaction (no visibilitychange event).
-setInterval(() => { try { _globalRefreshIfDue(); } catch {} }, 5 * 60 * 1000);
+// open across 6AM/3AM without any user interaction (no visibilitychange event).
+setInterval(() => {
+  try { _globalRefreshIfDue(); } catch {}
+  try { _autoRefreshUntrackedIfDue(); } catch {}
+}, 5 * 60 * 1000);
 
 // ---- Currency ----
 function usdToGbp(usd) { return usd * fxRate; }
@@ -8092,6 +8098,32 @@ function _globalRefreshIfDue() {
 function forceRefreshAllPrices() {
   _markGlobalRefreshed();
   return _globalSilentRefresh();
+}
+
+// ── Daily 3AM auto-refresh: untracked + unviewed cards ─────────────────────
+// Fires once per day after 3AM LOCAL time. Only refreshes cards that have
+// never been fetched (no cache entry, not in tracked lists). Designed to run
+// while the device charges overnight so prices are populated by morning.
+// Key is device-local (not in SYNC_KEYS) — each device manages its own cache.
+const AUTO_REFRESH_UNTRACKED_KEY = 'pkm-auto-refresh-untracked-ts';
+
+function _last3AMLocal() {
+  const now = new Date();
+  const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 3, 0, 0, 0);
+  if (now < t) t.setDate(t.getDate() - 1);
+  return t.getTime();
+}
+
+function _autoRefreshUntrackedIfDue() {
+  if (_psState.running || _globalRefreshRunning) return;
+  if (!cardData?.cards?.length) return;
+  const last = parseInt(localStorage.getItem(AUTO_REFRESH_UNTRACKED_KEY) || '0', 10);
+  if (last >= _last3AMLocal()) return;
+  const ids = psUntrackedUnviewedIds();
+  if (!ids.length) return;
+  // Mark before starting so a page reload mid-run doesn't re-trigger today.
+  localStorage.setItem(AUTO_REFRESH_UNTRACKED_KEY, String(Date.now()));
+  psBatchRefresh(ids, 'Auto-refresh: untracked cards (daily)');
 }
 
 // ── Binder background pre-fetch ────────────────────────────────────────────
