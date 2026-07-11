@@ -21429,7 +21429,10 @@ function setupPageNav() {
   const toolsAccountPanel = document.getElementById('toolsAccountPanel');
   if (toolsAccountPanel) {
     const authContent = document.querySelector('.sync-tab-account');
-    if (authContent) toolsAccountPanel.appendChild(authContent);
+    if (authContent) {
+      toolsAccountPanel.appendChild(authContent);
+      authContent.style.display = ''; // clear display:none set by sync tab system
+    }
   }
 
   // --- Wire the tab buttons + hash routing --------------------------
@@ -21850,11 +21853,13 @@ function setupToolsTabs() {
     const syncPanel    = document.getElementById('toolsSyncPanel');
     const dupesPanel   = document.getElementById('toolsDupesPanel');
     const accountPanel = document.getElementById('toolsAccountPanel');
+    const qsPanel      = document.getElementById('toolsQsPanel');
     const mappingPanel = document.getElementById('toolsMappingPanel');
-    if (syncPanel)    syncPanel.style.display    = tab === 'sync'    ? '' : 'none';
-    if (dupesPanel)   dupesPanel.style.display   = tab === 'dupes'   ? '' : 'none';
-    if (accountPanel) accountPanel.style.display = tab === 'account' ? '' : 'none';
-    if (mappingPanel) mappingPanel.style.display = tab === 'mapping' ? '' : 'none';
+    if (syncPanel)    syncPanel.style.display    = tab === 'sync'      ? '' : 'none';
+    if (dupesPanel)   dupesPanel.style.display   = tab === 'dupes'     ? '' : 'none';
+    if (accountPanel) accountPanel.style.display = tab === 'account'   ? '' : 'none';
+    if (qsPanel)      qsPanel.style.display      = tab === 'quicksync' ? '' : 'none';
+    if (mappingPanel) mappingPanel.style.display = tab === 'mapping'   ? '' : 'none';
     if (tab === 'dupes')   renderToolsDuplicates();
     if (tab === 'mapping') _renderMappingPanel();
   });
@@ -23589,19 +23594,19 @@ function _qsGenCode() {
   return s.slice(0, 4) + '-' + s.slice(4);
 }
 
-function setupQuickSync() {
+function _wireQsGroup(pfx) {
   const $ = id => document.getElementById(id);
-  const genBtn      = $('qsGenBtn');
-  const codeWrap    = $('qsCodeWrap');
-  const codeDisplay = $('qsCodeDisplay');
-  const copyBtn     = $('qsCopyBtn');
-  const sendLog     = $('qsSendLog');
-  const codeInput   = $('qsCodeInput');
-  const receiveBtn  = $('qsReceiveBtn');
-  const receiveLog  = $('qsReceiveLog');
+  const genBtn      = $(pfx + 'GenBtn');
+  const codeWrap    = $(pfx + 'CodeWrap');
+  const codeDisplay = $(pfx + 'CodeDisplay');
+  const copyBtn     = $(pfx + 'CopyBtn');
+  const sendLog     = $(pfx + 'SendLog');
+  const codeInput   = $(pfx + 'CodeInput');
+  const receiveBtn  = $(pfx + 'ReceiveBtn');
+  const receiveLog  = $(pfx + 'ReceiveLog');
   if (!genBtn) return;
 
-  function _qsLog(el, msg, kind) {
+  function _log(el, msg, kind) {
     if (!el) return;
     el.textContent = msg;
     el.className = 'sync-cloud-log' + (kind ? ' sync-log-' + kind : '');
@@ -23610,7 +23615,7 @@ function setupQuickSync() {
   genBtn.addEventListener('click', async () => {
     genBtn.disabled = true;
     genBtn.textContent = 'Pushing data…';
-    _qsLog(sendLog, '', '');
+    _log(sendLog, '', '');
     try {
       const code = _qsGenCode();
       const key = _qsKey(code);
@@ -23624,9 +23629,9 @@ function setupQuickSync() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       codeDisplay.textContent = code;
       codeWrap.style.display = '';
-      _qsLog(sendLog, 'Data sent — enter the code on your other device.', 'ok');
+      _log(sendLog, 'Data sent — enter the code on your other device.', 'ok');
     } catch (e) {
-      _qsLog(sendLog, `Failed: ${e.message}`, 'err');
+      _log(sendLog, `Failed: ${e.message}`, 'err');
     } finally {
       genBtn.disabled = false;
       genBtn.textContent = 'Generate new code';
@@ -23655,7 +23660,7 @@ function setupQuickSync() {
     if (code.length < 8) return;
     receiveBtn.disabled = true;
     receiveBtn.textContent = 'Getting data…';
-    _qsLog(receiveLog, '', '');
+    _log(receiveLog, '', '');
     try {
       const key = _qsKey(code);
       const endpoint = _qsEndpoint();
@@ -23666,18 +23671,23 @@ function setupQuickSync() {
       const j = await res.json();
       if (!j || !j.data) throw new Error('No data found — check the code and try again');
       const result = syncApplyPayload(j, 'merge');
-      _qsLog(receiveLog, `Got ${result.applied} keys — collection updated.`, 'ok');
+      _log(receiveLog, `Got ${result.applied} keys — collection updated.`, 'ok');
       codeInput.value = '';
       receiveBtn.disabled = true;
       try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
       try { if (typeof renderWishlist  === 'function') renderWishlist();  } catch {}
     } catch (e) {
-      _qsLog(receiveLog, `Failed: ${e.message}`, 'err');
+      _log(receiveLog, `Failed: ${e.message}`, 'err');
     } finally {
       if (receiveBtn.textContent === 'Getting data…') receiveBtn.textContent = 'Get data';
       if (!receiveBtn.disabled) receiveBtn.disabled = false;
     }
   });
+}
+
+function setupQuickSync() {
+  _wireQsGroup('qs');   // sync panel (⊙ icon → Quick Sync tab)
+  _wireQsGroup('tqs');  // Tools → Quick Sync tab
 }
 
 function syncBindOnce() {

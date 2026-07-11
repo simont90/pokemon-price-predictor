@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260712s">
+  <link rel="stylesheet" href="style.css?v=20260712t">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2363,6 +2363,7 @@
         <button class="ptab ptab-active" data-toolstab="sync" role="tab" aria-selected="true">Price Sync</button>
         <button class="ptab" data-toolstab="dupes" role="tab" aria-selected="false">Duplicates&nbsp;<span class="tools-dupe-badge" id="toolsDupeBadge" style="display:none">0</span></button>
         <button class="ptab" data-toolstab="account" role="tab" aria-selected="false">Account</button>
+        <button class="ptab" data-toolstab="quicksync" role="tab" aria-selected="false">Quick Sync</button>
         <button class="ptab" data-toolstab="mapping" role="tab" aria-selected="false">Card Mapping&nbsp;<span class="tools-map-badge" id="toolsMapBadge" style="display:none">0</span></button>
       </div>
       <div id="toolsSyncPanel">
@@ -2377,6 +2378,31 @@
       </div>
       <div id="toolsMappingPanel" style="display:none">
         <div id="toolsMappingMount"></div>
+      </div>
+      <div id="toolsQsPanel" style="display:none">
+        <p class="sync-intro">Send your collection to another device in seconds. Generate a code here, then enter it on the other device.</p>
+        <div class="qs-block">
+          <div class="qs-block-label">Send from this device</div>
+          <button class="sync-btn sync-btn-primary qs-gen-btn" id="tqsGenBtn" type="button">Generate code</button>
+          <div class="qs-code-wrap" id="tqsCodeWrap" style="display:none">
+            <div class="qs-code" id="tqsCodeDisplay">—</div>
+            <div class="qs-code-hint">Enter this code on your other device · valid for 24h</div>
+            <button class="sync-btn sync-btn-ghost qs-copy-btn" id="tqsCopyBtn" type="button">Copy code</button>
+          </div>
+          <div class="sync-cloud-log" id="tqsSendLog"></div>
+        </div>
+        <div class="qs-divider"><span>or</span></div>
+        <div class="qs-block">
+          <div class="qs-block-label">Receive on this device</div>
+          <div class="sync-field">
+            <label for="tqsCodeInput">Code from another device</label>
+            <input id="tqsCodeInput" type="text" class="sync-input qs-code-input"
+                   placeholder="XXXX-XXXX" maxlength="9" autocomplete="off"
+                   inputmode="text" autocapitalize="characters">
+          </div>
+          <button class="sync-btn sync-btn-primary" id="tqsReceiveBtn" type="button" disabled>Get data</button>
+          <div class="sync-cloud-log" id="tqsReceiveLog"></div>
+        </div>
       </div>
       <div class="tools-display-section">
         <div class="tools-display-label">Display</div>
@@ -2947,7 +2973,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260712s"></script>
+  <script src="app.js?v=20260712t"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
