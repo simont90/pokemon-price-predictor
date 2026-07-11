@@ -627,6 +627,18 @@ function getCharacterScore(cardName) {
   return 3.5;
 }
 
+function _getSpikeCharInfo(cardName) {
+  const nm = (cardName || '').toLowerCase();
+  for (const [tier, data] of Object.entries(CHAR_TIERS)) {
+    for (const name of data.names) {
+      if (nm.includes(name)) {
+        return { tier, score: data.score, displayName: name.charAt(0).toUpperCase() + name.slice(1) };
+      }
+    }
+  }
+  return null;
+}
+
 function getAppealScore(cardName) {
   const name = extractPokemonName(cardName);
   for (const [tier, data] of Object.entries(APPEAL_TIERS)) {
@@ -6504,6 +6516,29 @@ function _buildMassGradeInsight(item) {
   if (evProfitGBP >= 50)  return `Solid volume play — ~${copiesNeeded} submissions per PSA 10 at ${gemPct}% gem rate. Net after costs and subgem recovery: ~${fmtGBPDirect(evProfitGBP)}.`;
   if (evProfitGBP > 0)    return `Thin but positive EV — ${multiplier.toFixed(1)}× multiple and ~${copiesNeeded} copies needed per PSA 10 at ${gemPct}% gem rate. Scout for under-market raws to improve margin.`;
   return `Tight EV at current raw prices — ${multiplier.toFixed(1)}× grading premium but ${copiesNeeded} copies needed at ${gemPct}% gem rate. Only viable if raw can be sourced below ${fmtGBPDirect(rawGBP)}.`;
+}
+
+function _buildSpikeWatchInsight(item) {
+  const { card, rawGBP, psa10GBP, multiplier, charTier, charDisplayName } = item;
+  if (charTier === 'S') {
+    if (psa10GBP > 0 && multiplier >= 8) {
+      return `${charDisplayName} is one of the most collected Pokémon — and the graded market proves it. At ${fmtGBPDirect(rawGBP)} raw with a ${multiplier.toFixed(0)}× PSA 10 premium, this sits in the zone where collector attention hasn't fully reached raw pricing yet.`;
+    }
+    if (psa10GBP > 0) {
+      return `S-tier character with a ${multiplier.toFixed(1)}× PSA 10 premium in a vintage WOTC print. ${charDisplayName} collector demand is consistent and growing — ${fmtGBPDirect(rawGBP)} raw is still accessible before the gap narrows.`;
+    }
+    return `${charDisplayName} is one of the most enduringly popular Pokémon. Vintage WOTC holos of S-tier characters routinely spike when collector attention rotates — ${fmtGBPDirect(rawGBP)} raw is a low-friction entry before that happens. Hit Refresh to see live PSA 10 premium.`;
+  }
+  if (charTier === 'A') {
+    if (psa10GBP > 0 && multiplier >= 8) {
+      return `${charDisplayName} has a passionate collector fanbase, and the ${multiplier.toFixed(0)}× PSA 10 premium confirms it. The gap between raw at ${fmtGBPDirect(rawGBP)} and graded copies makes this an asymmetric vintage hold.`;
+    }
+    if (psa10GBP > 0) {
+      return `A-tier cult following with a ${multiplier.toFixed(1)}× PSA 10 premium — ${charDisplayName} holos in WOTC tend to spike when the character has a moment. At ${fmtGBPDirect(rawGBP)} raw, there's room to run before that catalyst arrives.`;
+    }
+    return `${charDisplayName} has an engaged collector fanbase. WOTC-era holos of cult Pokémon often see sharp price moves — at ${fmtGBPDirect(rawGBP)} raw there's genuine upside if attention arrives. Refresh for live PSA 10 data.`;
+  }
+  return `Vintage WOTC holo with dedicated collector demand at ${fmtGBPDirect(rawGBP)} raw. Limited original print run and strong character recognition make this a spike candidate. Refresh prices to see graded premium.`;
 }
 
 function _toggleUpgradeFromSO(idx) {
@@ -24750,6 +24785,30 @@ function _soRefreshIds() {
   mgScored.sort((a, b) => b.mult - a.mult);
   mgScored.slice(0, 20).forEach(s => ids.add(s.id));
 
+  // Spike Watch tab: vintage WOTC EN S/A-tier holos with affordable raw, top 20 by spike score
+  if (typeof _vintageSets === 'function') {
+    const swVinSets = new Set(_vintageSets().map(s => s.code));
+    const swFx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+    const SW_RAW_CAP_GBP = 300;
+    const swScored = [];
+    for (const card of (cardData?.cards || [])) {
+      if (card.lang === 'JP') continue;
+      if (!swVinSets.has(card.sc)) continue;
+      const rc = (card.rc || '').toUpperCase();
+      if (!['R', 'HR'].includes(rc)) continue;
+      const charInfo = _getSpikeCharInfo(card.n);
+      if (!charInfo || charInfo.score < 7.5) continue;
+      const rawUSD = card.p || 0;
+      if (!rawUSD || rawUSD <= 0) continue;
+      const rawGBP = usdToGbp(rawUSD);
+      if (rawGBP > SW_RAW_CAP_GBP) continue;
+      const rarityMult = rc === 'HR' ? 2.5 : 2.0;
+      swScored.push({ id: card.i, score: charInfo.score * rarityMult });
+    }
+    swScored.sort((a, b) => b.score - a.score);
+    swScored.slice(0, 20).forEach(s => ids.add(s.id));
+  }
+
   return [...ids].filter(Boolean);
 }
 
@@ -25111,6 +25170,132 @@ function renderStandouts() {
     return;
   }
   // — end Mass Grade tab —
+
+  // — Spike Watch tab —
+  if (_soGrade === 'spike') {
+    const swSubEl = document.getElementById('soSubtitle');
+    if (swSubEl) swSubEl.textContent = 'Vintage WOTC-era holos with S/A-tier characters still at accessible raw prices — candidates to spike when collector attention arrives.';
+
+    const SW_RAW_CAP_GBP = 300;
+    const swVinSets = new Set([
+      ...((typeof _vintageSets === 'function' ? _vintageSets() : []).map(s => s.code)),
+    ]);
+
+    const swCandidates = [];
+    for (const card of cardData.cards) {
+      try {
+        if (portfolioIds.has(card.i)) continue;
+        if (card.lang === 'JP') continue;
+        if (!swVinSets.has(card.sc)) continue;
+        const rc = (card.rc || '').toUpperCase();
+        if (!['R', 'HR'].includes(rc)) continue;
+        const charInfo = _getSpikeCharInfo(card.n);
+        if (!charInfo || charInfo.score < 7.5) continue;
+        const rawUSD = getCurrentPrice(card) || card.p || 0;
+        if (!rawUSD || rawUSD <= 0) continue;
+        const rawGBP = usdToGbp(rawUSD);
+        if (rawGBP > SW_RAW_CAP_GBP) continue;
+
+        const cachedRaw = priceCache[card.i];
+        const pd = cachedRaw && _priceCacheIsValid(cachedRaw._ts) ? cachedRaw : null;
+        const psa10USD = getPsa10Anchor(card).usd || (pd?.pcPsa10 > 0 ? pd.pcPsa10 : 0);
+        const psa10GBP = psa10USD > 0 ? psa10USD * fx : 0;
+        const multiplier = (psa10GBP > 0 && rawGBP > 0) ? psa10GBP / rawGBP : 0;
+
+        const rarityMult = rc === 'HR' ? 2.5 : 2.0;
+        const spikeScore = charInfo.score * rarityMult * (multiplier > 0 ? Math.min(multiplier, 50) : (50 / Math.max(rawGBP, 10)));
+
+        swCandidates.push({
+          card, rawGBP, psa10GBP, multiplier,
+          charTier: charInfo.tier,
+          charScore: charInfo.score,
+          charDisplayName: charInfo.displayName,
+          spikeScore,
+          inWishlist: wishlistIds.has(card.i),
+        });
+      } catch (_) {}
+    }
+
+    swCandidates.sort((a, b) => b.spikeScore - a.spikeScore);
+    const swTop = swCandidates.slice(0, 12);
+
+    if (swTop.length === 0) {
+      carousel.innerHTML = '<div class="so-empty">No spike candidates found — vintage card data may still be loading. Use "Refresh Prices" to pull WOTC-era price data.</div>';
+      dotsEl.innerHTML = '';
+    } else {
+      carousel.innerHTML = swTop.map((item, i) => {
+        const { card, rawGBP, psa10GBP, multiplier, charTier, charDisplayName, inWishlist } = item;
+        const imgUrl = _hiresUrl(getCardImg(card));
+        const tierClass = charTier === 'S' ? 'so-sw-tier--s' : charTier === 'A' ? 'so-sw-tier--a' : 'so-sw-tier--b';
+        const insight = _buildSpikeWatchInsight(item);
+        const multStr = multiplier > 0 ? `${multiplier.toFixed(1)}×` : '—';
+        const psa10Str = psa10GBP > 0 ? fmtGBPDirect(psa10GBP) : 'Refresh for data';
+        return `<div class="so-card" data-so-i="${i}">
+          <div class="so-img-wrap">
+            ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
+            <span class="so-tag" style="background:rgba(167,139,250,0.18);color:#a78bfa">Spike Watch</span>
+            ${inWishlist ? `<span class="so-tag" style="background:rgba(253,121,168,0.2);color:#fd79a8;top:auto;bottom:12px">Wishlist</span>` : ''}
+          </div>
+          <div class="so-body">
+            <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
+            <div class="so-set">${esc(card.s || '')}${card.cn ? ' \xb7 #' + esc(card.cn) : ''}</div>
+            <div class="so-sw-header">
+              <span class="so-sw-tier ${tierClass}">${charTier}-tier</span>
+              <span class="so-sw-rarity">${esc(card.r || card.rc || '')}</span>
+            </div>
+            <div class="so-upgrade-scenarios">
+              <div class="so-upgrade-scenario">
+                <span class="so-upg-lbl">Raw now</span>
+                <span class="so-upg-val">${fmtGBPDirect(rawGBP)}</span>
+              </div>
+              <div class="so-upgrade-scenario">
+                <span class="so-upg-lbl">PSA 10</span>
+                <span class="so-upg-val">${psa10Str}${psa10GBP > 0 ? ` <span class="so-upg-dim">${multStr} premium</span>` : ''}</span>
+              </div>
+            </div>
+            <div class="so-key-insight" style="border-color:rgba(167,139,250,0.25)">
+              <div class="so-key-insight-lbl" style="color:#a78bfa">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z"/></svg>
+                Spike Signals
+              </div>
+              <div class="so-key-insight-txt">${esc(insight)}</div>
+            </div>
+            <div class="so-actions">
+              <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
+              ${!inWishlist ? `<button class="so-btn-sec" onclick="toggleCardInWishlist('${esc(card.i)}')">+ Wishlist</button>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+      dotsEl.innerHTML = swTop.map((_, i) =>
+        `<div class="so-dot${i === 0 ? ' active' : ''}" data-dot="${i}"></div>`
+      ).join('');
+
+      if (!carousel.dataset.scrollBound) {
+        carousel.dataset.scrollBound = '1';
+        carousel.addEventListener('scroll', () => {
+          const w = (carousel.querySelector('.so-card')?.offsetWidth || 1) + 16;
+          const idx = Math.round(carousel.scrollLeft / w);
+          dotsEl.querySelectorAll('.so-dot').forEach((d, i2) => d.classList.toggle('active', i2 === idx));
+        }, { passive: true });
+      }
+    }
+
+    const swToggle = document.getElementById('soGradeToggle');
+    if (swToggle && !swToggle.dataset.bound) {
+      swToggle.dataset.bound = '1';
+      swToggle.addEventListener('click', e => {
+        const btn = e.target.closest('[data-grade]');
+        if (!btn) return;
+        _soGrade = btn.dataset.grade;
+        swToggle.querySelectorAll('.sgt-btn').forEach(b => b.classList.toggle('active', b === btn));
+        renderStandouts();
+      });
+    }
+    return;
+  }
+  // — end Spike Watch tab —
 
   // — Vintage tab —
   if (_soGrade === 'vintage') {
