@@ -23569,6 +23569,117 @@ function syncClosePanel() {
   const p = document.getElementById('syncPanel'); if (p) p.style.display = 'none';
 }
 
+// ---- Quick Sync ---------------------------------------------------------------
+// One-shot cross-device transfer using a short 8-char code.
+// Internal pair code = "QUICKSYNC" + 8 chars = 17 chars (fits 16-64 constraint).
+
+function _qsEndpoint() {
+  return syncGetEndpoint() || MKT_WORKER_DEFAULT;
+}
+function _qsKey(code) {
+  return 'QUICKSYNC' + code.replace(/-/g, '').toUpperCase();
+}
+function _qsGenCode() {
+  // Exclude visually ambiguous chars: 0/O, 1/I/l
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const arr = new Uint8Array(8);
+  (self.crypto || window.crypto).getRandomValues(arr);
+  let s = '';
+  for (const b of arr) s += chars[b % chars.length];
+  return s.slice(0, 4) + '-' + s.slice(4);
+}
+
+function setupQuickSync() {
+  const $ = id => document.getElementById(id);
+  const genBtn      = $('qsGenBtn');
+  const codeWrap    = $('qsCodeWrap');
+  const codeDisplay = $('qsCodeDisplay');
+  const copyBtn     = $('qsCopyBtn');
+  const sendLog     = $('qsSendLog');
+  const codeInput   = $('qsCodeInput');
+  const receiveBtn  = $('qsReceiveBtn');
+  const receiveLog  = $('qsReceiveLog');
+  if (!genBtn) return;
+
+  function _qsLog(el, msg, kind) {
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'sync-cloud-log' + (kind ? ' sync-log-' + kind : '');
+  }
+
+  genBtn.addEventListener('click', async () => {
+    genBtn.disabled = true;
+    genBtn.textContent = 'Pushing data…';
+    _qsLog(sendLog, '', '');
+    try {
+      const code = _qsGenCode();
+      const key = _qsKey(code);
+      const endpoint = _qsEndpoint();
+      const res = await fetch(`${endpoint}/sync?key=${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        body: JSON.stringify(syncBuildPayload()),
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      codeDisplay.textContent = code;
+      codeWrap.style.display = '';
+      _qsLog(sendLog, 'Data sent — enter the code on your other device.', 'ok');
+    } catch (e) {
+      _qsLog(sendLog, `Failed: ${e.message}`, 'err');
+    } finally {
+      genBtn.disabled = false;
+      genBtn.textContent = 'Generate new code';
+    }
+  });
+
+  copyBtn?.addEventListener('click', () => {
+    const code = codeDisplay?.textContent;
+    if (!code || code === '—') return;
+    navigator.clipboard?.writeText(code).then(() => {
+      copyBtn.textContent = 'Copied';
+      setTimeout(() => { copyBtn.textContent = 'Copy code'; }, 1500);
+    }).catch(() => {});
+  });
+
+  // Auto-format: uppercase + dash after 4 chars; enable button at 8 chars
+  codeInput?.addEventListener('input', () => {
+    let v = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (v.length > 8) v = v.slice(0, 8);
+    codeInput.value = v.length > 4 ? v.slice(0, 4) + '-' + v.slice(4) : v;
+    receiveBtn.disabled = v.length < 8;
+  });
+
+  receiveBtn?.addEventListener('click', async () => {
+    const code = codeInput.value.replace(/-/g, '');
+    if (code.length < 8) return;
+    receiveBtn.disabled = true;
+    receiveBtn.textContent = 'Getting data…';
+    _qsLog(receiveLog, '', '');
+    try {
+      const key = _qsKey(code);
+      const endpoint = _qsEndpoint();
+      const res = await fetch(`${endpoint}/sync?key=${encodeURIComponent(key)}`, {
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const j = await res.json();
+      if (!j || !j.data) throw new Error('No data found — check the code and try again');
+      const result = syncApplyPayload(j, 'merge');
+      _qsLog(receiveLog, `Got ${result.applied} keys — collection updated.`, 'ok');
+      codeInput.value = '';
+      receiveBtn.disabled = true;
+      try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
+      try { if (typeof renderWishlist  === 'function') renderWishlist();  } catch {}
+    } catch (e) {
+      _qsLog(receiveLog, `Failed: ${e.message}`, 'err');
+    } finally {
+      if (receiveBtn.textContent === 'Getting data…') receiveBtn.textContent = 'Get data';
+      if (!receiveBtn.disabled) receiveBtn.disabled = false;
+    }
+  });
+}
+
 function syncBindOnce() {
   // Show the toggle button (it's hidden by default in the HTML)
   const toggle = document.getElementById('syncToggle');
@@ -23582,6 +23693,7 @@ function syncBindOnce() {
     });
   }
   document.getElementById('syncClose')?.addEventListener('click', syncClosePanel);
+  setupQuickSync();
 
   // Sync nudge chip — tap to push immediately instead of waiting for debounce
   document.getElementById('syncNudgeBtn')?.addEventListener('click', async () => {
