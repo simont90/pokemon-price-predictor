@@ -3362,7 +3362,19 @@ function selectCard(id) {
     if (typeof _predictTabActivate === 'function') _predictTabActivate();
   }
 
-  if (window.innerWidth < 820) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (window.innerWidth < 820) {
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // After the scroll settles, check if pp-maxbuy is behind the fixed nav pill.
+    // This happens in PWA mode on iPhone where the top bar eats ~100px of viewport,
+    // causing the pack cost section to land directly behind the nav.
+    setTimeout(() => {
+      const ppMaxbuy = document.getElementById('ppMaxbuy');
+      const navEl    = document.querySelector('.page-nav');
+      if (!ppMaxbuy || !navEl) return;
+      const gap = ppMaxbuy.getBoundingClientRect().bottom - navEl.getBoundingClientRect().top;
+      if (gap > 0) window.scrollBy({ top: gap + 16, behavior: 'smooth' });
+    }, 450);
+  }
 }
 
 // ---- Japanese Card Image ----
