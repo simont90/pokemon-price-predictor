@@ -8121,11 +8121,11 @@ function _autoRefreshUntrackedIfDue() {
   if (!cardData?.cards?.length) return;
   const last = parseInt(localStorage.getItem(AUTO_REFRESH_UNTRACKED_KEY) || '0', 10);
   if (last >= _last3AMLocal()) return;
-  const ids = psUntrackedUnviewedIds();
+  const ids = psTrackedIds();
   if (!ids.length) return;
   // Mark before starting so a page reload mid-run doesn't re-trigger today.
   localStorage.setItem(AUTO_REFRESH_UNTRACKED_KEY, String(Date.now()));
-  psBatchRefresh(ids, 'Auto-refresh: untracked cards (daily)');
+  psBatchRefresh(ids, 'Auto-refresh: tracked cards (daily 3AM)');
 }
 
 // ── Worker cron price warm-up hydration ────────────────────────────────────
@@ -15713,7 +15713,7 @@ function psHideProgress() {
 }
 
 function psSetButtonsDisabled(disabled) {
-  ['psRefreshSelected', 'psRefreshCollection', 'psRefreshBinder', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psRefreshVintagePSA', 'psRefreshUnderFiver', 'psRefreshUntrackedUnviewed', 'psClearCache', 'psManualGo', 'livePriceRefresh']
+  ['psRefreshSelected', 'psRefreshCollection', 'psRefreshBinder', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psRefreshVintagePSA', 'psRefreshUnderFiver', 'psRefreshUntrackedUnviewed', 'psBucketGo', 'psClearCache', 'psManualGo', 'livePriceRefresh']
     .forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -15806,6 +15806,11 @@ async function psBatchRefresh(ids, label) {
   await Promise.all(workers);
 
   psSetLastSync(Date.now());
+  // Store achieved rate so bucket ETA estimates self-calibrate
+  if (_psState.startMs && _psState.done > 10) {
+    const rate = _psState.done / ((Date.now() - _psState.startMs) / 1000);
+    if (rate > 0) try { localStorage.setItem('pkm-ps-rate', JSON.stringify({ rate, ts: Date.now() })); } catch {}
+  }
   psUpdateStats();
   psHideProgress();
   psSetButtonsDisabled(false);
@@ -15951,6 +15956,32 @@ function setupPriceSync() {
   sel('psRefreshUntrackedUnviewed')?.addEventListener('click', () => {
     const ids = psUntrackedUnviewedIds();
     psBatchRefresh(ids, 'Refresh untracked + unviewed cards');
+  });
+
+  // Bucket refresh — run a fixed slice of untracked+unviewed cards
+  function _psBucketRate() {
+    try {
+      const stored = JSON.parse(localStorage.getItem('pkm-ps-rate') || 'null');
+      if (stored && stored.rate > 0 && Date.now() - stored.ts < 7 * 86400000) return stored.rate;
+    } catch {}
+    return 2; // conservative fallback: 2 cards/sec
+  }
+  function _psBucketFmtEta(count) {
+    const secs = Math.round(count / _psBucketRate());
+    const m = Math.floor(secs / 60), s = secs % 60;
+    return m > 0 ? `~${m}m ${s}s` : `~${s}s`;
+  }
+  function _psBucketUpdateEta() {
+    const etaEl = document.getElementById('psBucketEta');
+    const sel2 = document.getElementById('psBucketSize');
+    if (etaEl && sel2) etaEl.textContent = _psBucketFmtEta(parseInt(sel2.value, 10));
+  }
+  sel('psBucketSize')?.addEventListener('change', _psBucketUpdateEta);
+  _psBucketUpdateEta();
+  sel('psBucketGo')?.addEventListener('click', () => {
+    const count = parseInt(document.getElementById('psBucketSize')?.value || '200', 10);
+    const ids = psUntrackedUnviewedIds().slice(0, count);
+    psBatchRefresh(ids, `Refresh ${count} untracked cards`);
   });
   sel('psManualGo')?.addEventListener('click', psManualRefresh);
   sel('psManualInput')?.addEventListener('keydown', e => {

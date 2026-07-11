@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260712o">
+  <link rel="stylesheet" href="style.css?v=20260712p">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2202,6 +2202,18 @@
               <span class="ps-btn-text">Refresh untracked + unviewed cards</span>
               <span class="ps-btn-hint" id="psUntrackedUnviewedHint">Cards never fetched yet</span>
             </button>
+            <div class="ps-bucket-row" id="psBucketRow">
+              <select class="ps-bucket-sel" id="psBucketSize">
+                <option value="50">50 cards</option>
+                <option value="100">100 cards</option>
+                <option value="200" selected>200 cards</option>
+                <option value="300">300 cards</option>
+                <option value="400">400 cards</option>
+                <option value="500">500 cards</option>
+              </select>
+              <span class="ps-bucket-eta" id="psBucketEta"></span>
+              <button class="ps-btn-bucket" id="psBucketGo" type="button">Refresh this many</button>
+            </div>
             <button class="ps-btn ps-btn-ghost" id="psClearCache" type="button">
               <span class="ps-btn-ico">⌫</span>
               <span class="ps-btn-text">Clear price cache</span>
@@ -2907,7 +2919,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260712o"></script>
+  <script src="app.js?v=20260712p"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

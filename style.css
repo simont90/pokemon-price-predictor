@@ -5535,6 +5535,34 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .ps-btn-primary .ps-btn-hint { opacity: 0.85; }
 
 /* Manual lookup row */
+/* Bucket refresh row — sits below the untracked button */
+.ps-bucket-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px 8px 14px;
+  background: var(--surface-2, rgba(255,255,255,0.02));
+  border: 1px solid var(--border); border-radius: 10px;
+  margin-top: -6px; /* visually attaches below the untracked button */
+}
+.ps-bucket-sel {
+  flex: 1; min-width: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); font-size: 13px; padding: 7px 10px;
+  cursor: pointer;
+}
+.ps-bucket-sel:focus { outline: none; border-color: var(--accent); }
+.ps-bucket-eta {
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  white-space: nowrap; min-width: 52px; text-align: right;
+}
+.ps-btn-bucket {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text-muted); font-size: 12px; font-weight: 600;
+  padding: 7px 14px; cursor: pointer; white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+.ps-btn-bucket:hover { border-color: var(--accent); color: var(--accent); }
+.ps-btn-bucket:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .ps-manual { margin-bottom: 14px; }
 .ps-manual-lbl { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
 .ps-manual-lbl code {
