@@ -25174,7 +25174,9 @@ function renderStandouts() {
   // — Spike Watch tab —
   if (_soGrade === 'spike') {
     const swSubEl = document.getElementById('soSubtitle');
-    if (swSubEl) swSubEl.textContent = 'Vintage WOTC-era holos with S/A-tier characters still at accessible raw prices — candidates to spike when collector attention arrives.';
+    if (swSubEl) swSubEl.textContent = hasLimit
+      ? `Vintage WOTC-era holos with S/A-tier characters within your £${maxBudgetGBP} budget — candidates to spike when collector attention arrives.`
+      : 'Vintage WOTC-era holos with S/A-tier characters still at accessible raw prices — candidates to spike when collector attention arrives.';
 
     const SW_RAW_CAP_GBP = 300;
     const swVinSets = new Set([
@@ -25195,6 +25197,7 @@ function renderStandouts() {
         if (!rawUSD || rawUSD <= 0) continue;
         const rawGBP = usdToGbp(rawUSD);
         if (rawGBP > SW_RAW_CAP_GBP) continue;
+        if (hasLimit && rawGBP > maxBudgetGBP) continue;
 
         const cachedRaw = priceCache[card.i];
         const pd = cachedRaw && _priceCacheIsValid(cachedRaw._ts) ? cachedRaw : null;
