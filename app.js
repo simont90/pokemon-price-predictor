@@ -314,6 +314,32 @@ function _priceCacheIsValid(ts) {
 }
 const PRICE_CACHE_KEY = 'pkm-live-prices-v5'; // v5: adds ACE/CGC/BGS/TAG/SGC 10 anchors from PC full-grade table
 let _priceCache = null; // in-memory mirror; avoids JSON.parse on every getCachedPrice call
+
+// Lightweight "ever-fetched" index — persists card IDs that have been successfully
+// price-fetched at least once, independent of the 500-entry price cache cap.
+// Without this, the "untracked" count never falls because evicted cache entries
+// silently re-enter the untracked list.
+const PRICE_SEEN_KEY = 'pkm-price-seen-v1';
+let _priceSeen = null; // in-memory Set
+
+function getPriceSeen() {
+  if (_priceSeen) return _priceSeen;
+  try {
+    const raw = localStorage.getItem(PRICE_SEEN_KEY);
+    _priceSeen = new Set(raw ? JSON.parse(raw) : []);
+  } catch { _priceSeen = new Set(); }
+  return _priceSeen;
+}
+function markPriceSeen(cardId) {
+  const seen = getPriceSeen();
+  if (seen.has(cardId)) return; // already there — avoid unnecessary writes
+  seen.add(cardId);
+  try { localStorage.setItem(PRICE_SEEN_KEY, JSON.stringify([...seen])); } catch {}
+}
+function clearPriceSeen() {
+  _priceSeen = new Set();
+  try { localStorage.removeItem(PRICE_SEEN_KEY); } catch {}
+}
 // Computation caches — per-card, invalidated when that card's price data changes
 const _sigCache = new Map(); // card.i → { v: computeSignal result, ts }
 const _hcCache  = new Map(); // card.i → { v: computeHoldCore result, ts }
@@ -336,6 +362,8 @@ function setCachedPrice(cardId, data) {
     sorted.slice(0, keys.length - 500).forEach(k => delete cache[k]);
   }
   try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache)); } catch {}
+  // Mark as ever-fetched so the "untracked" count falls even after cache eviction
+  markPriceSeen(cardId);
   // Price changed — signal may shift, so invalidate cached computation for this card
   _sigCache.delete(cardId);
   _hcCache.delete(cardId);
@@ -15894,14 +15922,16 @@ function psCacheIdsUnderFiver() {
     .map(([id]) => id);
 }
 
-// IDs of cards that have never been fetched: not in portfolio/wishlist/watchlist AND not in price cache
+// IDs of cards that have never been fetched: not in portfolio/wishlist/watchlist,
+// not in the price cache, AND not in the ever-fetched seen set.
 function psUntrackedUnviewedIds() {
   if (!cardData?.cards?.length) return [];
   const cache = getPriceCache();
   const tracked = new Set(psTrackedIds());
+  const seen = getPriceSeen();
   return cardData.cards
     .map(c => c?.i)
-    .filter(id => id && !tracked.has(id) && !cache[id]);
+    .filter(id => id && !tracked.has(id) && !cache[id] && !seen.has(id));
 }
 
 function setupPriceSync() {
@@ -15934,6 +15964,8 @@ function setupPriceSync() {
   sel('psClearCache')?.addEventListener('click', () => {
     if (_psState.running) return;
     try { localStorage.removeItem(PRICE_CACHE_KEY); } catch {}
+    _priceCache = null;
+    clearPriceSeen();
     psSetLastSync(0);
     psUpdateStats();
     psLog('Price cache cleared.', 'info');
