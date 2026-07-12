@@ -1785,6 +1785,7 @@ const VINTAGE_CHANNELS = [
   { id: 'UCfEGPbDglUfd4Shi3ebuZCw', name: 'It Was Never a Phase'        },
   { id: 'UCweh8CzIYgMpvgvhniVKNQw', name: 'Jordan Collects'             },
   { id: 'UC-mDbPaXMhSCKgHIjyVX2Vw', name: 'Snomnomnomnom'               },
+  { id: 'UCvq8m0HTf4Mu_tVJO8GFyJg', name: 'Dewgong Don'                  },
 ];
 
 // Seed data from "Everything's About to Change... And Vintage Pokémon Will Explode"
@@ -1815,6 +1816,7 @@ const VINTAGE_INTEL_SEED = {
   sources: [
     { video_id: '1RD5N457AaI', channel: 'PikaPikaPaPa', title: "Everything's About to Change... And Vintage Pokémon Will Explode", published: '2025-07-11' },
     { video_id: 'yCAE55_kkf4', channel: 'PokeTamer', title: 'Vintage Pokémon Cards — What Are They Actually Worth in 2025?', published: '2025-01-01' },
+    { video_id: '41uDYckkWGI', channel: 'Dewgong Don', title: '', published: '2026-07-12' },
   ],
 };
 
