@@ -1764,9 +1764,27 @@ function _warmSnapKey(snap, key) {
 
 // ── Vintage intelligence ─────────────────────────────────────────────────────
 
-const VINTAGE_INTEL_KV_KEY   = 'vintage-intel-v1';
+const VINTAGE_INTEL_KV_KEY    = 'vintage-intel-v1';
 const VINTAGE_INTEL_CHECK_KEY = 'vintage-intel-last-check';
-const VINTAGE_CHANNEL_ID     = 'UCsSA2eBWW7qAwSV_COyW8uQ'; // PikaPikaPaPa
+const VINTAGE_BACKFILL_KEY    = 'vintage-backfill-queue';  // [{id, title}] written from local batch
+const VINTAGE_SEEN_KEY        = 'vintage-seen-videos';      // Set of processed video IDs (JSON array)
+const VINTAGE_BACKFILL_PER_RUN = 15;                        // videos processed per cron run
+
+// All monitored channels — RSS + backfill queue cover historical + new content
+const VINTAGE_CHANNELS = [
+  { id: 'UCsSA2eBWW7qAwSV_COyW8uQ', name: 'MasterBalless/PikaPikaPaPa' },
+  { id: 'UCJrBXKBCYtHrW_PSjZc3amQ', name: 'Phillips Collectibles'      },
+  { id: 'UCEYiwUuZO02Ewqrc5aZlzyQ', name: 'Collectors Corner TCG'       },
+  { id: 'UCd0bq0P8Xz9vEJqdnyqHYrg', name: 'PokeData Dad Guy'            },
+  { id: 'UCH92NLGznIRpQxErnKm_ZHQ', name: 'Sleeve No Card Behind'       },
+  { id: 'UCDFqWkHUKWDMm590DopfCvg', name: 'PokeTamer'                   },
+  { id: 'UCQg9Hzbs5f6A7W1dE46sc2A', name: 'Randolph Pokémon'            },
+  { id: 'UCePvxCHy42gdfsFvNDBRQdQ', name: 'PokeJace'                    },
+  { id: 'UCfEGPbDglUfd4Shi3ebuZCw', name: 'It Was Never a Phase'        },
+  { id: 'UCw47gkI_OV46GQyq08jQ-8w', name: 'Max D Pokémon'               },
+  { id: 'UCweh8CzIYgMpvgvhniVKNQw', name: 'Jordan Collects'             },
+  { id: 'UC-mDbPaXMhSCKgHIjyVX2Vw', name: 'Snomnomnomnom'               },
+];
 
 // Seed data from "Everything's About to Change... And Vintage Pokémon Will Explode"
 // by PikaPikaPaPa (Jul 2025). Re-used as fallback when KV is empty or unreachable.
@@ -1784,7 +1802,7 @@ const VINTAGE_INTEL_SEED = {
       'First Edition print — always prefer over Unlimited even at a grade lower',
       'Set rarity: Fossil, Team Rocket, Gym Challenge, Neo, WOTC Black Star Promos',
     ],
-    macro: 'TPCi leased 1 M+ sq ft in NC for new printing facility → modern card supply will surge, flippers exit, prices temporarily dip then recover stronger. PSA grading volume now >1 M TCG cards/month (4 of last 5 months) — modern card PSA pops will be enormous. Vintage WOTC pops grow only as sealed product is opened (rare). Conclusion: relative scarcity of vintage PSA 10s/9s increases over time.',
+    macro: 'TPCi leased 1 M+ sq ft in NC for new printing facility → modern card supply will surge, flippers exit, prices temporarily dip then recover stronger. PSA grading volume now >1 M TCG cards/month (4 of last 5 months) — modern card PSA pops will be enormous. Vintage WOTC pops grow only as sealed product is opened (rare). Conclusion: relative scarcity of vintage PSA 10s/9s increases over time.\n\nUK MARKET NOTE (PokeTamer 2025): First Edition and Shadowless Base Set cards were almost entirely released in the US — genuinely rare to find in UK bulk lots. Most UK-sourced vintage cards will be Unlimited or 4th Print. Base Set print run hierarchy by value: 1st Edition > Shadowless > Unlimited > 4th Print. Exception: every Base Set Machamp has a 1st Ed stamp (came with starter deck) — only meaningful value if also Shadowless. Price discovery: TCGPlayer listings are overinflated (US-biased); use eBay sold/completed to find real market value, especially for GBP. Real-world data point: 360-card "well-loved" vintage WOTC binder (Base Set–Gym Challenge) sold on eBay UK for £16,945 in 2025 with £1,585 profit after fees.',
   },
   featured_picks: [
     { name: '1st Ed Fossil Zapdos', set: 'fossil', grade: 'PSA 9', price_usd: 330, psa10_usd: 3300, psa10_pop: 378, note: 'PSA 10 tripled in 1 yr; PSA 9 only +14% — strong asymmetry' },
@@ -1794,7 +1812,8 @@ const VINTAGE_INTEL_SEED = {
     { name: 'WOTC Black Star Promo Mew', set: 'basep', grade: 'PSA 9', price_usd: 285, psa10_usd: 4525, psa9_pop: 3239, note: 'Mew brand momentum strong. PSA 10 from $1k to $4.5k in 1 yr' },
   ],
   sources: [
-    { video_id: '1RD5N457AaI', channel: 'PikaPikaPaPa', title: "Everything's About to Change... And Vintage Pokémon Will Explode" },
+    { video_id: '1RD5N457AaI', channel: 'PikaPikaPaPa', title: "Everything's About to Change... And Vintage Pokémon Will Explode", published: '2025-07-11' },
+    { video_id: 'yCAE55_kkf4', channel: 'PokeTamer', title: 'Vintage Pokémon Cards — What Are They Actually Worth in 2025?', published: '2025-01-01' },
   ],
 };
 
@@ -1811,8 +1830,70 @@ async function handleVintageIntel(request, env) {
   return new Response(JSON.stringify(intel), { headers: { ...ch, 'Content-Type': 'application/json' } });
 }
 
-// Cron task: check PikaPikaPaPa's channel for new vintage-relevant videos,
-// fetch their transcripts and distil insights into KV.
+// Helper: fetch + clean a YouTube VTT transcript → plain text (max maxChars)
+async function _fetchTranscript(videoId, maxChars = 12000) {
+  try {
+    const res = await fetch(
+      `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=vtt`,
+      { cf: { cacheTtl: 86400 } },
+    );
+    if (!res.ok) return '';
+    const vtt = await res.text();
+    return vtt
+      .replace(/WEBVTT[\s\S]*?\n\n/, '')
+      .replace(/\d{2}:\d{2}[^\n]*\n/g, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+      .slice(0, maxChars);
+  } catch { return ''; }
+}
+
+// Helper: call Claude Haiku to extract structured insights from a transcript
+async function _extractInsights(transcript, channelName, apiKey) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 700,
+      messages: [{
+        role: 'user',
+        content: `Pokémon TCG investment analyst. Extract insights from this ${channelName} transcript as JSON (omit keys you cannot populate from the content):\n{"key_thesis":string,"buy_signals":[string],"featured_picks":[{"name":string,"set":string,"grade":string,"price_usd":number,"note":string}],"macro_notes":string}\n\nTranscript:\n${transcript}`,
+      }],
+    }),
+  });
+  if (!res.ok) return null;
+  const j = await res.json();
+  const text = j.content?.[0]?.text || '';
+  const m = text.match(/\{[\s\S]+\}/);
+  if (!m) return null;
+  try { return JSON.parse(m[0]); } catch { return null; }
+}
+
+// Merge extracted insights into the running intel object (mutates intel)
+function _mergeInsights(intel, extracted, videoId, channelName, title, published) {
+  intel.sources = intel.sources || [];
+  if (!intel.sources.find(s => s.video_id === videoId)) {
+    intel.sources.unshift({ video_id: videoId, channel: channelName, title, published: published || '' });
+  }
+  if (extracted.featured_picks?.length) {
+    const existingNames = new Set((intel.featured_picks || []).map(p => p.name));
+    for (const p of extracted.featured_picks) {
+      if (!existingNames.has(p.name)) {
+        intel.featured_picks = [p, ...(intel.featured_picks || [])];
+        existingNames.add(p.name);
+      }
+    }
+  }
+  if (extracted.macro_notes) {
+    intel.framework = intel.framework || {};
+    intel.framework.macro = (extracted.macro_notes + '\n\n' + (intel.framework.macro || '')).slice(0, 4000);
+  }
+  intel.ts = Date.now();
+}
+
+// Cron task: (1) watch all channels' RSS for new videos, (2) drain backfill queue
 async function refreshVintageIntel(env) {
   if (!env.SYNC_KV || !env.ANTHROPIC_API_KEY) return;
 
@@ -1821,107 +1902,75 @@ async function refreshVintageIntel(env) {
   if (lastCheck && Date.now() - Number(lastCheck) < 7 * 24 * 3600 * 1000) return;
   await env.SYNC_KV.put(VINTAGE_INTEL_CHECK_KEY, String(Date.now()), { expirationTtl: 8 * 24 * 3600 });
 
-  // Fetch channel RSS
-  let rssText;
+  // Load existing intel + seen-video set
+  let intel = { ...VINTAGE_INTEL_SEED };
+  try { const r = await env.SYNC_KV.get(VINTAGE_INTEL_KV_KEY); if (r) intel = JSON.parse(r); } catch {}
+  let seenIds = new Set((intel.sources || []).map(s => s.video_id));
   try {
-    const rssRes = await fetch(
-      `https://www.youtube.com/feeds/videos.xml?channel_id=${VINTAGE_CHANNEL_ID}`,
-      { cf: { cacheTtl: 3600 } },
-    );
-    if (!rssRes.ok) return;
-    rssText = await rssRes.text();
-  } catch { return; }
-
-  // Parse video IDs + titles from RSS (simple regex, no DOM parser in Worker)
-  const VINTAGE_KEYWORDS = /vintage|wotc|first.?edition|1999|2000|fossil|gym.challenge|team.rocket|psa.?9|psa.?10|graded|invest/i;
-  const videos = [];
-  const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
-  let m;
-  while ((m = entryRegex.exec(rssText)) !== null) {
-    const entry = m[1];
-    const idMatch  = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
-    const titMatch = entry.match(/<title>([^<]+)<\/title>/);
-    const datMatch = entry.match(/<published>([^<]+)<\/published>/);
-    if (!idMatch || !titMatch) continue;
-    const videoId = idMatch[1];
-    const title   = titMatch[1];
-    const published = datMatch ? datMatch[1] : '';
-    if (!VINTAGE_KEYWORDS.test(title)) continue;
-    videos.push({ videoId, title, published });
-  }
-  if (!videos.length) return;
-
-  // Load existing intel to check which videos we've already processed
-  let existing = VINTAGE_INTEL_SEED;
-  try {
-    const raw = await env.SYNC_KV.get(VINTAGE_INTEL_KV_KEY);
-    if (raw) existing = JSON.parse(raw);
+    const sv = await env.SYNC_KV.get(VINTAGE_SEEN_KEY);
+    if (sv) JSON.parse(sv).forEach(id => seenIds.add(id));
   } catch {}
-  const seenIds = new Set((existing.sources || []).map(s => s.video_id));
-  const newVideos = videos.filter(v => !seenIds.has(v.videoId)).slice(0, 3); // max 3 new per run
-  if (!newVideos.length) return;
 
-  // For each new video, fetch transcript and distil insights
-  for (const { videoId, title, published } of newVideos) {
-    let transcript = '';
+  const VINTAGE_KEYWORDS = /vintage|wotc|first.?ed|1st.?ed|1999|2000|fossil|gym.challenge|gym.heroes|team.rocket|base.?set|jungle|psa|invest|graded|grade|value|worth|price|sealed|collect/i;
+  let processed = 0;
+  const toProcess = []; // {videoId, title, published, channelName}
+
+  // 1. Check each channel RSS for new videos
+  for (const { id: channelId, name: channelName } of VINTAGE_CHANNELS) {
     try {
-      const ttRes = await fetch(
-        `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=vtt`,
-        { cf: { cacheTtl: 86400 } },
+      const rssRes = await fetch(
+        `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,
+        { cf: { cacheTtl: 3600 } },
       );
-      if (ttRes.ok) {
-        const vtt = await ttRes.text();
-        // Strip VTT markup to plain text
-        transcript = vtt
-          .replace(/^WEBVTT[\s\S]*?\n\n/, '')
-          .replace(/^\d{2}:\d{2}[^\n]*\n/gm, '')
-          .replace(/<[^>]+>/g, '')
-          .replace(/\n{3,}/g, '\n\n')
-          .slice(0, 12000); // token budget
+      if (!rssRes.ok) continue;
+      const rss = await rssRes.text();
+      const entryRx = /<entry>([\s\S]*?)<\/entry>/g;
+      let m;
+      while ((m = entryRx.exec(rss)) !== null) {
+        const e = m[1];
+        const vid = (e.match(/<yt:videoId>([^<]+)<\/yt:videoId>/) || [])[1];
+        const tit = (e.match(/<title>([^<]+)<\/title>/) || [])[1];
+        const pub = (e.match(/<published>([^<]+)<\/published>/) || [])[1] || '';
+        if (!vid || !tit || seenIds.has(vid)) continue;
+        if (VINTAGE_KEYWORDS.test(tit)) toProcess.push({ videoId: vid, title: tit, published: pub, channelName });
       }
-    } catch {}
-    if (transcript.length < 200) continue; // skip if no usable transcript
-
-    // Ask Claude to extract vintage investment insights
-    try {
-      const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 800,
-          messages: [{
-            role: 'user',
-            content: `You are a Pokémon TCG investment analyst. From this YouTube transcript, extract structured vintage investing insights as JSON with this exact shape (omit keys you can't populate):\n{"key_thesis":string,"buy_signals":[string],"featured_picks":[{"name":string,"set":string,"grade":string,"price_usd":number,"psa10_usd":number,"note":string}],"macro_notes":string}\n\nTranscript:\n${transcript}`,
-          }],
-        }),
-      });
-      if (!aiRes.ok) continue;
-      const aiJson = await aiRes.json();
-      const raw = aiJson.content?.[0]?.text || '';
-      const jsonMatch = raw.match(/\{[\s\S]+\}/);
-      if (!jsonMatch) continue;
-      const extracted = JSON.parse(jsonMatch[0]);
-
-      // Merge into existing intel
-      existing.sources = existing.sources || [];
-      existing.sources.unshift({ video_id: videoId, channel: 'PikaPikaPaPa', title, published });
-      if (extracted.featured_picks?.length) {
-        // Prepend new picks, dedupe by name
-        const existingNames = new Set((existing.featured_picks || []).map(p => p.name));
-        for (const p of extracted.featured_picks) {
-          if (!existingNames.has(p.name)) {
-            existing.featured_picks = [p, ...(existing.featured_picks || [])];
-            existingNames.add(p.name);
-          }
-        }
-      }
-      if (extracted.macro_notes) existing.framework.macro = extracted.macro_notes + '\n\n' + existing.framework.macro;
-      existing.ts = Date.now();
     } catch {}
   }
 
-  await env.SYNC_KV.put(VINTAGE_INTEL_KV_KEY, JSON.stringify(existing), { expirationTtl: 30 * 24 * 3600 });
+  // 2. Drain backfill queue — take enough to fill up to VINTAGE_BACKFILL_PER_RUN total
+  let backfillQueue = [];
+  try { const bq = await env.SYNC_KV.get(VINTAGE_BACKFILL_KEY); if (bq) backfillQueue = JSON.parse(bq); } catch {}
+  const slotsLeft = VINTAGE_BACKFILL_PER_RUN - toProcess.length;
+  if (slotsLeft > 0 && backfillQueue.length > 0) {
+    // Find the channel name for backfill items (use 'Community' as fallback)
+    const batch = backfillQueue.splice(0, slotsLeft);
+    for (const { id: videoId, title } of batch) {
+      if (!seenIds.has(videoId)) toProcess.push({ videoId, title, published: '', channelName: 'Community' });
+    }
+    // Save the trimmed queue back
+    await env.SYNC_KV.put(VINTAGE_BACKFILL_KEY, JSON.stringify(backfillQueue),
+      { expirationTtl: 365 * 24 * 3600 });
+  }
+
+  // 3. Process each candidate video
+  for (const { videoId, title, published, channelName } of toProcess) {
+    if (processed >= VINTAGE_BACKFILL_PER_RUN) break;
+    seenIds.add(videoId); // mark before processing so retries skip it
+    const transcript = await _fetchTranscript(videoId);
+    if (transcript.length < 200) continue;
+    try {
+      const extracted = await _extractInsights(transcript, channelName, env.ANTHROPIC_API_KEY);
+      if (extracted) _mergeInsights(intel, extracted, videoId, channelName, title, published);
+      processed++;
+    } catch {}
+  }
+
+  if (processed > 0) {
+    await env.SYNC_KV.put(VINTAGE_INTEL_KV_KEY, JSON.stringify(intel), { expirationTtl: 90 * 24 * 3600 });
+  }
+  // Always persist the updated seen set
+  await env.SYNC_KV.put(VINTAGE_SEEN_KEY, JSON.stringify([...seenIds]),
+    { expirationTtl: 365 * 24 * 3600 });
 }
 
 async function handleCronRefresh(env) {
