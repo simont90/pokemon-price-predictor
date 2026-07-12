@@ -25151,6 +25151,11 @@ function _vgRefresh(el, changedId) {
 // ── Standouts page ────────────────────────────────────────────────────────────
 
 let _soGrade = 'raw'; // current grade filter for standouts carousel
+let _soSubGrade = 'raw'; // Raw | PSA 9 | PSA 10 sub-filter for Vintage/Spike tabs
+let _soVintage1stEd = false; // true = show only 1st-Edition-eligible WOTC sets
+
+// WOTC EN sets that had a 1st Edition print run
+const _SO_FIRST_ED_SETS = new Set(['base1','jungle','fossil','base3','gym1','gym2','neo1','neo2','neo3','neo4','basep']);
 
 // Collect card IDs relevant to all 4 Standouts tabs (top 20 per tab + portfolio).
 function _soRefreshIds() {
@@ -25306,6 +25311,37 @@ async function _soRefreshPrices() {
   setTimeout(() => { if (popup) popup.style.display = 'none'; renderStandouts(); }, 1500);
 }
 
+function _soShowSubFilter(showEdToggle) {
+  const sfEl = document.getElementById('soSubFilter');
+  if (!sfEl) return;
+  sfEl.style.display = '';
+  const grades = [['raw','Raw'],['psa9','PSA 9'],['psa10','PSA 10']];
+  let html = grades.map(([k, lbl]) =>
+    `<button class="so-sf-btn${_soSubGrade === k ? ' active' : ''}" data-sf-grade="${k}">${lbl}</button>`
+  ).join('');
+  if (showEdToggle) {
+    html += `<span class="so-sf-sep"></span>`;
+    html += `<button class="so-sf-btn${!_soVintage1stEd ? ' active' : ''}" data-sf-ed="all">All</button>`;
+    html += `<button class="so-sf-btn so-sf-btn--1sted${_soVintage1stEd ? ' active' : ''}" data-sf-ed="1sted">1st Ed</button>`;
+  }
+  sfEl.innerHTML = html;
+  if (!sfEl._sfBound) {
+    sfEl._sfBound = true;
+    sfEl.addEventListener('click', e => {
+      const btn = e.target.closest('[data-sf-grade],[data-sf-ed]');
+      if (!btn) return;
+      if ('sfGrade' in btn.dataset) _soSubGrade = btn.dataset.sfGrade;
+      if ('sfEd' in btn.dataset) _soVintage1stEd = btn.dataset.sfEd === '1sted';
+      renderStandouts();
+    });
+  }
+}
+
+function _soHideSubFilter() {
+  const sfEl = document.getElementById('soSubFilter');
+  if (sfEl) sfEl.style.display = 'none';
+}
+
 function renderStandouts() {
   const carousel = document.getElementById('soCarousel');
   const dotsEl   = document.getElementById('soDots');
@@ -25323,6 +25359,10 @@ function renderStandouts() {
   const portfolioIds = new Set(portfolio.map(p => p.id).filter(Boolean));
   const wishlistIds  = new Set(wishlist.map(w => w.id).filter(Boolean));
   const priceCache   = getPriceCache();
+
+  // Sub-filter (Raw | PSA 9 | PSA 10) only applies to Vintage and Spike Watch
+  if (!['vintage','spike'].includes(_soGrade)) _soHideSubFilter();
+
   // — Upgrade tab: buy a PSA 10 slab of a card you already own raw —
   if (_soGrade === 'upgrade') {
     const upSubEl = document.getElementById('soSubtitle');
@@ -25619,10 +25659,13 @@ function renderStandouts() {
 
   // — Spike Watch tab —
   if (_soGrade === 'spike') {
+    _soShowSubFilter(false);
+
+    const swGradeLabel = _soSubGrade === 'psa9' ? 'PSA 9' : _soSubGrade === 'psa10' ? 'PSA 10' : 'Raw';
     const swSubEl = document.getElementById('soSubtitle');
     if (swSubEl) swSubEl.textContent = hasLimit
-      ? `Vintage WOTC-era holos with S/A-tier characters within your £${maxBudgetGBP} budget — candidates to spike when collector attention arrives.`
-      : 'Vintage WOTC-era holos with S/A-tier characters still at accessible raw prices — candidates to spike when collector attention arrives.';
+      ? `Vintage WOTC-era holos with S/A-tier characters — ${swGradeLabel} entry within your £${maxBudgetGBP} budget, ranked by spike potential.`
+      : `Vintage WOTC-era holos with S/A-tier characters — ${swGradeLabel} entry price, ranked by spike potential.`;
 
     const SW_RAW_CAP_GBP = 300;
     const swVinSets = new Set([
@@ -25642,20 +25685,32 @@ function renderStandouts() {
         const rawUSD = getCurrentPrice(card) || card.p || 0;
         if (!rawUSD || rawUSD <= 0) continue;
         const rawGBP = usdToGbp(rawUSD);
-        if (rawGBP > SW_RAW_CAP_GBP) continue;
-        if (hasLimit && rawGBP > maxBudgetGBP) continue;
 
         const cachedRaw = priceCache[card.i];
         const pd = cachedRaw && _priceCacheIsValid(cachedRaw._ts) ? cachedRaw : null;
         const psa10USD = getPsa10Anchor(card).usd || (pd?.pcPsa10 > 0 ? pd.pcPsa10 : 0);
         const psa10GBP = psa10USD > 0 ? psa10USD * fx : 0;
-        const multiplier = (psa10GBP > 0 && rawGBP > 0) ? psa10GBP / rawGBP : 0;
+        const psa9USD  = pd?.pcPsa9 || pd?.pcGrade9 || 0;
+        const psa9GBP  = psa9USD > 0 ? psa9USD * fx : 0;
 
+        // Budget / cap check based on selected sub-grade
+        if (_soSubGrade === 'psa9') {
+          if (psa9GBP <= 0) continue;
+          if (hasLimit && psa9GBP > maxBudgetGBP) continue;
+        } else if (_soSubGrade === 'psa10') {
+          if (psa10GBP <= 0) continue;
+          if (hasLimit && psa10GBP > maxBudgetGBP) continue;
+        } else {
+          if (rawGBP > SW_RAW_CAP_GBP) continue;
+          if (hasLimit && rawGBP > maxBudgetGBP) continue;
+        }
+
+        const multiplier = (psa10GBP > 0 && rawGBP > 0) ? psa10GBP / rawGBP : 0;
         const rarityMult = rc === 'HR' ? 2.5 : 2.0;
         const spikeScore = charInfo.score * rarityMult * (multiplier > 0 ? Math.min(multiplier, 50) : (50 / Math.max(rawGBP, 10)));
 
         swCandidates.push({
-          card, rawGBP, psa10GBP, multiplier,
+          card, rawGBP, psa9GBP, psa10GBP, multiplier,
           charTier: charInfo.tier,
           charScore: charInfo.score,
           charDisplayName: charInfo.displayName,
@@ -25669,16 +25724,24 @@ function renderStandouts() {
     const swTop = swCandidates.slice(0, 12);
 
     if (swTop.length === 0) {
-      carousel.innerHTML = '<div class="so-empty">No spike candidates found — vintage card data may still be loading. Use "Refresh Prices" to pull WOTC-era price data.</div>';
+      const noDataMsg = _soSubGrade !== 'raw'
+        ? `No ${swGradeLabel} spike candidates found within budget — use "Refresh Prices" to pull graded price data, or try the Raw sub-filter.`
+        : 'No spike candidates found — vintage card data may still be loading. Use "Refresh Prices" to pull WOTC-era price data.';
+      carousel.innerHTML = `<div class="so-empty">${noDataMsg}</div>`;
       dotsEl.innerHTML = '';
     } else {
       carousel.innerHTML = swTop.map((item, i) => {
-        const { card, rawGBP, psa10GBP, multiplier, charTier, charDisplayName, inWishlist } = item;
+        const { card, rawGBP, psa9GBP, psa10GBP, multiplier, charTier, charDisplayName, inWishlist } = item;
         const imgUrl = _hiresUrl(getCardImg(card));
         const tierClass = charTier === 'S' ? 'so-sw-tier--s' : charTier === 'A' ? 'so-sw-tier--a' : 'so-sw-tier--b';
         const insight = _buildSpikeWatchInsight(item);
         const multStr = multiplier > 0 ? `${multiplier.toFixed(1)}×` : '—';
         const psa10Str = psa10GBP > 0 ? fmtGBPDirect(psa10GBP) : 'Refresh for data';
+        // Entry label / value based on sub-grade selection
+        const entryLbl = _soSubGrade === 'psa9' ? 'PSA 9 entry' : _soSubGrade === 'psa10' ? 'PSA 10 entry' : 'Raw now';
+        const entryVal = _soSubGrade === 'psa9' ? (psa9GBP > 0 ? fmtGBPDirect(psa9GBP) : '—')
+                       : _soSubGrade === 'psa10' ? psa10Str
+                       : fmtGBPDirect(rawGBP);
         return `<div class="so-card" data-so-i="${i}">
           <div class="so-img-wrap">
             ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
@@ -25695,8 +25758,8 @@ function renderStandouts() {
             </div>
             <div class="so-upgrade-scenarios">
               <div class="so-upgrade-scenario">
-                <span class="so-upg-lbl">Raw now</span>
-                <span class="so-upg-val">${fmtGBPDirect(rawGBP)}</span>
+                <span class="so-upg-lbl">${entryLbl}</span>
+                <span class="so-upg-val">${entryVal}</span>
               </div>
               <div class="so-upgrade-scenario">
                 <span class="so-upg-lbl">PSA 10</span>
@@ -25749,10 +25812,14 @@ function renderStandouts() {
 
   // — Vintage tab —
   if (_soGrade === 'vintage') {
+    _soShowSubFilter(true);
+
+    const vGradeLabel = _soSubGrade === 'psa9' ? 'PSA 9' : _soSubGrade === 'psa10' ? 'PSA 10' : 'Raw';
+    const vEdLabel    = _soVintage1stEd ? '1st Edition ' : '';
     const vSubEl = document.getElementById('soSubtitle');
     if (vSubEl) vSubEl.textContent = hasLimit
-      ? `Best WOTC-era (1999–2003) buys within your £${maxBudgetGBP} budget — optimal grade ranked by risk-adjusted ROI.`
-      : 'Best entry for WOTC-era (1999–2003) cards across Raw and all PSA grades — ranked by risk-adjusted 5yr ROI.';
+      ? `Best ${vEdLabel}WOTC-era ${vGradeLabel} buys within your £${maxBudgetGBP} budget — ranked by risk-adjusted 5yr ROI.`
+      : `Best ${vEdLabel}WOTC-era ${vGradeLabel} entries (1999–2003) — ranked by risk-adjusted 5yr ROI.`;
 
     const vintageSets = new Set([
       ...((typeof _vintageSets === 'function' ? _vintageSets() : []).map(s => s.code)),
@@ -25764,6 +25831,8 @@ function renderStandouts() {
       try {
         if (portfolioIds.has(card.i)) continue;
         if (!vintageSets.has(card.sc)) continue;
+        // 1st Ed filter: only show sets that had a 1st Edition print run (EN only)
+        if (_soVintage1stEd && (card.lang === 'JP' || !_SO_FIRST_ED_SETS.has(card.sc))) continue;
         const cr = priceCache[card.i];
         const pd = cr && _priceCacheIsValid(cr._ts) ? cr : null;
         if (!card.p10 && !pd?.pcPsa10) continue;
@@ -25772,11 +25841,18 @@ function renderStandouts() {
         const eligible = hc.strategies
           .filter(s => s.roi > 0 && s.riskAdjusted != null && !['gamble', 'ace'].includes(s.key));
         if (!eligible.length) continue;
-        eligible.sort((a, b) => (b.riskAdjusted || 0) - (a.riskAdjusted || 0));
-        const bestStrat = eligible[0];
+        // Pick strategy matching the sub-grade filter
+        let bestStrat;
+        if (_soSubGrade === 'raw') {
+          bestStrat = eligible.find(s => s.key === 'raw') || eligible.sort((a, b) => (b.riskAdjusted || 0) - (a.riskAdjusted || 0))[0];
+        } else {
+          bestStrat = eligible.find(s => s.key === _soSubGrade);
+        }
+        if (!bestStrat) continue;
         const todayGBP = bestStrat.today * fx;
         if (todayGBP <= 0) continue;
         if (hasLimit && todayGBP > maxBudgetGBP) continue;
+        const is1stEd = _SO_FIRST_ED_SETS.has(card.sc) && card.lang !== 'JP';
         vsScored.push({
           card, strat: bestStrat, todayGBP,
           yr5GBP:    bestStrat.yr5 * fx,
@@ -25784,6 +25860,7 @@ function renderStandouts() {
           roi:       bestStrat.roi,
           risk:      bestStrat.risk || 'med',
           inWishlist: wishlistIds.has(card.i),
+          is1stEd,
         });
       } catch (_) {}
     }
@@ -25792,23 +25869,28 @@ function renderStandouts() {
     const vsTop = vsScored.slice(0, 12);
 
     if (vsTop.length === 0) {
-      const budgetMsg = hasLimit ? ` within your £${maxBudgetGBP} budget` : '';
-      carousel.innerHTML = `<div class="so-empty">No vintage standouts found${budgetMsg}. Use "Refresh Prices" to pull data for WOTC-era cards.</div>`;
+      const filterDesc = _soVintage1stEd ? ' 1st Edition' : '';
+      const budgetMsg  = hasLimit ? ` within your £${maxBudgetGBP} budget` : '';
+      const gradeMsg   = _soSubGrade !== 'raw' ? ` for ${vGradeLabel}` : '';
+      carousel.innerHTML = `<div class="so-empty">No${filterDesc} vintage standouts found${gradeMsg}${budgetMsg}. Use "Refresh Prices" to pull WOTC-era card data.</div>`;
       dotsEl.innerHTML = '';
     } else {
       carousel.innerHTML = vsTop.map((item, i) => {
-        const { card, strat, todayGBP, yr5GBP, profitGBP, roi, risk, inWishlist } = item;
+        const { card, strat, todayGBP, yr5GBP, profitGBP, roi, risk, inWishlist, is1stEd } = item;
         const imgUrl    = _hiresUrl(getCardImg(card));
         const roiColor  = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : 'var(--text)';
         const riskClass = risk === 'low' ? 'so-risk-low' : risk === 'high' ? 'so-risk-high' : 'so-risk-med';
         const riskLabel = risk === 'low' ? 'Low risk' : risk === 'high' ? 'High risk' : 'Med risk';
         const insight   = _buildVintageInsight(item);
+        const tagHtml   = inWishlist
+          ? `<span class="so-tag" style="background:rgba(253,121,168,0.2);color:#fd79a8">Wishlist</span>`
+          : is1stEd
+            ? `<span class="so-tag" style="background:rgba(232,182,52,0.2);color:#e8b634">1st Ed avail</span>`
+            : `<span class="so-tag" style="background:rgba(232,182,52,0.1);color:#e8b634">WOTC</span>`;
         return `<div class="so-card" data-so-i="${i}">
           <div class="so-img-wrap">
             ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
-            ${inWishlist
-              ? `<span class="so-tag" style="background:rgba(253,121,168,0.2);color:#fd79a8">Wishlist</span>`
-              : `<span class="so-tag" style="background:rgba(232,182,52,0.15);color:#e8b634">WOTC</span>`}
+            ${tagHtml}
           </div>
           <div class="so-body">
             <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
@@ -25821,6 +25903,7 @@ function renderStandouts() {
               <div class="so-strat-roi" style="color:${roiColor}">+${Math.round(roi)}%</div>
             </div>
             <div class="so-strat-meta">5yr target ${fmtGBPDirect(yr5GBP)} \xb7 profit ${profitGBP >= 0 ? '+' : ''}${fmtGBPDirect(profitGBP)}</div>
+            ${is1stEd ? `<div class="so-1sted-note">1st Ed version exists — typically 3–10× Unlimited price</div>` : ''}
             <div class="so-key-insight">
               <div class="so-key-insight-lbl"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>Key Insight</div>
               <div class="so-key-insight-txt">${esc(insight)}</div>
