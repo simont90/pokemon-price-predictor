@@ -1772,7 +1772,8 @@ const VINTAGE_BACKFILL_PER_RUN = 15;                        // videos processed 
 
 // All monitored channels — RSS + backfill queue cover historical + new content
 const VINTAGE_CHANNELS = [
-  { id: 'UCsSA2eBWW7qAwSV_COyW8uQ', name: 'MasterBalless/PikaPikaPaPa' },
+  { id: 'UCsSA2eBWW7qAwSV_COyW8uQ', name: 'PikaPikaPaPa'               },
+  { id: 'UCw47gkI_OV46GQyq08jQ-8w', name: 'MasterBalless'              },
   { id: 'UCJrBXKBCYtHrW_PSjZc3amQ', name: 'Phillips Collectibles'      },
   { id: 'UCEYiwUuZO02Ewqrc5aZlzyQ', name: 'Collectors Corner TCG'       },
   { id: 'UCd0bq0P8Xz9vEJqdnyqHYrg', name: 'PokeData Dad Guy'            },
@@ -1781,7 +1782,6 @@ const VINTAGE_CHANNELS = [
   { id: 'UCQg9Hzbs5f6A7W1dE46sc2A', name: 'Randolph Pokémon'            },
   { id: 'UCePvxCHy42gdfsFvNDBRQdQ', name: 'PokeJace'                    },
   { id: 'UCfEGPbDglUfd4Shi3ebuZCw', name: 'It Was Never a Phase'        },
-  { id: 'UCw47gkI_OV46GQyq08jQ-8w', name: 'Max D Pokémon'               },
   { id: 'UCweh8CzIYgMpvgvhniVKNQw', name: 'Jordan Collects'             },
   { id: 'UC-mDbPaXMhSCKgHIjyVX2Vw', name: 'Snomnomnomnom'               },
 ];
