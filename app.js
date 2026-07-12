@@ -17523,7 +17523,7 @@ const AI_PROVIDERS = {
 };
 
 let aiChatHistory = [];
-let _vintageIntel = null;        // cached from /vintage-intel; refreshed per-session on first vintage query
+let _vintageIntel = null;        // cached from /vintage-intel; fetched once per session on first AI query
 let _vintageIntelFetched = false;
 try { aiChatHistory = JSON.parse(localStorage.getItem(AI_HIST_STORAGE) || '[]') || []; }
 catch { aiChatHistory = []; }
@@ -17760,14 +17760,13 @@ function aiSystemPrompt(ctx) {
     : '';
 
   const vintageSection = _vintageIntel ? `
-VINTAGE MARKET INTELLIGENCE (sourced from ${(_vintageIntel.sources || []).map(s => s.channel + ': "' + s.title + '"').join('; ')}):
-Era: ${_vintageIntel.framework?.era || 'WOTC 1999–2003'}
-Sweet spot: ${_vintageIntel.framework?.sweet_spot || ''}
-Buy signals: ${(_vintageIntel.framework?.buy_signals || []).join(' · ')}
-Macro: ${_vintageIntel.framework?.macro || ''}
-Current featured picks (from community analysis):
-${(_vintageIntel.featured_picks || []).map(p => `  • ${p.name} (${p.grade}) ~$${p.price_usd} — ${p.note}`).join('\n')}
-Apply this framework when analysing WOTC-era cards: flag PSA 9 undervaluation vs PSA 10 moves, note population scarcity, and always mention whether First Edition exists for the card.
+TCG MARKET INTELLIGENCE (sourced from community channels: ${(_vintageIntel.sources || []).map(s => s.channel + ': "' + s.title + '"').join('; ')}):
+${_vintageIntel.framework?.era ? `Era focus: ${_vintageIntel.framework.era}` : ''}
+${_vintageIntel.framework?.sweet_spot ? `Sweet spot: ${_vintageIntel.framework.sweet_spot}` : ''}
+${(_vintageIntel.framework?.buy_signals || []).length ? `Buy signals: ${_vintageIntel.framework.buy_signals.join(' · ')}` : ''}
+${_vintageIntel.framework?.macro ? `Macro: ${_vintageIntel.framework.macro}` : ''}
+${(_vintageIntel.featured_picks || []).length ? `Featured picks:\n${_vintageIntel.featured_picks.map(p => `  • ${p.name} (${p.grade}) ~$${p.price_usd} — ${p.note}`).join('\n')}` : ''}
+Apply these insights across all card eras. For WOTC cards: flag PSA 9 undervaluation vs PSA 10, note population scarcity, mention First Edition where relevant.
 ` : '';
 
   return `You are "PokeKnow", an expert Pokemon TCG market analyst built into the user's collection-tracking app.
@@ -18080,20 +18079,13 @@ async function aiSubmit(userText) {
   aiSaveHistory();
   aiRenderHistory();
 
-  // Fetch vintage intelligence from worker the first time a vintage card is active
-  // or the vintage focus is set — lazy so it doesn't slow down every query.
+  // Fetch TCG market intelligence from worker once per session (lazy, non-blocking)
   if (!_vintageIntelFetched) {
-    const focus = (typeof getFocus === 'function') ? getFocus() : null;
-    const isVintageFocus = focus && focus.id === 'vintage';
-    const isVintageCard = selectedCard && (typeof _vintageSets === 'function') &&
-      _vintageSets().some(s => s.code === selectedCard.sc);
-    if (isVintageFocus || isVintageCard) {
-      _vintageIntelFetched = true;
-      try {
-        const res = await fetch(getMktWorkerUrl() + '/vintage-intel', { signal: AbortSignal.timeout(5000) });
-        if (res.ok) _vintageIntel = await res.json();
-      } catch {}
-    }
+    _vintageIntelFetched = true;
+    try {
+      const res = await fetch(getMktWorkerUrl() + '/vintage-intel', { signal: AbortSignal.timeout(5000) });
+      if (res.ok) _vintageIntel = await res.json();
+    } catch {}
   }
 
   const ctx = aiBuildContext();

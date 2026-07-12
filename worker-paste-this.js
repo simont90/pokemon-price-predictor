@@ -1859,7 +1859,7 @@ async function _extractInsights(transcript, channelName, apiKey) {
       max_tokens: 700,
       messages: [{
         role: 'user',
-        content: `Pokémon TCG investment analyst. Extract insights from this ${channelName} transcript as JSON (omit keys you cannot populate from the content):\n{"key_thesis":string,"buy_signals":[string],"featured_picks":[{"name":string,"set":string,"grade":string,"price_usd":number,"note":string}],"macro_notes":string}\n\nTranscript:\n${transcript}`,
+        content: `Pokémon TCG market analyst. Extract actionable insights from this ${channelName} transcript as JSON (omit keys you cannot populate). Covers any card era — vintage WOTC, modern, Japanese, sealed product, graded slabs, or set releases.\n{"key_thesis":string,"buy_signals":[string],"featured_picks":[{"name":string,"set":string,"grade":string,"price_usd":number,"note":string}],"macro_notes":string}\n\nTranscript:\n${transcript}`,
       }],
     }),
   });
@@ -1911,11 +1911,10 @@ async function refreshVintageIntel(env) {
     if (sv) JSON.parse(sv).forEach(id => seenIds.add(id));
   } catch {}
 
-  const VINTAGE_KEYWORDS = /vintage|wotc|first.?ed|1st.?ed|1999|2000|fossil|gym.challenge|gym.heroes|team.rocket|base.?set|jungle|psa|invest|graded|grade|value|worth|price|sealed|collect/i;
   let processed = 0;
   const toProcess = []; // {videoId, title, published, channelName}
 
-  // 1. Check each channel RSS for new videos
+  // 1. Check each channel RSS for new videos — all videos, not just vintage-titled ones
   for (const { id: channelId, name: channelName } of VINTAGE_CHANNELS) {
     try {
       const rssRes = await fetch(
@@ -1932,7 +1931,7 @@ async function refreshVintageIntel(env) {
         const tit = (e.match(/<title>([^<]+)<\/title>/) || [])[1];
         const pub = (e.match(/<published>([^<]+)<\/published>/) || [])[1] || '';
         if (!vid || !tit || seenIds.has(vid)) continue;
-        if (VINTAGE_KEYWORDS.test(tit)) toProcess.push({ videoId: vid, title: tit, published: pub, channelName });
+        toProcess.push({ videoId: vid, title: tit, published: pub, channelName });
       }
     } catch {}
   }
