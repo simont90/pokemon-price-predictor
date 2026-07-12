@@ -833,8 +833,7 @@ async function handle(request, env) {
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request) });
   if (url.pathname === '/health') return new Response('ok', { headers: corsHeaders(request) });
   if (url.pathname === '/vintage-intel') return handleVintageIntel(request, env);
-  if (url.pathname === '/channels') return handleChannels(request, env, url);
-  if (url.pathname === '/channel-videos') return handleChannelVideos(request, env, url);
+
   if (url.pathname === '/sync') return handleSync(request, env, url);
   if (url.pathname === '/mcp') return handleMcp(request, env, url);
   if (url.pathname === '/img-proxy') return handleImgProxy(request, env, url);
@@ -1830,50 +1829,6 @@ async function handleVintageIntel(request, env) {
     } catch {}
   }
   return new Response(JSON.stringify(intel), { headers: { ...ch, 'Content-Type': 'application/json' } });
-}
-
-// GET /channels — returns index of all monitored channels with video counts
-async function handleChannels(request, env, url) {
-  const ch = { ...corsHeaders(request), 'Cache-Control': 'public, max-age=1800' };
-  if (!env.SYNC_KV) return new Response('[]', { headers: { ...ch, 'Content-Type': 'application/json' } });
-  try {
-    const raw = await env.SYNC_KV.get('channel-index');
-    const index = raw ? JSON.parse(raw) : VINTAGE_CHANNELS.map(c => ({ channelId: c.id, name: c.name, total: 0 }));
-    return new Response(JSON.stringify(index), { headers: { ...ch, 'Content-Type': 'application/json' } });
-  } catch {
-    return new Response('[]', { headers: { ...ch, 'Content-Type': 'application/json' } });
-  }
-}
-
-// GET /channel-videos?id=<channelId>&q=<search>&page=<n> — returns paginated video list for a channel
-async function handleChannelVideos(request, env, url) {
-  const ch = { ...corsHeaders(request), 'Cache-Control': 'public, max-age=1800' };
-  const channelId = url.searchParams.get('id') || '';
-  const query     = (url.searchParams.get('q') || '').toLowerCase().trim();
-  const page      = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-  const per       = 50;
-
-  if (!channelId || !env.SYNC_KV) {
-    return new Response(JSON.stringify({ videos: [], total: 0, page: 1, pages: 0 }),
-      { headers: { ...ch, 'Content-Type': 'application/json' } });
-  }
-  try {
-    const raw = await env.SYNC_KV.get(`channel-videos:${channelId}`);
-    if (!raw) return new Response(JSON.stringify({ videos: [], total: 0, page: 1, pages: 0 }),
-      { headers: { ...ch, 'Content-Type': 'application/json' } });
-
-    const data = JSON.parse(raw);
-    let videos = data.videos || [];
-    if (query) videos = videos.filter(v => v.title.toLowerCase().includes(query));
-    const total = videos.length;
-    const pages = Math.ceil(total / per);
-    const slice = videos.slice((page - 1) * per, page * per);
-    return new Response(JSON.stringify({ name: data.name, channelId, videos: slice, total, page, pages }),
-      { headers: { ...ch, 'Content-Type': 'application/json' } });
-  } catch {
-    return new Response(JSON.stringify({ videos: [], total: 0, page: 1, pages: 0 }),
-      { headers: { ...ch, 'Content-Type': 'application/json' } });
-  }
 }
 
 // Helper: fetch + clean a YouTube VTT transcript → plain text (max maxChars)
