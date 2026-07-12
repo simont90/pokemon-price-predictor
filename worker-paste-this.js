@@ -833,6 +833,8 @@ async function handle(request, env) {
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request) });
   if (url.pathname === '/health') return new Response('ok', { headers: corsHeaders(request) });
   if (url.pathname === '/vintage-intel') return handleVintageIntel(request, env);
+  if (url.pathname === '/channels') return handleChannels(request, env, url);
+  if (url.pathname === '/channel-videos') return handleChannelVideos(request, env, url);
   if (url.pathname === '/sync') return handleSync(request, env, url);
   if (url.pathname === '/mcp') return handleMcp(request, env, url);
   if (url.pathname === '/img-proxy') return handleImgProxy(request, env, url);
@@ -1830,6 +1832,50 @@ async function handleVintageIntel(request, env) {
   return new Response(JSON.stringify(intel), { headers: { ...ch, 'Content-Type': 'application/json' } });
 }
 
+// GET /channels — returns index of all monitored channels with video counts
+async function handleChannels(request, env, url) {
+  const ch = { ...corsHeaders(request), 'Cache-Control': 'public, max-age=1800' };
+  if (!env.SYNC_KV) return new Response('[]', { headers: { ...ch, 'Content-Type': 'application/json' } });
+  try {
+    const raw = await env.SYNC_KV.get('channel-index');
+    const index = raw ? JSON.parse(raw) : VINTAGE_CHANNELS.map(c => ({ channelId: c.id, name: c.name, total: 0 }));
+    return new Response(JSON.stringify(index), { headers: { ...ch, 'Content-Type': 'application/json' } });
+  } catch {
+    return new Response('[]', { headers: { ...ch, 'Content-Type': 'application/json' } });
+  }
+}
+
+// GET /channel-videos?id=<channelId>&q=<search>&page=<n> — returns paginated video list for a channel
+async function handleChannelVideos(request, env, url) {
+  const ch = { ...corsHeaders(request), 'Cache-Control': 'public, max-age=1800' };
+  const channelId = url.searchParams.get('id') || '';
+  const query     = (url.searchParams.get('q') || '').toLowerCase().trim();
+  const page      = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+  const per       = 50;
+
+  if (!channelId || !env.SYNC_KV) {
+    return new Response(JSON.stringify({ videos: [], total: 0, page: 1, pages: 0 }),
+      { headers: { ...ch, 'Content-Type': 'application/json' } });
+  }
+  try {
+    const raw = await env.SYNC_KV.get(`channel-videos:${channelId}`);
+    if (!raw) return new Response(JSON.stringify({ videos: [], total: 0, page: 1, pages: 0 }),
+      { headers: { ...ch, 'Content-Type': 'application/json' } });
+
+    const data = JSON.parse(raw);
+    let videos = data.videos || [];
+    if (query) videos = videos.filter(v => v.title.toLowerCase().includes(query));
+    const total = videos.length;
+    const pages = Math.ceil(total / per);
+    const slice = videos.slice((page - 1) * per, page * per);
+    return new Response(JSON.stringify({ name: data.name, channelId, videos: slice, total, page, pages }),
+      { headers: { ...ch, 'Content-Type': 'application/json' } });
+  } catch {
+    return new Response(JSON.stringify({ videos: [], total: 0, page: 1, pages: 0 }),
+      { headers: { ...ch, 'Content-Type': 'application/json' } });
+  }
+}
+
 // Helper: fetch + clean a YouTube VTT transcript → plain text (max maxChars)
 async function _fetchTranscript(videoId, maxChars = 12000) {
   try {
@@ -1914,7 +1960,7 @@ async function refreshVintageIntel(env) {
   let processed = 0;
   const toProcess = []; // {videoId, title, published, channelName}
 
-  // 1. Check each channel RSS for new videos — all videos, not just vintage-titled ones
+  // 1. Check each channel RSS for new videos — prepend any new ones to the stored channel list
   for (const { id: channelId, name: channelName } of VINTAGE_CHANNELS) {
     try {
       const rssRes = await fetch(
@@ -1924,14 +1970,40 @@ async function refreshVintageIntel(env) {
       if (!rssRes.ok) continue;
       const rss = await rssRes.text();
       const entryRx = /<entry>([\s\S]*?)<\/entry>/g;
+      const newVids = [];
       let m;
       while ((m = entryRx.exec(rss)) !== null) {
         const e = m[1];
         const vid = (e.match(/<yt:videoId>([^<]+)<\/yt:videoId>/) || [])[1];
         const tit = (e.match(/<title>([^<]+)<\/title>/) || [])[1];
         const pub = (e.match(/<published>([^<]+)<\/published>/) || [])[1] || '';
-        if (!vid || !tit || seenIds.has(vid)) continue;
-        toProcess.push({ videoId: vid, title: tit, published: pub, channelName });
+        if (!vid || !tit) continue;
+        if (!seenIds.has(vid)) {
+          newVids.push({ id: vid, title: tit, published: pub });
+          toProcess.push({ videoId: vid, title: tit, published: pub, channelName });
+        }
+      }
+      // Prepend new videos to the stored channel video list in KV
+      if (newVids.length > 0) {
+        try {
+          const kvKey = `channel-videos:${channelId}`;
+          const existing = await env.SYNC_KV.get(kvKey);
+          const stored = existing ? JSON.parse(existing) : { channelId, name: channelName, videos: [] };
+          const existingIds = new Set(stored.videos.map(v => v.id));
+          const toAdd = newVids.filter(v => !existingIds.has(v.id));
+          if (toAdd.length > 0) {
+            stored.videos = [...toAdd, ...stored.videos];
+            stored.total = stored.videos.length;
+            await env.SYNC_KV.put(kvKey, JSON.stringify(stored), { expirationTtl: 365 * 24 * 3600 });
+            // Update channel index
+            const idxRaw = await env.SYNC_KV.get('channel-index');
+            if (idxRaw) {
+              const idx = JSON.parse(idxRaw);
+              const entry = idx.find(c => c.channelId === channelId);
+              if (entry) { entry.total = stored.total; await env.SYNC_KV.put('channel-index', JSON.stringify(idx)); }
+            }
+          }
+        } catch {}
       }
     } catch {}
   }

@@ -21468,6 +21468,7 @@ function setupPageNav() {
     binder: document.getElementById('pageBinder'),
     budget: document.getElementById('pageBudget'),
     vintage: document.getElementById('pageVintage'),
+    channels: document.getElementById('pageChannels'),
     know: document.getElementById('pageKnow'),
     standouts: document.getElementById('pageStandouts'),
     analysis: document.getElementById('pageAnalysis'),
@@ -21501,6 +21502,7 @@ function setupPageNav() {
     if (page === 'tools') { try { updateToolsDupeBadge(); _loadMapQ(); _updateMapQBadge(); } catch(e) {} }
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
     if (page === 'vintage') { try { renderVintagePage(); } catch(e) {} }
+    if (page === 'channels') { try { renderChannelsPage(); } catch(e) {} }
     if (page === 'know') { try { _pknOnNavigate(); } catch(e) {} }
     if (page === 'standouts') { try { renderStandouts(); } catch(e) {} }
     if (page === 'analysis') { try { renderAiAnalysisPage(); } catch(e) {} }
@@ -26771,4 +26773,173 @@ function _setupMarketBrief() {
   // Try immediately, then after short delay for data load
   _populate();
   setTimeout(_populate, 2000);
+}
+
+// ─── Channels page ────────────────────────────────────────────────────────────
+const _chState = { view: 'grid', channelId: null, name: '', page: 1, query: '', total: 0, pages: 0 };
+let _chIndexCache = null;
+
+async function renderChannelsPage() {
+  const root = document.getElementById('pageChannels');
+  if (!root) return;
+  if (_chState.view === 'grid') await _chRenderGrid(root);
+  else await _chRenderVideos(root);
+}
+
+async function _chRenderGrid(root) {
+  if (_chIndexCache) { _chBuildGrid(root, _chIndexCache); return; }
+  root.innerHTML = '<div class="ch-loading">Loading channels…</div>';
+  try {
+    const res = await fetch(getMktWorkerUrl() + '/channels');
+    _chIndexCache = res.ok ? await res.json() : [];
+  } catch { _chIndexCache = []; }
+  _chBuildGrid(root, _chIndexCache);
+}
+
+function _chBuildGrid(root, index) {
+  const total = index.reduce((s, c) => s + (c.total || 0), 0);
+  root.innerHTML = `
+    <div class="ch-page-hd">
+      <div class="ch-page-hd-left">
+        <h1 class="ch-page-title">Community Channels</h1>
+        <span class="ch-page-meta">${index.length} channels · ${total.toLocaleString()} videos</span>
+      </div>
+    </div>
+    <div class="ch-grid" id="chGrid"></div>`;
+  const grid = root.querySelector('#chGrid');
+  index.forEach(ch => {
+    const card = document.createElement('button');
+    card.className = 'ch-card';
+    card.type = 'button';
+    card.innerHTML = `
+      <div class="ch-card-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.96-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/></svg>
+      </div>
+      <div class="ch-card-body">
+        <div class="ch-card-name">${ch.name}</div>
+        <div class="ch-card-count">${(ch.total || 0).toLocaleString()} videos</div>
+      </div>
+      <svg class="ch-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+    card.addEventListener('click', () => {
+      _chState.view = 'videos';
+      _chState.channelId = ch.channelId;
+      _chState.name = ch.name;
+      _chState.page = 1;
+      _chState.query = '';
+      renderChannelsPage();
+    });
+    grid.appendChild(card);
+  });
+}
+
+async function _chRenderVideos(root) {
+  root.innerHTML = `<div class="ch-loading">Loading videos…</div>`;
+  const params = new URLSearchParams({ id: _chState.channelId, page: _chState.page });
+  if (_chState.query) params.set('q', _chState.query);
+  try {
+    const res = await fetch(getMktWorkerUrl() + '/channel-videos?' + params);
+    const data = res.ok ? await res.json() : { videos: [], total: 0, pages: 0 };
+    _chState.total = data.total;
+    _chState.pages = data.pages;
+    _chBuildVideoList(root, data.videos);
+  } catch {
+    root.innerHTML = '<div class="ch-loading">Failed to load videos.</div>';
+  }
+}
+
+function _chBuildVideoList(root, videos) {
+  const q = _chState.query;
+  const pg = _chState.page;
+  const totalPgs = _chState.pages;
+  const total = _chState.total;
+
+  root.innerHTML = `
+    <div class="ch-page-hd">
+      <div class="ch-page-hd-left">
+        <button class="ch-back-btn" type="button" id="chBackBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          All Channels
+        </button>
+        <h1 class="ch-page-title">${_chState.name}</h1>
+        <span class="ch-page-meta">${total.toLocaleString()} video${total !== 1 ? 's' : ''}${q ? ' matching "' + q + '"' : ''}</span>
+      </div>
+      <div class="ch-page-hd-right">
+        <a class="ch-yt-link" href="https://www.youtube.com/channel/${_chState.channelId}" target="_blank" rel="noopener">
+          Open on YouTube ↗
+        </a>
+      </div>
+    </div>
+    <div class="ch-search-row">
+      <input class="ch-search" id="chSearch" type="search" placeholder="Search videos…" value="${q.replace(/"/g, '&quot;')}">
+    </div>
+    <div class="ch-video-list" id="chVideoList"></div>
+    <div class="ch-pagination" id="chPagination"></div>`;
+
+  // Back button
+  root.querySelector('#chBackBtn').addEventListener('click', () => {
+    _chState.view = 'grid';
+    renderChannelsPage();
+  });
+
+  // Search
+  let _searchTimer;
+  root.querySelector('#chSearch').addEventListener('input', e => {
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(() => {
+      _chState.query = e.target.value.trim();
+      _chState.page = 1;
+      _chRenderVideos(root);
+    }, 350);
+  });
+
+  // Video list
+  const list = root.querySelector('#chVideoList');
+  if (!videos.length) {
+    list.innerHTML = '<div class="ch-empty">No videos found.</div>';
+  } else {
+    videos.forEach(v => {
+      const item = document.createElement('a');
+      item.className = 'ch-video-item';
+      item.href = `https://www.youtube.com/watch?v=${v.id}`;
+      item.target = '_blank';
+      item.rel = 'noopener';
+      const dateStr = v.published && v.published !== 'NA'
+        ? new Date(v.published).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+        : '';
+      item.innerHTML = `
+        <div class="ch-video-thumb">
+          <img src="https://i.ytimg.com/vi/${v.id}/mqdefault.jpg" loading="lazy" alt="" onerror="this.style.display='none'">
+          <div class="ch-video-play"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+        </div>
+        <div class="ch-video-info">
+          <div class="ch-video-title">${v.title.replace(/</g, '&lt;')}</div>
+          ${dateStr ? `<div class="ch-video-date">${dateStr}</div>` : ''}
+        </div>`;
+      list.appendChild(item);
+    });
+  }
+
+  // Pagination
+  if (totalPgs > 1) {
+    const pag = root.querySelector('#chPagination');
+    const mkBtn = (label, targetPage, disabled = false) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ch-pg-btn' + (disabled ? ' active' : '');
+      b.disabled = disabled;
+      b.textContent = label;
+      if (!disabled) b.addEventListener('click', () => { _chState.page = targetPage; _chRenderVideos(root); root.scrollIntoView({ behavior: 'smooth' }); });
+      return b;
+    };
+    pag.appendChild(mkBtn('‹ Prev', pg - 1, pg <= 1));
+    // Window of page buttons
+    const start = Math.max(1, pg - 2);
+    const end = Math.min(totalPgs, start + 4);
+    for (let i = start; i <= end; i++) pag.appendChild(mkBtn(String(i), i, i === pg));
+    pag.appendChild(mkBtn('Next ›', pg + 1, pg >= totalPgs));
+    const info = document.createElement('span');
+    info.className = 'ch-pg-info';
+    info.textContent = `Page ${pg} of ${totalPgs}`;
+    pag.appendChild(info);
+  }
 }
