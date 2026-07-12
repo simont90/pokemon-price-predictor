@@ -16108,7 +16108,12 @@ function setupPriceSync() {
   function _psBucketUpdateEta() {
     const etaEl = document.getElementById('psBucketEta');
     const sel2 = document.getElementById('psBucketSize');
-    if (etaEl && sel2) etaEl.textContent = _psBucketFmtEta(parseInt(sel2.value, 10));
+    const goBtn = document.getElementById('psBucketGo');
+    if (etaEl && sel2) {
+      const n = parseInt(sel2.value, 10);
+      etaEl.textContent = _psBucketFmtEta(n);
+      if (goBtn) goBtn.textContent = `Refresh ${n} cards`;
+    }
   }
   sel('psBucketSize')?.addEventListener('change', _psBucketUpdateEta);
   _psBucketUpdateEta();

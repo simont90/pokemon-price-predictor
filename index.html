@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260713o">
+  <link rel="stylesheet" href="style.css?v=20260713p">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2281,9 +2281,11 @@
                 <option value="300">300 cards</option>
                 <option value="400">400 cards</option>
                 <option value="500">500 cards</option>
+                <option value="750">750 cards</option>
+                <option value="1000">1000 cards</option>
               </select>
               <span class="ps-bucket-eta" id="psBucketEta"></span>
-              <button class="ps-btn-bucket" id="psBucketGo" type="button">Refresh this many</button>
+              <button class="ps-btn-bucket" id="psBucketGo" type="button">Refresh 200 cards</button>
             </div>
             <button class="ps-btn ps-btn-ghost" id="psClearCache" type="button">
               <span class="ps-btn-ico">⌫</span>
@@ -3047,7 +3049,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260713o"></script>
+  <script src="app.js?v=20260713p"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
