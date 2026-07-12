@@ -16334,3 +16334,155 @@ h1, h2, h3 {
 .pack-cost-value {
   font-kerning: none;  /* disable kerning on mono figures — already handled by tnum */
 }
+
+/* ================================================================
+   RESPONSIVE POLISH — Mobile / Tablet / Desktop
+   All four target displays:
+     iPhone Pro Max  430 × 932  CSS px
+     iPad Mini      1133 × 744  CSS px
+     iPad Pro 12.9  1366 × 1024 CSS px
+     Apple Studio   2560 × 1440 CSS px
+   ================================================================ */
+
+/* ── 1. Standouts grade toggle ─────────────────────────────────
+   The toggle lives inside .so-title-row (flex, space-between).
+   Without min-width:0 the flex child expands to content width,
+   defeating overflow-x:auto. Force it to shrink so it scrolls.
+   Buttons inside must not shrink (flex-shrink:0) — the container
+   scrolls, not the buttons. The global `button { min-width:44px }`
+   rule would otherwise compress them all to 44px. */
+.so-grade-toggle { min-width: 0; }
+.so-grade-toggle .sgt-btn { flex-shrink: 0; }
+
+/* On mobile: stack title + toggle in a column so the toggle gets
+   the full row width and its overflow-x:auto scroll works cleanly */
+@media (max-width: 639px) {
+  .so-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .so-grade-toggle {
+    width: 100%;
+    padding-right: 28px; /* right-side breathing room */
+  }
+  /* Sub-filter (Raw | PSA 9 | PSA 10 | All | 1st Ed) — scroll, don't wrap */
+  .so-sub-filter {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 20px;
+  }
+  .so-sub-filter::-webkit-scrollbar { display: none; }
+}
+
+/* ── 2. Standouts: tag badge must never wrap ───────────────── */
+.so-tag { white-space: nowrap; }
+
+/* ── 3. Standouts card: body gaps tighter on very narrow screens */
+@media (max-width: 400px) {
+  .so-img-wrap { min-height: 210px; }
+  .so-img { height: 185px; }
+  .so-body { padding: 12px 14px 16px; }
+}
+
+/* ── 4. Card detail Market grade tabs ──────────────────────────
+   Five tabs (Raw / PSA 7 / PSA 8 / PSA 9 / PSA 10) wrap 3+2 on
+   430 px. Make them a single scrollable row instead. */
+@media (max-width: 560px) {
+  .mkt-grade-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mkt-grade-tabs::-webkit-scrollbar { display: none; }
+  .mkt-grade-tab { flex: 0 0 auto; min-width: 64px; }
+}
+
+/* ── 5. Marketplace scan / ACE grade buttons ───────────────── */
+@media (max-width: 560px) {
+  .mra-grades {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+  .mra-grades::-webkit-scrollbar { display: none; }
+  .mra-grade { flex-shrink: 0; }
+}
+
+/* ── 6. Vintage set chip row — explicit nowrap ─────────────── */
+.vg-set-chips { flex-wrap: nowrap; }
+
+/* ── 7. Binder gen filter scroll affordance (fade mask) ────── */
+@media (max-width: 639px) {
+  .binder-gen-filter {
+    -webkit-mask-image: linear-gradient(to right, black 88%, transparent 100%);
+    mask-image: linear-gradient(to right, black 88%, transparent 100%);
+  }
+}
+
+/* ── 8. Home tab bar: fade mask → indicates scroll ─────────── */
+@media (max-width: 639px) {
+  .home-tab-bar {
+    -webkit-mask-image: linear-gradient(to right, black 88%, transparent 100%);
+    mask-image: linear-gradient(to right, black 88%, transparent 100%);
+  }
+}
+
+/* ── 9. predict-tab-bar: ensure text never wraps inside a tab ─ */
+.ptab { white-space: nowrap; }
+/* Tighter on very narrow phones */
+@media (max-width: 360px) {
+  .predict-tab-bar { padding: 3px; }
+  .ptab { padding: 7px 4px; font-size: 10px; gap: 3px; }
+}
+
+/* ── 10. Underrated scanner filter row: scroll on mobile ────── */
+@media (max-width: 639px) {
+  .ur-filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .ur-filter-row::-webkit-scrollbar { display: none; }
+}
+
+/* ── 11. Pack cost section: clamp number so it never overflows ─ */
+@media (max-width: 480px) {
+  .pack-cost-value { font-size: clamp(28px, 8vw, 48px); }
+}
+
+/* ── 12. Page nav: never wider than viewport on large screens ── */
+@media (min-width: 1024px) {
+  .page-nav {
+    max-width: 560px; /* cap pill width so it floats nicely, not full-width */
+  }
+  .page-nav-btn { padding: 10px 26px; }
+  .page-nav-sub { display: block; font-size: 9px; }
+}
+
+/* ── 13. Studio Display (≥2200px): constrain content columns ── */
+@media (min-width: 2200px) {
+  .so-carousel { grid-template-columns: repeat(4, 1fr); max-width: 1800px; margin: 0 auto; }
+  .page-intro { max-width: 1800px; }
+  #pageBinder { max-width: 1400px; }
+}
+
+/* ── 14. iPad Mini/Pro: 2-col standouts grid spacing ────────── */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .so-body { padding: 14px 16px 18px; }
+  .so-img-wrap { min-height: 250px; }
+}
+
+/* ── 15. Ensure so-card actions never compress the Buy raw link ─ */
+.so-actions { display: flex; gap: 8px; align-items: stretch; flex-wrap: nowrap; }
+.so-btn-main { flex: 1 1 0; min-width: 0; }
+.so-btn-sec,
+.so-btn-ungraded { flex: 0 0 auto; white-space: nowrap; }
+
+/* ── 16. Bottom nav safe-area clearance on all pages ─────────── */
+.page { padding-bottom: 0; } /* padding handled by .app */
+@media (max-width: 639px) {
+  /* Extra clearance for the bottom nav pill (~70px + safe-area) */
+  .app { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 100px); }
+}
