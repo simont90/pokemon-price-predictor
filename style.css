@@ -16452,13 +16452,63 @@ h1, h2, h3 {
   .pack-cost-value { font-size: clamp(28px, 8vw, 48px); }
 }
 
-/* ── 12. Page nav: never wider than viewport on large screens ── */
-@media (min-width: 1024px) {
+/* ── 12. Desktop nav: vertical left sidebar ─────────────────────
+   At ≥821px the floating bottom pill becomes a fixed vertical
+   sidebar anchored left, centred vertically. Body gets
+   padding-left to push app content clear of the sidebar.
+   JS detects this breakpoint and switches pill positioning
+   from left/width to top/height. ────────────────────────────── */
+@media (min-width: 821px) {
+  body { padding-left: 108px; } /* sidebar 84px + 12px + 12px gap */
+
   .page-nav {
-    max-width: 560px; /* cap pill width so it floats nicely, not full-width */
+    bottom: auto;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    flex-direction: column;
+    width: 84px;
+    max-width: none;
+    max-height: calc(100dvh - 48px);
+    padding: 8px 5px;
   }
-  .page-nav-btn { padding: 10px 26px; }
-  .page-nav-sub { display: block; font-size: 9px; }
+
+  /* Sliding pill + hover bubble: horizontal extent set here,
+     top + height driven by JS for each active/hovered button */
+  .nav-pill,
+  .nav-hover-bubble {
+    left: 5px;
+    top: 5px;
+    width: calc(100% - 10px);
+    bottom: auto;
+    height: 64px; /* JS will override */
+  }
+
+  /* Button: icon above label, full sidebar width */
+  .page-nav-btn {
+    flex: none !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    min-height: 64px;
+    padding: 12px 8px;
+    font-size: 10.5px;
+    gap: 5px;
+  }
+
+  /* Sub-labels are too long for 84px — keep hidden */
+  .page-nav-sub { display: none !important; }
+
+  /* Scroll-shrink doesn't make sense vertically — neutralise it */
+  .page-nav.shrunk { padding: 8px 5px; }
+  .page-nav.shrunk .page-nav-btn {
+    min-height: 64px;
+    padding: 12px 8px;
+    gap: 5px;
+  }
+  .page-nav.shrunk .page-nav-btn > span:not(.page-nav-sub) { display: block; }
 }
 
 /* ── 13. Studio Display (≥2200px): constrain content columns ── */

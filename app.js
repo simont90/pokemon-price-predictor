@@ -21734,18 +21734,34 @@ function setupPageNav() {
   const nav = document.getElementById('pageNav');
   const pill = document.getElementById('navPill');
 
+  const _isVerticalNav = () => window.matchMedia('(min-width: 821px)').matches;
+
   function _positionPill(activeBtn) {
     if (!pill || !nav || !activeBtn) return;
     const navRect = nav.getBoundingClientRect();
     const btnRect = activeBtn.getBoundingClientRect();
-    pill.style.left = (btnRect.left - navRect.left) + 'px';
-    pill.style.width = btnRect.width + 'px';
+    if (_isVerticalNav()) {
+      pill.style.top    = (btnRect.top  - navRect.top)  + 'px';
+      pill.style.height = btnRect.height + 'px';
+      pill.style.left   = '5px';
+      pill.style.width  = 'calc(100% - 10px)';
+    } else {
+      pill.style.left   = (btnRect.left - navRect.left) + 'px';
+      pill.style.width  = btnRect.width + 'px';
+      pill.style.top    = '';
+      pill.style.height = '';
+    }
   }
 
   // Move pill after every page switch — wire onto button clicks after the fact
   buttons.forEach(b => {
     b.addEventListener('click', () => requestAnimationFrame(() => _positionPill(nav?.querySelector('.page-nav-btn.active'))));
   });
+
+  // Re-position pill on resize (orientation change / window drag)
+  window.addEventListener('resize', () => {
+    requestAnimationFrame(() => _positionPill(nav?.querySelector('.page-nav-btn.active')));
+  }, { passive: true });
 
   // Initial pill position — defer until layout is settled
   function _initPill() {
@@ -21763,8 +21779,17 @@ function setupPageNav() {
     if (!hoverBubble || !nav || !btn) return;
     const navRect = nav.getBoundingClientRect();
     const btnRect = btn.getBoundingClientRect();
-    hoverBubble.style.left  = (btnRect.left - navRect.left) + 'px';
-    hoverBubble.style.width = btnRect.width + 'px';
+    if (_isVerticalNav()) {
+      hoverBubble.style.top    = (btnRect.top  - navRect.top)  + 'px';
+      hoverBubble.style.height = btnRect.height + 'px';
+      hoverBubble.style.left   = '5px';
+      hoverBubble.style.width  = 'calc(100% - 10px)';
+    } else {
+      hoverBubble.style.left  = (btnRect.left - navRect.left) + 'px';
+      hoverBubble.style.width = btnRect.width + 'px';
+      hoverBubble.style.top    = '';
+      hoverBubble.style.height = '';
+    }
     hoverBubble.style.opacity = '1';
     hoverBubble.style.transform = 'scale(1)';
   }
@@ -21799,9 +21824,10 @@ function setupPageNav() {
     }, { passive: true });
   }
 
-  // Shrink nav to icon-only when scrolling down, expand on scroll-up
+  // Shrink nav to icon-only when scrolling down (mobile/tablet only — sidebar is always expanded)
   let _prevNavScrollY = window.scrollY;
   window.addEventListener('scroll', () => {
+    if (_isVerticalNav()) return;
     const y = window.scrollY;
     if (nav) nav.classList.toggle('shrunk', y > _prevNavScrollY && y > 80);
     _prevNavScrollY = y;
