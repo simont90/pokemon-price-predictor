@@ -22963,25 +22963,52 @@ function setupCollapsibleSections() {
 }
 
 function setupHeaderMenu() {
-  const btn   = document.getElementById('headerMenuBtn');
-  const popup = document.getElementById('hdrPopup');
-  if (!btn || !popup) return;
+  const btn       = document.getElementById('headerMenuBtn');
+  const sidebarBtn = document.getElementById('sidebarMyStuff');
+  const popup     = document.getElementById('hdrPopup');
+  if (!popup) return;
 
   const close = () => {
-    popup.classList.remove('hmp-open');
+    popup.classList.remove('hmp-open', 'hmp-sidebar');
+    popup.style.top = '';
     popup.setAttribute('aria-hidden', 'true');
-    btn.setAttribute('aria-expanded', 'false');
+    btn?.setAttribute('aria-expanded', 'false');
+    sidebarBtn?.setAttribute('aria-expanded', 'false');
   };
 
-  btn.addEventListener('click', e => {
-    e.stopPropagation();
-    const open = popup.classList.toggle('hmp-open');
-    popup.setAttribute('aria-hidden', open ? 'false' : 'true');
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
+  const _openFromSidebar = () => {
+    const r = sidebarBtn.getBoundingClientRect();
+    // Position vertically centred on the button, clamped to viewport
+    const desiredTop = r.top + r.height / 2;
+    popup.classList.add('hmp-sidebar');
+    popup.style.top = Math.max(12, Math.min(desiredTop, window.innerHeight - 420)) + 'px';
+  };
+
+  if (btn) {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = popup.classList.toggle('hmp-open');
+      popup.classList.remove('hmp-sidebar');
+      popup.style.top = '';
+      popup.setAttribute('aria-hidden', open ? 'false' : 'true');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+
+  if (sidebarBtn) {
+    sidebarBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = popup.classList.toggle('hmp-open');
+      if (open) _openFromSidebar();
+      else { popup.classList.remove('hmp-sidebar'); popup.style.top = ''; }
+      popup.setAttribute('aria-hidden', open ? 'false' : 'true');
+      sidebarBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn?.setAttribute('aria-expanded', 'false');
+    });
+  }
 
   document.addEventListener('click', e => {
-    if (popup.classList.contains('hmp-open') && !popup.contains(e.target) && e.target !== btn) close();
+    if (popup.classList.contains('hmp-open') && !popup.contains(e.target) && e.target !== btn && e.target !== sidebarBtn) close();
   });
 
   // Overlay action items

@@ -16461,6 +16461,9 @@ h1, h2, h3 {
 @media (min-width: 821px) {
   body { padding-left: 108px; } /* sidebar 84px + 12px + 12px gap */
 
+  /* Hamburger lives in the sidebar now — hide the header one */
+  #headerMenuBtn { display: none !important; }
+
   .page-nav {
     bottom: auto;
     left: 12px;
@@ -16509,6 +16512,44 @@ h1, h2, h3 {
     gap: 5px;
   }
   .page-nav.shrunk .page-nav-btn > span:not(.page-nav-sub) { display: block; }
+
+  /* My Stuff separator — thin rule above the button */
+  .nav-stuff-sep {
+    width: calc(100% - 20px);
+    height: 1px;
+    margin: 4px 10px;
+    background: rgba(255,255,255,0.10);
+    flex-shrink: 0;
+  }
+
+  /* My Stuff button — same shape as nav buttons but accent-tinted */
+  .nav-stuff-btn {
+    color: var(--text-muted);
+  }
+  .nav-stuff-btn svg { opacity: 0.55; }
+  .nav-stuff-btn:hover { color: var(--accent); }
+  .nav-stuff-btn:hover svg { opacity: 1; color: var(--accent); }
+  .nav-stuff-btn[aria-expanded="true"] { color: var(--accent); }
+  .nav-stuff-btn[aria-expanded="true"] svg { opacity: 1; color: var(--accent); }
+
+  /* Popup anchored to the right of the sidebar when opened from it */
+  .hdr-popup.hmp-sidebar {
+    position: fixed;
+    left: 108px;   /* sidebar right-edge (12 + 84 + 12) */
+    top: auto;
+    transform: none;
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+  }
+}
+
+/* My Stuff elements hidden on mobile — sidebar-only */
+.nav-stuff-sep,
+.nav-stuff-btn { display: none; }
+@media (min-width: 821px) {
+  .nav-stuff-sep,
+  .nav-stuff-btn { display: flex; }
+  .nav-stuff-sep { display: block; }
 }
 
 /* ── 13. Studio Display (≥2200px): constrain content columns ── */
