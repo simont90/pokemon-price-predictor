@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260713p">
+  <link rel="stylesheet" href="style.css?v=20260713r">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -854,6 +854,7 @@
     <!-- Home Page -->
     <div class="page" id="pageHome" data-page="home" style="display:none">
       <div class="home-dashboard">
+        <div class="home-main-col">
 
         <!-- Market Brief banner (light mode only) -->
         <div class="market-brief" id="marketBrief" onclick="go('know')">
@@ -913,6 +914,9 @@
             <div id="homeTopPicksAvoid"><div class="home-empty">Scanning…</div></div>
           </div>
         </div>
+
+        </div><!-- /home-main-col -->
+        <div class="home-side-col">
 
         <!-- GROUP: My Collection & Consider Grading -->
         <div class="home-tab-group" id="hTabColl">
@@ -1154,7 +1158,8 @@
           <div id="homeVintageArea"></div>
         </div>
 
-      </div>
+        </div><!-- /home-side-col -->
+      </div><!-- /home-dashboard -->
     </div><!-- /#pageHome -->
 
     <!-- View All modal (home dashboard sections) -->
@@ -3049,7 +3054,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260713p"></script>
+  <script src="app.js?v=20260713r"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

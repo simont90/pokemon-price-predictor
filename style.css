@@ -10682,6 +10682,25 @@ body {
   }
 }
 
+/* Two-column home layout: wrapper divs carry columns, flex-row on wide desktop */
+.home-main-col,
+.home-side-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+@media (min-width: 1280px) {
+  .home-dashboard {
+    display: flex;
+    flex-direction: row;
+    gap: 28px;
+    align-items: start;
+  }
+  .home-main-col { flex: 1; min-width: 0; }
+  .home-side-col { width: 380px; flex-shrink: 0; }
+}
+
 /* Predict: slight weight shift on very wide screens */
 @media (min-width: 1440px) {
   .main { grid-template-columns: 1.2fr 1fr; gap: 28px; }
