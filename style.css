@@ -16110,3 +16110,15 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   .ch-video-thumb { width: 90px; height: 51px; }
   .ch-grid { grid-template-columns: 1fr; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Mobile card detail: cap image height so card info is visible on first scroll.
+   Must come AFTER the Retina max-height:512px rule (~line 10789) to win the
+   !important cascade. With 260px cap the signal badge fits in the initial view
+   on all iPhones (nav-bar 150px + image ~300px + info ~285px visible = done).
+   ───────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .card-thumb { max-height: 260px !important; }
+  /* Tighten image container vertical padding to reclaim a few extra pixels */
+  .card-images { padding: 10px 0 8px !important; margin-bottom: 8px !important; }
+}
