@@ -3605,7 +3605,11 @@ function computeSignal(card, pullCost, desirability) {
   const isHeating = momentum.mult > 1.1;
   const isCooling = momentum.mult < 0.8;
 
-  const isChaseChar = charMult >= 1.3;
+  const isChaseChar   = charMult >= 1.3;
+  const isSuperIconic = charMult >= 1.6;  // S-tier: Charizard, Mewtwo, Pikachu, Mew, Umbreon, Eevee
+  const isJP          = card.lang === 'JP';
+  const isWotcFirst   = _HVG_1ED_SETS.has(card.sc);   // 1st Ed eligible WOTC sets — supply fully discontinued
+  const isAltArt      = card.rc === 'SIR' || card.rc === 'SAR';
 
   // Primary signal: model's projected annual growth rate (rarityRate × charMult × ageMult)
   // Benchmarked against ~8% opportunity cost. This is the direct output of the forecast model.
@@ -3638,9 +3642,29 @@ function computeSignal(card, pullCost, desirability) {
   // Gem-rate signal: hard-to-grade cards command extra PSA 10 scarcity premium
   const gemRate = card.g != null ? card.g : null;
   if (gemRate !== null) {
-    if (gemRate < 0.05)       { score += 1; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — very hard to grade`); }
+    if (gemRate < 0.03)       { score += 2; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — PSA 10 pop extremely scarce`); }
+    else if (gemRate < 0.05)  { score += 1; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — very hard to grade`); }
     else if (gemRate >= 0.30) { score -= 1; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — easy to grade, many PSA 10s`); }
   }
+
+  // Video-intelligence signals -----------------------------------------------
+
+  // S-tier icon: consistent cross-market demand regardless of era or format
+  if (isSuperIconic) { score += 1; reasons.push('S-tier icon — sustained cross-market demand'); }
+
+  // WOTC 1st Ed eligible sets: production fully discontinued, no reprint risk
+  if (isWotcFirst && ageMonths >= 240) { score += 1; reasons.push('WOTC 1st Ed eligible — supply fully discontinued'); }
+
+  // JP price correction window: 2025-2026 JP crash put JP cards at EN-equivalent pricing
+  if (isJP && modelVsMarket > 1.1) { score += 1; reasons.push('JP correction window — undervalued vs EN equivalent'); }
+
+  // Alt Art spike-reset cycle: SIR/SAR typically dip 3-18 months post-release before recovering
+  if (isAltArt && ageMonths >= 3 && ageMonths < 18 && !isSuperIconic) {
+    score -= 1;
+    reasons.push('Alt Art correction window — 18-month floor not yet reached');
+  }
+
+  // --------------------------------------------------------------------------
 
   let signal, cls;
   if (score >= 4)       { signal = 'STRONG BUY'; cls = 'signal-strong-buy'; }
