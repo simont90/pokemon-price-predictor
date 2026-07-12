@@ -15978,9 +15978,26 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   display: inline-block; width: 1px; height: 16px;
   background: var(--border); margin: 0 2px;
 }
-.so-1sted-note {
-  font-size: 10px; color: #c9a225;
-  margin: 4px 0 2px; line-height: 1.3;
+.so-pc-variant {
+  font-size: 10px; color: var(--text-muted);
+  margin: 3px 0 2px; line-height: 1.3;
+}
+.so-1sted-avail { color: #c9a225; }
+
+/* PriceCharting variant toggle (Unlimited / Shadowless / 1st Edition) */
+.pc-variant-row {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 6px 0 4px;
+}
+.pc-var-btn {
+  font-size: 11px; font-weight: 600; padding: 3px 9px;
+  border-radius: 7px; border: 1px solid var(--border);
+  background: var(--bg-raised); color: var(--text-muted);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pc-var-btn.active {
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(232,182,52,0.1);
 }
 
 /* Standouts — Refresh progress popup */

@@ -187,6 +187,7 @@ let _displayCurrency = localStorage.getItem(DISP_CURRENCY_KEY) || 'GBP';
 let _currencyRates   = { GBP: 1, USD: 1.27, EUR: 1.17, JPY: 190, AUD: 2.01, CAD: 1.74 };
 const _CURRENCY_SYMS = { GBP: '£', USD: '$', EUR: '€', JPY: '¥', AUD: 'A$', CAD: 'C$' };
 let _lastLiveData    = null;
+let _marketPCVariant = 'unlimited'; // active variant in the PC panel: 'unlimited' | '1sted' | 'shadowless'
 let searchIndex = [];
 const $ = id => document.getElementById(id);
 
@@ -2703,6 +2704,105 @@ async function fetchAndCacheFresh(card, originalId) {
   }
 }
 
+// Extract a short variant label from a PriceCharting product name
+function _pcVariantLabel(pcName) {
+  if (!pcName) return 'Unlimited';
+  const n = pcName.toLowerCase();
+  if (/1st.?edition|first.?edition/.test(n)) return '1st Edition';
+  if (/shadowless/.test(n)) return 'Shadowless';
+  if (/non.?holo/.test(n)) return 'Non-Holo';
+  if (/reverse.?holo/.test(n)) return 'Rev. Holo';
+  return 'Unlimited';
+}
+
+// Update just the PC price cells (ungraded/psa10/psa9/ace10/ace9/roi/matchName)
+// Used by renderLivePrice and switchMarketPCVariant so they stay in sync.
+function _applyPCCells(pcData, overrideMatchName) {
+  const fv = (usd) => usd > 0 ? fmtGBP(usd) : '—';
+  $('pcUngraded').textContent  = fv(pcData.pcUngraded);
+  $('pcPsa10').textContent     = fv(pcData.pcPsa10);
+  $('pcGrade9').textContent    = fv(pcData.pcPsa9 || pcData.pcGrade9 || 0);
+  $('pcAce10').textContent     = fv(pcData.pcAce10 || 0);
+  $('pcAce9').textContent      = fv(pcData.pcAce9 || 0);
+  if (pcData.pcPsa10 > 0 && pcData.pcUngraded > 0) {
+    const roi = ((pcData.pcPsa10 - pcData.pcUngraded - 25) / pcData.pcUngraded * 100).toFixed(0);
+    const roiEl = $('pcGradingRoi');
+    roiEl.textContent = `${roi > 0 ? '+' : ''}${roi}%`;
+    roiEl.className = `lp-val pc-grading-roi ${roi > 50 ? 'roi-good' : roi > 0 ? 'roi-ok' : 'roi-bad'}`;
+  } else {
+    const roiEl = $('pcGradingRoi');
+    roiEl.textContent = '—';
+    roiEl.className = 'lp-val pc-grading-roi';
+  }
+  const matchEl = $('pcMatchName');
+  if (matchEl) {
+    const lbl = overrideMatchName || pcData.pcName || '';
+    matchEl.textContent = lbl;
+    matchEl.style.display = lbl ? '' : 'none';
+  }
+}
+
+// Show/hide/update the variant toggle buttons in the PC panel
+function _updatePCVariantButtons(card) {
+  const row = $('pcVariantRow');
+  if (!row) return;
+  const is1edEligible = card && card.lang !== 'JP' && (typeof _SO_FIRST_ED_SETS !== 'undefined') && _SO_FIRST_ED_SETS.has(card.sc);
+  const isShadowlessEligible = card && card.lang !== 'JP' && (typeof _HVG_SHADOWLESS_SETS !== 'undefined') && _HVG_SHADOWLESS_SETS.has(card.sc);
+  if (!is1edEligible && !isShadowlessEligible) { row.style.display = 'none'; return; }
+  row.style.display = '';
+  row.innerHTML = [
+    `<button class="pc-var-btn${_marketPCVariant === 'unlimited' ? ' active' : ''}" data-pc-var="unlimited" onclick="switchMarketPCVariant('unlimited')">Unlimited</button>`,
+    isShadowlessEligible ? `<button class="pc-var-btn${_marketPCVariant === 'shadowless' ? ' active' : ''}" data-pc-var="shadowless" onclick="switchMarketPCVariant('shadowless')">Shadowless</button>` : '',
+    is1edEligible ? `<button class="pc-var-btn${_marketPCVariant === '1sted' ? ' active' : ''}" data-pc-var="1sted" onclick="switchMarketPCVariant('1sted')">1st Edition</button>` : '',
+  ].join('');
+}
+
+// Switch the PC panel to a different print variant (Unlimited / Shadowless / 1st Edition).
+// Fetches from the existing variant price caches (or triggers a fresh PriceCharting request).
+window.switchMarketPCVariant = async function(variant) {
+  if (!selectedCard) return;
+  _marketPCVariant = variant;
+  _updatePCVariantButtons(selectedCard);
+
+  if (variant === 'unlimited') {
+    if (_lastLiveData) _applyPCCells(_lastLiveData);
+    return;
+  }
+
+  // Show loading state
+  ['pcUngraded','pcPsa10','pcGrade9','pcAce10','pcAce9'].forEach(id => { const el = $(id); if (el) el.textContent = '…'; });
+  $('pcGradingRoi').textContent = '…';
+  const matchEl = $('pcMatchName');
+  if (matchEl) matchEl.textContent = variant === '1sted' ? 'Fetching 1st Edition…' : 'Fetching Shadowless…';
+
+  let pd = null;
+  try {
+    if (variant === '1sted') {
+      pd = _getCached1edPrice(selectedCard.i);
+      if (!pd || !_priceCacheIsValid(pd._ts)) pd = await _hvg1edFetchOne(selectedCard);
+    } else if (variant === 'shadowless') {
+      pd = _getCachedShadowlessPrice(selectedCard.i);
+      if (!pd || !_priceCacheIsValid(pd._ts)) pd = await _hvgShadowlessFetchOne(selectedCard);
+    }
+  } catch {}
+
+  if (!pd || !(pd.pcPsa10 > 0 || pd.pcPsa9 > 0)) {
+    const varLabel = variant === '1sted' ? '1st Edition' : 'Shadowless';
+    ['pcUngraded','pcPsa10','pcGrade9','pcAce10','pcAce9'].forEach(id => { const el = $(id); if (el) el.textContent = '—'; });
+    $('pcGradingRoi').textContent = '—';
+    if (matchEl) matchEl.textContent = `No ${varLabel} data — try "Wrong card?" to find it manually`;
+    return;
+  }
+
+  // Merge raw (ungraded) from unlimited data if variant doesn't have it
+  const merged = { ...pd };
+  if (!(merged.pcUngraded > 0) && _lastLiveData?.pcUngraded > 0) {
+    merged.pcUngraded = _lastLiveData.pcUngraded;
+  }
+  const varLabel = variant === '1sted' ? '1st Edition' : 'Shadowless';
+  _applyPCCells(merged, varLabel + ' · ' + (selectedCard.n || ''));
+};
+
 // Render live pricing panel
 function renderLivePrice(data) {
   _lastLiveData = data;
@@ -2878,8 +2978,10 @@ function renderLivePrice(data) {
     } else {
       pcLink.style.display = 'none';
     }
+    _updatePCVariantButtons(selectedCard);
   } else {
     pcRow.style.display = 'none';
+    const varRow = $('pcVariantRow'); if (varRow) varRow.style.display = 'none';
   }
 
   // Collectrics row
@@ -3126,6 +3228,7 @@ function selectCard(id) {
   _holdWinnerKey = null;  // reset until renderHoldStrategy runs for this card
   _holdWinnerDesc = '';
   _mktGradeRows  = null;
+  _marketPCVariant = 'unlimited'; // reset variant picker on card change
 
   // Taste engine: score this searched card; strong matches auto-join the
   // home recommendations (deferred so it never delays the card render).
@@ -25882,6 +25985,8 @@ function renderStandouts() {
         const riskClass = risk === 'low' ? 'so-risk-low' : risk === 'high' ? 'so-risk-high' : 'so-risk-med';
         const riskLabel = risk === 'low' ? 'Low risk' : risk === 'high' ? 'High risk' : 'Med risk';
         const insight   = _buildVintageInsight(item);
+        const cachedPc  = priceCache[card.i];
+        const pcVariant = _pcVariantLabel(cachedPc?.pcName || '');
         const tagHtml   = inWishlist
           ? `<span class="so-tag" style="background:rgba(253,121,168,0.2);color:#fd79a8">Wishlist</span>`
           : is1stEd
@@ -25903,7 +26008,7 @@ function renderStandouts() {
               <div class="so-strat-roi" style="color:${roiColor}">+${Math.round(roi)}%</div>
             </div>
             <div class="so-strat-meta">5yr target ${fmtGBPDirect(yr5GBP)} \xb7 profit ${profitGBP >= 0 ? '+' : ''}${fmtGBPDirect(profitGBP)}</div>
-            ${is1stEd ? `<div class="so-1sted-note">1st Ed version exists — typically 3–10× Unlimited price</div>` : ''}
+            <div class="so-pc-variant">Pricing: ${esc(pcVariant)}${is1stEd && pcVariant === 'Unlimited' ? ' · <span class="so-1sted-avail">1st Ed +3–10×</span>' : ''}</div>
             <div class="so-key-insight">
               <div class="so-key-insight-lbl"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>Key Insight</div>
               <div class="so-key-insight-txt">${esc(insight)}</div>
