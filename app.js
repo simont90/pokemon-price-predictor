@@ -17523,6 +17523,8 @@ const AI_PROVIDERS = {
 };
 
 let aiChatHistory = [];
+let _vintageIntel = null;        // cached from /vintage-intel; refreshed per-session on first vintage query
+let _vintageIntelFetched = false;
 try { aiChatHistory = JSON.parse(localStorage.getItem(AI_HIST_STORAGE) || '[]') || []; }
 catch { aiChatHistory = []; }
 
@@ -17757,10 +17759,21 @@ function aiSystemPrompt(ctx) {
     ? `ACTIVE CARD: The user has [[card:${ctx.selected_card.id}|${ctx.selected_card.name}]] loaded on screen. Investment stars: ${ctx.selected_card.investment_stars ?? 'n/a'}/5. PSA 10 gem rate: ${ctx.selected_card.psa10_gem_rate_pct != null ? ctx.selected_card.psa10_gem_rate_pct + '%' : 'unknown'}. When asked to analyse it, use signal (${ctx.selected_card.signal || 'n/a'}), signal_reasons, desirability (${ctx.selected_card.desirability}), best_strategy, and forecast fields to give a complete verdict: buy/hold/sell, whether to grade, 5-year trajectory, and risks. Cite the actual numbers — don't be vague.`
     : '';
 
+  const vintageSection = _vintageIntel ? `
+VINTAGE MARKET INTELLIGENCE (sourced from ${(_vintageIntel.sources || []).map(s => s.channel + ': "' + s.title + '"').join('; ')}):
+Era: ${_vintageIntel.framework?.era || 'WOTC 1999–2003'}
+Sweet spot: ${_vintageIntel.framework?.sweet_spot || ''}
+Buy signals: ${(_vintageIntel.framework?.buy_signals || []).join(' · ')}
+Macro: ${_vintageIntel.framework?.macro || ''}
+Current featured picks (from community analysis):
+${(_vintageIntel.featured_picks || []).map(p => `  • ${p.name} (${p.grade}) ~$${p.price_usd} — ${p.note}`).join('\n')}
+Apply this framework when analysing WOTC-era cards: flag PSA 9 undervaluation vs PSA 10 moves, note population scarcity, and always mention whether First Edition exists for the card.
+` : '';
+
   return `You are "PokeKnow", an expert Pokemon TCG market analyst built into the user's collection-tracking app.
 
 ROLE: Give crisp, data-driven advice on buying, selling, grading and timing the Pokemon TCG market. Be opinionated but honest about uncertainty. Optimise for actionable signal, not generic advice.
-
+${vintageSection}
 ${budgetLine}
 ${focusLine}
 ${cardLine}
@@ -18066,6 +18079,22 @@ async function aiSubmit(userText) {
   aiChatHistory.push({ role: 'user', content: text });
   aiSaveHistory();
   aiRenderHistory();
+
+  // Fetch vintage intelligence from worker the first time a vintage card is active
+  // or the vintage focus is set — lazy so it doesn't slow down every query.
+  if (!_vintageIntelFetched) {
+    const focus = (typeof getFocus === 'function') ? getFocus() : null;
+    const isVintageFocus = focus && focus.id === 'vintage';
+    const isVintageCard = selectedCard && (typeof _vintageSets === 'function') &&
+      _vintageSets().some(s => s.code === selectedCard.sc);
+    if (isVintageFocus || isVintageCard) {
+      _vintageIntelFetched = true;
+      try {
+        const res = await fetch(getMktWorkerUrl() + '/vintage-intel', { signal: AbortSignal.timeout(5000) });
+        if (res.ok) _vintageIntel = await res.json();
+      } catch {}
+    }
+  }
 
   const ctx = aiBuildContext();
   const sys = aiSystemPrompt(ctx);

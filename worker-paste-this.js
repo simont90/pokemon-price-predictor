@@ -832,6 +832,7 @@ async function handle(request, env) {
   const url = new URL(request.url);
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request) });
   if (url.pathname === '/health') return new Response('ok', { headers: corsHeaders(request) });
+  if (url.pathname === '/vintage-intel') return handleVintageIntel(request, env);
   if (url.pathname === '/sync') return handleSync(request, env, url);
   if (url.pathname === '/mcp') return handleMcp(request, env, url);
   if (url.pathname === '/img-proxy') return handleImgProxy(request, env, url);
@@ -1761,6 +1762,168 @@ function _warmSnapKey(snap, key) {
   try { return JSON.parse(snap.data[key]) || []; } catch { return []; }
 }
 
+// ── Vintage intelligence ─────────────────────────────────────────────────────
+
+const VINTAGE_INTEL_KV_KEY   = 'vintage-intel-v1';
+const VINTAGE_INTEL_CHECK_KEY = 'vintage-intel-last-check';
+const VINTAGE_CHANNEL_ID     = 'UCsSA2eBWW7qAwSV_COyW8uQ'; // PikaPikaPaPa
+
+// Seed data from "Everything's About to Change... And Vintage Pokémon Will Explode"
+// by PikaPikaPaPa (Jul 2025). Re-used as fallback when KV is empty or unreachable.
+const VINTAGE_INTEL_SEED = {
+  ts: 1752192000000, // 2025-07-11
+  framework: {
+    era: 'WOTC 1999–2003',
+    priority: ['First Edition', 'Unlimited'],
+    sweet_spot: 'PSA 9 when PSA 10 has significantly outpaced it (e.g. 3× in 1yr while PSA 9 only +14%). PSA 10 is often out of reach for casual collectors; the PSA 9 captures most of the upside at a fraction of the price.',
+    buy_signals: [
+      'PSA 10 pop < 500 — genuinely scarce in top grade',
+      'PSA 9 pop < 1 000 — still findable, price gap to PSA 10 represents opportunity',
+      'PSA 10 price growing >2× faster than PSA 9 over past year — the market is underpricing PSA 9',
+      'Iconic Pokémon: Zapdos, Mewtwo, Charizard, Mew, Dragonite, Venusaur, Gengar',
+      'First Edition print — always prefer over Unlimited even at a grade lower',
+      'Set rarity: Fossil, Team Rocket, Gym Challenge, Neo, WOTC Black Star Promos',
+    ],
+    macro: 'TPCi leased 1 M+ sq ft in NC for new printing facility → modern card supply will surge, flippers exit, prices temporarily dip then recover stronger. PSA grading volume now >1 M TCG cards/month (4 of last 5 months) — modern card PSA pops will be enormous. Vintage WOTC pops grow only as sealed product is opened (rare). Conclusion: relative scarcity of vintage PSA 10s/9s increases over time.',
+  },
+  featured_picks: [
+    { name: '1st Ed Fossil Zapdos', set: 'fossil', grade: 'PSA 9', price_usd: 330, psa10_usd: 3300, psa10_pop: 378, note: 'PSA 10 tripled in 1 yr; PSA 9 only +14% — strong asymmetry' },
+    { name: '1st Ed Team Rocket Dark Dragonite', set: 'base3', grade: 'PSA 9', price_usd: 850, psa10_usd: 7700, psa10_pop: 223, note: 'PSA 10 rose from $3k to $7.7k; PSA 9 flat at ~$850 with 2 261 in holders' },
+    { name: '1st Ed Gym Challenge Team Rocket\'s Mewtwo', set: 'gym2', grade: 'PSA 9', price_usd: 837, psa10_usd: 6000, psa9_pop: 953, note: 'Creator\'s top pick. PSA 10 from $1.5k to $6k; PSA 9 sub-$900 with sub-1k pop' },
+    { name: '1st Ed Gym Challenge Erika\'s Venusaur', set: 'gym2', grade: 'PSA 9', price_usd: 881, psa10_usd: 5500, psa10_pop: 107, note: 'Only 107 PSA 10s ever graded — exceptional scarcity' },
+    { name: 'WOTC Black Star Promo Mew', set: 'basep', grade: 'PSA 9', price_usd: 285, psa10_usd: 4525, psa9_pop: 3239, note: 'Mew brand momentum strong. PSA 10 from $1k to $4.5k in 1 yr' },
+  ],
+  sources: [
+    { video_id: '1RD5N457AaI', channel: 'PikaPikaPaPa', title: "Everything's About to Change... And Vintage Pokémon Will Explode" },
+  ],
+};
+
+// GET /vintage-intel — returns structured vintage investment intelligence
+async function handleVintageIntel(request, env) {
+  const ch = { ...corsHeaders(request), 'Cache-Control': 'public, max-age=3600' };
+  let intel = VINTAGE_INTEL_SEED;
+  if (env.SYNC_KV) {
+    try {
+      const raw = await env.SYNC_KV.get(VINTAGE_INTEL_KV_KEY);
+      if (raw) intel = JSON.parse(raw);
+    } catch {}
+  }
+  return new Response(JSON.stringify(intel), { headers: { ...ch, 'Content-Type': 'application/json' } });
+}
+
+// Cron task: check PikaPikaPaPa's channel for new vintage-relevant videos,
+// fetch their transcripts and distil insights into KV.
+async function refreshVintageIntel(env) {
+  if (!env.SYNC_KV || !env.ANTHROPIC_API_KEY) return;
+
+  // Rate-gate: only run once per week
+  const lastCheck = await env.SYNC_KV.get(VINTAGE_INTEL_CHECK_KEY);
+  if (lastCheck && Date.now() - Number(lastCheck) < 7 * 24 * 3600 * 1000) return;
+  await env.SYNC_KV.put(VINTAGE_INTEL_CHECK_KEY, String(Date.now()), { expirationTtl: 8 * 24 * 3600 });
+
+  // Fetch channel RSS
+  let rssText;
+  try {
+    const rssRes = await fetch(
+      `https://www.youtube.com/feeds/videos.xml?channel_id=${VINTAGE_CHANNEL_ID}`,
+      { cf: { cacheTtl: 3600 } },
+    );
+    if (!rssRes.ok) return;
+    rssText = await rssRes.text();
+  } catch { return; }
+
+  // Parse video IDs + titles from RSS (simple regex, no DOM parser in Worker)
+  const VINTAGE_KEYWORDS = /vintage|wotc|first.?edition|1999|2000|fossil|gym.challenge|team.rocket|psa.?9|psa.?10|graded|invest/i;
+  const videos = [];
+  const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
+  let m;
+  while ((m = entryRegex.exec(rssText)) !== null) {
+    const entry = m[1];
+    const idMatch  = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
+    const titMatch = entry.match(/<title>([^<]+)<\/title>/);
+    const datMatch = entry.match(/<published>([^<]+)<\/published>/);
+    if (!idMatch || !titMatch) continue;
+    const videoId = idMatch[1];
+    const title   = titMatch[1];
+    const published = datMatch ? datMatch[1] : '';
+    if (!VINTAGE_KEYWORDS.test(title)) continue;
+    videos.push({ videoId, title, published });
+  }
+  if (!videos.length) return;
+
+  // Load existing intel to check which videos we've already processed
+  let existing = VINTAGE_INTEL_SEED;
+  try {
+    const raw = await env.SYNC_KV.get(VINTAGE_INTEL_KV_KEY);
+    if (raw) existing = JSON.parse(raw);
+  } catch {}
+  const seenIds = new Set((existing.sources || []).map(s => s.video_id));
+  const newVideos = videos.filter(v => !seenIds.has(v.videoId)).slice(0, 3); // max 3 new per run
+  if (!newVideos.length) return;
+
+  // For each new video, fetch transcript and distil insights
+  for (const { videoId, title, published } of newVideos) {
+    let transcript = '';
+    try {
+      const ttRes = await fetch(
+        `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=vtt`,
+        { cf: { cacheTtl: 86400 } },
+      );
+      if (ttRes.ok) {
+        const vtt = await ttRes.text();
+        // Strip VTT markup to plain text
+        transcript = vtt
+          .replace(/^WEBVTT[\s\S]*?\n\n/, '')
+          .replace(/^\d{2}:\d{2}[^\n]*\n/gm, '')
+          .replace(/<[^>]+>/g, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .slice(0, 12000); // token budget
+      }
+    } catch {}
+    if (transcript.length < 200) continue; // skip if no usable transcript
+
+    // Ask Claude to extract vintage investment insights
+    try {
+      const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 800,
+          messages: [{
+            role: 'user',
+            content: `You are a Pokémon TCG investment analyst. From this YouTube transcript, extract structured vintage investing insights as JSON with this exact shape (omit keys you can't populate):\n{"key_thesis":string,"buy_signals":[string],"featured_picks":[{"name":string,"set":string,"grade":string,"price_usd":number,"psa10_usd":number,"note":string}],"macro_notes":string}\n\nTranscript:\n${transcript}`,
+          }],
+        }),
+      });
+      if (!aiRes.ok) continue;
+      const aiJson = await aiRes.json();
+      const raw = aiJson.content?.[0]?.text || '';
+      const jsonMatch = raw.match(/\{[\s\S]+\}/);
+      if (!jsonMatch) continue;
+      const extracted = JSON.parse(jsonMatch[0]);
+
+      // Merge into existing intel
+      existing.sources = existing.sources || [];
+      existing.sources.unshift({ video_id: videoId, channel: 'PikaPikaPaPa', title, published });
+      if (extracted.featured_picks?.length) {
+        // Prepend new picks, dedupe by name
+        const existingNames = new Set((existing.featured_picks || []).map(p => p.name));
+        for (const p of extracted.featured_picks) {
+          if (!existingNames.has(p.name)) {
+            existing.featured_picks = [p, ...(existing.featured_picks || [])];
+            existingNames.add(p.name);
+          }
+        }
+      }
+      if (extracted.macro_notes) existing.framework.macro = extracted.macro_notes + '\n\n' + existing.framework.macro;
+      existing.ts = Date.now();
+    } catch {}
+  }
+
+  await env.SYNC_KV.put(VINTAGE_INTEL_KV_KEY, JSON.stringify(existing), { expirationTtl: 30 * 24 * 3600 });
+}
+
 async function handleCronRefresh(env) {
   if (!env.SYNC_KV) return;
   let listed;
@@ -1805,6 +1968,8 @@ async function handleCronRefresh(env) {
       );
     }
   }
+  // Also refresh vintage intelligence from YouTube channel
+  try { await refreshVintageIntel(env); } catch {}
 }
 
 // GET /price-warm?key=<pairCode> — returns the pre-warmed price map for this user.

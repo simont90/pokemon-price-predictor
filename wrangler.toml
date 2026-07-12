@@ -6,3 +6,6 @@ compatibility_flags = ["nodejs_compat"]
 [[kv_namespaces]]
 binding = "SYNC_KV"
 id = "6488eeadb6924bab9e71c36627c1658a"
+
+[triggers]
+crons = ["0 6 * * 1"]   # Every Monday 06:00 UTC — refresh prices + vintage intel
