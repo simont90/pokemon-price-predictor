@@ -22963,25 +22963,18 @@ function setupCollapsibleSections() {
 }
 
 function setupHeaderMenu() {
-  const btn       = document.getElementById('headerMenuBtn');
+  const btn        = document.getElementById('headerMenuBtn');
   const sidebarBtn = document.getElementById('sidebarMyStuff');
-  const popup     = document.getElementById('hdrPopup');
+  const popup      = document.getElementById('hdrPopup');
+  const backdrop   = document.getElementById('hmpBackdrop');
   if (!popup) return;
 
   const close = () => {
     popup.classList.remove('hmp-open', 'hmp-sidebar');
-    popup.style.top = '';
+    backdrop?.classList.remove('hmp-open');
     popup.setAttribute('aria-hidden', 'true');
     btn?.setAttribute('aria-expanded', 'false');
     sidebarBtn?.setAttribute('aria-expanded', 'false');
-  };
-
-  const _openFromSidebar = () => {
-    const r = sidebarBtn.getBoundingClientRect();
-    // Position vertically centred on the button, clamped to viewport
-    const desiredTop = r.top + r.height / 2;
-    popup.classList.add('hmp-sidebar');
-    popup.style.top = Math.max(12, Math.min(desiredTop, window.innerHeight - 420)) + 'px';
   };
 
   if (btn) {
@@ -22989,7 +22982,7 @@ function setupHeaderMenu() {
       e.stopPropagation();
       const open = popup.classList.toggle('hmp-open');
       popup.classList.remove('hmp-sidebar');
-      popup.style.top = '';
+      backdrop?.classList.remove('hmp-open');
       popup.setAttribute('aria-hidden', open ? 'false' : 'true');
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
@@ -22999,14 +22992,21 @@ function setupHeaderMenu() {
     sidebarBtn.addEventListener('click', e => {
       e.stopPropagation();
       const open = popup.classList.toggle('hmp-open');
-      if (open) _openFromSidebar();
-      else { popup.classList.remove('hmp-sidebar'); popup.style.top = ''; }
+      if (open) {
+        popup.classList.add('hmp-sidebar');
+        backdrop?.classList.add('hmp-open');
+      } else {
+        popup.classList.remove('hmp-sidebar');
+        backdrop?.classList.remove('hmp-open');
+      }
       popup.setAttribute('aria-hidden', open ? 'false' : 'true');
       sidebarBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
       btn?.setAttribute('aria-expanded', 'false');
     });
   }
 
+  // Click backdrop or outside to close
+  backdrop?.addEventListener('click', close);
   document.addEventListener('click', e => {
     if (popup.classList.contains('hmp-open') && !popup.contains(e.target) && e.target !== btn && e.target !== sidebarBtn) close();
   });

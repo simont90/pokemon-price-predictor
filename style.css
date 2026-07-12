@@ -9297,9 +9297,9 @@ section.card .card-collapse-btn { padding: 10px; }
 /* ── Header ⋮ popup menu ─────────────────────────────────────────────── */
 .hdr-popup {
   display: none;
-  position: absolute;
-  top: calc(100% + 10px);
-  left: 0;
+  position: fixed;
+  top: 81px;
+  left: 8px;
   width: 230px;
   z-index: 500;
   border-radius: 18px;
@@ -16532,15 +16532,42 @@ h1, h2, h3 {
   .nav-stuff-btn[aria-expanded="true"] { color: var(--accent); }
   .nav-stuff-btn[aria-expanded="true"] svg { opacity: 1; color: var(--accent); }
 
-  /* Popup anchored to the right of the sidebar when opened from it */
+  /* Popup: always vertically centred, flush to sidebar right edge.
+     The button is at the bottom so aligning to it always clips.
+     Centred placement looks intentional and never overflows. */
   .hdr-popup.hmp-sidebar {
     position: fixed;
-    left: 108px;   /* sidebar right-edge (12 + 84 + 12) */
-    top: auto;
-    transform: none;
-    max-height: calc(100dvh - 24px);
+    left: 108px;   /* 12px gap + 84px sidebar + 12px gap */
+    top: 50%;
+    transform: translateY(-50%);
+    max-height: calc(100dvh - 48px);
     overflow-y: auto;
+    animation: hmpSlideIn 0.18s cubic-bezier(0.34, 1.1, 0.64, 1);
   }
+}
+
+@keyframes hmpSlideIn {
+  from { opacity: 0; transform: translateY(-50%) translateX(-10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(-50%) translateX(0) scale(1); }
+}
+
+/* Dim backdrop behind My Stuff popup on desktop */
+.hmp-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.28);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 499; /* just below popup z-index 500 */
+  animation: hmpBackdropIn 0.18s ease;
+}
+@media (min-width: 821px) {
+  .hmp-backdrop.hmp-open { display: block; }
+}
+@keyframes hmpBackdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* My Stuff elements hidden on mobile — sidebar-only */
