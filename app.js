@@ -25913,6 +25913,134 @@ function renderStandouts() {
   }
   // — end Spike Watch tab —
 
+  // — Buy Raw + Grade tab —
+  if (_soGrade === 'grade') {
+    const grSubEl = document.getElementById('soSubtitle');
+    if (grSubEl) grSubEl.textContent = 'Cards where buying raw and grading with PSA is the strongest probability-weighted 5yr play — sorted by expected profit after fees. Source raw copies on ungraded.com.';
+
+    const GR_MIN_EV_PROFIT_GBP = 20;
+
+    const grCandidates = [];
+    for (const card of cardData.cards) {
+      try {
+        if (portfolioIds.has(card.i)) continue;
+        const hc = _getHoldCoreCached(card);
+        if (!hc?.ok) continue;
+        const gamble = hc.strategies.find(s => s.key === 'gamble');
+        if (!gamble || gamble.roi <= 0) continue;
+        const rawEntryGBP   = hc.rawUSD * fx;
+        if (hasLimit && rawEntryGBP > maxBudgetGBP) continue;
+        const gradingFeeGBP  = getUkGradingFeeGBP(hc.psa10USD);
+        const totalOutlayGBP = gamble.today * fx;
+        const evProfitGBP    = gamble.profit * fx;
+        if (evProfitGBP < GR_MIN_EV_PROFIT_GBP) continue;
+        const copiesNeeded   = hc.gemRate > 0 ? Math.ceil(1 / hc.gemRate) : null;
+        grCandidates.push({
+          card,
+          rawEntryGBP,
+          gradingFeeGBP,
+          totalOutlayGBP,
+          evProfitGBP,
+          roi:          gamble.roi,
+          riskAdjusted: gamble.riskAdjusted,
+          gemRate:      hc.gemRate,
+          copiesNeeded,
+          psa10GBP:     hc.psa10USD * fx,
+          inWishlist:   wishlistIds.has(card.i),
+        });
+      } catch (_) {}
+    }
+
+    grCandidates.sort((a, b) => b.evProfitGBP - a.evProfitGBP);
+    const grTop = grCandidates.slice(0, 12);
+
+    if (grTop.length === 0) {
+      carousel.innerHTML = '<div class="so-empty">No strong grade candidates found — cards need a PSA 10 anchor price to compute grading EV. Use "Refresh Prices" to pull live data.</div>';
+      dotsEl.innerHTML = '';
+    } else {
+      carousel.innerHTML = grTop.map((item, i) => {
+        const { card, rawEntryGBP, gradingFeeGBP, totalOutlayGBP, evProfitGBP, roi, gemRate, copiesNeeded, psa10GBP, inWishlist } = item;
+        const imgUrl      = _hiresUrl(getCardImg(card));
+        const roiColor    = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : 'var(--text)';
+        const profitColor = evProfitGBP >= 100 ? '#34d399' : evProfitGBP >= 50 ? '#e8b634' : 'var(--text-muted)';
+        const gemPct      = (gemRate * 100).toFixed(0);
+        const copiesStr   = copiesNeeded ? `~${copiesNeeded} copies for PSA 10` : '';
+        const searchQ     = encodeURIComponent((card.n || '') + ' ' + (card.s || '').split(' ')[0]);
+        return `<div class="so-card" data-so-i="${i}">
+          <div class="so-img-wrap">
+            ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
+            <span class="so-tag" style="background:rgba(251,146,60,0.18);color:#fb923c">Grade Target</span>
+            ${inWishlist ? `<span class="so-tag" style="background:rgba(253,121,168,0.2);color:#fd79a8;top:auto;bottom:12px">Wishlist</span>` : ''}
+          </div>
+          <div class="so-body">
+            <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
+            <div class="so-set">${esc(card.s || '')}${card.cn ? ' \xb7 #' + esc(card.cn) : ''}</div>
+            <div class="so-strat-row">
+              <div class="so-strat-allin">
+                <span class="so-strat-lbl">Total outlay</span>
+                <span class="so-strat-price">${fmtGBPDirect(totalOutlayGBP)}</span>
+              </div>
+              <div class="so-strat-roi" style="color:${roiColor}">+${Math.round(roi)}%</div>
+            </div>
+            <div class="so-upgrade-scenarios">
+              <div class="so-upgrade-scenario">
+                <span class="so-upg-lbl">Buy raw</span>
+                <span class="so-upg-val">${fmtGBPDirect(rawEntryGBP)}</span>
+              </div>
+              <div class="so-upgrade-scenario">
+                <span class="so-upg-lbl">PSA fee</span>
+                <span class="so-upg-val">+${fmtGBPDirect(gradingFeeGBP)}</span>
+              </div>
+              <div class="so-upgrade-scenario">
+                <span class="so-upg-lbl">PSA 10 target</span>
+                <span class="so-upg-val">${psa10GBP > 0 ? fmtGBPDirect(psa10GBP) : '—'}</span>
+              </div>
+              <div class="so-upgrade-scenario">
+                <span class="so-upg-lbl">Gem rate</span>
+                <span class="so-upg-val">${gemPct}%${copiesStr ? ` <span class="so-upg-dim">${copiesStr}</span>` : ''}</span>
+              </div>
+              <div class="so-upgrade-scenario" style="border-top:1px solid var(--border);padding-top:5px;margin-top:2px">
+                <span class="so-upg-lbl">5yr EV profit</span>
+                <span class="so-upg-val" style="color:${profitColor};font-weight:700">${evProfitGBP >= 0 ? '+' : ''}${fmtGBPDirect(evProfitGBP)} <span class="so-upg-dim">EV</span></span>
+              </div>
+            </div>
+            <div class="so-actions">
+              <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
+              <a class="so-btn-sec so-btn-ungraded" href="https://www.ungraded.com/search?q=${searchQ}" target="_blank" rel="noopener">Buy raw ↗</a>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+      dotsEl.innerHTML = grTop.map((_, i) =>
+        `<div class="so-dot${i === 0 ? ' active' : ''}" data-dot="${i}"></div>`
+      ).join('');
+
+      if (!carousel.dataset.scrollBound) {
+        carousel.dataset.scrollBound = '1';
+        carousel.addEventListener('scroll', () => {
+          const w = (carousel.querySelector('.so-card')?.offsetWidth || 1) + 16;
+          const idx = Math.round(carousel.scrollLeft / w);
+          dotsEl.querySelectorAll('.so-dot').forEach((d, i2) => d.classList.toggle('active', i2 === idx));
+        }, { passive: true });
+      }
+    }
+
+    const grToggle = document.getElementById('soGradeToggle');
+    if (grToggle && !grToggle.dataset.bound) {
+      grToggle.dataset.bound = '1';
+      grToggle.addEventListener('click', e => {
+        const btn = e.target.closest('[data-grade]');
+        if (!btn) return;
+        _soGrade = btn.dataset.grade;
+        grToggle.querySelectorAll('.sgt-btn').forEach(b => b.classList.toggle('active', b === btn));
+        renderStandouts();
+      });
+    }
+    return;
+  }
+  // — end Buy Raw + Grade tab —
+
   // — Vintage tab —
   if (_soGrade === 'vintage') {
     _soShowSubFilter(true);

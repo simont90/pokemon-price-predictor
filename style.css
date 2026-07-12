@@ -15751,6 +15751,15 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .sgt-btn--mass.active { border-color: #34d399; color: #34d399; background: rgba(52,211,153,0.12); }
 .sgt-btn--spike { border-color: rgba(167,139,250,0.4); color: #a78bfa; }
 .sgt-btn--spike.active { border-color: #a78bfa; color: #a78bfa; background: rgba(167,139,250,0.12); }
+.sgt-btn--grade { border-color: rgba(251,146,60,0.4); color: #fb923c; }
+.sgt-btn--grade.active { border-color: #fb923c; color: #fb923c; background: rgba(251,146,60,0.12); }
+.so-btn-ungraded {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 11px 14px; border-radius: 12px; text-decoration: none;
+  background: var(--bg); border: 1.5px solid rgba(251,146,60,0.5);
+  color: #fb923c; font-size: 13px; font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
 
 .so-carousel {
   display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
