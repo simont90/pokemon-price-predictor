@@ -3405,7 +3405,7 @@ function selectCard(id) {
   }
 
   if (window.innerWidth < 820) {
-    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    section.scrollIntoView({ behavior: 'instant', block: 'start' });
     // After the scroll settles, check if pp-maxbuy is behind the fixed nav pill.
     // This happens in PWA mode on iPhone where the top bar eats ~100px of viewport,
     // causing the pack cost section to land directly behind the nav.
@@ -12018,7 +12018,7 @@ function renderTop50(candidates) {
 
   document.querySelectorAll('#top50TableBody .t50-open').forEach(b => b.addEventListener('click', (e) => {
     selectCard(e.currentTarget.dataset.id);
-    document.getElementById('selectedCardSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('selectedCardSection')?.scrollIntoView({ behavior: 'instant', block: 'start' });
   }));
 }
 
@@ -22533,7 +22533,7 @@ function urRender(results) {
       setTimeout(() => {
         try {
           selectCard(id);
-          document.getElementById('selectedCardSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          document.getElementById('selectedCardSection')?.scrollIntoView({ behavior: 'instant', block: 'start' });
         } catch (e) {}
       }, 80);
     });

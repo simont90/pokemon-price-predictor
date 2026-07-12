@@ -16022,6 +16022,261 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
    ───────────────────────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .card-thumb { max-height: 260px !important; }
-  /* Tighten image container vertical padding to reclaim a few extra pixels */
   .card-images { padding: 10px 0 8px !important; margin-bottom: 8px !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   UI POLISH — rendering, overlaps, touch, performance
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Global rendering ── */
+html {
+  scroll-padding-bottom: 90px;   /* keeps scrolled-to elements above the bottom nav */
+}
+body {
+  overscroll-behavior-y: contain;  /* prevents rubber-band on non-scroll containers */
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+}
+
+/* ── Tabular numbers everywhere money appears ── */
+.predicted-price,
+.max-price,
+.home-card-price,
+.brief-price,
+.brief-pill,
+.fx-value,
+.pp-maxbuy-val,
+.hold-price-big,
+.mkt-price-big,
+.portfolio-total,
+.portfolio-item-price,
+span[id$="PriceGBP"],
+span[id$="Price"],
+span[id*="price"],
+span[id*="Price"] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ── Card image rendering — crisp on HiDPI without artefacts ── */
+.card-thumb,
+.home-card-art,
+.brief-img,
+.cpov-card-thumb,
+.search-result-img,
+.portfolio-item-img,
+.wishlist-item-img,
+.binder-pg-img,
+.ma-thumb {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+/* Override crisp-edges for thumbnails that are displayed much smaller than source
+   (they should use high-quality downscaling, not nearest-neighbor) */
+.home-card-art,
+.brief-img,
+.search-result-img,
+.portfolio-item-img,
+.wishlist-item-img {
+  image-rendering: auto;
+}
+
+/* ── Loading shimmer for card art placeholders ── */
+@keyframes _shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.home-card-art:not([src]),
+.home-card-art[src=""],
+.brief-img:not([src]) {
+  background: linear-gradient(90deg,
+    rgba(128,128,128,0.08) 0%,
+    rgba(128,128,128,0.16) 40%,
+    rgba(128,128,128,0.08) 80%);
+  background-size: 800px 100%;
+  animation: _shimmer 1.4s ease infinite;
+}
+
+/* ── Rendering containment — isolate paint/layout per card ── */
+.card,
+.home-card-tile,
+.home-section-wrap,
+.result-card,
+.portfolio-panel,
+.compare-slot {
+  contain: layout paint;
+}
+
+/* ── Touch target floors — minimum 44×44 per Apple HIG ──
+   Applies only to standalone buttons, NOT inline card-row buttons
+   (.add-portfolio-btn in card-name-row is 28px by design — expanding it
+   pushes the row into the bottom nav) ── */
+.card-nav-qbtn,
+.page-nav-btn,
+.home-budget-go,
+.theme-btn,
+.header-menu-btn,
+.card-back-btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+/* Card name-row buttons: expand tap area via padding instead of box size */
+.card-name-row .add-portfolio-btn {
+  padding: 8px;
+  margin: -4px;
+}
+
+/* ── Crisper active feedback on touch ── */
+.add-portfolio-btn:active,
+.card-nav-qbtn:active {
+  transform: scale(0.87);
+  opacity: 0.85;
+  transition: transform 0.08s, opacity 0.08s;
+}
+.cp-btn:active { transform: translateY(2px) scale(0.98); }
+
+/* ── Fix text overlap: compact home brief rows on narrow screens ──
+   The market-brief section takes ~380px at 375px width which pushes
+   the ↑Buy/↓Avoid tab bar behind the fixed bottom nav pill.
+   Trim rows to ~52px each (-10px ×3 rows = saves ~30px) and reduce
+   section padding to push the tab bar above y=736 (nav top). ── */
+@media (max-width: 600px) {
+  /* Compact brief rows so the ↑Buy/↓Avoid tab bar clears the bottom nav pill */
+  .home-brief {
+    padding: 12px 12px 6px;
+    margin-bottom: 10px;
+    /* Show max ~2 movers + header; clip the rest so the tab bar appears above nav */
+    max-height: 230px;
+    overflow: hidden;
+  }
+  .brief-section { padding: 6px 0; }
+  .brief-row { gap: 10px; padding: 1px 0; }
+  .brief-img { width: 34px; height: 47px; }
+  .brief-name { font-size: 13px; }
+  .brief-sub  { font-size: 10.5px; }
+  .brief-price { font-size: 13px; }
+  .market-brief { padding: 12px 14px; }
+  .home-budget-bar { padding: 8px 14px; gap: 8px; }
+}
+
+/* ── Scroll margin so tab groups clear the nav pill when scrolled into view ── */
+.home-tab-group,
+.home-section-wrap,
+.predict-tab-bar,
+.card {
+  scroll-margin-bottom: 90px;
+}
+
+/* ── Algorithm / Pack Cost section — cleaner hierarchy ── */
+.prediction-card {
+  background: linear-gradient(
+    160deg,
+    var(--bg-card) 0%,
+    rgba(232,182,52,0.06) 60%,
+    rgba(232,182,52,0.02) 100%
+  );
+}
+.predicted-price {
+  letter-spacing: -0.04em;
+  text-shadow: 0 0 32px rgba(232,182,52,0.25);
+}
+.max-price {
+  letter-spacing: -0.035em;
+}
+[data-theme="light"] .predicted-price {
+  text-shadow: 0 2px 12px rgba(204,0,0,0.15);
+}
+[data-theme="light"] .max-price {
+  text-shadow: 0 2px 12px rgba(0,182,122,0.18);
+}
+
+/* ── Signal badges — more visible, stronger contrast ── */
+.signal-badge {
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+/* ── Light mode — lift card depth ── */
+[data-theme="light"] .card {
+  box-shadow:
+    inset 0 1.5px 0 rgba(255,255,255,1),
+    inset 1px 0 0 rgba(255,255,255,0.70),
+    0 2px 4px rgba(0,0,0,0.04),
+    0 8px 24px rgba(0,0,0,0.07),
+    0 0 0 0.5px rgba(0,0,0,0.06);
+}
+[data-theme="light"] .home-card-tile {
+  box-shadow:
+    0 2px 8px rgba(0,0,0,0.06),
+    0 6px 20px rgba(0,0,0,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.95);
+}
+[data-theme="light"] .prediction-card {
+  background: linear-gradient(
+    160deg,
+    rgba(255,255,255,0.85) 0%,
+    rgba(204,0,0,0.03) 100%
+  );
+}
+
+/* ── Dark mode — subtle depth on cards ── */
+[data-theme="dark"] .card {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 4px 16px rgba(0,0,0,0.4),
+    0 1px 3px rgba(0,0,0,0.3);
+}
+[data-theme="dark"] .prediction-card {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 4px 20px rgba(232,182,52,0.08),
+    0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* ── Nav pill — sharper glass in light mode ── */
+[data-theme="light"] .page-nav {
+  background: rgba(248,248,252,0.80);
+  border-color: rgba(255,255,255,0.90);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,1),
+    0 8px 32px rgba(0,0,0,0.12),
+    0 2px 8px rgba(0,0,0,0.08),
+    0 0 0 0.5px rgba(0,0,0,0.06);
+}
+
+/* ── Smooth scroll and momentum on scroll regions ── */
+.portfolio-list,
+.home-scroll-row,
+.home-htab-panel,
+.search-results,
+.compare-body,
+.ql-results {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* ── Better focus rings (accessibility + visual clarity) ── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Heading sharpness ── */
+h1, h2, h3 {
+  text-wrap: balance;
+}
+.logo h1 {
+  letter-spacing: -0.025em;
+}
+.card-name-row h2 {
+  letter-spacing: -0.015em;
+  font-size: 18px;
+}
+
+/* ── Price figures — monospaced rendering ── */
+.predicted-price,
+.max-price,
+.pack-cost-value {
+  font-kerning: none;  /* disable kerning on mono figures — already handled by tnum */
 }
