@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260714c">
+  <link rel="stylesheet" href="style.css?v=20260714d">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2311,6 +2311,34 @@
               <button class="ps-btn ps-btn-primary" id="psManualGo" type="button">Refresh</button>
             </div>
           </div>
+          <div class="ps-d1-seed" id="psD1SeedSection">
+            <div class="ps-d1-seed-hd">
+              <div class="ps-d1-seed-title">⚡ Instant Price Database</div>
+              <span class="ps-d1-badge" id="psD1Badge">Not started</span>
+            </div>
+            <div class="ps-d1-seed-sub">Pre-load prices for all 25,000+ cards into D1 so any search or recommendation returns an instant price — no waiting. One-time setup, resumes if interrupted.</div>
+            <div class="ps-d1-seed-btns">
+              <button class="ps-btn ps-btn-primary" id="psSeedD1Btn" type="button">
+                <span class="ps-btn-ico">⚡</span>
+                <span class="ps-btn-text">Seed All Cards to D1</span>
+                <span class="ps-btn-hint">~15 min · runs in background · safe to cancel and resume</span>
+              </button>
+              <button class="ps-btn" id="psSeedD1StopBtn" type="button" style="display:none">
+                <span class="ps-btn-ico">✕</span>
+                <span class="ps-btn-text">Pause seeding</span>
+                <span class="ps-btn-hint">Progress is saved — resume any time</span>
+              </button>
+            </div>
+            <div class="ps-d1-progress" id="psD1Progress" style="display:none">
+              <div class="ps-d1-progress-head">
+                <span id="psD1ProgressLabel">Seeding…</span>
+                <span id="psD1ProgressCounter">0 / 0</span>
+                <span id="psD1ProgressEta"></span>
+              </div>
+              <div class="ps-progress-bar"><div class="ps-progress-fill" id="psD1ProgressFill"></div></div>
+              <div class="ps-d1-progress-card" id="psD1ProgressCard"></div>
+            </div>
+          </div>
           <div class="ps-progress" id="psProgress" style="display:none">
             <div class="ps-progress-head">
               <span class="ps-progress-label" id="psProgressLabel">Refreshing…</span>
@@ -3061,7 +3089,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260714c"></script>
+  <script src="app.js?v=20260714d"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

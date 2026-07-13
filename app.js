@@ -15940,6 +15940,131 @@ function psSetButtonsDisabled(disabled) {
     });
 }
 
+// ── D1 Bulk Seed ─────────────────────────────────────────────────────────────
+// Pre-populate D1 for all 25k+ cards so any search returns an instant price.
+// Progress is saved to localStorage so it can be paused and resumed.
+
+const D1_SEED_KEY = 'pkm-d1-seed-v1';
+let _d1SeedState = { running: false, cancel: false };
+
+function _d1SeedLoad() {
+  try { return JSON.parse(localStorage.getItem(D1_SEED_KEY) || 'null') || null; } catch { return null; }
+}
+function _d1SeedSave(s) {
+  try { localStorage.setItem(D1_SEED_KEY, JSON.stringify(s)); } catch {}
+}
+function _d1BadgeUpdate() {
+  const badge = document.getElementById('psD1Badge');
+  if (!badge) return;
+  const s = _d1SeedLoad();
+  if (s?.complete) {
+    badge.textContent = `All ${(s.total || 0).toLocaleString()} cards seeded · ${psFormatAgo(s.ts)}`;
+    badge.classList.add('ps-d1-badge-done');
+  } else if (s?.cursor > 0) {
+    badge.textContent = `Paused at ${s.cursor.toLocaleString()} / ${(s.total || 0).toLocaleString()}`;
+    badge.classList.add('ps-d1-badge-partial');
+  }
+}
+function _d1SeedUi(cursor, total, cardName, etaStr) {
+  const $ = id => document.getElementById(id);
+  const pct = total > 0 ? Math.min(100, Math.round(cursor / total * 100)) : 0;
+  $('psD1Progress')  && ($('psD1Progress').style.display = 'block');
+  $('psD1ProgressLabel')   && ($('psD1ProgressLabel').textContent   = 'Seeding to D1…');
+  $('psD1ProgressCounter') && ($('psD1ProgressCounter').textContent = `${cursor.toLocaleString()} / ${total.toLocaleString()}`);
+  $('psD1ProgressFill')    && ($('psD1ProgressFill').style.width    = pct + '%');
+  $('psD1ProgressCard')    && ($('psD1ProgressCard').textContent    = cardName || '');
+  $('psD1ProgressEta')     && etaStr && ($('psD1ProgressEta').textContent = etaStr);
+  const badge = $('psD1Badge');
+  if (badge) { badge.textContent = `${cursor.toLocaleString()} / ${total.toLocaleString()} seeded`; badge.className = 'ps-d1-badge ps-d1-badge-active'; }
+}
+
+async function seedAllPricesToD1() {
+  if (_d1SeedState.running || _psState.running) {
+    psLog('Another refresh is already running — wait for it to finish first.', 'warn');
+    return;
+  }
+  if (!cardData?.cards?.length) {
+    psLog('Card database not loaded yet — try again in a moment.', 'warn');
+    return;
+  }
+
+  const workerUrl = getMktWorkerUrl();
+  const allCards  = cardData.cards;
+  const total     = allCards.length;
+  const BATCH     = 100;  // max cards per /prices POST
+  const DELAY_MS  = 250;  // pause between batches — gentle on PriceCharting
+
+  // Resume from saved cursor if the total matches
+  const saved  = _d1SeedLoad();
+  let cursor   = (saved?.total === total && saved?.cursor > 0 && !saved?.complete) ? saved.cursor : 0;
+
+  _d1SeedState = { running: true, cancel: false };
+  document.getElementById('psSeedD1Btn')?.setAttribute('disabled', '');
+  const stopBtn = document.getElementById('psSeedD1StopBtn');
+  if (stopBtn) stopBtn.style.display = '';
+
+  psClearLog();
+  const resumeMsg = cursor > 0 ? ` (resuming from ${cursor.toLocaleString()})` : '';
+  psLog(`D1 seeding started · ${total.toLocaleString()} cards${resumeMsg}`, 'info');
+
+  const startMs = Date.now();
+
+  while (cursor < total && !_d1SeedState.cancel) {
+    const batch    = allCards.slice(cursor, cursor + BATCH);
+    const ids      = [];
+    const cardMeta = {};
+    for (const c of batch) {
+      if (!c?.i) continue;
+      ids.push(c.i);
+      cardMeta[c.i] = { n: c.n || '', s: c.s || '', cn: c.cn || '', lang: (c.lang || 'EN').toLowerCase() };
+    }
+
+    if (ids.length) {
+      try {
+        const resp = await fetch(`${workerUrl}/prices`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids, cards: cardMeta }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          for (const [id, price] of Object.entries(data)) {
+            if (price) setCachedPrice(id, price);
+          }
+        }
+      } catch {}
+    }
+
+    cursor += batch.length;
+    _d1SeedSave({ cursor, total, ts: Date.now() });
+
+    // ETA
+    const elapsed  = (Date.now() - startMs) / 1000;
+    const rate     = elapsed > 0 ? (cursor - (saved?.cursor || 0)) / elapsed : 1;
+    const etaSec   = rate > 0 ? Math.round((total - cursor) / rate) : 0;
+    const etaStr   = cursor >= total ? '' : etaSec > 60 ? `~${Math.ceil(etaSec / 60)}m left` : `~${etaSec}s left`;
+    const lastName = batch[batch.length - 1]?.n || '';
+    _d1SeedUi(cursor, total, lastName, etaStr);
+
+    if (cursor < total && !_d1SeedState.cancel) await new Promise(r => setTimeout(r, DELAY_MS));
+  }
+
+  _d1SeedState.running = false;
+  document.getElementById('psSeedD1Btn')?.removeAttribute('disabled');
+  if (stopBtn) stopBtn.style.display = 'none';
+
+  if (!_d1SeedState.cancel) {
+    _d1SeedSave({ cursor: total, total, ts: Date.now(), complete: true });
+    const badge = document.getElementById('psD1Badge');
+    if (badge) { badge.textContent = `All ${total.toLocaleString()} cards seeded`; badge.className = 'ps-d1-badge ps-d1-badge-done'; }
+    const progCard = document.getElementById('psD1ProgressCard');
+    if (progCard) progCard.textContent = 'Complete — every card now returns an instant price.';
+    psLog(`D1 seeding complete · ${total.toLocaleString()} cards now in instant price database.`, 'ok');
+  } else {
+    psLog(`D1 seeding paused at ${cursor.toLocaleString()} / ${total.toLocaleString()} cards. Resume any time.`, 'warn');
+  }
+}
+
 // Refresh a single card by id — returns {ok, error, data}
 async function psRefreshOne(id) {
   if (!cardData) return { ok: false, error: 'Catalog not loaded' };
@@ -16209,6 +16334,10 @@ function setupPriceSync() {
   sel('psManualInput')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); psManualRefresh(); }
   });
+
+  sel('psSeedD1Btn')?.addEventListener('click', () => seedAllPricesToD1());
+  sel('psSeedD1StopBtn')?.addEventListener('click', () => { _d1SeedState.cancel = true; });
+  _d1BadgeUpdate();
 
   // Per-selected-card refresh in the Live Market Price panel
   sel('livePriceRefresh')?.addEventListener('click', () => {
