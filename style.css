@@ -16134,7 +16134,8 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .aia-stat-sub { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
 
 .aia-section { margin: 0 20px 20px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
-.aia-section-hd { padding: 14px 16px 10px; font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--border); }
+.aia-section-hd { padding: 14px 16px 10px; font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.aia-section-total { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 0; text-transform: none; white-space: nowrap; }
 .aia-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
 .aia-item:last-child { border-bottom: none; }
 .aia-item:hover { background: var(--bg); }

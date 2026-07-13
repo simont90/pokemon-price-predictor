@@ -27039,10 +27039,11 @@ function renderAiAnalysisPage() {
 
       // Budget-split view (default)
       const _tag = x => x.isBoth ? 'Wishlist + Binder' : x.isBinder ? 'Binder' : '';
+      const wFitsTotal = wFitsMonth.reduce((s, x) => s + x.rawGBP, 0);
       return rankRow + (monthRemain != null
         ? [
             wFitsMonth.length ? `<div class="aia-section">
-              <div class="aia-section-hd">Buy this month · fits in ${fmtGBPDirect(monthRemain)} remaining</div>
+              <div class="aia-section-hd">Buy this month · fits in ${fmtGBPDirect(monthRemain)} remaining<span class="aia-section-total">${fmtGBPDirect(wFitsTotal)} total</span></div>
               ${wFitsMonth.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', _tag(x), 'hold')).join('')}
             </div>` : `<div class="aia-empty-tab">No cards fit within ${fmtGBPDirect(monthRemain)} remaining this month.</div>`,
             wSaveForLater.length ? `<div class="aia-section">
