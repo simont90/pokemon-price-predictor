@@ -26756,7 +26756,9 @@ async function _aiaFetchRanking(cards, monthRemain) {
   ).join('\n');
 
   const intelCtx  = (_marketIntel?.framework?.buy_signals || []).slice(0, 6).join('; ') || '';
-  const budgetCtx = monthRemain != null ? `Monthly budget remaining: ${fmtGBPDirect(monthRemain)}.` : '';
+  const budgetCtx = monthRemain != null
+    ? `Total monthly budget remaining: ${fmtGBPDirect(monthRemain)} for ALL purchases combined this month — not per card. Mark buy_now:true only for a curated selection whose COMBINED cost stays within this total. If the best card alone costs more than the budget, leave all as false.`
+    : '';
 
   const systemPrompt = `You are a Pokémon TCG investment analyst. Rank the provided cards by purchase priority. Set buy_now:true only for cards worth buying this month given the budget. Every card MUST have a "reason" field: one short sentence (max 10 words) explaining the ranking decision — e.g. "scarce holo, prices rising" or "budget pick, solid long-term hold" or "overstocked, wait for dip". Respond ONLY with a JSON array, no prose, no markdown. Format: [{"id":"...","buy_now":true,"reason":"..."},...]. Rank highest priority first.`;
   const userPrompt   = `${budgetCtx}\n\nCards:\n${cardList}\n\nMarket signals: ${intelCtx || 'Use general TCG knowledge.'}\n\nJSON array only:`;
@@ -26919,10 +26921,16 @@ function renderAiAnalysisPage() {
   const monthLabel   = bdgMonth ? bdgMonth.month.label : null;
 
   // If a monthly budget exists, split by monthly remaining; else fall back to per-card budget
-  const wFitsMonth   = monthRemain != null ? wSorted.filter(x => x.rawGBP <= monthRemain) : [];
-  const wSaveForLater = monthRemain != null ? wSorted.filter(x => x.rawGBP > monthRemain) : [];
-  // Sort "fits this month" desc by price so the most valuable cards surface first
-  wFitsMonth.sort((a, b) => b.rawGBP - a.rawGBP);
+  // Greedy cumulative split: pick highest-value cards first until budget is exhausted
+  const wFitsMonth = [];
+  const wSaveForLater = [];
+  if (monthRemain != null) {
+    let spent = 0;
+    [...wSorted].sort((a, b) => b.rawGBP - a.rawGBP).forEach(x => {
+      if (spent + x.rawGBP <= monthRemain) { wFitsMonth.push(x); spent += x.rawGBP; }
+      else { wSaveForLater.push(x); }
+    });
+  }
 
   const wishlistHTML = `
     <div class="aia-stats-grid">
