@@ -26719,6 +26719,26 @@ function _standoutInsight(card, item) {
 
 // ── AI Analysis page ───────────────────────────────────────────────────────────
 
+// Returns the current (or nearest upcoming) Budget month's remaining allowance.
+// Returns null if the budget tool has no target configured.
+function _getBudgetMonthRemaining() {
+  const data = _loadBudget();
+  if (!(data.target > 0)) return null;
+  const now = new Date();
+  const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const active = BUDGET_MONTHS.find(m => m.key === monthKey) || BUDGET_MONTHS[0];
+  const effs   = _computeEffectiveTargets(data);
+  const eff    = effs[active.key] || { target: data.target, rollover: 0 };
+  const md     = _budgetMonth(data, active.key);
+  const spent  = Math.max(0, (md.packs || 0) + (md.singles || 0) - (md.sold || 0));
+  return {
+    month:     active,
+    target:    eff.target,
+    spent,
+    remaining: Math.max(0, eff.target - spent),
+  };
+}
+
 let _aiaActiveTab = 'existing';
 
 function renderAiAnalysisPage() {
@@ -26822,31 +26842,52 @@ function renderAiAnalysisPage() {
     </div>` : ''}`;
 
   // ── Tab: Wishlist ──────────────────────────────────────────────────────────
+  const bdgMonth     = _getBudgetMonthRemaining();
+  const monthRemain  = bdgMonth ? bdgMonth.remaining : null;
+  const monthLabel   = bdgMonth ? bdgMonth.month.label : null;
+
+  // If a monthly budget exists, split by monthly remaining; else fall back to per-card budget
+  const wFitsMonth   = monthRemain != null ? wSorted.filter(x => x.rawGBP <= monthRemain) : [];
+  const wSaveForLater = monthRemain != null ? wSorted.filter(x => x.rawGBP > monthRemain) : [];
+  // Sort "fits this month" desc by price so the most valuable cards surface first
+  wFitsMonth.sort((a, b) => b.rawGBP - a.rawGBP);
+
   const wishlistHTML = `
     <div class="aia-stats-grid">
       <div class="aia-stat">
         <div class="aia-stat-lbl">Wishlist</div>
         <div class="aia-stat-val">${wCards.length}</div>
-        <div class="aia-stat-sub">${wWithin.length} within budget</div>
+        <div class="aia-stat-sub">${wSorted.length} with prices</div>
       </div>
       <div class="aia-stat">
-        <div class="aia-stat-lbl">Budget total</div>
-        <div class="aia-stat-val">${wTotalCost > 0 ? fmtGBPDirect(wTotalCost) : '—'}</div>
-        <div class="aia-stat-sub">${budget < 99999 ? 'max £' + budget + ' each' : 'no limit set'}</div>
+        <div class="aia-stat-lbl">${monthLabel ? monthLabel + ' remaining' : 'Budget total'}</div>
+        <div class="aia-stat-val">${monthRemain != null ? fmtGBPDirect(monthRemain) : (wTotalCost > 0 ? fmtGBPDirect(wTotalCost) : '—')}</div>
+        <div class="aia-stat-sub">${bdgMonth ? 'of £' + Math.round(bdgMonth.target) + ' target · £' + Math.round(bdgMonth.spent) + ' spent' : (budget < 99999 ? 'max £' + budget + ' each' : 'set a budget below')}</div>
       </div>
     </div>
-    ${wWithin.length === 0 && wOver.length === 0
+    ${wSorted.length === 0
       ? '<div class="aia-empty-tab">No wishlist cards with prices yet — prices load as you browse.</div>'
-      : [
-          wWithin.length ? `<div class="aia-section">
-            <div class="aia-section-hd">Within Budget${budget < 99999 ? ' · Under £' + budget : ''}</div>
-            ${wWithin.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
-          </div>` : '',
-          wOver.length ? `<div class="aia-section">
-            <div class="aia-section-hd">Over Budget</div>
-            ${wOver.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
-          </div>` : '',
-        ].join('')}`;
+      : monthRemain != null
+        ? [
+            wFitsMonth.length ? `<div class="aia-section">
+              <div class="aia-section-hd">Buy this month · fits in ${fmtGBPDirect(monthRemain)} remaining</div>
+              ${wFitsMonth.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
+            </div>` : `<div class="aia-empty-tab">No wishlist cards fit within ${fmtGBPDirect(monthRemain)} remaining this month.</div>`,
+            wSaveForLater.length ? `<div class="aia-section">
+              <div class="aia-section-hd">Save for later · over monthly remaining</div>
+              ${wSaveForLater.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
+            </div>` : '',
+          ].join('')
+        : [
+            wWithin.length ? `<div class="aia-section">
+              <div class="aia-section-hd">Within Budget${budget < 99999 ? ' · Under £' + budget : ''}</div>
+              ${wWithin.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
+            </div>` : '',
+            wOver.length ? `<div class="aia-section">
+              <div class="aia-section-hd">Over Budget</div>
+              ${wOver.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
+            </div>` : '',
+          ].join('')}`;
 
   // ── Tab: Recommendations ───────────────────────────────────────────────────
   const recoHTML = `
