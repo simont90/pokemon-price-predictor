@@ -27043,7 +27043,7 @@ function renderAiAnalysisPage() {
       return rankRow + (monthRemain != null
         ? [
             wFitsMonth.length ? `<div class="aia-section">
-              <div class="aia-section-hd"><span>Buy this month<button class="aia-refresh-btn" onclick="event.stopPropagation();renderAiAnalysisPage()" title="Refresh">↻</button></span><span class="aia-section-total">${fmtGBPDirect(wFitsTotal)} total · <span class="${monthRemain - wFitsTotal < 0.01 ? 'aia-total-zero' : ''}">${fmtGBPDirect(Math.max(0, monthRemain - wFitsTotal))} left</span></span></div>
+              <div class="aia-section-hd"><span>Buy this month<button class="aia-refresh-btn" onclick="event.stopPropagation();renderAiAnalysisPage()" title="Refresh">↻</button></span><span class="aia-section-total">${fmtGBPDirect(wFitsTotal)} total · ${(() => { const leftAfter = bdgMonth ? Math.max(0, bdgMonth.target - bdgMonth.spent - wFitsTotal) : Math.max(0, monthRemain - wFitsTotal); return leftAfter < 0.01 ? '<span class="aia-total-zero">fully committed</span>' : `<span>${fmtGBPDirect(leftAfter)} left</span>`; })()}</span></div>
               ${wFitsMonth.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', _tag(x), 'hold')).join('')}
             </div>` : `<div class="aia-empty-tab">No cards fit within ${fmtGBPDirect(monthRemain)} remaining this month.</div>`,
             wSaveForLater.length ? `<div class="aia-section">
