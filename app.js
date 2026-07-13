@@ -303,18 +303,20 @@ async function _resolveLegacyTCGCImage(card) {
   }
 }
 
-// ---- Live Pricing Cache (localStorage with TTL) ----
+// ---- Live Pricing Cache (in-memory, session-scoped) ----
+// D1 (via the /prices worker endpoint) is the persistent store — cross-session,
+// cross-device. This Map is the session read buffer that prevents re-fetching
+// the same card twice within a page session.
 // Price validity: prices are considered current until the next 6AM GMT boundary.
-// _priceCacheIsValid(ts) is the single source of truth for fresh vs stale.
 function _priceCacheIsValid(ts) {
-  const now = Date.now();
   const d = new Date();
   const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 6, 0, 0, 0));
   if (d < t) t.setUTCDate(t.getUTCDate() - 1);
   return (ts || 0) >= t.getTime();
 }
-const PRICE_CACHE_KEY = 'pkm-live-prices-v5'; // v5: adds ACE/CGC/BGS/TAG/SGC 10 anchors from PC full-grade table
-let _priceCache = null; // in-memory mirror; avoids JSON.parse on every getCachedPrice call
+// Remove the old localStorage price cache so it no longer occupies quota.
+try { localStorage.removeItem('pkm-live-prices-v5'); } catch {}
+let _priceCache = {}; // session-only; rebuilt from D1 as cards are viewed
 
 // Lightweight "ever-fetched" index — persists card IDs that have been successfully
 // price-fetched at least once, independent of the 500-entry price cache cap.
@@ -346,56 +348,26 @@ const _sigCache = new Map(); // card.i → { v: computeSignal result, ts }
 const _hcCache  = new Map(); // card.i → { v: computeHoldCore result, ts }
 const _COMP_TTL = 600_000;   // 10-minute TTL — signals don't change faster than live price refreshes
 
-function getPriceCache() {
-  if (_priceCache) return _priceCache;
-  try { _priceCache = JSON.parse(localStorage.getItem(PRICE_CACHE_KEY) || '{}') || {}; }
-  catch { _priceCache = {}; }
-  // One-time migration: strip pcImageUrl from existing entries (never read back, just wastes space)
-  let migrated = false;
-  for (const entry of Object.values(_priceCache)) {
-    if (entry && 'pcImageUrl' in entry) { delete entry.pcImageUrl; migrated = true; }
-  }
-  if (migrated) try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_priceCache)); } catch {}
-  return _priceCache;
-}
-
-function _priceCacheFlush(cache) {
-  try {
-    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
-  } catch {
-    // localStorage full — evict oldest 20% of entries and retry once
-    const sorted = Object.keys(cache).sort((a, b) => (cache[a]?._ts || 0) - (cache[b]?._ts || 0));
-    sorted.slice(0, Math.ceil(sorted.length * 0.2)).forEach(k => delete cache[k]);
-    try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache)); } catch {}
-  }
-}
+function getPriceCache() { return _priceCache; }
 
 function setCachedPrice(cardId, data) {
-  const cache = getPriceCache();
-  // Strip pcImageUrl — large, never read from the cache, not worth the localStorage bytes
   const { pcImageUrl, ...slim } = data;
-  cache[cardId] = { ...slim, _ts: Date.now() };
-  _priceCacheFlush(cache);
-  // Mark as ever-fetched so the "untracked" count falls even after cache eviction
+  _priceCache[cardId] = { ...slim, _ts: Date.now() };
   markPriceSeen(cardId);
-  // Price changed — signal may shift, so invalidate cached computation for this card
   _sigCache.delete(cardId);
   _hcCache.delete(cardId);
-  _recoCached = null; // reco HTML uses pcPsa10 / market from this cache
+  _recoCached = null;
 }
 
 function getCachedPrice(cardId) {
-  const cache = getPriceCache();
-  const entry = cache[cardId];
+  const entry = _priceCache[cardId];
   if (!entry) return null;
   if (!_priceCacheIsValid(entry._ts)) return null;
   return entry;
 }
 
-// Returns the last-stored cache entry regardless of age (stale-but-usable fallback).
 function getLastKnownPrice(cardId) {
-  const cache = getPriceCache();
-  return cache[cardId] || null;
+  return _priceCache[cardId] || null;
 }
 
 // IDs we've already attempted via fetchBatchPrices this session (avoids re-fetching nulls).
@@ -8448,8 +8420,7 @@ async function _hydrateFromPriceWarm() {
       }
     }
     if (count > 0) {
-      _priceCache = cache;
-      try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache)); } catch {}
+      _batchFetchAttempted.clear(); // warm prices may now cover previously-attempted cards
     }
   } catch {
     clearTimeout(t);
@@ -9833,7 +9804,6 @@ function applyPCOverride(product) {
   try {
     const cache = getPriceCache();
     delete cache[cardId];
-    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
   } catch {}
   closePCOverride();
   if (selectedCard && selectedCard.i === cardId) fetchLivePrice(selectedCard);
@@ -9846,7 +9816,6 @@ function markPCNotAvailable() {
   try {
     const cache = getPriceCache();
     delete cache[cardId];
-    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
   } catch {}
   closePCOverride();
   if (selectedCard && selectedCard.i === cardId) fetchLivePrice(selectedCard);
@@ -9859,7 +9828,6 @@ function clearPCOverride() {
   try {
     const cache = getPriceCache();
     delete cache[cardId];
-    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
   } catch {}
   closePCOverride();
   if (selectedCard && selectedCard.i === cardId) fetchLivePrice(selectedCard);
@@ -10046,7 +10014,6 @@ function applyCPOverride(otherId) {
   try {
     const cache = getPriceCache();
     delete cache[otherId];
-    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
   } catch {}
   closeCPOverride();
   // Re-render the counterpart flag so the new pick shows immediately
@@ -10530,7 +10497,6 @@ function addManualCardFromTCGC(r, lang) {
   try {
     const cache = getPriceCache();
     delete cache[id];
-    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
   } catch {}
   selectCard(id);
 }
@@ -10878,7 +10844,6 @@ async function saveEditCard() {
   try {
     const cache = getPriceCache();
     delete cache[c.i];
-    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
   } catch {}
   status.className = 'ql-status success';
   status.textContent = 'Saved. Re-loading the card…';
@@ -10907,7 +10872,6 @@ function resetEditCard() {
   try {
     const cache = getPriceCache();
     delete cache[c.i];
-    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
   } catch {}
   closeEditCard();
   selectCard(c.i);
@@ -10940,7 +10904,6 @@ function setupEditCard() {
     // Always bust the price cache so fetchLivePrice re-fetches fresh from pokemontcg.io
     const _enrichCache = getPriceCache();
     delete _enrichCache[card.i];
-    try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_enrichCache)); } catch {}
     // Also clear the in-memory pokemontcg.io link cache so we always get a fresh URL
     pokemonTcgIoCache.delete(card.i);
 
@@ -11008,7 +10971,6 @@ function setupEditCard() {
       if (status) { status.style.display = 'block'; status.textContent = 'URL saved — fetching live prices…'; }
       const _cache = getPriceCache();
       delete _cache[card.i];
-      try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_cache)); } catch {}
       fetchLivePrice(card).then(() => {
         if (selectedCard && selectedCard.i === card.i && status) {
           const hasTcg = livePrice && livePrice.tcgMarket > 0;
@@ -11036,7 +10998,6 @@ function setupEditCard() {
     // Bust price cache so re-fetch picks up the manual price
     const _cache = getPriceCache();
     delete _cache[selectedCard.i];
-    try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_cache)); } catch {}
     if (status) { status.style.display = 'block'; status.textContent = `Saved $${usd.toFixed(2)} — refreshing…`; }
     fetchLivePrice(selectedCard);
   });
@@ -11051,7 +11012,6 @@ function setupEditCard() {
     if (status) { status.style.display = 'block'; status.textContent = 'Cleared — refreshing…'; }
     const _cache = getPriceCache();
     delete _cache[selectedCard.i];
-    try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_cache)); } catch {}
     fetchLivePrice(selectedCard);
   });
 }
@@ -11178,7 +11138,6 @@ function setupPWANav() {
         // Bust the price cache for this card
         const cache = getPriceCache();
         delete cache[selectedCard.i];
-        localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
       } catch {}
       fetchLivePrice(selectedCard);
     } else {
@@ -16357,8 +16316,7 @@ function setupPriceSync() {
   });
   sel('psClearCache')?.addEventListener('click', () => {
     if (_psState.running) return;
-    try { localStorage.removeItem(PRICE_CACHE_KEY); } catch {}
-    _priceCache = null;
+    _priceCache = {};
     clearPriceSeen();
     psSetLastSync(0);
     psUpdateStats();
@@ -23445,7 +23403,6 @@ const SYNC_KEYS = [
   'pkm-vintage-v1',              // Vintage page targets (WOTC-era PSA hunt list)
   'pkm-dupe-dismissed-v1',        // Dismissed duplicate / counterpart pairs
   'pkm-price-seen-v1',           // Ever-fetched card IDs (persists across cache evictions)
-  'pkm-live-prices-v5',         // Actual price cache (synced so both devices start warm)
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
