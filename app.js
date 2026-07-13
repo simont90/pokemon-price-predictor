@@ -2524,15 +2524,63 @@ async function fetchLivePrice(card) {
   }
 
   // No cache — acquire priority lock so background workers pause while we fetch.
-  // Release immediately if a newer fetchLivePrice call supersedes this one.
-  if (_priorityFetchRelease) _priorityFetchRelease(); // cancel any previous lock
+  if (_priorityFetchRelease) _priorityFetchRelease();
   let release;
   _priorityFetchDone = new Promise(r => { release = r; });
   _priorityFetchRelease = release;
 
   try {
+    // D1-first: try the edge price database before hitting PriceCharting directly.
+    // D1 hit → ~50ms; D1 miss → PriceCharting fetch + seeds D1 for future lookups.
+    const workerUrl = getMktWorkerUrl();
+    let d1Price = null;
+    try {
+      const _meta = {};
+      _meta[card.i] = { n: card.n || '', s: card.s || '', cn: card.cn || '', lang: (card.lang || 'EN').toLowerCase() };
+      const d1Resp = await fetch(`${workerUrl}/prices`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [card.i], cards: _meta }),
+      });
+      if (d1Resp.ok) {
+        const d1Data = await d1Resp.json();
+        const d1Entry = d1Data[card.i];
+        if (d1Entry && (d1Entry.pcUngraded > 0 || d1Entry.pcPsa10 > 0)) d1Price = d1Entry;
+      }
+    } catch {}
+
+    if (d1Price) {
+      if (thisId !== livePriceFetchId) return;
+      // Build a full price object from D1 fields; TCGPlayer/CM filled in below.
+      const basePrice = {
+        source: 'd1',
+        market: d1Price.market || d1Price.pcUngraded || 0,
+        low: 0, mid: d1Price.mid || d1Price.pcUngraded || 0, high: 0, directLow: 0,
+        tcgMarket: 0, tcgLow: 0, tcgMid: 0, tcgHigh: 0, tcgUpdated: '', tcgUrl: '',
+        cmTrend: 0, cmAvg1: 0, cmAvg7: 0, cmAvg30: 0, cmLow: 0, cmSuggested: 0,
+        cmUpdated: '', cmUrl: '', cmLang: card.lang || 'EN',
+        pcUngraded: d1Price.pcUngraded || 0, pcPsa10: d1Price.pcPsa10 || 0,
+        pcGrade9: d1Price.pcPsa9 || 0,
+        pcName: d1Price.pcName || '', pcConsole: d1Price.pcConsole || '', pcId: d1Price.pcId || '',
+        pcAce10: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0,
+        pcPsa9: d1Price.pcPsa9 || 0, pcPsa8: d1Price.pcPsa8 || 0,
+        pcPsa7: d1Price.pcPsa7 || 0, pcPsa6: d1Price.pcPsa6 || 0, pcPsa5: d1Price.pcPsa5 || 0,
+        crRaw: 0, crPsa10: 0, crGemRate: 0, crName: '', crUrl: '', crPsa10VsRaw: 0,
+      };
+      setCachedPrice(card.i, basePrice);
+      livePrice = { ...basePrice };
+      renderLivePrice(livePrice);
+      recalcWithLivePrice(card);
+      maybeFetchMarketDataFromLive(card, livePrice);
+      // Release lock now — TCGPlayer enrichment continues in background
+      _priorityFetchRelease = null; release();
+      // Enrich EN cards with TCGPlayer + Cardmarket (D1 has PC data only)
+      if (card.lang !== 'JP') _enrichSingleCardTCG(card, thisId, livePrice);
+      return;
+    }
+
+    // D1 had no data — full fallback: PriceCharting + TCGPlayer/CM simultaneously
     const priceData = await fetchFreshPriceData(card);
-    if (thisId !== livePriceFetchId) return; // stale
+    if (thisId !== livePriceFetchId) return;
     livePrice = priceData;
     setCachedPrice(card.i, priceData);
     renderLivePrice(priceData);
@@ -2551,6 +2599,42 @@ async function fetchLivePrice(card) {
       release();
     }
   }
+}
+
+// Enrich a D1-sourced price with TCGPlayer + Cardmarket data, then re-render.
+// D1 only stores PriceCharting fields; this fills in the TCGPlayer/CM side of the
+// composite price and updates the cache + display when the response arrives.
+async function _enrichSingleCardTCG(card, fetchId, priceObj) {
+  try {
+    const enData = await fetchLivePriceEN(card.i);
+    if (fetchId !== livePriceFetchId || !enData) return;
+    priceObj.tcgUpdated  = enData.tcgUpdated;
+    priceObj.tcgUrl      = enData.tcgUrl;
+    priceObj.tcgMarket   = enData.market;
+    priceObj.tcgLow      = enData.low;
+    priceObj.tcgMid      = enData.mid;
+    priceObj.tcgHigh     = enData.high;
+    priceObj.directLow   = enData.directLow;
+    priceObj.cmTrend     = enData.cmTrend;
+    priceObj.cmAvg1      = enData.cmAvg1;
+    priceObj.cmAvg7      = enData.cmAvg7;
+    priceObj.cmAvg30     = enData.cmAvg30;
+    priceObj.cmLow       = enData.cmLow;
+    priceObj.cmSuggested = enData.cmSuggested;
+    priceObj.cmUpdated   = enData.cmUpdated;
+    priceObj.cmUrl       = enData.cmUrl;
+    if (priceObj.pcUngraded > 0 && enData.market > 0) {
+      priceObj.market = (priceObj.pcUngraded + enData.market) / 2;
+      priceObj.priceIsComposite = true;
+    } else if (priceObj.pcUngraded <= 0 && enData.market > 0) {
+      priceObj.market = enData.market;
+      priceObj.source = 'pokemontcg.io';
+    }
+    setCachedPrice(card.i, priceObj);
+    if (fetchId !== livePriceFetchId) return;
+    renderLivePrice(priceObj);
+    recalcWithLivePrice(card);
+  } catch {}
 }
 
 // Unified fetch: PriceCharting primary, TCGPlayer secondary for EN cards
