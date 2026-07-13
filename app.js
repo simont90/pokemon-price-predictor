@@ -27043,7 +27043,7 @@ function renderAiAnalysisPage() {
       return rankRow + (monthRemain != null
         ? [
             wFitsMonth.length ? `<div class="aia-section">
-              <div class="aia-section-hd">Buy this month · fits in ${fmtGBPDirect(monthRemain)} remaining<span class="aia-section-total">${fmtGBPDirect(wFitsTotal)} total</span></div>
+              <div class="aia-section-hd"><span>Buy this month · fits in ${fmtGBPDirect(monthRemain)} remaining<button class="aia-refresh-btn" onclick="event.stopPropagation();renderAiAnalysisPage()" title="Refresh">↻</button></span><span class="aia-section-total">${fmtGBPDirect(wFitsTotal)} total</span></div>
               ${wFitsMonth.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', _tag(x), 'hold')).join('')}
             </div>` : `<div class="aia-empty-tab">No cards fit within ${fmtGBPDirect(monthRemain)} remaining this month.</div>`,
             wSaveForLater.length ? `<div class="aia-section">
