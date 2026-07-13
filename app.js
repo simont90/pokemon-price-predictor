@@ -26770,10 +26770,14 @@ async function _aiaFetchRanking(cards, monthRemain) {
         onToken: t => { full += t; },
         onDone:  () => {
           try {
-            const clean = full.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            let clean = full.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            // Extract the JSON array even if there's surrounding prose
+            const start = clean.indexOf('[');
+            const end   = clean.lastIndexOf(']');
+            if (start !== -1 && end > start) clean = clean.slice(start, end + 1);
             _aiaRanking = JSON.parse(clean);
             resolve();
-          } catch { reject(new Error('Could not parse AI response.')); }
+          } catch { reject(new Error(`Could not parse AI response: "${full.slice(0, 120)}"`)); }
         },
         onError: e => reject(new Error(e)),
       });
