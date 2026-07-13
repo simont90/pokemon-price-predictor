@@ -26744,6 +26744,35 @@ let _aiaRanking = null;          // [{ id, buy_now, reason }] — AI-ranked orde
 let _aiaRankingLoading = false;
 let _aiaRankingError = null;
 
+// ── Wishlist holds — persisted in pkm-aia-holds-v1, reset each calendar month ──
+function _aiaHoldsMonth() {
+  const n = new Date();
+  return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
+}
+function _aiaHoldsGet() {
+  try {
+    const all = JSON.parse(localStorage.getItem('pkm-aia-holds-v1') || '{}');
+    const m = _aiaHoldsMonth();
+    return Object.fromEntries(Object.entries(all).filter(([, v]) => v === m));
+  } catch { return {}; }
+}
+function _aiaHoldCard(cardId) {
+  try {
+    const all = JSON.parse(localStorage.getItem('pkm-aia-holds-v1') || '{}');
+    all[cardId] = _aiaHoldsMonth();
+    localStorage.setItem('pkm-aia-holds-v1', JSON.stringify(all));
+  } catch {}
+  renderAiAnalysisPage();
+}
+function _aiaUnholdCard(cardId) {
+  try {
+    const all = JSON.parse(localStorage.getItem('pkm-aia-holds-v1') || '{}');
+    delete all[cardId];
+    localStorage.setItem('pkm-aia-holds-v1', JSON.stringify(all));
+  } catch {}
+  renderAiAnalysisPage();
+}
+
 // Call the AI to rank wishlist+binder cards by priority and flag buy_now ones.
 async function _aiaFetchRanking(cards, monthRemain) {
   if (_aiaRankingLoading || !cards.length) return;
@@ -26913,35 +26942,43 @@ function renderAiAnalysisPage() {
     </div>` : ''}`;
 
   // Card row for ranked view — individual ring border, reason line
-  const _aiaRankedCard = (card, price, tag, buyNow, reason) => {
+  const _aiaRankedCard = (card, price, tag, buyNow, reason, held) => {
     const img = _hiresUrl(getCardImg(card));
-    return `<div class="aia-ranked-card${buyNow ? ' aia-buynow' : ''}" onclick="selectCard('${esc(card.i)}');go('predict')">
+    const showRing = buyNow && !held;
+    return `<div class="aia-ranked-card${showRing ? ' aia-buynow' : ''}${held ? ' aia-held' : ''}" onclick="selectCard('${esc(card.i)}');go('predict')">
       ${img ? `<img class="aia-item-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="aia-item-img"></div>'}
       <div class="aia-item-body">
         <div class="aia-item-name">${esc(card.n)}</div>
-        <div class="aia-item-sub">${esc(card.s || '')}${tag ? `<span class="aia-item-tag">${esc(tag)}</span>` : ''}${buyNow ? '<span class="aia-item-tag aia-tag-buy">Buy now</span>' : ''}</div>
+        <div class="aia-item-sub">${esc(card.s || '')}${tag ? `<span class="aia-item-tag">${esc(tag)}</span>` : ''}${showRing ? '<span class="aia-item-tag aia-tag-buy">Buy now</span>' : ''}${held ? '<span class="aia-item-tag aia-tag-held">Held</span>' : ''}</div>
         ${reason ? `<div class="aia-item-reason">${esc(reason)}</div>` : ''}
       </div>
-      <div>
+      <div class="aia-ranked-right">
         <div class="aia-item-val">${price}</div>
         <div class="aia-item-sub2">raw</div>
+        ${buyNow ? (held
+          ? `<button class="aia-hold-btn aia-unhold-btn" onclick="event.stopPropagation();_aiaUnholdCard('${esc(card.i)}')">Unhold</button>`
+          : `<button class="aia-hold-btn" onclick="event.stopPropagation();_aiaHoldCard('${esc(card.i)}')">Hold</button>`)
+          : ''}
       </div>
     </div>`;
   };
 
   // ── Tab: Wishlist ──────────────────────────────────────────────────────────
+  const holds        = _aiaHoldsGet();
+  const isHeld       = id => !!holds[id];
   const bdgMonth     = _getBudgetMonthRemaining();
   const monthRemain  = bdgMonth ? bdgMonth.remaining : null;
   const monthLabel   = bdgMonth ? bdgMonth.month.label : null;
 
   // If a monthly budget exists, split by monthly remaining; else fall back to per-card budget
   // Greedy cumulative split: pick highest-value cards first until budget is exhausted
+  // Held cards are excluded from "buy this month" regardless of budget
   const wFitsMonth = [];
   const wSaveForLater = [];
   if (monthRemain != null) {
     let spent = 0;
     [...wSorted].sort((a, b) => b.rawGBP - a.rawGBP).forEach(x => {
-      if (spent + x.rawGBP <= monthRemain) { wFitsMonth.push(x); spent += x.rawGBP; }
+      if (!isHeld(x.card.i) && spent + x.rawGBP <= monthRemain) { wFitsMonth.push(x); spent += x.rawGBP; }
       else { wSaveForLater.push(x); }
     });
   }
@@ -26981,7 +27018,7 @@ function renderAiAnalysisPage() {
         return rankRow + `<div class="aia-ranked-list">
           ${ranked.map(x => {
             const rk = rankMap.get(x.card.i) || {};
-            return _aiaRankedCard(x.card, fmtGBPDirect(x.rawGBP), x.isBoth ? 'Wishlist + Binder' : x.isBinder ? 'Binder' : '', !!rk.buy_now, rk.reason || '');
+            return _aiaRankedCard(x.card, fmtGBPDirect(x.rawGBP), x.isBoth ? 'Wishlist + Binder' : x.isBinder ? 'Binder' : '', !!rk.buy_now, rk.reason || '', isHeld(x.card.i));
           }).join('')}
         </div>`;
       }

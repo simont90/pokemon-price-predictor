@@ -16187,6 +16187,9 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .aia-tag-buy {
   background: var(--accent); color: #000;
 }
+.aia-tag-held {
+  background: var(--border); color: var(--text-dim);
+}
 
 /* ── AI Ranking ─────────────────────────────────────────────────────────────── */
 .aia-rank-row {
@@ -16226,6 +16229,19 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   background: color-mix(in srgb, var(--accent) 6%, var(--bg-raised));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
+.aia-ranked-card.aia-held { opacity: 0.55; }
+.aia-ranked-right {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0;
+}
+.aia-hold-btn {
+  font-size: 11px; font-weight: 600; font-family: inherit;
+  padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-dim); cursor: pointer;
+  white-space: nowrap;
+}
+.aia-hold-btn:hover { border-color: var(--text-dim); color: var(--text); }
+.aia-unhold-btn { color: var(--accent); border-color: var(--accent); }
+.aia-unhold-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .aia-item-reason {
   font-size: 12px; color: var(--text-secondary, var(--text-dim)); margin-top: 4px;
   font-style: italic;
