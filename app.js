@@ -26780,7 +26780,15 @@ async function _aiaFetchRanking(cards, monthRemain) {
   _aiaRankingError = null;
   renderAiAnalysisPage();
 
-  const cardList = cards.map(x =>
+  // Cap cards sent to AI: budget-fits first (sorted cheapest→most expensive),
+  // then fill remaining slots with aspirational over-budget picks, hard cap 60.
+  const MAX_RANK = 60;
+  const budget = monthRemain ?? Infinity;
+  const fits   = cards.filter(x => x.rawGBP <= budget).sort((a, b) => a.rawGBP - b.rawGBP);
+  const over   = cards.filter(x => x.rawGBP >  budget).sort((a, b) => a.rawGBP - b.rawGBP);
+  const ranked_input = [...fits, ...over].slice(0, MAX_RANK);
+
+  const cardList = ranked_input.map(x =>
     `ID:${x.card.i}|${x.card.n} (${x.card.s})|${fmtGBPDirect(x.rawGBP)} raw|${x.isBoth ? 'Wishlist+Binder' : x.isBinder ? 'Binder' : 'Wishlist'}`
   ).join('\n');
 
@@ -26798,7 +26806,7 @@ async function _aiaFetchRanking(cards, monthRemain) {
       aiStreamChat({
         provider: aiGetProvider(), key: aiGetKey(),
         messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
-        maxTokens: Math.max(2048, cards.length * 120),
+        maxTokens: Math.max(2048, ranked_input.length * 120),
         onToken: t => { full += t; },
         onDone:  () => {
           try {
