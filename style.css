@@ -10690,24 +10690,38 @@ body {
   gap: 20px;
 }
 
-/* iPad portrait (900-1279px): two columns, narrower side panel */
+/* iPad / wide tablet (900px+): two-column layout + generous spacing */
 @media (min-width: 900px) {
   .home-dashboard {
     display: flex;
     flex-direction: row;
-    gap: 20px;
+    gap: 24px;
     align-items: start;
+    padding-top: 16px;
+    padding-bottom: 100px;
   }
-  .home-main-col { flex: 1; min-width: 0; }
-  .home-side-col { width: 320px; flex-shrink: 0; }
-  /* On touch/iPad the user swipes the card row natively — hide redundant arrows */
+  .home-main-col { flex: 1; min-width: 0; gap: 24px; }
+  .home-side-col { width: 340px; flex-shrink: 0; gap: 20px; }
+
+  /* Taller section headers — 8px feels fine on mobile, tight on a big screen */
+  .home-section-hd { padding: 14px 20px; min-height: 52px; }
+  .home-group-hd   { padding: 14px 20px; min-height: 52px; }
+
+  /* More air above/below the scroll rows */
+  .home-scroll-row { padding: 10px 20px 18px; }
+
+  /* Tab bars (My Collection | Consider Grading etc.) need more room */
+  .home-tab-bar { margin: 12px 16px 12px; }
+
+  /* On touch/iPad the user swipes natively — hide redundant arrows */
   .home-side-col .home-scroll-arrows { display: none; }
 }
 
 /* Wide desktop (1280px+): widen side panel and gap */
 @media (min-width: 1280px) {
-  .home-dashboard { gap: 28px; }
-  .home-side-col { width: 400px; }
+  .home-dashboard { gap: 32px; }
+  .home-main-col { gap: 28px; }
+  .home-side-col { width: 420px; gap: 24px; }
   /* Restore arrows on mouse-driven desktop */
   .home-side-col .home-scroll-arrows { display: flex; }
 }
@@ -14454,11 +14468,15 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 [data-theme="light"] .home-section-hd {
   background: transparent;
   border-bottom: none;
-  padding: 14px 16px 4px;
 }
 [data-theme="light"] .home-group-hd {
-  padding: 14px 16px 4px;
   border-bottom: none;
+}
+/* Light-mode compact padding only on narrow screens — on 900px+ the
+   @media (min-width:900px) rule wins and supplies the generous value */
+@media (max-width: 899px) {
+  [data-theme="light"] .home-section-hd { padding: 14px 16px 4px; }
+  [data-theme="light"] .home-group-hd   { padding: 14px 16px 4px; }
 }
 [data-theme="light"] .home-section-title,
 [data-theme="light"] .home-group-hd .home-section-title {
