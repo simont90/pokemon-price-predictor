@@ -26752,7 +26752,7 @@ async function _aiaFetchRanking(cards, monthRemain) {
   renderAiAnalysisPage();
 
   const cardList = cards.map(x =>
-    `ID:${x.card.i}|${x.card.n} (${x.card.s})|${fmtGBPDirect(x.rawGBP)} raw|${x.isBinder ? 'Binder' : 'Wishlist'}`
+    `ID:${x.card.i}|${x.card.n} (${x.card.s})|${fmtGBPDirect(x.rawGBP)} raw|${x.isBoth ? 'Wishlist+Binder' : x.isBinder ? 'Binder' : 'Wishlist'}`
   ).join('\n');
 
   const intelCtx  = (_marketIntel?.framework?.buy_signals || []).slice(0, 6).join('; ') || '';
@@ -26839,14 +26839,27 @@ function renderAiAnalysisPage() {
     .sort((a, b) => b.rawGBP - a.rawGBP)
     .slice(0, 8);
 
-  const wSorted  = [...wCards, ...bCards]
+  // Deduplicate: if a card is in both wishlist and binder, show once with combined tag
+  const _wSeenIds = new Map(); // cardId → index in merged array
+  const _wMerged = [];
+  [...wCards, ...bCards]
     .filter(x => x.pd?.pcUngraded > 0)
     .map(x => ({ ...x, rawGBP: usdToGbp(x.pd.pcUngraded) }))
-    .sort((a, b) => a.rawGBP - b.rawGBP);
+    .forEach(x => {
+      const id = x.card.i;
+      if (_wSeenIds.has(id)) {
+        _wMerged[_wSeenIds.get(id)].isBoth = true; // already added from wishlist, mark as both
+      } else {
+        _wSeenIds.set(id, _wMerged.length);
+        _wMerged.push(x);
+      }
+    });
+  const wSorted = _wMerged.sort((a, b) => a.rawGBP - b.rawGBP);
   const wWithin  = wSorted.filter(x => budget >= 99999 || x.rawGBP <= budget);
   const wOver    = wSorted.filter(x => budget < 99999 && x.rawGBP > budget);
   const wTotalCost = wWithin.reduce((s, x) => s + x.rawGBP, 0);
-  const wTotalCount = wCards.length + bCards.length;
+  const wDupeCount  = wSorted.filter(x => x.isBoth).length;
+  const wTotalCount = wSorted.length;
 
   // Card row helper — tag is an optional pill appended to the set line (e.g. 'Binder')
   const _aiaItem = (card, rightTop, rightSub, tag = '') => {
@@ -26937,7 +26950,7 @@ function renderAiAnalysisPage() {
       <div class="aia-stat">
         <div class="aia-stat-lbl">Wishlist + Binder</div>
         <div class="aia-stat-val">${wTotalCount}</div>
-        <div class="aia-stat-sub">${wCards.length} wishlist · ${bCards.length} binder targets</div>
+        <div class="aia-stat-sub">${wCards.length} wishlist · ${bCards.length} binder${wDupeCount ? ` · ${wDupeCount} overlap` : ''}</div>
       </div>
       <div class="aia-stat">
         <div class="aia-stat-lbl">${monthLabel ? monthLabel + ' remaining' : 'Budget total'}</div>
@@ -26967,7 +26980,7 @@ function renderAiAnalysisPage() {
         return rankRow + `<div class="aia-ranked-list">
           ${ranked.map(x => {
             const rk = rankMap.get(x.card.i) || {};
-            return _aiaRankedCard(x.card, fmtGBPDirect(x.rawGBP), x.isBinder ? 'Binder' : '', !!rk.buy_now, rk.reason || '');
+            return _aiaRankedCard(x.card, fmtGBPDirect(x.rawGBP), x.isBoth ? 'Wishlist + Binder' : x.isBinder ? 'Binder' : '', !!rk.buy_now, rk.reason || '');
           }).join('')}
         </div>`;
       }
@@ -26977,21 +26990,21 @@ function renderAiAnalysisPage() {
         ? [
             wFitsMonth.length ? `<div class="aia-section">
               <div class="aia-section-hd">Buy this month · fits in ${fmtGBPDirect(monthRemain)} remaining</div>
-              ${wFitsMonth.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBinder ? 'Binder' : '')).join('')}
+              ${wFitsMonth.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBoth ? 'Wishlist + Binder' : x.isBinder ? 'Binder' : '')).join('')}
             </div>` : `<div class="aia-empty-tab">No cards fit within ${fmtGBPDirect(monthRemain)} remaining this month.</div>`,
             wSaveForLater.length ? `<div class="aia-section">
               <div class="aia-section-hd">Save for later · over monthly remaining</div>
-              ${wSaveForLater.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBinder ? 'Binder' : '')).join('')}
+              ${wSaveForLater.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBoth ? 'Wishlist + Binder' : x.isBinder ? 'Binder' : '')).join('')}
             </div>` : '',
           ].join('')
         : [
             wWithin.length ? `<div class="aia-section">
               <div class="aia-section-hd">Within Budget${budget < 99999 ? ' · Under £' + budget : ''}</div>
-              ${wWithin.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBinder ? 'Binder' : '')).join('')}
+              ${wWithin.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBoth ? 'Wishlist + Binder' : x.isBinder ? 'Binder' : '')).join('')}
             </div>` : '',
             wOver.length ? `<div class="aia-section">
               <div class="aia-section-hd">Over Budget</div>
-              ${wOver.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBinder ? 'Binder' : '')).join('')}
+              ${wOver.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBoth ? 'Wishlist + Binder' : x.isBinder ? 'Binder' : '')).join('')}
             </div>` : '',
           ].join(''));
     })()}`;
