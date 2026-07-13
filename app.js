@@ -26426,10 +26426,10 @@ function renderAiAnalysisPage() {
   if (!body) return;
 
   const pCards = portfolio
-    .map(p => ({ card: cardData?.[p.id], pd: getCachedPrice(p.id), p }))
+    .map(p => ({ card: getCardById(p.id), pd: getCachedPrice(p.id), p }))
     .filter(x => x.card);
   const wCards = wishlist
-    .map(w => ({ card: cardData?.[w.id], pd: getCachedPrice(w.id), w }))
+    .map(w => ({ card: getCardById(w.id), pd: getCachedPrice(w.id), w }))
     .filter(x => x.card);
 
   if (pCards.length === 0 && wCards.length === 0) {
