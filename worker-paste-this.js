@@ -505,7 +505,7 @@ async function handleAiChat(request, env) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1500,
+      max_tokens: Math.min(8192, Math.max(256, body.max_tokens || 1500)),
       stream: true,
       ...(systemMsg ? { system: systemMsg.content } : {}),
       messages: chatMsgs,

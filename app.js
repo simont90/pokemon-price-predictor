@@ -18242,7 +18242,7 @@ HARD BUDGET RULE — absolute, applies to every reply:
 }
 
 // ---- LLM client (streaming) ----
-async function aiStreamChat({ provider, key, messages, onToken, onDone, onError }) {
+async function aiStreamChat({ provider, key, messages, maxTokens, onToken, onDone, onError }) {
   const cfg = AI_PROVIDERS[provider];
   if (!cfg) { onError('Unknown provider'); return; }
 
@@ -18258,7 +18258,7 @@ async function aiStreamChat({ provider, key, messages, onToken, onDone, onError 
     headers['Authorization'] = 'Bearer ' + key;
   }
 
-  const body = { model: cfg.model, messages, stream: true, temperature: 0.4 };
+  const body = { model: cfg.model, messages, stream: true, temperature: 0.4, ...(maxTokens ? { max_tokens: maxTokens } : {}) };
 
   let res;
   try {
@@ -26769,6 +26769,7 @@ async function _aiaFetchRanking(cards, monthRemain) {
       aiStreamChat({
         provider: aiGetProvider(), key: aiGetKey(),
         messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+        maxTokens: Math.max(2048, cards.length * 120),
         onToken: t => { full += t; },
         onDone:  () => {
           try {
