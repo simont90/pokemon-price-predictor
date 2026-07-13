@@ -16227,7 +16227,8 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .aia-item-reason {
-  font-size: 11px; color: var(--text-dim); margin-top: 3px;
+  font-size: 12px; color: var(--text-secondary, var(--text-dim)); margin-top: 4px;
+  font-style: italic;
 }
 
 
