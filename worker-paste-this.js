@@ -2078,6 +2078,68 @@ async function handleCronRefresh(env) {
   }
   // Also refresh vintage intelligence from YouTube channel
   try { await refreshVintageIntel(env); } catch {}
+  // Refresh stale D1 entries so the next day's prices are ready at 6AM
+  if (env.PRICES_DB) try { await _d1CronRefreshStale(env.PRICES_DB); } catch {}
+}
+
+// Refresh the oldest stale entries in D1, capped to keep within Worker time limits.
+// Uses the stored pc_name + pc_console to re-query PriceCharting directly —
+// no need for the original card metadata since we already know the exact PC product.
+const D1_CRON_BATCH = 1000; // cards refreshed per scheduled run
+const D1_CRON_CONC  = 10;
+
+async function _d1CronRefreshStale(db) {
+  const cutoff = Date.now() - D1_FRESH_MS;
+  let rows;
+  try {
+    const { results } = await db.prepare(
+      `SELECT card_id, pc_name, pc_console FROM prices
+       WHERE updated_at < ? AND pc_name != ''
+       ORDER BY updated_at ASC LIMIT ?`
+    ).bind(cutoff, D1_CRON_BATCH).all();
+    rows = results;
+  } catch { return; }
+  if (!rows?.length) return;
+
+  const fresh = {};
+  let ci = 0;
+  await Promise.all(Array.from({ length: Math.min(D1_CRON_CONC, rows.length) }, async () => {
+    while (ci < rows.length) {
+      const row = rows[ci++];
+      if (!row.pc_name) continue;
+      try {
+        // Search PC for the exact product we already matched — pc_name is the canonical name.
+        const q = `${row.pc_name} ${row.pc_console}`.trim();
+        const pcUrl = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(q)}&format=json`;
+        const resp = await fetch(pcUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PokemonPricePredictor/1.0)', Accept: 'application/json' },
+        });
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const products = data.products || [];
+        // Pick the product whose name and console match exactly.
+        const match = products.find(p =>
+          (p.productName || '') === row.pc_name && (p.consoleName || '') === row.pc_console
+        ) || products[0];
+        if (!match) continue;
+        const price = _warmParsePC(match.price1);
+        if (!price) continue;
+        fresh[row.card_id] = {
+          pcUngraded: price,
+          pcPsa10:    _warmParsePC(match.price2),
+          pcGrade9:   _warmParsePC(match.price3),
+          market:     price,
+          mid:        price,
+          pcName:     match.productName || row.pc_name,
+          pcConsole:  match.consoleName || row.pc_console,
+          pcId:       match.id || '',
+          source:     'pricecharting',
+          _ts:        Date.now(),
+        };
+      } catch {}
+    }
+  }));
+  if (Object.keys(fresh).length) await _d1UpsertPrices(db, fresh);
 }
 
 // ── D1 price database ────────────────────────────────────────────────────────

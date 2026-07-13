@@ -13,4 +13,4 @@ database_name = "pokemon-prices"
 database_id = "d488a41c-c3c5-44f3-865d-918713b5b2e7"
 
 [triggers]
-crons = ["0 3 * * *"]   # Every day 03:00 UTC — refresh prices + vintage intel
+crons = ["0 6 * * *"]   # Every day 06:00 UTC — refresh prices + vintage intel + D1 stale entries
