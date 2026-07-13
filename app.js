@@ -16381,6 +16381,10 @@ function setupPriceSync() {
   sel('psSeedD1StopBtn')?.addEventListener('click', () => { _d1SeedState.cancel = true; });
   _d1BadgeUpdate();
 
+  sel('psUpdateAiBtn')?.addEventListener('click', () => refreshMarketIntelNow(false));
+  // Auto-refresh market intel if stale (last fetch before today's 8AM UTC)
+  setTimeout(_marketIntelAutoRefresh, 2000);
+
   // Per-selected-card refresh in the Live Market Price panel
   sel('livePriceRefresh')?.addEventListener('click', () => {
     if (!selectedCard || _psState.running) return;
@@ -17885,8 +17889,61 @@ const AI_PROVIDERS = {
 };
 
 let aiChatHistory = [];
-let _marketIntel = null;        // cached from /market-intel; fetched once per session on first AI query
+let _marketIntel = null;
 let _marketIntelFetched = false;
+const MARKET_INTEL_TS_KEY = 'pkm-market-intel-ts'; // last successful fetch timestamp
+
+// Returns today's 8AM UTC in ms — the daily auto-refresh boundary.
+function _marketIntel8AM() {
+  const d = new Date();
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 8, 0, 0, 0);
+}
+
+// Fetch (or re-fetch) market intel from the worker, store result, update badge.
+async function refreshMarketIntelNow(silent = false) {
+  const btn    = document.getElementById('psUpdateAiBtn');
+  const badge  = document.getElementById('psAiBadge');
+  const status = document.getElementById('psAiUpdateStatus');
+  if (btn) btn.disabled = true;
+  if (badge) { badge.textContent = 'Updating…'; badge.className = 'ps-d1-badge ps-d1-badge-active'; }
+  if (!silent && status) { status.style.display = 'block'; status.textContent = 'Fetching latest market intelligence…'; }
+  try {
+    const res = await fetch(getMktWorkerUrl() + '/market-intel', { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(res.status);
+    _marketIntel = await res.json();
+    _marketIntelFetched = true;
+    try { localStorage.setItem(MARKET_INTEL_TS_KEY, String(Date.now())); } catch {}
+    _psAiBadgeUpdate();
+    if (!silent && status) {
+      const d = _marketIntel?.ts ? new Date(_marketIntel.ts) : new Date();
+      status.textContent = `Updated — intel covers ${(_marketIntel?.sources || []).length} sources, last processed ${d.toLocaleDateString('en-GB')}.`;
+    }
+  } catch (e) {
+    if (badge) { badge.textContent = 'Error'; badge.className = 'ps-d1-badge'; }
+    if (!silent && status) { status.style.display = 'block'; status.textContent = 'Update failed — worker unreachable.'; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function _psAiBadgeUpdate() {
+  const badge = document.getElementById('psAiBadge');
+  if (!badge) return;
+  const ts = parseInt(localStorage.getItem(MARKET_INTEL_TS_KEY) || '0', 10);
+  if (!ts) { badge.textContent = 'Never updated'; badge.className = 'ps-d1-badge'; return; }
+  const stale = ts < _marketIntel8AM();
+  const d = new Date(ts);
+  const label = `${d.toLocaleDateString('en-GB')} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+  badge.textContent = stale ? `Stale · ${label}` : `Current · ${label}`;
+  badge.className   = 'ps-d1-badge ' + (stale ? '' : 'ps-d1-badge-done');
+}
+
+// Auto-refresh on load if the stored fetch is before today's 8AM UTC.
+function _marketIntelAutoRefresh() {
+  const ts = parseInt(localStorage.getItem(MARKET_INTEL_TS_KEY) || '0', 10);
+  if (ts < _marketIntel8AM()) refreshMarketIntelNow(true);
+  else _psAiBadgeUpdate();
+}
 try { aiChatHistory = JSON.parse(localStorage.getItem(AI_HIST_STORAGE) || '[]') || []; }
 catch { aiChatHistory = []; }
 
@@ -18441,14 +18498,8 @@ async function aiSubmit(userText) {
   aiSaveHistory();
   aiRenderHistory();
 
-  // Fetch TCG market intelligence from worker once per session (lazy, non-blocking)
-  if (!_marketIntelFetched) {
-    _marketIntelFetched = true;
-    try {
-      const res = await fetch(getMktWorkerUrl() + '/market-intel', { signal: AbortSignal.timeout(5000) });
-      if (res.ok) _marketIntel = await res.json();
-    } catch {}
-  }
+  // Fetch market intel if not yet loaded this session (auto-refresh already handles daily staleness)
+  if (!_marketIntelFetched) refreshMarketIntelNow(true);
 
   const ctx = aiBuildContext();
   const sys = aiSystemPrompt(ctx);

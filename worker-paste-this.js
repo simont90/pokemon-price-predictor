@@ -1929,10 +1929,10 @@ function _mergeInsights(intel, extracted, videoId, channelName, title, published
 async function refreshMarketIntel(env) {
   if (!env.SYNC_KV || !env.ANTHROPIC_API_KEY) return;
 
-  // Rate-gate: only run once per week
+  // Rate-gate: once per day (cron runs at 06:00 UTC; gate ensures we don't double-process)
   const lastCheck = await env.SYNC_KV.get(MARKET_INTEL_CHECK_KEY);
-  if (lastCheck && Date.now() - Number(lastCheck) < 7 * 24 * 3600 * 1000) return;
-  await env.SYNC_KV.put(MARKET_INTEL_CHECK_KEY, String(Date.now()), { expirationTtl: 8 * 24 * 3600 });
+  if (lastCheck && Date.now() - Number(lastCheck) < 20 * 3600 * 1000) return;
+  await env.SYNC_KV.put(MARKET_INTEL_CHECK_KEY, String(Date.now()), { expirationTtl: 2 * 24 * 3600 });
 
   // Load existing intel + seen-video set
   let intel = { ...MARKET_INTEL_SEED };

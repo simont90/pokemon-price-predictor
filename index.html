@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260714h">
+  <link rel="stylesheet" href="style.css?v=20260714i">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2338,6 +2338,21 @@
               <div class="ps-d1-progress-card" id="psD1ProgressCard"></div>
             </div>
           </div>
+          <div class="ps-ai-update" id="psAiUpdateSection">
+            <div class="ps-d1-seed-hd">
+              <div class="ps-d1-seed-title">🤖 Update AI</div>
+              <span class="ps-d1-badge" id="psAiBadge">Checking…</span>
+            </div>
+            <div class="ps-d1-seed-sub">Pulls the latest channel insights and refreshes market intelligence so the AI Analyst reflects today's pricing and signals. Runs automatically at 8AM daily.</div>
+            <div class="ps-d1-seed-btns">
+              <button class="ps-btn ps-btn-primary" id="psUpdateAiBtn" type="button">
+                <span class="ps-btn-ico">🤖</span>
+                <span class="ps-btn-text">Update AI now</span>
+                <span class="ps-btn-hint">Fetches latest market intel from worker</span>
+              </button>
+            </div>
+            <div class="ps-ai-update-status" id="psAiUpdateStatus" style="display:none"></div>
+          </div>
           <div class="ps-progress" id="psProgress" style="display:none">
             <div class="ps-progress-head">
               <span class="ps-progress-label" id="psProgressLabel">Refreshing…</span>
@@ -3088,7 +3103,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260714h"></script>
+  <script src="app.js?v=20260714i"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

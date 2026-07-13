@@ -5610,6 +5610,16 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .ps-d1-badge-active { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); border-color: var(--accent); }
 .ps-d1-seed-sub { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-bottom: 12px; }
 .ps-d1-seed-btns { display: flex; flex-direction: column; gap: 6px; }
+.ps-ai-update {
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  background: color-mix(in srgb, #7c4dff 7%, transparent);
+  border: 1px solid color-mix(in srgb, #7c4dff 25%, transparent);
+  border-radius: 12px;
+}
+.ps-ai-update-status {
+  margin-top: 10px; font-size: 12px; color: var(--text-dim); font-family: var(--mono);
+}
 .ps-d1-progress { margin-top: 12px; }
 .ps-d1-progress-head {
   display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12px;
