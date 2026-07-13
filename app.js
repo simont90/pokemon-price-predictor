@@ -26751,14 +26751,19 @@ function renderAiAnalysisPage() {
   const wCards = wishlist
     .map(w => ({ card: getCardById(w.id), pd: getCachedPrice(w.id), w }))
     .filter(x => x.card);
+  // Unowned Full Art Binder entries treated as an additional wishlist
+  const bCards = (typeof fullArtBinder !== 'undefined' ? fullArtBinder : [])
+    .filter(b => !b.owned)
+    .map(b => ({ card: getCardById(b.id), pd: getCachedPrice(b.id), b, isBinder: true }))
+    .filter(x => x.card);
 
-  if (pCards.length === 0 && wCards.length === 0) {
+  if (pCards.length === 0 && wCards.length === 0 && bCards.length === 0) {
     body.innerHTML = '<div class="aia-empty">Add cards to your collection or wishlist to generate analysis.</div>';
     return;
   }
 
   // Kick off batch price fetch for any cards missing from cache
-  const _allCards = [...pCards.map(x => x.card), ...wCards.map(x => x.card)];
+  const _allCards = [...pCards.map(x => x.card), ...wCards.map(x => x.card), ...bCards.map(x => x.card)];
   const _needPrices = _allCards.filter(c => c && !getCachedPrice(c.i) && !_batchFetchAttempted.has(c.i));
   if (_needPrices.length) {
     fetchBatchPrices(_needPrices).then(fetched => {
@@ -26783,22 +26788,23 @@ function renderAiAnalysisPage() {
     .sort((a, b) => b.rawGBP - a.rawGBP)
     .slice(0, 8);
 
-  const wSorted  = wCards
+  const wSorted  = [...wCards, ...bCards]
     .filter(x => x.pd?.pcUngraded > 0)
     .map(x => ({ ...x, rawGBP: usdToGbp(x.pd.pcUngraded) }))
     .sort((a, b) => a.rawGBP - b.rawGBP);
   const wWithin  = wSorted.filter(x => budget >= 99999 || x.rawGBP <= budget);
   const wOver    = wSorted.filter(x => budget < 99999 && x.rawGBP > budget);
   const wTotalCost = wWithin.reduce((s, x) => s + x.rawGBP, 0);
+  const wTotalCount = wCards.length + bCards.length;
 
-  // Card row helper
-  const _aiaItem = (card, rightTop, rightSub) => {
+  // Card row helper — tag is an optional pill appended to the set line (e.g. 'Binder')
+  const _aiaItem = (card, rightTop, rightSub, tag = '') => {
     const img = _hiresUrl(getCardImg(card));
     return `<div class="aia-item" onclick="selectCard('${esc(card.i)}');go('predict')">
       ${img ? `<img class="aia-item-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="aia-item-img"></div>'}
       <div class="aia-item-body">
         <div class="aia-item-name">${esc(card.n)}</div>
-        <div class="aia-item-sub">${esc(card.s || '')}</div>
+        <div class="aia-item-sub">${esc(card.s || '')}${tag ? `<span class="aia-item-tag">${esc(tag)}</span>` : ''}</div>
       </div>
       <div>
         <div class="aia-item-val">${rightTop}</div>
@@ -26855,9 +26861,9 @@ function renderAiAnalysisPage() {
   const wishlistHTML = `
     <div class="aia-stats-grid">
       <div class="aia-stat">
-        <div class="aia-stat-lbl">Wishlist</div>
-        <div class="aia-stat-val">${wCards.length}</div>
-        <div class="aia-stat-sub">${wSorted.length} with prices</div>
+        <div class="aia-stat-lbl">Wishlist + Binder</div>
+        <div class="aia-stat-val">${wTotalCount}</div>
+        <div class="aia-stat-sub">${wCards.length} wishlist · ${bCards.length} binder targets</div>
       </div>
       <div class="aia-stat">
         <div class="aia-stat-lbl">${monthLabel ? monthLabel + ' remaining' : 'Budget total'}</div>
@@ -26871,21 +26877,21 @@ function renderAiAnalysisPage() {
         ? [
             wFitsMonth.length ? `<div class="aia-section">
               <div class="aia-section-hd">Buy this month · fits in ${fmtGBPDirect(monthRemain)} remaining</div>
-              ${wFitsMonth.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
-            </div>` : `<div class="aia-empty-tab">No wishlist cards fit within ${fmtGBPDirect(monthRemain)} remaining this month.</div>`,
+              ${wFitsMonth.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBinder ? 'Binder' : '')).join('')}
+            </div>` : `<div class="aia-empty-tab">No cards fit within ${fmtGBPDirect(monthRemain)} remaining this month.</div>`,
             wSaveForLater.length ? `<div class="aia-section">
               <div class="aia-section-hd">Save for later · over monthly remaining</div>
-              ${wSaveForLater.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
+              ${wSaveForLater.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBinder ? 'Binder' : '')).join('')}
             </div>` : '',
           ].join('')
         : [
             wWithin.length ? `<div class="aia-section">
               <div class="aia-section-hd">Within Budget${budget < 99999 ? ' · Under £' + budget : ''}</div>
-              ${wWithin.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
+              ${wWithin.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBinder ? 'Binder' : '')).join('')}
             </div>` : '',
             wOver.length ? `<div class="aia-section">
               <div class="aia-section-hd">Over Budget</div>
-              ${wOver.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
+              ${wOver.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBinder ? 'Binder' : '')).join('')}
             </div>` : '',
           ].join('')}`;
 

@@ -16178,6 +16178,12 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   cursor: pointer; font-family: inherit; transition: border-color 0.15s, color 0.15s;
 }
 .aia-chip:hover { border-color: var(--accent); color: var(--accent); }
+.aia-item-tag {
+  display: inline-block; margin-left: 6px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent); border-radius: 4px; padding: 1px 5px; vertical-align: middle;
+}
 
 
 /* ─────────────────────────────────────────────────────────────────────────────
