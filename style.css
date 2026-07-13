@@ -10690,15 +10690,22 @@ body {
   gap: 20px;
 }
 
-@media (min-width: 1280px) {
+/* iPad portrait (900-1279px): two columns, narrower side panel */
+@media (min-width: 900px) {
   .home-dashboard {
     display: flex;
     flex-direction: row;
-    gap: 28px;
+    gap: 20px;
     align-items: start;
   }
   .home-main-col { flex: 1; min-width: 0; }
-  .home-side-col { width: 380px; flex-shrink: 0; }
+  .home-side-col { width: 300px; flex-shrink: 0; }
+}
+
+/* Wide desktop (1280px+): widen side panel and gap */
+@media (min-width: 1280px) {
+  .home-dashboard { gap: 28px; }
+  .home-side-col { width: 380px; }
 }
 
 /* Predict: slight weight shift on very wide screens */
