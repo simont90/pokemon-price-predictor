@@ -10699,13 +10699,17 @@ body {
     align-items: start;
   }
   .home-main-col { flex: 1; min-width: 0; }
-  .home-side-col { width: 300px; flex-shrink: 0; }
+  .home-side-col { width: 320px; flex-shrink: 0; }
+  /* On touch/iPad the user swipes the card row natively — hide redundant arrows */
+  .home-side-col .home-scroll-arrows { display: none; }
 }
 
 /* Wide desktop (1280px+): widen side panel and gap */
 @media (min-width: 1280px) {
   .home-dashboard { gap: 28px; }
-  .home-side-col { width: 380px; }
+  .home-side-col { width: 400px; }
+  /* Restore arrows on mouse-driven desktop */
+  .home-side-col .home-scroll-arrows { display: flex; }
 }
 
 /* Predict: slight weight shift on very wide screens */
