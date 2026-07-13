@@ -850,6 +850,7 @@ async function handle(request, env) {
   if (url.pathname === '/ai/query') return handleAiQuery(request, env, url);
   if (url.pathname === '/tcg-price') return handleTcgPrice(request, url);
   if (url.pathname === '/price-warm') return handlePriceWarm(request, env, url);
+  if (url.pathname === '/prices') return handlePricesBatch(request, env, url);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 
   const q = url.searchParams.get('q') || '';
@@ -2071,10 +2072,133 @@ async function handleCronRefresh(env) {
         JSON.stringify({ ts: Date.now(), prices: priceMap }),
         { expirationTtl: PC_WARM_KV_TTL },
       );
+      // Also persist to D1 so /prices can serve them instantly to all users
+      if (env.PRICES_DB) await _d1UpsertPrices(env.PRICES_DB, priceMap);
     }
   }
   // Also refresh vintage intelligence from YouTube channel
   try { await refreshVintageIntel(env); } catch {}
+}
+
+// ── D1 price database ────────────────────────────────────────────────────────
+// prices table: card_id PK, numeric price columns, updated_at epoch ms.
+// Prices older than D1_FRESH_MS are treated as stale and re-fetched inline.
+
+const D1_FRESH_MS           = 23 * 3600 * 1000; // fresh window: 23 h
+const PRICES_BATCH_MAX      = 100;               // max IDs per /prices request
+const PRICES_FETCH_CONC     = 8;                 // PriceCharting concurrency for misses
+
+async function _d1FetchPrices(db, ids) {
+  if (!db || !ids.length) return {};
+  const ph = ids.map(() => '?').join(',');
+  try {
+    const { results } = await db.prepare(
+      `SELECT card_id,pc_ungraded,pc_psa10,pc_psa9,pc_psa8,pc_psa7,pc_psa6,pc_psa5,
+              pc_name,pc_console,pc_id,market,mid,updated_at
+         FROM prices WHERE card_id IN (${ph})`
+    ).bind(...ids).all();
+    const map = {};
+    for (const r of results) map[r.card_id] = r;
+    return map;
+  } catch { return {}; }
+}
+
+async function _d1UpsertPrices(db, priceMap) {
+  if (!db) return;
+  const entries = Object.entries(priceMap);
+  if (!entries.length) return;
+  const stmts = entries.map(([id, p]) =>
+    db.prepare(
+      `INSERT INTO prices (card_id,pc_ungraded,pc_psa10,pc_psa9,pc_psa8,pc_psa7,pc_psa6,pc_psa5,
+                           pc_name,pc_console,pc_id,market,mid,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(card_id) DO UPDATE SET
+         pc_ungraded=excluded.pc_ungraded, pc_psa10=excluded.pc_psa10,
+         pc_psa9=excluded.pc_psa9, pc_psa8=excluded.pc_psa8, pc_psa7=excluded.pc_psa7,
+         pc_psa6=excluded.pc_psa6, pc_psa5=excluded.pc_psa5,
+         pc_name=excluded.pc_name, pc_console=excluded.pc_console, pc_id=excluded.pc_id,
+         market=excluded.market, mid=excluded.mid, updated_at=excluded.updated_at`
+    ).bind(
+      id,
+      p.pcUngraded||0, p.pcPsa10||0, p.pcPsa9||p.pcGrade9||0,
+      p.pcPsa8||0, p.pcPsa7||0, p.pcPsa6||0, p.pcPsa5||0,
+      p.pcName||'', p.pcConsole||'', p.pcId||'',
+      p.market||p.pcUngraded||0, p.mid||p.pcUngraded||0,
+      p._ts||Date.now()
+    )
+  );
+  for (let i = 0; i < stmts.length; i += 100) {
+    try { await db.batch(stmts.slice(i, i + 100)); } catch (e) { console.error('D1 batch error:', e?.message || e); }
+  }
+}
+
+function _d1RowToPrice(r) {
+  if (!r) return null;
+  return {
+    pcUngraded: r.pc_ungraded||0, pcPsa10: r.pc_psa10||0,
+    pcPsa9:     r.pc_psa9||0,     pcPsa8:  r.pc_psa8||0,
+    pcPsa7:     r.pc_psa7||0,     pcPsa6:  r.pc_psa6||0,
+    pcPsa5:     r.pc_psa5||0,
+    pcName:     r.pc_name||'',    pcConsole: r.pc_console||'',
+    pcId:       r.pc_id||'',
+    market:     r.market||0,      mid:     r.mid||0,
+    _ts:        r.updated_at||0,  _src:    'd1',
+  };
+}
+
+// POST /prices  body: { ids:[...], cards:{ id:{n,s,cn,lang} } }
+// GET  /prices?ids=id1,id2,...  (D1 read-only, no PC fallback)
+// Returns { id: priceData|null, ... }
+async function handlePricesBatch(request, env, url) {
+  const ch = corsHeaders(request);
+  if (!env.PRICES_DB) return _jsonResp(503, { error: 'Price DB not configured.' }, ch);
+
+  let ids = [], cardMeta = {};
+  if (request.method === 'POST') {
+    let body; try { body = await request.json(); } catch { return _jsonResp(400, { error: 'Invalid JSON.' }, ch); }
+    ids      = (body.ids || []).slice(0, PRICES_BATCH_MAX);
+    cardMeta = body.cards || {};
+  } else {
+    ids = (url.searchParams.get('ids') || '').split(',').filter(Boolean).slice(0, PRICES_BATCH_MAX);
+  }
+  if (!ids.length) return _jsonResp(400, { error: 'No ids provided.' }, ch);
+
+  const cutoff  = Date.now() - D1_FRESH_MS;
+  const d1Rows  = await _d1FetchPrices(env.PRICES_DB, ids);
+  const result  = {};
+  const misses  = []; // stale or missing, and we have metadata to re-fetch
+
+  for (const id of ids) {
+    const row = d1Rows[id];
+    if (row && (row.updated_at||0) > cutoff) {
+      result[id] = _d1RowToPrice(row);
+    } else {
+      result[id] = row ? _d1RowToPrice(row) : null; // return stale if we have it
+      if (cardMeta[id]) misses.push(id);
+    }
+  }
+
+  // Fetch misses from PriceCharting inline, store back to D1
+  if (misses.length) {
+    const fresh = {};
+    let ci = 0;
+    await Promise.all(Array.from({ length: Math.min(PRICES_FETCH_CONC, misses.length) }, async () => {
+      while (ci < misses.length) {
+        const id = misses[ci++];
+        const m  = cardMeta[id];
+        if (!m) continue;
+        try {
+          const p = await _warmFetchPCCard({ i: id, n: m.n, s: m.s, cn: m.cn, lang: m.lang });
+          if (p) { result[id] = { ...p, _src: 'pc' }; fresh[id] = p; }
+        } catch {}
+      }
+    }));
+    if (Object.keys(fresh).length) {
+      await _d1UpsertPrices(env.PRICES_DB, fresh);
+    }
+  }
+
+  return _jsonResp(200, result, ch);
 }
 
 // GET /price-warm?key=<pairCode> — returns the pre-warmed price map for this user.

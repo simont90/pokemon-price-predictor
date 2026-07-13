@@ -7,5 +7,10 @@ compatibility_flags = ["nodejs_compat"]
 binding = "SYNC_KV"
 id = "6488eeadb6924bab9e71c36627c1658a"
 
+[[d1_databases]]
+binding = "PRICES_DB"
+database_name = "pokemon-prices"
+database_id = "d488a41c-c3c5-44f3-865d-918713b5b2e7"
+
 [triggers]
-crons = ["0 6 * * 1"]   # Every Monday 06:00 UTC — refresh prices + vintage intel
+crons = ["0 3 * * *"]   # Every day 03:00 UTC — refresh prices + vintage intel

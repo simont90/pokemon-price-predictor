@@ -16114,6 +16114,7 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   display: flex; align-items: center; justify-content: center; gap: 8px;
 }
 .aia-empty { padding: 40px 20px; text-align: center; color: var(--text-dim); font-size: 14px; line-height: 1.6; }
+.aia-loading-notice { margin: 12px 20px 0; padding: 8px 12px; border-radius: 8px; background: var(--bg-raised); border: 1px solid var(--border); font-size: 12px; color: var(--text-dim); }
 
 
 /* ─────────────────────────────────────────────────────────────────────────────

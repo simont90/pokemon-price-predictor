@@ -398,6 +398,46 @@ function getLastKnownPrice(cardId) {
   return cache[cardId] || null;
 }
 
+// IDs we've already attempted via fetchBatchPrices this session (avoids re-fetching nulls).
+const _batchFetchAttempted = new Set();
+
+// Batch-fetch prices for an array of card objects from the D1 / PriceCharting worker endpoint.
+// Cards with a fresh cached price are skipped. Results are stored via setCachedPrice.
+// Returns a map { cardId: priceData } for newly-fetched cards.
+async function fetchBatchPrices(cards) {
+  const workerUrl = typeof getMktWorkerUrl === 'function' ? getMktWorkerUrl() : MKT_WORKER_DEFAULT;
+  const cardMeta = {};
+  for (const c of (cards || [])) {
+    if (!c?.i) continue;
+    if (getCachedPrice(c.i)) continue;         // already fresh
+    if (_batchFetchAttempted.has(c.i)) continue; // already tried
+    _batchFetchAttempted.add(c.i);
+    cardMeta[c.i] = { n: c.n || '', s: c.s || '', cn: c.cn || '', lang: (c.lang || 'EN').toLowerCase() };
+  }
+  const ids = Object.keys(cardMeta);
+  if (!ids.length) return {};
+  const result = {};
+  const BATCH = 100;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const batchIds = ids.slice(i, i + BATCH);
+    const batchMeta = {};
+    for (const id of batchIds) batchMeta[id] = cardMeta[id];
+    try {
+      const resp = await fetch(`${workerUrl}/prices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: batchIds, cards: batchMeta }),
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      for (const [id, price] of Object.entries(data)) {
+        if (price) { setCachedPrice(id, price); result[id] = price; }
+      }
+    } catch {}
+  }
+  return result;
+}
+
 // ---- TCGPlayer URL overrides (per-card manual/auto-enriched link) ----
 const TCG_OVERRIDE_KEY = 'pkm-tcg-overrides-v1';
 function getTcgOverride(cardId) {
@@ -25564,6 +25604,15 @@ function renderStandouts() {
   const wishlistIds  = new Set(wishlist.map(w => w.id).filter(Boolean));
   const priceCache   = getPriceCache();
 
+  // Batch-fetch prices for portfolio cards that lack live data (improves Upgrade / Vintage tabs)
+  const _soPortCards = portfolio.map(p => getCardById(p.id)).filter(Boolean);
+  const _soNeedPrices = _soPortCards.filter(c => !getCachedPrice(c.i) && !_batchFetchAttempted.has(c.i));
+  if (_soNeedPrices.length) {
+    fetchBatchPrices(_soNeedPrices).then(fetched => {
+      if (Object.keys(fetched).length) renderStandouts();
+    }).catch(() => {});
+  }
+
   // Sub-filter (Raw | PSA 9 | PSA 10) only applies to Vintage and Spike Watch
   if (!['vintage','spike'].includes(_soGrade)) _soHideSubFilter();
 
@@ -26456,6 +26505,15 @@ function renderAiAnalysisPage() {
     return;
   }
 
+  // Kick off batch price fetch for any cards missing from local cache
+  const _allAnalysisCards = [...pCards.map(x => x.card), ...wCards.map(x => x.card)];
+  const _needPrices = _allAnalysisCards.filter(c => c && !getCachedPrice(c.i) && !_batchFetchAttempted.has(c.i));
+  if (_needPrices.length) {
+    fetchBatchPrices(_needPrices).then(fetched => {
+      if (Object.keys(fetched).length) renderAiAnalysisPage();
+    }).catch(() => {});
+  }
+
   // Portfolio value
   const totalRaw = pCards.reduce((s, x) => s + usdToGbp(x.pd?.pcUngraded || 0), 0);
   const withPrices = pCards.filter(x => (x.pd?.pcUngraded || 0) > 0).length;
@@ -26548,7 +26606,10 @@ function renderAiAnalysisPage() {
       </button>
     </div>`;
 
-  body.innerHTML = statsHTML + gradingHTML + wishlistHTML + ctaHTML;
+  const loadingHTML = _needPrices.length
+    ? `<div class="aia-loading-notice">Fetching prices for ${_needPrices.length} card${_needPrices.length === 1 ? '' : 's'}…</div>`
+    : '';
+  body.innerHTML = loadingHTML + statsHTML + gradingHTML + wishlistHTML + ctaHTML;
 
   document.getElementById('aiaDeepDiveBtn')?.addEventListener('click', () => {
     const topCards = gradingOps.slice(0, 3).map(x => `${x.card.n} (${x.mult.toFixed(1)}× PSA premium)`).join(', ');
