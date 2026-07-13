@@ -17885,8 +17885,8 @@ const AI_PROVIDERS = {
 };
 
 let aiChatHistory = [];
-let _vintageIntel = null;        // cached from /vintage-intel; fetched once per session on first AI query
-let _vintageIntelFetched = false;
+let _marketIntel = null;        // cached from /market-intel; fetched once per session on first AI query
+let _marketIntelFetched = false;
 try { aiChatHistory = JSON.parse(localStorage.getItem(AI_HIST_STORAGE) || '[]') || []; }
 catch { aiChatHistory = []; }
 
@@ -18121,20 +18121,20 @@ function aiSystemPrompt(ctx) {
     ? `ACTIVE CARD: The user has [[card:${ctx.selected_card.id}|${ctx.selected_card.name}]] loaded on screen. Investment stars: ${ctx.selected_card.investment_stars ?? 'n/a'}/5. PSA 10 gem rate: ${ctx.selected_card.psa10_gem_rate_pct != null ? ctx.selected_card.psa10_gem_rate_pct + '%' : 'unknown'}. When asked to analyse it, use signal (${ctx.selected_card.signal || 'n/a'}), signal_reasons, desirability (${ctx.selected_card.desirability}), best_strategy, and forecast fields to give a complete verdict: buy/hold/sell, whether to grade, 5-year trajectory, and risks. Cite the actual numbers — don't be vague.`
     : '';
 
-  const vintageSection = _vintageIntel ? `
-TCG MARKET INTELLIGENCE (sourced from community channels: ${(_vintageIntel.sources || []).map(s => s.channel + ': "' + s.title + '"').join('; ')}):
-${_vintageIntel.framework?.era ? `Era focus: ${_vintageIntel.framework.era}` : ''}
-${_vintageIntel.framework?.sweet_spot ? `Sweet spot: ${_vintageIntel.framework.sweet_spot}` : ''}
-${(_vintageIntel.framework?.buy_signals || []).length ? `Buy signals: ${_vintageIntel.framework.buy_signals.join(' · ')}` : ''}
-${_vintageIntel.framework?.macro ? `Macro: ${_vintageIntel.framework.macro}` : ''}
-${(_vintageIntel.featured_picks || []).length ? `Featured picks:\n${_vintageIntel.featured_picks.map(p => `  • ${p.name} (${p.grade}) ~$${p.price_usd} — ${p.note}`).join('\n')}` : ''}
+  const marketIntelSection = _marketIntel ? `
+TCG MARKET INTELLIGENCE (sourced from community channels: ${(_marketIntel.sources || []).map(s => s.channel + ': "' + s.title + '"').join('; ')}):
+${_marketIntel.framework?.era ? `Era focus: ${_marketIntel.framework.era}` : ''}
+${_marketIntel.framework?.sweet_spot ? `Sweet spot: ${_marketIntel.framework.sweet_spot}` : ''}
+${(_marketIntel.framework?.buy_signals || []).length ? `Buy signals: ${_marketIntel.framework.buy_signals.join(' · ')}` : ''}
+${_marketIntel.framework?.macro ? `Macro: ${_marketIntel.framework.macro}` : ''}
+${(_marketIntel.featured_picks || []).length ? `Featured picks:\n${_marketIntel.featured_picks.map(p => `  • ${p.name} (${p.grade}) ~$${p.price_usd} — ${p.note}`).join('\n')}` : ''}
 Apply these insights across all card eras. For WOTC cards: flag PSA 9 undervaluation vs PSA 10, note population scarcity, mention First Edition where relevant.
 ` : '';
 
   return `You are "PokeKnow", an expert Pokemon TCG market analyst built into the user's collection-tracking app.
 
 ROLE: Give crisp, data-driven advice on buying, selling, grading and timing the Pokemon TCG market. Be opinionated but honest about uncertainty. Optimise for actionable signal, not generic advice.
-${vintageSection}
+${marketIntelSection}
 ${budgetLine}
 ${focusLine}
 ${cardLine}
@@ -18442,11 +18442,11 @@ async function aiSubmit(userText) {
   aiRenderHistory();
 
   // Fetch TCG market intelligence from worker once per session (lazy, non-blocking)
-  if (!_vintageIntelFetched) {
-    _vintageIntelFetched = true;
+  if (!_marketIntelFetched) {
+    _marketIntelFetched = true;
     try {
-      const res = await fetch(getMktWorkerUrl() + '/vintage-intel', { signal: AbortSignal.timeout(5000) });
-      if (res.ok) _vintageIntel = await res.json();
+      const res = await fetch(getMktWorkerUrl() + '/market-intel', { signal: AbortSignal.timeout(5000) });
+      if (res.ok) _marketIntel = await res.json();
     } catch {}
   }
 

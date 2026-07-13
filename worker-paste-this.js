@@ -832,7 +832,7 @@ async function handle(request, env) {
   const url = new URL(request.url);
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request) });
   if (url.pathname === '/health') return new Response('ok', { headers: corsHeaders(request) });
-  if (url.pathname === '/vintage-intel') return handleVintageIntel(request, env);
+  if (url.pathname === '/market-intel' || url.pathname === '/vintage-intel') return handleMarketIntel(request, env);
 
   if (url.pathname === '/sync') return handleSync(request, env, url);
   if (url.pathname === '/mcp') return handleMcp(request, env, url);
@@ -1764,16 +1764,16 @@ function _warmSnapKey(snap, key) {
   try { return JSON.parse(snap.data[key]) || []; } catch { return []; }
 }
 
-// ── Vintage intelligence ─────────────────────────────────────────────────────
+// ── Market intelligence (all card eras) ─────────────────────────────────────────────────────
 
-const VINTAGE_INTEL_KV_KEY    = 'vintage-intel-v1';
-const VINTAGE_INTEL_CHECK_KEY = 'vintage-intel-last-check';
+const MARKET_INTEL_KV_KEY    = 'market-intel-v1';
+const MARKET_INTEL_CHECK_KEY = 'market-intel-last-check';
 const VINTAGE_BACKFILL_KEY    = 'vintage-backfill-queue';  // [{id, title}] written from local batch
 const VINTAGE_SEEN_KEY        = 'vintage-seen-videos';      // Set of processed video IDs (JSON array)
-const VINTAGE_BACKFILL_PER_RUN = 15;                        // videos processed per cron run
+const MARKET_BACKFILL_PER_RUN = 15;                        // videos processed per cron run
 
 // All monitored channels — RSS + backfill queue cover historical + new content
-const VINTAGE_CHANNELS = [
+const MARKET_CHANNELS = [
   { id: 'UCsSA2eBWW7qAwSV_COyW8uQ', name: 'PikaPikaPaPa'               },
   { id: 'UCw47gkI_OV46GQyq08jQ-8w', name: 'MasterBalless'              },
   { id: 'UCJrBXKBCYtHrW_PSjZc3amQ', name: 'Phillips Collectibles'      },
@@ -1791,10 +1791,10 @@ const VINTAGE_CHANNELS = [
 
 // Seed data from "Everything's About to Change... And Vintage Pokémon Will Explode"
 // by PikaPikaPaPa (Jul 2025). Re-used as fallback when KV is empty or unreachable.
-const VINTAGE_INTEL_SEED = {
+const MARKET_INTEL_SEED = {
   ts: 1752192000000, // 2025-07-11
   framework: {
-    era: 'WOTC 1999–2003',
+    era: 'All eras — WOTC, modern SV/SwSh, Japanese, sealed product',
     priority: ['First Edition', 'Unlimited'],
     sweet_spot: 'PSA 9 when PSA 10 has significantly outpaced it (e.g. 3× in 1yr while PSA 9 only +14%). PSA 10 is often out of reach for casual collectors; the PSA 9 captures most of the upside at a fraction of the price.',
     buy_signals: [
@@ -1849,13 +1849,13 @@ const VINTAGE_INTEL_SEED = {
   ],
 };
 
-// GET /vintage-intel — returns structured vintage investment intelligence
-async function handleVintageIntel(request, env) {
+// GET /market-intel (alias: /vintage-intel) — returns Pokémon TCG market intelligence across all card eras
+async function handleMarketIntel(request, env) {
   const ch = { ...corsHeaders(request), 'Cache-Control': 'public, max-age=3600' };
-  let intel = VINTAGE_INTEL_SEED;
+  let intel = MARKET_INTEL_SEED;
   if (env.SYNC_KV) {
     try {
-      const raw = await env.SYNC_KV.get(VINTAGE_INTEL_KV_KEY);
+      const raw = await env.SYNC_KV.get(MARKET_INTEL_KV_KEY);
       if (raw) intel = JSON.parse(raw);
     } catch {}
   }
@@ -1926,17 +1926,17 @@ function _mergeInsights(intel, extracted, videoId, channelName, title, published
 }
 
 // Cron task: (1) watch all channels' RSS for new videos, (2) drain backfill queue
-async function refreshVintageIntel(env) {
+async function refreshMarketIntel(env) {
   if (!env.SYNC_KV || !env.ANTHROPIC_API_KEY) return;
 
   // Rate-gate: only run once per week
-  const lastCheck = await env.SYNC_KV.get(VINTAGE_INTEL_CHECK_KEY);
+  const lastCheck = await env.SYNC_KV.get(MARKET_INTEL_CHECK_KEY);
   if (lastCheck && Date.now() - Number(lastCheck) < 7 * 24 * 3600 * 1000) return;
-  await env.SYNC_KV.put(VINTAGE_INTEL_CHECK_KEY, String(Date.now()), { expirationTtl: 8 * 24 * 3600 });
+  await env.SYNC_KV.put(MARKET_INTEL_CHECK_KEY, String(Date.now()), { expirationTtl: 8 * 24 * 3600 });
 
   // Load existing intel + seen-video set
-  let intel = { ...VINTAGE_INTEL_SEED };
-  try { const r = await env.SYNC_KV.get(VINTAGE_INTEL_KV_KEY); if (r) intel = JSON.parse(r); } catch {}
+  let intel = { ...MARKET_INTEL_SEED };
+  try { const r = await env.SYNC_KV.get(MARKET_INTEL_KV_KEY); if (r) intel = JSON.parse(r); } catch {}
   let seenIds = new Set((intel.sources || []).map(s => s.video_id));
   try {
     const sv = await env.SYNC_KV.get(VINTAGE_SEEN_KEY);
@@ -1947,7 +1947,7 @@ async function refreshVintageIntel(env) {
   const toProcess = []; // {videoId, title, published, channelName}
 
   // 1. Check each channel RSS for new videos — prepend any new ones to the stored channel list
-  for (const { id: channelId, name: channelName } of VINTAGE_CHANNELS) {
+  for (const { id: channelId, name: channelName } of MARKET_CHANNELS) {
     try {
       const rssRes = await fetch(
         `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,
@@ -1994,10 +1994,10 @@ async function refreshVintageIntel(env) {
     } catch {}
   }
 
-  // 2. Drain backfill queue — take enough to fill up to VINTAGE_BACKFILL_PER_RUN total
+  // 2. Drain backfill queue — take enough to fill up to MARKET_BACKFILL_PER_RUN total
   let backfillQueue = [];
   try { const bq = await env.SYNC_KV.get(VINTAGE_BACKFILL_KEY); if (bq) backfillQueue = JSON.parse(bq); } catch {}
-  const slotsLeft = VINTAGE_BACKFILL_PER_RUN - toProcess.length;
+  const slotsLeft = MARKET_BACKFILL_PER_RUN - toProcess.length;
   if (slotsLeft > 0 && backfillQueue.length > 0) {
     // Find the channel name for backfill items (use 'Community' as fallback)
     const batch = backfillQueue.splice(0, slotsLeft);
@@ -2011,7 +2011,7 @@ async function refreshVintageIntel(env) {
 
   // 3. Process each candidate video
   for (const { videoId, title, published, channelName } of toProcess) {
-    if (processed >= VINTAGE_BACKFILL_PER_RUN) break;
+    if (processed >= MARKET_BACKFILL_PER_RUN) break;
     seenIds.add(videoId); // mark before processing so retries skip it
     const transcript = await _fetchTranscript(videoId);
     if (transcript.length < 200) continue;
@@ -2023,7 +2023,7 @@ async function refreshVintageIntel(env) {
   }
 
   if (processed > 0) {
-    await env.SYNC_KV.put(VINTAGE_INTEL_KV_KEY, JSON.stringify(intel), { expirationTtl: 90 * 24 * 3600 });
+    await env.SYNC_KV.put(MARKET_INTEL_KV_KEY, JSON.stringify(intel), { expirationTtl: 90 * 24 * 3600 });
   }
   // Always persist the updated seen set
   await env.SYNC_KV.put(VINTAGE_SEEN_KEY, JSON.stringify([...seenIds]),
@@ -2076,8 +2076,8 @@ async function handleCronRefresh(env) {
       if (env.PRICES_DB) await _d1UpsertPrices(env.PRICES_DB, priceMap);
     }
   }
-  // Also refresh vintage intelligence from YouTube channel
-  try { await refreshVintageIntel(env); } catch {}
+  // Also refresh market intelligence from YouTube channels (all card eras)
+  try { await refreshMarketIntel(env); } catch {}
   // Refresh stale D1 entries so the next day's prices are ready at 6AM
   if (env.PRICES_DB) try { await _d1CronRefreshStale(env.PRICES_DB); } catch {}
 }
