@@ -17900,15 +17900,22 @@ function _marketIntel8AM() {
 }
 
 // Fetch (or re-fetch) market intel from the worker, store result, update badge.
+// silent=false (manual button): POST to trigger background re-analysis, then GET current state.
+// silent=true (auto-refresh): GET only.
 async function refreshMarketIntelNow(silent = false) {
   const btn    = document.getElementById('psUpdateAiBtn');
   const badge  = document.getElementById('psAiBadge');
   const status = document.getElementById('psAiUpdateStatus');
   if (btn) btn.disabled = true;
   if (badge) { badge.textContent = 'Updating…'; badge.className = 'ps-d1-badge ps-d1-badge-active'; }
-  if (!silent && status) { status.style.display = 'block'; status.textContent = 'Fetching latest market intelligence…'; }
+  if (!silent && status) { status.style.display = 'block'; status.textContent = 'Triggering market intel re-analysis…'; }
   try {
-    const res = await fetch(getMktWorkerUrl() + '/market-intel', { signal: AbortSignal.timeout(8000) });
+    const baseUrl = getMktWorkerUrl() + '/market-intel';
+    if (!silent) {
+      // POST tells the worker to bypass the rate gate and re-run analysis in the background
+      try { await fetch(baseUrl, { method: 'POST', signal: AbortSignal.timeout(8000) }); } catch {}
+    }
+    const res = await fetch(baseUrl, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(res.status);
     _marketIntel = await res.json();
     _marketIntelFetched = true;
@@ -17916,7 +17923,7 @@ async function refreshMarketIntelNow(silent = false) {
     _psAiBadgeUpdate();
     if (!silent && status) {
       const d = _marketIntel?.ts ? new Date(_marketIntel.ts) : new Date();
-      status.textContent = `Updated — intel covers ${(_marketIntel?.sources || []).length} sources, last processed ${d.toLocaleDateString('en-GB')}.`;
+      status.textContent = `Re-analysis triggered. Currently covers ${(_marketIntel?.sources || []).length} sources, last processed ${d.toLocaleDateString('en-GB')}. New picks will appear within a minute — hit Update AI again to refresh.`;
     }
   } catch (e) {
     if (badge) { badge.textContent = 'Error'; badge.className = 'ps-d1-badge'; }

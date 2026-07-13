@@ -828,11 +828,11 @@ Examples:
 }
 
 // ---- Main handler ----
-async function handle(request, env) {
+async function handle(request, env, ctx) {
   const url = new URL(request.url);
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request) });
   if (url.pathname === '/health') return new Response('ok', { headers: corsHeaders(request) });
-  if (url.pathname === '/market-intel' || url.pathname === '/vintage-intel') return handleMarketIntel(request, env);
+  if (url.pathname === '/market-intel' || url.pathname === '/vintage-intel') return handleMarketIntel(request, env, ctx);
 
   if (url.pathname === '/sync') return handleSync(request, env, url);
   if (url.pathname === '/mcp') return handleMcp(request, env, url);
@@ -1849,8 +1849,19 @@ const MARKET_INTEL_SEED = {
   ],
 };
 
-// GET /market-intel (alias: /vintage-intel) — returns Pokémon TCG market intelligence across all card eras
-async function handleMarketIntel(request, env) {
+// GET /market-intel — returns cached Pokémon TCG market intelligence
+// POST /market-intel — bypasses rate gate, fires background re-analysis, returns immediately
+async function handleMarketIntel(request, env, ctx) {
+  if (request.method === 'POST') {
+    // Clear the rate gate so the next refreshMarketIntel call actually runs
+    if (env.SYNC_KV) {
+      try { await env.SYNC_KV.delete(MARKET_INTEL_CHECK_KEY); } catch {}
+    }
+    ctx.waitUntil(refreshMarketIntel(env));
+    return new Response(JSON.stringify({ ok: true, scheduled: true }), {
+      headers: { ...corsHeaders(request), 'Content-Type': 'application/json' },
+    });
+  }
   const ch = { ...corsHeaders(request), 'Cache-Control': 'public, max-age=3600' };
   let intel = MARKET_INTEL_SEED;
   if (env.SYNC_KV) {
@@ -2276,7 +2287,7 @@ async function handlePriceWarm(request, env, url) {
 
 export default {
   async fetch(request, env, ctx) {
-    try { return await handle(request, env); }
+    try { return await handle(request, env, ctx); }
     catch (e) {
       return new Response(JSON.stringify({ error: e.message }), {
         status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
