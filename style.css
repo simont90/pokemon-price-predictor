@@ -16184,6 +16184,51 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent); border-radius: 4px; padding: 1px 5px; vertical-align: middle;
 }
+.aia-tag-buy {
+  background: var(--accent); color: #000;
+}
+
+/* ── AI Ranking ─────────────────────────────────────────────────────────────── */
+.aia-rank-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 20px 4px; flex-wrap: wrap;
+}
+.aia-rank-btn, .aia-rank-re {
+  background: var(--accent); color: #000;
+  border: none; border-radius: 8px; padding: 8px 16px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  font-family: inherit;
+}
+.aia-rank-btn:disabled { opacity: 0.55; cursor: default; }
+.aia-rank-re {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-dim); font-weight: 600;
+}
+.aia-rank-done {
+  font-size: 12px; font-weight: 700; color: var(--accent);
+  letter-spacing: 0.03em;
+}
+.aia-rank-err {
+  font-size: 12px; color: #f77; width: 100%; margin-top: 4px;
+}
+.aia-ranked-list {
+  margin: 8px 20px 20px; display: flex; flex-direction: column; gap: 8px;
+}
+.aia-ranked-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; cursor: pointer;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: 12px; transition: border-color 0.15s;
+}
+.aia-ranked-card:hover { border-color: var(--accent); }
+.aia-ranked-card.aia-buynow {
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-raised));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.aia-item-reason {
+  font-size: 11px; color: var(--text-dim); margin-top: 3px;
+}
 
 
 /* ─────────────────────────────────────────────────────────────────────────────

@@ -26740,6 +26740,51 @@ function _getBudgetMonthRemaining() {
 }
 
 let _aiaActiveTab = 'existing';
+let _aiaRanking = null;          // [{ id, buy_now, reason }] — AI-ranked order, highest priority first
+let _aiaRankingLoading = false;
+let _aiaRankingError = null;
+
+// Call the AI to rank wishlist+binder cards by priority and flag buy_now ones.
+async function _aiaFetchRanking(cards, monthRemain) {
+  if (_aiaRankingLoading || !cards.length) return;
+  _aiaRankingLoading = true;
+  _aiaRankingError = null;
+  renderAiAnalysisPage();
+
+  const cardList = cards.map(x =>
+    `ID:${x.card.i}|${x.card.n} (${x.card.s})|${fmtGBPDirect(x.rawGBP)} raw|${x.isBinder ? 'Binder' : 'Wishlist'}`
+  ).join('\n');
+
+  const intelCtx  = (_marketIntel?.framework?.buy_signals || []).slice(0, 6).join('; ') || '';
+  const budgetCtx = monthRemain != null ? `Monthly budget remaining: ${fmtGBPDirect(monthRemain)}.` : '';
+
+  const systemPrompt = `You are a Pokémon TCG investment analyst. Rank the provided cards by purchase priority and mark buy_now:true for those worth buying this month given the budget. Respond ONLY with a JSON array — no prose, no markdown. Format: [{"id":"...","buy_now":true,"reason":"under 8 words"},...]. Rank highest priority first.`;
+  const userPrompt   = `${budgetCtx}\n\nCards:\n${cardList}\n\nMarket signals: ${intelCtx || 'Use general TCG knowledge.'}\n\nJSON array only:`;
+
+  let full = '';
+  try {
+    await new Promise((resolve, reject) => {
+      aiStreamChat({
+        provider: aiGetProvider(), key: aiGetKey(),
+        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+        onToken: t => { full += t; },
+        onDone:  () => {
+          try {
+            const clean = full.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            _aiaRanking = JSON.parse(clean);
+            resolve();
+          } catch { reject(new Error('Could not parse AI response.')); }
+        },
+        onError: e => reject(new Error(e)),
+      });
+    });
+  } catch (e) {
+    _aiaRankingError = String(e.message || e);
+  }
+  _aiaRankingLoading = false;
+  _aiaActiveTab = 'wishlist';
+  renderAiAnalysisPage();
+}
 
 function renderAiAnalysisPage() {
   const body = document.getElementById('aiAnalysisBody');
@@ -26847,6 +26892,23 @@ function renderAiAnalysisPage() {
       )).join('')}
     </div>` : ''}`;
 
+  // Card row for ranked view — individual ring border, reason line
+  const _aiaRankedCard = (card, price, tag, buyNow, reason) => {
+    const img = _hiresUrl(getCardImg(card));
+    return `<div class="aia-ranked-card${buyNow ? ' aia-buynow' : ''}" onclick="selectCard('${esc(card.i)}');go('predict')">
+      ${img ? `<img class="aia-item-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="aia-item-img"></div>'}
+      <div class="aia-item-body">
+        <div class="aia-item-name">${esc(card.n)}</div>
+        <div class="aia-item-sub">${esc(card.s || '')}${tag ? `<span class="aia-item-tag">${esc(tag)}</span>` : ''}${buyNow ? '<span class="aia-item-tag aia-tag-buy">Buy now</span>' : ''}</div>
+        ${reason ? `<div class="aia-item-reason">${esc(reason)}</div>` : ''}
+      </div>
+      <div>
+        <div class="aia-item-val">${price}</div>
+        <div class="aia-item-sub2">raw</div>
+      </div>
+    </div>`;
+  };
+
   // ── Tab: Wishlist ──────────────────────────────────────────────────────────
   const bdgMonth     = _getBudgetMonthRemaining();
   const monthRemain  = bdgMonth ? bdgMonth.remaining : null;
@@ -26871,9 +26933,35 @@ function renderAiAnalysisPage() {
         <div class="aia-stat-sub">${bdgMonth ? 'of £' + Math.round(bdgMonth.target) + ' target · £' + Math.round(bdgMonth.spent) + ' spent' : (budget < 99999 ? 'max £' + budget + ' each' : 'set a budget below')}</div>
       </div>
     </div>
-    ${wSorted.length === 0
-      ? '<div class="aia-empty-tab">No wishlist cards with prices yet — prices load as you browse.</div>'
-      : monthRemain != null
+    ${(() => {
+      if (wSorted.length === 0) return '<div class="aia-empty-tab">No wishlist cards with prices yet — prices load as you browse.</div>';
+
+      // Rank button row
+      const rankRow = `<div class="aia-rank-row">
+        ${_aiaRankingLoading
+          ? '<button class="aia-rank-btn" disabled>Analysing…</button>'
+          : _aiaRanking
+            ? `<span class="aia-rank-done">✦ Ranked by AI</span><button class="aia-rank-re" id="aiaReRankBtn">Re-rank</button>`
+            : `<button class="aia-rank-btn" id="aiaRankBtn">✦ Rank with AI</button>`}
+        ${_aiaRankingError ? `<div class="aia-rank-err">${esc(_aiaRankingError)}</div>` : ''}
+      </div>`;
+
+      // Ranked view
+      if (_aiaRanking && !_aiaRankingLoading) {
+        const rankMap = new Map(_aiaRanking.map((r, i) => [r.id, { ...r, rank: i }]));
+        const ranked  = [...wSorted].sort((a, b) =>
+          (rankMap.get(a.card.i)?.rank ?? 999) - (rankMap.get(b.card.i)?.rank ?? 999)
+        );
+        return rankRow + `<div class="aia-ranked-list">
+          ${ranked.map(x => {
+            const rk = rankMap.get(x.card.i) || {};
+            return _aiaRankedCard(x.card, fmtGBPDirect(x.rawGBP), x.isBinder ? 'Binder' : '', !!rk.buy_now, rk.reason || '');
+          }).join('')}
+        </div>`;
+      }
+
+      // Budget-split view (default)
+      return rankRow + (monthRemain != null
         ? [
             wFitsMonth.length ? `<div class="aia-section">
               <div class="aia-section-hd">Buy this month · fits in ${fmtGBPDirect(monthRemain)} remaining</div>
@@ -26893,7 +26981,8 @@ function renderAiAnalysisPage() {
               <div class="aia-section-hd">Over Budget</div>
               ${wOver.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw', x.isBinder ? 'Binder' : '')).join('')}
             </div>` : '',
-          ].join('')}`;
+          ].join(''));
+    })()}`;
 
   // ── Tab: Recommendations ───────────────────────────────────────────────────
   const recoHTML = `
@@ -26936,6 +27025,16 @@ function renderAiAnalysisPage() {
         p.classList.toggle('aia-panel-hidden', p.id !== 'aiaPanel' + _cap(_aiaActiveTab))
       );
     });
+  });
+
+  // Rank with AI buttons
+  document.getElementById('aiaRankBtn')?.addEventListener('click', () => {
+    _aiaRanking = null;
+    _aiaFetchRanking(wSorted, monthRemain != null ? monthRemain : null);
+  });
+  document.getElementById('aiaReRankBtn')?.addEventListener('click', () => {
+    _aiaRanking = null;
+    _aiaFetchRanking(wSorted, monthRemain != null ? monthRemain : null);
   });
 
   // CTA: full deep dive
