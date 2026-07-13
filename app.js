@@ -26719,6 +26719,8 @@ function _standoutInsight(card, item) {
 
 // ── AI Analysis page ───────────────────────────────────────────────────────────
 
+let _aiaActiveTab = 'existing';
+
 function renderAiAnalysisPage() {
   const body = document.getElementById('aiAnalysisBody');
   if (!body) return;
@@ -26735,124 +26737,195 @@ function renderAiAnalysisPage() {
     return;
   }
 
-  // Kick off batch price fetch for any cards missing from local cache
-  const _allAnalysisCards = [...pCards.map(x => x.card), ...wCards.map(x => x.card)];
-  const _needPrices = _allAnalysisCards.filter(c => c && !getCachedPrice(c.i) && !_batchFetchAttempted.has(c.i));
+  // Kick off batch price fetch for any cards missing from cache
+  const _allCards = [...pCards.map(x => x.card), ...wCards.map(x => x.card)];
+  const _needPrices = _allCards.filter(c => c && !getCachedPrice(c.i) && !_batchFetchAttempted.has(c.i));
   if (_needPrices.length) {
     fetchBatchPrices(_needPrices).then(fetched => {
       if (Object.keys(fetched).length) renderAiAnalysisPage();
     }).catch(() => {});
   }
 
-  // Portfolio value
-  const totalRaw = pCards.reduce((s, x) => s + usdToGbp(x.pd?.pcUngraded || 0), 0);
-  const withPrices = pCards.filter(x => (x.pd?.pcUngraded || 0) > 0).length;
+  // Computed values
+  const totalRaw    = pCards.reduce((s, x) => s + usdToGbp(x.pd?.pcUngraded || 0), 0);
+  const withPrices  = pCards.filter(x => (x.pd?.pcUngraded || 0) > 0).length;
+  const budget      = getMaxBudgetGBP();
 
-  // Top grading opportunities (collection cards with high PSA 10 multiple)
   const gradingOps = pCards
     .filter(x => x.pd?.pcPsa10 > 0 && x.pd?.pcUngraded > 0)
     .map(x => ({ ...x, mult: x.pd.pcPsa10 / x.pd.pcUngraded }))
     .sort((a, b) => b.mult - a.mult)
-    .slice(0, 5);
+    .slice(0, 8);
 
-  // Wishlist priorities (by price asc, within budget)
-  const budget = getMaxBudgetGBP();
-  const wPriority = wCards
+  const collByValue = pCards
+    .filter(x => (x.pd?.pcUngraded || 0) > 0)
+    .map(x => ({ ...x, rawGBP: usdToGbp(x.pd.pcUngraded) }))
+    .sort((a, b) => b.rawGBP - a.rawGBP)
+    .slice(0, 8);
+
+  const wSorted  = wCards
     .filter(x => x.pd?.pcUngraded > 0)
     .map(x => ({ ...x, rawGBP: usdToGbp(x.pd.pcUngraded) }))
-    .filter(x => budget >= 99999 || x.rawGBP <= budget)
-    .sort((a, b) => a.rawGBP - b.rawGBP)
-    .slice(0, 5);
+    .sort((a, b) => a.rawGBP - b.rawGBP);
+  const wWithin  = wSorted.filter(x => budget >= 99999 || x.rawGBP <= budget);
+  const wOver    = wSorted.filter(x => budget < 99999 && x.rawGBP > budget);
+  const wTotalCost = wWithin.reduce((s, x) => s + x.rawGBP, 0);
 
-  const statsHTML = `
+  // Card row helper
+  const _aiaItem = (card, rightTop, rightSub) => {
+    const img = _hiresUrl(getCardImg(card));
+    return `<div class="aia-item" onclick="selectCard('${esc(card.i)}');go('predict')">
+      ${img ? `<img class="aia-item-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="aia-item-img"></div>'}
+      <div class="aia-item-body">
+        <div class="aia-item-name">${esc(card.n)}</div>
+        <div class="aia-item-sub">${esc(card.s || '')}</div>
+      </div>
+      <div>
+        <div class="aia-item-val">${rightTop}</div>
+        <div class="aia-item-sub2">${rightSub}</div>
+      </div>
+    </div>`;
+  };
+
+  // ── Tab: Existing ──────────────────────────────────────────────────────────
+  const existingHTML = `
     <div class="aia-stats-grid">
       <div class="aia-stat">
-        <div class="aia-stat-lbl">Collection</div>
+        <div class="aia-stat-lbl">Cards</div>
         <div class="aia-stat-val">${pCards.length}</div>
-        <div class="aia-stat-sub">${withPrices} with live prices</div>
+        <div class="aia-stat-sub">${withPrices} with prices</div>
       </div>
       <div class="aia-stat">
-        <div class="aia-stat-lbl">Portfolio value</div>
+        <div class="aia-stat-lbl">Portfolio</div>
         <div class="aia-stat-val">${totalRaw > 0 ? fmtGBPDirect(totalRaw) : '—'}</div>
         <div class="aia-stat-sub">raw market total</div>
-      </div>
-      <div class="aia-stat">
-        <div class="aia-stat-lbl">Wishlist</div>
-        <div class="aia-stat-val">${wCards.length}</div>
-        <div class="aia-stat-sub">${wPriority.length} within budget</div>
       </div>
       <div class="aia-stat">
         <div class="aia-stat-lbl">Grade ops</div>
         <div class="aia-stat-val">${gradingOps.length}</div>
         <div class="aia-stat-sub">PSA 10 premium ≥2×</div>
       </div>
-    </div>`;
+    </div>
+    ${gradingOps.length ? `<div class="aia-section">
+      <div class="aia-section-hd">Grading Opportunities · PSA 10 Premium</div>
+      ${gradingOps.map(x => _aiaItem(x.card,
+        x.mult.toFixed(1) + '×',
+        fmtGBPDirect(usdToGbp(x.pd.pcUngraded)) + ' → ' + fmtGBPDirect(usdToGbp(x.pd.pcPsa10))
+      )).join('')}
+    </div>` : '<div class="aia-empty-tab">No grading opportunities yet — prices load as you browse your collection.</div>'}
+    ${collByValue.length ? `<div class="aia-section">
+      <div class="aia-section-hd">Most Valuable · Raw Price</div>
+      ${collByValue.map(x => _aiaItem(x.card,
+        fmtGBPDirect(x.rawGBP),
+        x.pd?.pcPsa10 > 0 ? 'PSA 10 ' + fmtGBPDirect(usdToGbp(x.pd.pcPsa10)) : 'raw'
+      )).join('')}
+    </div>` : ''}`;
 
-  const gradingHTML = gradingOps.length === 0 ? '' : `
-    <div class="aia-section">
-      <div class="aia-section-hd">Top Grading Opportunities</div>
-      ${gradingOps.map(x => {
-        const img = _hiresUrl(getCardImg(x.card));
-        const raw = fmtGBPDirect(usdToGbp(x.pd.pcUngraded));
-        const psa10 = fmtGBPDirect(usdToGbp(x.pd.pcPsa10));
-        return `<div class="aia-item" onclick="selectCard('${esc(x.card.i)}');go('predict')">
-          ${img ? `<img class="aia-item-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="aia-item-img"></div>'}
-          <div class="aia-item-body">
-            <div class="aia-item-name">${esc(x.card.n)}</div>
-            <div class="aia-item-sub">${esc(x.card.s || '')}</div>
-          </div>
-          <div>
-            <div class="aia-item-val">${x.mult.toFixed(1)}×</div>
-            <div class="aia-item-sub2">${raw} → ${psa10}</div>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>`;
+  // ── Tab: Wishlist ──────────────────────────────────────────────────────────
+  const wishlistHTML = `
+    <div class="aia-stats-grid">
+      <div class="aia-stat">
+        <div class="aia-stat-lbl">Wishlist</div>
+        <div class="aia-stat-val">${wCards.length}</div>
+        <div class="aia-stat-sub">${wWithin.length} within budget</div>
+      </div>
+      <div class="aia-stat">
+        <div class="aia-stat-lbl">Budget total</div>
+        <div class="aia-stat-val">${wTotalCost > 0 ? fmtGBPDirect(wTotalCost) : '—'}</div>
+        <div class="aia-stat-sub">${budget < 99999 ? 'max £' + budget + ' each' : 'no limit set'}</div>
+      </div>
+    </div>
+    ${wWithin.length === 0 && wOver.length === 0
+      ? '<div class="aia-empty-tab">No wishlist cards with prices yet — prices load as you browse.</div>'
+      : [
+          wWithin.length ? `<div class="aia-section">
+            <div class="aia-section-hd">Within Budget${budget < 99999 ? ' · Under £' + budget : ''}</div>
+            ${wWithin.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
+          </div>` : '',
+          wOver.length ? `<div class="aia-section">
+            <div class="aia-section-hd">Over Budget</div>
+            ${wOver.map(x => _aiaItem(x.card, fmtGBPDirect(x.rawGBP), 'raw')).join('')}
+          </div>` : '',
+        ].join('')}`;
 
-  const wishlistHTML = wPriority.length === 0 ? '' : `
-    <div class="aia-section">
-      <div class="aia-section-hd">Wishlist Priorities${budget < 99999 ? ' · Budget £' + budget : ''}</div>
-      ${wPriority.map(x => {
-        const img = _hiresUrl(getCardImg(x.card));
-        return `<div class="aia-item" onclick="selectCard('${esc(x.card.i)}');go('predict')">
-          ${img ? `<img class="aia-item-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="aia-item-img"></div>'}
-          <div class="aia-item-body">
-            <div class="aia-item-name">${esc(x.card.n)}</div>
-            <div class="aia-item-sub">${esc(x.card.s || '')}</div>
-          </div>
-          <div>
-            <div class="aia-item-val">${fmtGBPDirect(x.rawGBP)}</div>
-            <div class="aia-item-sub2">raw</div>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>`;
-
-  const ctaHTML = `
+  // ── Tab: Recommendations ───────────────────────────────────────────────────
+  const recoHTML = `
     <div class="aia-cta-row">
       <button class="aia-cta-btn" id="aiaDeepDiveBtn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.09 3.26L16.5 6.5l-3.26 1.09L12 11l-1.09-3.26L7.5 6.5l3.26-1.09z"/><path d="M19 14l.73 2.18L22 17l-2.18.73L19 20l-.73-2.18L16 17l2.18-.73z"/></svg>
-        Get AI Recommendations
+        Full Portfolio Deep Dive
       </button>
+    </div>
+    <div class="aia-reco-chips">
+      <button class="aia-chip" id="aiaChipGrade">Best cards to grade?</button>
+      <button class="aia-chip" id="aiaChipSell">Anything to sell?</button>
+      <button class="aia-chip" id="aiaChipBuy">What should I buy next?</button>
+      <button class="aia-chip" id="aiaChipHold">Hold vs flip?</button>
     </div>`;
 
+  // ── Assemble ───────────────────────────────────────────────────────────────
   const loadingHTML = _needPrices.length
     ? `<div class="aia-loading-notice">Fetching prices for ${_needPrices.length} card${_needPrices.length === 1 ? '' : 's'}…</div>`
     : '';
-  body.innerHTML = loadingHTML + statsHTML + gradingHTML + wishlistHTML + ctaHTML;
 
+  const _cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  const _tabs = ['existing', 'wishlist', 'recommendations'];
+  const _labels = { existing: 'Existing', wishlist: 'Wishlist', recommendations: 'Recommendations' };
+
+  body.innerHTML = loadingHTML + `
+    <div class="aia-tab-row">
+      ${_tabs.map(t => `<button class="aia-tab${t === _aiaActiveTab ? ' aia-tab-active' : ''}" data-aia-tab="${t}">${_labels[t]}</button>`).join('')}
+    </div>
+    <div id="aiaPanelExisting"       class="aia-tab-panel${_aiaActiveTab === 'existing'       ? '' : ' aia-panel-hidden'}">${existingHTML}</div>
+    <div id="aiaPanelWishlist"       class="aia-tab-panel${_aiaActiveTab === 'wishlist'       ? '' : ' aia-panel-hidden'}">${wishlistHTML}</div>
+    <div id="aiaPanelRecommendations" class="aia-tab-panel${_aiaActiveTab === 'recommendations' ? '' : ' aia-panel-hidden'}">${recoHTML}</div>`;
+
+  // Tab switching
+  body.querySelectorAll('[data-aia-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _aiaActiveTab = btn.dataset.aiaTab;
+      body.querySelectorAll('.aia-tab').forEach(b => b.classList.toggle('aia-tab-active', b === btn));
+      body.querySelectorAll('.aia-tab-panel').forEach(p =>
+        p.classList.toggle('aia-panel-hidden', p.id !== 'aiaPanel' + _cap(_aiaActiveTab))
+      );
+    });
+  });
+
+  // CTA: full deep dive
   document.getElementById('aiaDeepDiveBtn')?.addEventListener('click', () => {
-    const topCards = gradingOps.slice(0, 3).map(x => `${x.card.n} (${x.mult.toFixed(1)}× PSA premium)`).join(', ');
-    const wishStr  = wPriority.slice(0, 3).map(x => `${x.card.n} at ${fmtGBPDirect(x.rawGBP)}`).join(', ');
+    const topG  = gradingOps.slice(0, 3).map(x => `${x.card.n} (${x.mult.toFixed(1)}× PSA premium)`).join(', ');
+    const topW  = wWithin.slice(0, 3).map(x => `${x.card.n} at ${fmtGBPDirect(x.rawGBP)}`).join(', ');
     const prompt = [
-      `Strategic portfolio analysis request.`,
-      `My collection: ${pCards.length} cards, raw market value ~${fmtGBPDirect(totalRaw)}.`,
-      gradingOps.length > 0 ? `Top grading opportunities (PSA 10 premium): ${topCards}.` : '',
-      wPriority.length > 0 ? `Top wishlist targets: ${wishStr}.` : '',
-      `Give me: (1) top 3 grading decisions with reasoning, (2) any cards to consider selling, (3) one tactical recommendation for the next 30 days.`,
+      `Strategic portfolio analysis.`,
+      `Collection: ${pCards.length} cards, raw value ~${fmtGBPDirect(totalRaw)}.`,
+      gradingOps.length ? `Top grading opportunities: ${topG}.` : '',
+      wWithin.length   ? `Top wishlist targets: ${topW}.` : '',
+      `Give me: (1) top 3 grading decisions with reasoning, (2) any cards to consider selling, (3) one tactical move for the next 30 days.`,
     ].filter(Boolean).join(' ');
     go('know');
     setTimeout(() => { try { aiSubmit(prompt); } catch(e) {} }, 350);
+  });
+
+  // Quick-ask chips
+  document.getElementById('aiaChipGrade')?.addEventListener('click', () => {
+    const cards = gradingOps.slice(0, 5).map(x => `${x.card.n} (${x.mult.toFixed(1)}× PSA premium, raw ${fmtGBPDirect(usdToGbp(x.pd.pcUngraded))})`).join('; ');
+    go('know');
+    setTimeout(() => { try { aiSubmit(`Which of my collection cards are worth grading right now? ${cards || 'Review my collection.'} Consider grading fees, realistic PSA grade, and whether the PSA 10 premium justifies the cost.`); } catch(e) {} }, 350);
+  });
+  document.getElementById('aiaChipSell')?.addEventListener('click', () => {
+    const cards = collByValue.slice(0, 5).map(x => `${x.card.n} (raw ${fmtGBPDirect(x.rawGBP)}${x.pd?.pcPsa10 ? ', PSA 10 ' + fmtGBPDirect(usdToGbp(x.pd.pcPsa10)) : ''})`).join('; ');
+    go('know');
+    setTimeout(() => { try { aiSubmit(`Should I sell any of these cards from my collection? ${cards || 'Review my collection.'} Consider market momentum, whether prices are near highs, and whether proceeds could be better deployed elsewhere.`); } catch(e) {} }, 350);
+  });
+  document.getElementById('aiaChipBuy')?.addEventListener('click', () => {
+    const wish = wWithin.slice(0, 5).map(x => `${x.card.n} at ${fmtGBPDirect(x.rawGBP)}`).join('; ');
+    go('know');
+    setTimeout(() => { try { aiSubmit(`What should I buy next for my collection? Wishlist within budget: ${wish || 'none set — suggest based on market trends.'}. Top pick and whether now is a good entry point.`); } catch(e) {} }, 350);
+  });
+  document.getElementById('aiaChipHold')?.addEventListener('click', () => {
+    const cards = collByValue.slice(0, 5).map(x => `${x.card.n} (raw ${fmtGBPDirect(x.rawGBP)})`).join('; ');
+    go('know');
+    setTimeout(() => { try { aiSubmit(`Hold vs flip verdict for my top collection cards: ${cards || 'review my collection.'}. Give a clear hold or flip call for each with brief reasoning.`); } catch(e) {} }, 350);
   });
 }
 
