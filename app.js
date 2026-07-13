@@ -18633,36 +18633,37 @@ async function _homeRecoPrefetch(all) {
   const seen = new Set();
   const toFetch = [];
   // Prioritise strategy sections (especially psa10) — that's where the wrong
-  // price is most visible. Cap at 5 per section so we don't hammer the API.
+  // price is most visible. Cap at 10 per section.
   for (const key of ['psa10', 'psa9', 'psa8', 'raw', 'general']) {
-    for (const r of (all[key] || []).slice(0, 5)) {
+    for (const r of (all[key] || []).slice(0, 10)) {
       if (seen.has(r.card.i)) continue;
       seen.add(r.card.i);
       const cached = getCachedPrice(r.card.i);
-      // Only fetch if there's no live pcPsa10 in the cache (the stale case)
       if (!cached || (key !== 'general' && !cached.pcPsa10)) toFetch.push(r.card);
     }
   }
   if (!toFetch.length) return;
 
+  // Preserve existing TCGPlayer prices before the batch overwrites them
+  const tcgSaved = {};
   for (const card of toFetch) {
-    try {
-      const priceData = await fetchFreshPriceData(card);
-      // Preserve any previously fetched TCGPlayer prices
-      if (priceData.tcgMarket <= 0) {
-        const existing = getLastKnownPrice(card.i);
-        if (existing && existing.tcgMarket > 0) {
-          priceData.tcgMarket = existing.tcgMarket;
-          priceData.tcgLow    = existing.tcgLow    || 0;
-          priceData.tcgMid    = existing.tcgMid    || 0;
-          priceData.tcgHigh   = existing.tcgHigh   || 0;
-          priceData.tcgUrl    = priceData.tcgUrl   || existing.tcgUrl;
-        }
-      }
-      setCachedPrice(card.i, priceData); // also nulls _recoCached
-    } catch {}
+    const ex = getLastKnownPrice(card.i);
+    if (ex?.tcgMarket > 0) tcgSaved[card.i] = ex;
   }
-  // Rebuild tiles now that live prices are available
+
+  // Parallel batch via D1 / PriceCharting — ~1s for 50 cards vs ~15s sequential
+  await fetchBatchPrices(toFetch);
+
+  // Restore TCGPlayer prices that batch may have clobbered
+  for (const [id, ex] of Object.entries(tcgSaved)) {
+    const fresh = getCachedPrice(id);
+    if (fresh && ex.tcgMarket > 0 && !(fresh.tcgMarket > 0)) {
+      setCachedPrice(id, { ...fresh, tcgMarket: ex.tcgMarket, tcgLow: ex.tcgLow || 0,
+        tcgMid: ex.tcgMid || 0, tcgHigh: ex.tcgHigh || 0, tcgUrl: fresh.tcgUrl || ex.tcgUrl });
+    }
+  }
+
+  // Rebuild reco tiles with live prices
   _renderHomeReco(true);
 }
 
