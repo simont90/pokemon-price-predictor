@@ -350,13 +350,32 @@ function getPriceCache() {
   if (_priceCache) return _priceCache;
   try { _priceCache = JSON.parse(localStorage.getItem(PRICE_CACHE_KEY) || '{}') || {}; }
   catch { _priceCache = {}; }
+  // One-time migration: strip pcImageUrl from existing entries (never read back, just wastes space)
+  let migrated = false;
+  for (const entry of Object.values(_priceCache)) {
+    if (entry && 'pcImageUrl' in entry) { delete entry.pcImageUrl; migrated = true; }
+  }
+  if (migrated) try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(_priceCache)); } catch {}
   return _priceCache;
+}
+
+function _priceCacheFlush(cache) {
+  try {
+    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // localStorage full — evict oldest 20% of entries and retry once
+    const sorted = Object.keys(cache).sort((a, b) => (cache[a]?._ts || 0) - (cache[b]?._ts || 0));
+    sorted.slice(0, Math.ceil(sorted.length * 0.2)).forEach(k => delete cache[k]);
+    try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache)); } catch {}
+  }
 }
 
 function setCachedPrice(cardId, data) {
   const cache = getPriceCache();
-  cache[cardId] = { ...data, _ts: Date.now() };
-  try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cache)); } catch {}
+  // Strip pcImageUrl — large, never read from the cache, not worth the localStorage bytes
+  const { pcImageUrl, ...slim } = data;
+  cache[cardId] = { ...slim, _ts: Date.now() };
+  _priceCacheFlush(cache);
   // Mark as ever-fetched so the "untracked" count falls even after cache eviction
   markPriceSeen(cardId);
   // Price changed — signal may shift, so invalidate cached computation for this card
