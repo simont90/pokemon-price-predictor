@@ -26841,10 +26841,40 @@ function renderAiAnalysisPage() {
     .map(w => ({ card: getCardById(w.id), pd: getCachedPrice(w.id), w }))
     .filter(x => x.card);
   // Unowned Full Art Binder entries treated as an additional wishlist
-  const bCards = (typeof fullArtBinder !== 'undefined' ? fullArtBinder : [])
+  const _bCardsRaw = (typeof fullArtBinder !== 'undefined' ? fullArtBinder : [])
     .filter(b => !b.owned)
     .map(b => ({ card: getCardById(b.id), pd: getCachedPrice(b.id), b, isBinder: true }))
     .filter(x => x.card);
+
+  // Language filter: group EN/JP counterparts, keep the better-value one per generation rule.
+  // Gen 1–2 (dex ≤251): prefer JP if price is lower. Gen 3+ (dex ≥252): prefer EN unless JP
+  // is >20% cheaper.
+  const _bcGroups = new Map();
+  _bCardsRaw.forEach(x => {
+    const key = counterpartByCard.get(x.card.i) || x.card.i;
+    if (!_bcGroups.has(key)) _bcGroups.set(key, []);
+    _bcGroups.get(key).push(x);
+  });
+  const bCards = [];
+  _bcGroups.forEach(group => {
+    if (group.length === 1) { bCards.push(group[0]); return; }
+    const en = group.find(x => x.card.lang !== 'JP');
+    const jp = group.find(x => x.card.lang === 'JP');
+    if (!en || !jp) { bCards.push(group[0]); return; }
+    const dex = dexNumOf(en.card.n || jp.card.n);
+    const enGBP = en.pd ? usdToGbp(en.pd.pcUngraded || 0) : 0;
+    const jpGBP = jp.pd ? usdToGbp(jp.pd.pcUngraded || 0) : 0;
+    const isEarlyGen = dex != null && dex <= 251;
+    let winner;
+    if (isEarlyGen) {
+      // Gen 1 & 2: JP if it's cheaper or EN has no price
+      winner = (jpGBP > 0 && (enGBP <= 0 || jpGBP <= enGBP)) ? jp : en;
+    } else {
+      // Gen 3+: EN unless JP is >20% cheaper
+      winner = (jpGBP > 0 && enGBP > 0 && jpGBP < enGBP * 0.80) ? jp : en;
+    }
+    bCards.push(winner);
+  });
 
   if (pCards.length === 0 && wCards.length === 0 && bCards.length === 0) {
     body.innerHTML = '<div class="aia-empty">Add cards to your collection or wishlist to generate analysis.</div>';
