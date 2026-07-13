@@ -360,6 +360,7 @@ function setCachedPrice(cardId, data) {
 }
 
 function getCachedPrice(cardId) {
+  if (!_priceCache) return null;
   const entry = _priceCache[cardId];
   if (!entry) return null;
   if (!_priceCacheIsValid(entry._ts)) return null;
@@ -367,7 +368,7 @@ function getCachedPrice(cardId) {
 }
 
 function getLastKnownPrice(cardId) {
-  return _priceCache[cardId] || null;
+  return _priceCache?.[cardId] || null;
 }
 
 // IDs we've already attempted via fetchBatchPrices this session (avoids re-fetching nulls).
@@ -23566,9 +23567,9 @@ function syncApplyPayload(payload, mode) {
     if (typeof acquisitions !== 'undefined') acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}');
     if (typeof binderSpeciesOverrides !== 'undefined') binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species-overrides-v1') || '{}');
     if (typeof binderPairings !== 'undefined') binderPairings = JSON.parse(localStorage.getItem('pkm-binder-pairings-v1') || '{}');
-    // Reset seen set and price cache so next read re-reads from localStorage (may have merged remote data)
+    // Reset seen set and price cache so next read re-fetches from D1
     _priceSeen = null;
-    _priceCache = null;
+    _priceCache = {};
   } catch {}
   // Re-inject user-added cards that arrived from another device, then rebuild
   // the search index so they appear immediately without a page reload.
