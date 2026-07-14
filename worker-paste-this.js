@@ -1774,27 +1774,33 @@ const MARKET_BACKFILL_PER_RUN = 15;                        // videos processed p
 
 // All monitored channels — RSS + backfill queue cover historical + new content
 const MARKET_CHANNELS = [
-  { id: 'UCsSA2eBWW7qAwSV_COyW8uQ', name: 'PikaPikaPaPa'               },
-  { id: 'UCw47gkI_OV46GQyq08jQ-8w', name: 'MasterBalless'              },
-  { id: 'UCJrBXKBCYtHrW_PSjZc3amQ', name: 'Phillips Collectibles'      },
-  { id: 'UCEYiwUuZO02Ewqrc5aZlzyQ', name: 'Collectors Corner TCG'       },
-  { id: 'UCd0bq0P8Xz9vEJqdnyqHYrg', name: 'PokeData Dad Guy'            },
-  { id: 'UCH92NLGznIRpQxErnKm_ZHQ', name: 'Sleeve No Card Behind'       },
-  { id: 'UCDFqWkHUKWDMm590DopfCvg', name: 'PokeTamer'                   },
-  { id: 'UCQg9Hzbs5f6A7W1dE46sc2A', name: 'Randolph Pokémon'            },
-  { id: 'UCePvxCHy42gdfsFvNDBRQdQ', name: 'PokeJace'                    },
-  { id: 'UCfEGPbDglUfd4Shi3ebuZCw', name: 'It Was Never a Phase'        },
-  { id: 'UCweh8CzIYgMpvgvhniVKNQw', name: 'Jordan Collects'             },
-  { id: 'UC-mDbPaXMhSCKgHIjyVX2Vw', name: 'Snomnomnomnom'               },
-  { id: 'UCvq8m0HTf4Mu_tVJO8GFyJg', name: 'Dewgong Don'                  },
-  { id: 'UCDs1k6MPQJKG5_1oAvLbo1g', name: 'Top 10 Pokemon'               },
+  { id: 'UCsSA2eBWW7qAwSV_COyW8uQ', name: 'PikaPikaPaPa'              },
+  { id: 'UCw47gkI_OV46GQyq08jQ-8w', name: 'MasterBalless'             },
+  { id: 'UCJrBXKBCYtHrW_PSjZc3amQ', name: 'Sleeve No Card Behind'     }, // was mislabelled Phillips Collectibles
+  { id: 'UCEYiwUuZO02Ewqrc5aZlzyQ', name: 'PokeTamer'                 }, // was mislabelled Collectors Corner TCG
+  { id: 'UCd0bq0P8Xz9vEJqdnyqHYrg', name: 'PokeData Dad Guy'          },
+  { id: 'UCH92NLGznIRpQxErnKm_ZHQ', name: 'Collectors Corner TCG'     }, // was mislabelled Sleeve No Card Behind
+  { id: 'UCDFqWkHUKWDMm590DopfCvg', name: 'Phillips Collectibles'     }, // was mislabelled PokeTamer
+  { id: 'UCQg9Hzbs5f6A7W1dE46sc2A', name: 'Randolph Pokémon'          },
+  { id: 'UCePvxCHy42gdfsFvNDBRQdQ', name: 'It Was Never A Phase Cards' }, // was mislabelled PokeJace
+  { id: 'UCfEGPbDglUfd4Shi3ebuZCw', name: 'PokeJace'                  }, // was mislabelled It Was Never a Phase
+  { id: 'UCweh8CzIYgMpvgvhniVKNQw', name: 'Snomnom'                   }, // was mislabelled Jordan Collects
+  { id: 'UC-mDbPaXMhSCKgHIjyVX2Vw', name: 'Max Does Pokemon'          }, // was mislabelled Snomnomnomnom
+  { id: 'UCvq8m0HTf4Mu_tVJO8GFyJg', name: 'Dewgong Don'               },
+  { id: 'UCDs1k6MPQJKG5_1oAvLbo1g', name: 'Top 10 Pokemon'            },
+  { id: 'UCTHk5ZPd0lv6jWwV5aVt1iA', name: 'PokeAnalyst Ed'            },
 ];
 
 // User-pinned video IDs — always processed if not yet in intel sources
 const MARKET_PINNED_VIDEOS = [
-  { videoId: '_cyddOc1SMU', title: 'The Entire History of Shiny Pokémon Cards',         channelName: 'Sleeve No Card Behind' },
-  { videoId: 'w1HHF9GUiwo', title: 'Top 10 EXPENSIVE Pitch Black Pokemon Cards!',       channelName: 'Top 10 Pokemon'        },
-  { videoId: 'KHxEw59qjCI', title: "I Can't Believe These 8 Pokémon Cards Are Still Under $10!", channelName: 'Phillips Collectibles' },
+  { videoId: '_cyddOc1SMU', title: 'The Entire History of Shiny Pokémon Cards',                             channelName: 'Sleeve No Card Behind'    },
+  { videoId: 'w1HHF9GUiwo', title: 'Top 10 EXPENSIVE Pitch Black Pokemon Cards!',                          channelName: 'Top 10 Pokemon'            },
+  { videoId: 'KHxEw59qjCI', title: "I Can't Believe These 8 Pokémon Cards Are Still Under $10!",           channelName: 'Phillips Collectibles'     },
+  { videoId: 'mQE8W5gc5Cw', title: "I'm Not Worried About Pokémon Card Prices Dropping Right Now...",      channelName: 'Phillips Collectibles'     },
+  { videoId: '5d7tjpVKFOc', title: "Your Pokémon Cards Dropped 42% This Summer — Here's Why That's Good", channelName: 'PokeAnalyst Ed'            },
+  { videoId: 'PawseRgrbzw', title: 'MOST EXPENSIVE Card for EVERY Pokemon EVER',                           channelName: 'ThePokePlanet'             },
+  { videoId: 'tZtCOYKD5IY', title: 'Is The Summer Slump Even That Bad? Pokemon Market Update',             channelName: 'It Was Never A Phase Cards' },
+  { videoId: 'hLvJqNVmbE8', title: 'Why Investing In Japanese Pokemon Cards Is A Smart Decision!',         channelName: 'Phillips Collectibles'     },
 ];
 
 // Seed data from "Everything's About to Change... And Vintage Pokémon Will Explode"
@@ -1827,6 +1833,11 @@ const MARKET_INTEL_SEED = {
       'Modern shiny sets (Ultra Shiny GX, Shiny Treasure ex) offer lower entry points with steady appreciation — Umbreon GX SR 229/150, Gardevoir ex SAR 348/190, Mew ex SAR 347/190 are standout picks; Japanese print quality advantage amplified in modern sets (Sleeve No Card Behind 2026)',
       'Pitch Black (July 2026 release) — wait 3–6 weeks post-launch before buying singles as global pack openings push prices down; Mega Darkrai ex SIR ($440) and MHR ($996) are the set chase cards; Mega Zeraora ex SIR ($184) is best-value SIR at launch with projected settled range $150–$280 (Top 10 Pokemon 2026)',
       'Pitch Black set contains only 6 SIRs out of 120 cards (36 total secret rares) — concentrated collector spend on a small number of cards historically sustains SIR premiums longer than sets with more SIRs (Top 10 Pokemon 2026)',
+      'Summer 2026 TCG correction: modern singles down 20–45% from 2025 peaks — the correction is supply/speculation-driven, not demand-driven; experienced collectors treat this as a structured accumulation window ahead of Q4 2026 and the 30th Anniversary catalyst (PokeAnalyst Ed 2026)',
+      'Japanese Pokémon card investing advantages: PSA 10 hit rates run 60–89% for Japanese vs substantially lower for English; every tracked Japanese sealed box has appreciated above retail (155%–1,838% range); MEGA-era Japanese boxes (~$53/¥8,000) flagged as accessible 30th Anniversary entry point (Phillips Collectibles 2026)',
+      '30th Anniversary (October 2026) is a structural demand catalyst — milestone drives renewed mainstream and collector interest across all eras; Q4 2026 surge expected after summer accumulation window; older SV sets already surging in anticipation (It Was Never A Phase Cards 2026)',
+      'Pitch Black post-launch price tracking confirms 3–6 week softening pattern on schedule — singles settling toward floor; older Scarlet & Violet sets surging concurrently as new-release attention widens market participation (It Was Never A Phase Cards 2026)',
+      '"Most expensive card for every Pokémon species" reference data: 1st Ed PSA 10 Charizard ~$954,800, 1st Ed PSA 10 Blastoise ~$138,880, PSA 10 Venusaur ~$55,000, Mega Gengar ex SIR ~$960 for modern; use this as ceiling pricing context when evaluating species-level collector demand (ThePokePlanet 2026)',
     ],
     macro: 'TPCi leased 1 M+ sq ft in NC for new printing facility → modern card supply will surge, flippers exit, prices temporarily dip then recover stronger. PSA grading volume now >1 M TCG cards/month (4 of last 5 months) — modern card PSA pops will be enormous. Vintage WOTC pops grow only as sealed product is opened (rare). Conclusion: relative scarcity of vintage PSA 10s/9s increases over time.\n\nUK MARKET NOTE (PokeTamer 2025): First Edition and Shadowless Base Set cards were almost entirely released in the US — genuinely rare to find in UK bulk lots. Most UK-sourced vintage cards will be Unlimited or 4th Print. Base Set print run hierarchy by value: 1st Edition > Shadowless > Unlimited > 4th Print. Exception: every Base Set Machamp has a 1st Ed stamp (came with starter deck) — only meaningful value if also Shadowless. Price discovery: TCGPlayer listings are overinflated (US-biased); use eBay sold/completed to find real market value, especially for GBP. Real-world data point: 360-card "well-loved" vintage WOTC binder (Base Set–Gym Challenge) sold on eBay UK for £16,945 in 2025 with £1,585 profit after fees.\n\nBUDGET VINTAGE ENTRY POINTS (Phillips Collectibles 2026): Despite a rising vintage market, mid-tier WOTC sets (Jungle, Fossil, Team Rocket, Neo) still contain cards featuring iconic species available raw under $10. These represent extreme value asymmetry — the PSA 10 of a popular species from any WOTC set typically trades $200–$2,000+. Key strategy: buy in bulk, submit selectively, hold the gems. Eight specific cards identified as severely under-priced at sub-$10 raw.\n\nSUB-$300 INVESTMENT SWEEP (PokeKingShop 2026): The $100–$300 price window is the most accessible entry zone with meaningful upside. It simultaneously covers: (1) vintage WOTC PSA 9 holos from Jungle/Fossil/Base Set; (2) modern Evolving Skies Alternate Arts (Umbreon VMAX, Rayquaza VMAX) in PSA 9–10; (3) sealed ETBs from popular out-of-print sets. As the "nostalgia cohort" (Millennials/Gen Z who grew up with Gen I–III) enters peak income years through 2027–2030, demand for both vintage and iconic modern cards will structurally increase.\n\nJAPANESE MARKET CORRECTION (Henrys Poke Corner 2026): The Japanese Pokémon card market underwent a significant speculative correction. Patient investors who understand JP fundamentals — fixed vintage print runs, genuine scarcity of gem-mint copies, and strong domestic collector demand — treat such corrections as structural entry points. The crash is speculation-driven, not demand-driven; the collector floor for genuinely scarce JP cards remains intact.\n\nVINTAGE vs MODERN PRICING PARADOX (Sleeve No Card Behind 2026): WOTC-era vintage holos with 25+ years of fixed supply sometimes trade below modern Alternate Art and SIR cards printed in the millions. The convergence thesis: as the nostalgia cohort ages into peak income years (2026–2032), vintage supply stays fixed while demand compounds. This pricing gap historically corrects — vintage is structurally undervalued relative to modern prints in the long run.\n\n2026 MARKET BIFURCATION (Phillips Collectibles 2026): Multiple Phillips Collectibles videos document a bifurcated 2026 market — modern JP, new-set promos, and sealed product near all-time highs while vintage WOTC is in a cyclical correction. Core thesis: dips in structurally sound assets are accumulation opportunities, not exits. Framework from 7 Timeless Rules: buy iconic species, buy scarcity, buy grade asymmetry, hold minimum 2 years, avoid hype-driven modern bulk, prioritise 1st Edition, never over-expose to a single card.\n\nALTERNATE ARTS / SIR CYCLICAL PATTERN (Danny Phantump 2026): Alternate Art and Special Illustration Rare cards from Sword & Shield and Scarlet & Violet exhibit a repeating spike-reset cycle where each reset establishes a higher structural floor than the prior one. Evolving Skies (Umbreon VMAX AA, Rayquaza VMAX AA) and top Scarlet & Violet SIRs are the most liquid modern investment vehicles. Ascended Heroes set evaluation: early-set price corrections can be ideal accumulation windows for iconic species in new sets.\n\nGRADING ECONOMICS (Dewgong Don 2026): Professional grading is only economically justified when the card has a realistic shot at PSA 9+ given visible condition, PSA 10 value is at least 5× the raw price, and grading fees are recoverable within the expected hold period. Most modern bulk fails this test at 2026 grading fees. For vintage WOTC, selective submission of well-centred, corner-sharp cards from iconic sets remains viable.',
   },
@@ -1843,8 +1854,12 @@ const MARKET_INTEL_SEED = {
     { name: 'WOTC Black Star Promo Mew', set: 'basep', grade: 'PSA 9', price_usd: 285, psa10_usd: 4525, psa9_pop: 3239, note: 'Mew brand momentum strong. PSA 10 from $1k to $4.5k in 1 yr' },
   ],
   sources: [
-    { video_id: '_cyddOc1SMU', channel: 'Sleeve No Card Behind', title: 'The Entire History of Shiny Pokémon Cards', published: '2026-07-14' },
-    { video_id: 'w1HHF9GUiwo', channel: 'Top 10 Pokemon', title: 'Top 10 EXPENSIVE Pitch Black Pokemon Cards!', published: '2026-07-14' },
+    { video_id: '_cyddOc1SMU', channel: 'Sleeve No Card Behind',    title: 'The Entire History of Shiny Pokémon Cards',                             published: '2026-07-14' },
+    { video_id: 'w1HHF9GUiwo', channel: 'Top 10 Pokemon',          title: 'Top 10 EXPENSIVE Pitch Black Pokemon Cards!',                          published: '2026-07-14' },
+    { video_id: '5d7tjpVKFOc', channel: 'PokeAnalyst Ed',          title: "Your Pokémon Cards Dropped 42% This Summer — Here's Why That's Good", published: '2026-07-14' },
+    { video_id: 'PawseRgrbzw', channel: 'ThePokePlanet',           title: 'MOST EXPENSIVE Card for EVERY Pokemon EVER',                          published: '2026-07-14' },
+    { video_id: 'tZtCOYKD5IY', channel: 'It Was Never A Phase Cards', title: 'Is The Summer Slump Even That Bad? Pokemon Market Update',          published: '2026-07-14' },
+    { video_id: 'hLvJqNVmbE8', channel: 'Phillips Collectibles',   title: 'Why Investing In Japanese Pokemon Cards Is A Smart Decision!',         published: '2026-07-14' },
     { video_id: '1RD5N457AaI', channel: 'PikaPikaPaPa', title: "Everything's About to Change... And Vintage Pokémon Will Explode", published: '2025-07-11' },
     { video_id: 'yCAE55_kkf4', channel: 'PokeTamer', title: 'Vintage Pokémon Cards — What Are They Actually Worth in 2025?', published: '2025-01-01' },
     { video_id: '41uDYckkWGI', channel: 'Dewgong Don', title: "Most Pokemon Cards Aren't Worth Grading. Here's How to Tell.", published: '2026-07-12' },
