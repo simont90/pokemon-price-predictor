@@ -1787,6 +1787,14 @@ const MARKET_CHANNELS = [
   { id: 'UCweh8CzIYgMpvgvhniVKNQw', name: 'Jordan Collects'             },
   { id: 'UC-mDbPaXMhSCKgHIjyVX2Vw', name: 'Snomnomnomnom'               },
   { id: 'UCvq8m0HTf4Mu_tVJO8GFyJg', name: 'Dewgong Don'                  },
+  { id: 'UCDs1k6MPQJKG5_1oAvLbo1g', name: 'Top 10 Pokemon'               },
+];
+
+// User-pinned video IDs — always processed if not yet in intel sources
+const MARKET_PINNED_VIDEOS = [
+  { videoId: '_cyddOc1SMU', title: 'The Entire History of Shiny Pokémon Cards',         channelName: 'Sleeve No Card Behind' },
+  { videoId: 'w1HHF9GUiwo', title: 'Top 10 EXPENSIVE Pitch Black Pokemon Cards!',       channelName: 'Top 10 Pokemon'        },
+  { videoId: 'KHxEw59qjCI', title: "I Can't Believe These 8 Pokémon Cards Are Still Under $10!", channelName: 'Phillips Collectibles' },
 ];
 
 // Seed data from "Everything's About to Change... And Vintage Pokémon Will Explode"
@@ -1813,10 +1821,21 @@ const MARKET_INTEL_SEED = {
       'Alternate Art and Special Illustration Rare cards exhibit a recurring spike-reset cycle; each reset establishes a higher structural floor — the right entry is the reset, not the spike (Danny Phantump 2026)',
       'Professional grading is only economically justified when PSA 10 value is at least 5× raw price and the card has a realistic chance at gem mint — most modern bulk fails this threshold (Dewgong Don 2026)',
       'Sealed product from discontinued sets (Evolving Skies ETBs, Brilliant Stars booster boxes) appreciates reliably once out-of-print — fixed supply compounds with growing demand (multiple creators 2026)',
+      'Shiny Pokémon cards — Japanese variants command 40–80% price premiums over English equivalents due to lower print runs and superior print quality; JP shiny versions are structurally better value across all eras (Sleeve No Card Behind 2026)',
+      'Neo-era Shining cards (Gyarados, Charizard, Mewtwo, Celebi from Neo Revelation/Destiny) are the scarcest vintage shiny prints — PSA 10 pop under 200 for each; Shining Gyarados PSA 10 ~$50k is the #1 most historically significant shiny card (Sleeve No Card Behind 2026)',
+      'Gold Star era (EX Dragon Frontiers, EX Deoxys, POP Series 5, Team Rocket Returns) represents peak mid-2000s shiny printing — Charizard Gold Star PSA 10 ~$22k, Rayquaza Gold Star PSA 10 ~$22k, Umbreon Gold Star raw ~$1,800 are the strongest holds (Sleeve No Card Behind 2026)',
+      'Modern shiny sets (Ultra Shiny GX, Shiny Treasure ex) offer lower entry points with steady appreciation — Umbreon GX SR 229/150, Gardevoir ex SAR 348/190, Mew ex SAR 347/190 are standout picks; Japanese print quality advantage amplified in modern sets (Sleeve No Card Behind 2026)',
+      'Pitch Black (July 2026 release) — wait 3–6 weeks post-launch before buying singles as global pack openings push prices down; Mega Darkrai ex SIR ($440) and MHR ($996) are the set chase cards; Mega Zeraora ex SIR ($184) is best-value SIR at launch with projected settled range $150–$280 (Top 10 Pokemon 2026)',
+      'Pitch Black set contains only 6 SIRs out of 120 cards (36 total secret rares) — concentrated collector spend on a small number of cards historically sustains SIR premiums longer than sets with more SIRs (Top 10 Pokemon 2026)',
     ],
     macro: 'TPCi leased 1 M+ sq ft in NC for new printing facility → modern card supply will surge, flippers exit, prices temporarily dip then recover stronger. PSA grading volume now >1 M TCG cards/month (4 of last 5 months) — modern card PSA pops will be enormous. Vintage WOTC pops grow only as sealed product is opened (rare). Conclusion: relative scarcity of vintage PSA 10s/9s increases over time.\n\nUK MARKET NOTE (PokeTamer 2025): First Edition and Shadowless Base Set cards were almost entirely released in the US — genuinely rare to find in UK bulk lots. Most UK-sourced vintage cards will be Unlimited or 4th Print. Base Set print run hierarchy by value: 1st Edition > Shadowless > Unlimited > 4th Print. Exception: every Base Set Machamp has a 1st Ed stamp (came with starter deck) — only meaningful value if also Shadowless. Price discovery: TCGPlayer listings are overinflated (US-biased); use eBay sold/completed to find real market value, especially for GBP. Real-world data point: 360-card "well-loved" vintage WOTC binder (Base Set–Gym Challenge) sold on eBay UK for £16,945 in 2025 with £1,585 profit after fees.\n\nBUDGET VINTAGE ENTRY POINTS (Phillips Collectibles 2026): Despite a rising vintage market, mid-tier WOTC sets (Jungle, Fossil, Team Rocket, Neo) still contain cards featuring iconic species available raw under $10. These represent extreme value asymmetry — the PSA 10 of a popular species from any WOTC set typically trades $200–$2,000+. Key strategy: buy in bulk, submit selectively, hold the gems. Eight specific cards identified as severely under-priced at sub-$10 raw.\n\nSUB-$300 INVESTMENT SWEEP (PokeKingShop 2026): The $100–$300 price window is the most accessible entry zone with meaningful upside. It simultaneously covers: (1) vintage WOTC PSA 9 holos from Jungle/Fossil/Base Set; (2) modern Evolving Skies Alternate Arts (Umbreon VMAX, Rayquaza VMAX) in PSA 9–10; (3) sealed ETBs from popular out-of-print sets. As the "nostalgia cohort" (Millennials/Gen Z who grew up with Gen I–III) enters peak income years through 2027–2030, demand for both vintage and iconic modern cards will structurally increase.\n\nJAPANESE MARKET CORRECTION (Henrys Poke Corner 2026): The Japanese Pokémon card market underwent a significant speculative correction. Patient investors who understand JP fundamentals — fixed vintage print runs, genuine scarcity of gem-mint copies, and strong domestic collector demand — treat such corrections as structural entry points. The crash is speculation-driven, not demand-driven; the collector floor for genuinely scarce JP cards remains intact.\n\nVINTAGE vs MODERN PRICING PARADOX (Sleeve No Card Behind 2026): WOTC-era vintage holos with 25+ years of fixed supply sometimes trade below modern Alternate Art and SIR cards printed in the millions. The convergence thesis: as the nostalgia cohort ages into peak income years (2026–2032), vintage supply stays fixed while demand compounds. This pricing gap historically corrects — vintage is structurally undervalued relative to modern prints in the long run.\n\n2026 MARKET BIFURCATION (Phillips Collectibles 2026): Multiple Phillips Collectibles videos document a bifurcated 2026 market — modern JP, new-set promos, and sealed product near all-time highs while vintage WOTC is in a cyclical correction. Core thesis: dips in structurally sound assets are accumulation opportunities, not exits. Framework from 7 Timeless Rules: buy iconic species, buy scarcity, buy grade asymmetry, hold minimum 2 years, avoid hype-driven modern bulk, prioritise 1st Edition, never over-expose to a single card.\n\nALTERNATE ARTS / SIR CYCLICAL PATTERN (Danny Phantump 2026): Alternate Art and Special Illustration Rare cards from Sword & Shield and Scarlet & Violet exhibit a repeating spike-reset cycle where each reset establishes a higher structural floor than the prior one. Evolving Skies (Umbreon VMAX AA, Rayquaza VMAX AA) and top Scarlet & Violet SIRs are the most liquid modern investment vehicles. Ascended Heroes set evaluation: early-set price corrections can be ideal accumulation windows for iconic species in new sets.\n\nGRADING ECONOMICS (Dewgong Don 2026): Professional grading is only economically justified when the card has a realistic shot at PSA 9+ given visible condition, PSA 10 value is at least 5× the raw price, and grading fees are recoverable within the expected hold period. Most modern bulk fails this test at 2026 grading fees. For vintage WOTC, selective submission of well-centred, corner-sharp cards from iconic sets remains viable.',
   },
   featured_picks: [
+    { name: 'Shining Gyarados', set: 'Neo Revelation', grade: 'PSA 10', price_usd: 50000, note: 'First-ever shiny card printed (1999); PSA 10 pop ~150; definitive Neo-era shiny blue chip (Sleeve No Card Behind 2026)' },
+    { name: 'Umbreon Gold Star', set: 'POP Series 5', grade: 'Raw', price_usd: 1800, note: 'Highest-demand Gold Star after Charizard/Rayquaza; strong Eeveelution collector base; PSA 10 well above raw (Sleeve No Card Behind 2026)' },
+    { name: 'Gardevoir ex SAR', set: 'Shiny Treasure ex', grade: 'Raw', price_usd: 120, note: 'Modern shiny standout; rarity and strong demand driving steady appreciation; JP version preferred (Sleeve No Card Behind 2026)' },
+    { name: 'Mega Zeraora ex SIR', set: 'Pitch Black', grade: 'Raw', price_usd: 184, note: 'Best-value SIR at July 2026 launch; projected settled price $150–$280; buy after initial wave subsides (Top 10 Pokemon 2026)' },
+    { name: 'Mega Darkrai ex SIR', set: 'Pitch Black', grade: 'Raw', price_usd: 440, note: 'Set chase card alongside $996 MHR version; Akira Egawa illustration; best long-hold SIR in the set (Top 10 Pokemon 2026)' },
     { name: '1st Ed Fossil Zapdos', set: 'fossil', grade: 'PSA 9', price_usd: 330, psa10_usd: 3300, psa10_pop: 378, note: 'PSA 10 tripled in 1 yr; PSA 9 only +14% — strong asymmetry' },
     { name: '1st Ed Team Rocket Dark Dragonite', set: 'base3', grade: 'PSA 9', price_usd: 850, psa10_usd: 7700, psa10_pop: 223, note: 'PSA 10 rose from $3k to $7.7k; PSA 9 flat at ~$850 with 2 261 in holders' },
     { name: '1st Ed Gym Challenge Team Rocket\'s Mewtwo', set: 'gym2', grade: 'PSA 9', price_usd: 837, psa10_usd: 6000, psa9_pop: 953, note: 'Creator\'s top pick. PSA 10 from $1.5k to $6k; PSA 9 sub-$900 with sub-1k pop' },
@@ -1824,6 +1843,8 @@ const MARKET_INTEL_SEED = {
     { name: 'WOTC Black Star Promo Mew', set: 'basep', grade: 'PSA 9', price_usd: 285, psa10_usd: 4525, psa9_pop: 3239, note: 'Mew brand momentum strong. PSA 10 from $1k to $4.5k in 1 yr' },
   ],
   sources: [
+    { video_id: '_cyddOc1SMU', channel: 'Sleeve No Card Behind', title: 'The Entire History of Shiny Pokémon Cards', published: '2026-07-14' },
+    { video_id: 'w1HHF9GUiwo', channel: 'Top 10 Pokemon', title: 'Top 10 EXPENSIVE Pitch Black Pokemon Cards!', published: '2026-07-14' },
     { video_id: '1RD5N457AaI', channel: 'PikaPikaPaPa', title: "Everything's About to Change... And Vintage Pokémon Will Explode", published: '2025-07-11' },
     { video_id: 'yCAE55_kkf4', channel: 'PokeTamer', title: 'Vintage Pokémon Cards — What Are They Actually Worth in 2025?', published: '2025-01-01' },
     { video_id: '41uDYckkWGI', channel: 'Dewgong Don', title: "Most Pokemon Cards Aren't Worth Grading. Here's How to Tell.", published: '2026-07-12' },
@@ -2020,7 +2041,16 @@ async function refreshMarketIntel(env) {
       { expirationTtl: 365 * 24 * 3600 });
   }
 
-  // 3. Process each candidate video
+  // 3. Inject pinned videos that haven't made it into sources yet
+  const processedIds = new Set(intel.sources.map(s => s.video_id));
+  for (const pinned of MARKET_PINNED_VIDEOS) {
+    if (!processedIds.has(pinned.videoId) && !toProcess.some(t => t.videoId === pinned.videoId)) {
+      seenIds.delete(pinned.videoId); // allow retry even if previously attempted
+      toProcess.unshift(pinned);
+    }
+  }
+
+  // 4. Process each candidate video
   for (const { videoId, title, published, channelName } of toProcess) {
     if (processed >= MARKET_BACKFILL_PER_RUN) break;
     seenIds.add(videoId); // mark before processing so retries skip it
