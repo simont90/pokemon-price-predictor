@@ -26740,7 +26740,7 @@ function _getBudgetMonthRemaining() {
 }
 
 let _aiaActiveTab = 'existing';
-let _aiaRanking = null;          // [{ id, buy_now, reason }] — AI-ranked order, highest priority first
+let _aiaRanking = null;          // [{ id, buy_now, stars, reason }] — AI-ranked order, highest priority first
 let _aiaRankingLoading = false;
 let _aiaRankingError = null;
 
@@ -26811,7 +26811,7 @@ async function _aiaFetchRanking(cards, monthRemain) {
     ? `Total monthly budget remaining: ${fmtGBPDirect(monthRemain)} for ALL purchases combined this month — not per card. Mark buy_now:true only for a curated selection whose COMBINED cost stays within this total. If the best card alone costs more than the budget, leave all as false.`
     : '';
 
-  const systemPrompt = `You are a Pokémon TCG investment analyst. Rank the provided cards by purchase priority. Set buy_now:true only for cards worth buying this month given the budget. Every card MUST have a "reason" field: one short sentence (max 10 words) explaining the ranking decision — e.g. "scarce holo, prices rising" or "budget pick, solid long-term hold" or "overstocked, wait for dip". Respond ONLY with a JSON array, no prose, no markdown. Format: [{"id":"...","buy_now":true,"reason":"..."},...]. Rank highest priority first.`;
+  const systemPrompt = `You are a Pokémon TCG investment analyst. Rank the provided cards by purchase priority. Set buy_now:true only for cards worth buying this month given the budget. Every card MUST have: "reason" (one sentence, max 12 words explaining the decision) and "stars" (1–3 integer: 3=standout high-conviction buy, 2=solid pick, 1=watchlist/wait). Respond ONLY with a JSON array, no prose, no markdown. Format: [{"id":"...","buy_now":true,"stars":3,"reason":"scarce holo, PSA 10 pop low, prices rising"},...]. Rank highest priority first.`;
   const userPrompt   = `${budgetCtx}\n\nCards:\n${cardList}\n\nMarket signals: ${intelCtx || 'Use general TCG knowledge.'}${jpCtx}\n\nJSON array only:`;
 
   let full = '';
@@ -27000,10 +27000,12 @@ function renderAiAnalysisPage() {
     </div>` : ''}`;
 
   // Card row for ranked view — individual ring border, reason line
-  const _aiaRankedCard = (card, price, tag, buyNow, reason, held) => {
+  const _aiaRankedCard = (card, price, tag, buyNow, reason, held, stars) => {
     const img = _hiresUrl(getCardImg(card));
     const showRing = buyNow && !held;
-    return `<div class="aia-ranked-card${showRing ? ' aia-buynow' : ''}${held ? ' aia-held' : ''}" onclick="selectCard('${esc(card.i)}');go('predict')">
+    const s = stars >= 1 && stars <= 3 ? stars : 0;
+    const starsHtml = s ? `<div class="aia-stars aia-stars-${s}">${'★'.repeat(s)}${'☆'.repeat(3 - s)}</div>` : '';
+    return `<div class="aia-ranked-card${showRing ? ' aia-buynow' : ''}${held ? ' aia-held' : ''}${s === 3 ? ' aia-standout' : ''}" onclick="selectCard('${esc(card.i)}');go('predict')">
       ${img ? `<img class="aia-item-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="aia-item-img"></div>'}
       <div class="aia-item-body">
         <div class="aia-item-name">${esc(card.n)}</div>
@@ -27011,6 +27013,7 @@ function renderAiAnalysisPage() {
         ${reason ? `<div class="aia-item-reason">${esc(reason)}</div>` : ''}
       </div>
       <div class="aia-ranked-right">
+        ${starsHtml}
         <div class="aia-item-val">${price}</div>
         <div class="aia-item-sub2">raw</div>
         ${buyNow ? (held
@@ -27076,7 +27079,7 @@ function renderAiAnalysisPage() {
         return rankRow + `<div class="aia-ranked-list">
           ${ranked.map(x => {
             const rk = rankMap.get(x.card.i) || {};
-            return _aiaRankedCard(x.card, fmtGBPDirect(x.rawGBP), x.isBoth ? 'Wishlist + Binder' : x.isBinder ? 'Binder' : '', !!rk.buy_now, rk.reason || '', isHeld(x.card.i));
+            return _aiaRankedCard(x.card, fmtGBPDirect(x.rawGBP), x.isBoth ? 'Wishlist + Binder' : x.isBinder ? 'Binder' : '', !!rk.buy_now, rk.reason || '', isHeld(x.card.i), rk.stars || 0);
           }).join('')}
         </div>`;
       }

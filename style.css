@@ -16250,6 +16250,18 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
   font-size: 12px; color: var(--text-secondary, var(--text-dim)); margin-top: 4px;
   font-style: italic;
 }
+.aia-stars {
+  font-size: 13px; letter-spacing: 1px; line-height: 1;
+}
+.aia-stars-3 { color: var(--accent); }
+.aia-stars-2 { color: color-mix(in srgb, var(--accent) 70%, var(--text-dim)); }
+.aia-stars-1 { color: var(--text-dim); }
+.aia-ranked-card.aia-standout {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.aia-ranked-card.aia-buynow.aia-standout {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
 
 
 /* ─────────────────────────────────────────────────────────────────────────────
