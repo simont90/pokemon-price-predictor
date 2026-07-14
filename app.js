@@ -26792,13 +26792,27 @@ async function _aiaFetchRanking(cards, monthRemain) {
     `ID:${x.card.i}|${x.card.n} (${x.card.s})|${fmtGBPDirect(x.rawGBP)} raw|${x.isBoth ? 'Wishlist+Binder' : x.isBinder ? 'Binder' : 'Wishlist'}`
   ).join('\n');
 
-  const intelCtx  = (_marketIntel?.framework?.buy_signals || []).slice(0, 6).join('; ') || '';
+  const allSignals  = _marketIntel?.framework?.buy_signals || [];
+  const hasJPCards  = ranked_input.some(x => x.card.lang === 'JP');
+  // When JP cards are present, front-load JP-relevant signals so they aren't cut off
+  const jpSignals    = allSignals.filter(s => /japan|jp[\s,·]|shiny|neo|gold star/i.test(s));
+  const otherSignals = allSignals.filter(s => !/japan|jp[\s,·]|shiny|neo|gold star/i.test(s));
+  const intelCtx = hasJPCards
+    ? [...jpSignals, ...otherSignals].slice(0, 10).join('; ')
+    : allSignals.slice(0, 8).join('; ');
+
+  // Inject the structured JP framework when JP cards are in the list
+  const jpFw  = _marketIntel?.framework?.japanese_cards;
+  const jpCtx = (hasJPCards && jpFw)
+    ? `\n\nJapanese card rules: ${jpFw.summary || ''} Era guide: ${Object.entries(jpFw.era_guide || {}).map(([k, v]) => `${k}: ${v}`).join(' | ')} Strategy: ${(jpFw.buy_strategy || []).join('; ')}`
+    : '';
+
   const budgetCtx = monthRemain != null
     ? `Total monthly budget remaining: ${fmtGBPDirect(monthRemain)} for ALL purchases combined this month — not per card. Mark buy_now:true only for a curated selection whose COMBINED cost stays within this total. If the best card alone costs more than the budget, leave all as false.`
     : '';
 
   const systemPrompt = `You are a Pokémon TCG investment analyst. Rank the provided cards by purchase priority. Set buy_now:true only for cards worth buying this month given the budget. Every card MUST have a "reason" field: one short sentence (max 10 words) explaining the ranking decision — e.g. "scarce holo, prices rising" or "budget pick, solid long-term hold" or "overstocked, wait for dip". Respond ONLY with a JSON array, no prose, no markdown. Format: [{"id":"...","buy_now":true,"reason":"..."},...]. Rank highest priority first.`;
-  const userPrompt   = `${budgetCtx}\n\nCards:\n${cardList}\n\nMarket signals: ${intelCtx || 'Use general TCG knowledge.'}\n\nJSON array only:`;
+  const userPrompt   = `${budgetCtx}\n\nCards:\n${cardList}\n\nMarket signals: ${intelCtx || 'Use general TCG knowledge.'}${jpCtx}\n\nJSON array only:`;
 
   let full = '';
   try {
