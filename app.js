@@ -17922,9 +17922,18 @@ async function refreshMarketIntelNow(silent = false) {
     _marketIntelFetched = true;
     try { localStorage.setItem(MARKET_INTEL_TS_KEY, String(Date.now())); } catch {}
     _psAiBadgeUpdate();
+    // Wipe cached ranking so it re-runs with the fresh intel + current card prices
+    _aiaRanking = null;
+    _aiaRankingError = null;
+    // If the analyst page is already open, re-render and kick off a fresh rank
+    const _curPage = (location.hash || '').replace('#', '');
+    if (_curPage === 'analysis') {
+      try { renderAiAnalysisPage(); } catch {}
+      setTimeout(() => { try { document.getElementById('aiaRankBtn')?.click(); } catch {} }, 150);
+    }
     if (!silent && status) {
-      const d = _marketIntel?.ts ? new Date(_marketIntel.ts) : new Date();
-      status.textContent = `Re-analysis triggered. Currently covers ${(_marketIntel?.sources || []).length} sources, last processed ${d.toLocaleDateString('en-GB')}. New picks will appear within a minute — hit Update AI again to refresh.`;
+      const srcCount = (_marketIntel?.sources || []).length;
+      status.textContent = `Intel updated — ${srcCount} source${srcCount === 1 ? '' : 's'} loaded. AI ranking cleared; open the Analyst tab to re-rank with the latest card prices and signals.`;
     }
   } catch (e) {
     if (badge) { badge.textContent = 'Error'; badge.className = 'ps-d1-badge'; }
