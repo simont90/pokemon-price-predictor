@@ -2054,9 +2054,25 @@ async function refreshMarketIntel(env) {
   if (lastCheck && Date.now() - Number(lastCheck) < 20 * 3600 * 1000) return;
   await env.SYNC_KV.put(MARKET_INTEL_CHECK_KEY, String(Date.now()), { expirationTtl: 2 * 24 * 3600 });
 
-  // Load existing intel + seen-video set
+  // Load existing intel + seen-video set.
+  // Always merge with current MARKET_INTEL_SEED so manually-curated fields
+  // (buy_signals, japanese_cards, macro) are applied even when KV has an older blob.
   let intel = { ...MARKET_INTEL_SEED };
-  try { const r = await env.SYNC_KV.get(MARKET_INTEL_KV_KEY); if (r) intel = JSON.parse(r); } catch {}
+  try {
+    const r = await env.SYNC_KV.get(MARKET_INTEL_KV_KEY);
+    if (r) {
+      const stored = JSON.parse(r);
+      intel = {
+        ...stored,
+        framework: {
+          ...(stored.framework || {}),
+          // Seed-curated fields always win — they're updated by code deploys
+          buy_signals:    MARKET_INTEL_SEED.framework.buy_signals,
+          japanese_cards: MARKET_INTEL_SEED.framework.japanese_cards,
+        },
+      };
+    }
+  } catch {}
   let seenIds = new Set((intel.sources || []).map(s => s.video_id));
   try {
     const sv = await env.SYNC_KV.get(VINTAGE_SEEN_KEY);
@@ -2151,9 +2167,9 @@ async function refreshMarketIntel(env) {
     } catch {}
   }
 
-  if (processed > 0) {
-    await env.SYNC_KV.put(MARKET_INTEL_KV_KEY, JSON.stringify(intel), { expirationTtl: 90 * 24 * 3600 });
-  }
+  // Always write back — advances ts, applies seed merges, even if no transcripts processed
+  intel.ts = Date.now();
+  await env.SYNC_KV.put(MARKET_INTEL_KV_KEY, JSON.stringify(intel), { expirationTtl: 90 * 24 * 3600 });
   // Always persist the updated seen set
   await env.SYNC_KV.put(VINTAGE_SEEN_KEY, JSON.stringify([...seenIds]),
     { expirationTtl: 365 * 24 * 3600 });
