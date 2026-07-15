@@ -17922,18 +17922,32 @@ async function refreshMarketIntelNow(silent = false) {
     _marketIntelFetched = true;
     try { localStorage.setItem(MARKET_INTEL_TS_KEY, String(Date.now())); } catch {}
     _psAiBadgeUpdate();
-    // Wipe cached ranking so it re-runs with the fresh intel + current card prices
+    // Clear every AI/intel-driven section cache so they rebuild on next render
     _aiaRanking = null;
     _aiaRankingError = null;
-    // If the analyst page is already open, re-render and kick off a fresh rank
+    _recoCached = null;
+    _topPicksCache = null;
+    _homeVintageHash = '';
+    // Re-render whichever page is currently open
     const _curPage = (location.hash || '').replace('#', '');
-    if (_curPage === 'analysis') {
-      try { renderAiAnalysisPage(); } catch {}
-      setTimeout(() => { try { document.getElementById('aiaRankBtn')?.click(); } catch {} }, 150);
-    }
+    try {
+      if (_curPage === 'home') {
+        renderHomeDashboard();
+        _renderHomeTopPicks(true);
+        _renderHomeReco(true);
+      } else if (_curPage === 'analysis') {
+        renderAiAnalysisPage();
+        setTimeout(() => { try { document.getElementById('aiaRankBtn')?.click(); } catch {} }, 150);
+      } else if (_curPage === 'standouts') {
+        renderStandouts();
+      } else if (_curPage === 'vintage') {
+        renderVintagePage();
+      }
+      // know/analysis/other pages read _marketIntel inline — no re-render needed
+    } catch {}
     if (!silent && status) {
       const srcCount = (_marketIntel?.sources || []).length;
-      status.textContent = `Intel updated — ${srcCount} source${srcCount === 1 ? '' : 's'} loaded. AI ranking cleared; open the Analyst tab to re-rank with the latest card prices and signals.`;
+      status.textContent = `Intel updated — ${srcCount} source${srcCount === 1 ? '' : 's'} loaded. All AI sections refreshed.`;
     }
   } catch (e) {
     if (badge) { badge.textContent = 'Error'; badge.className = 'ps-d1-badge'; }

@@ -1822,6 +1822,8 @@ const MARKET_PINNED_VIDEOS = [
   { videoId: 'rcqdvtkqkCo', title: "Japanese Pokemon Cards are WEIRD Right Now (And That's OKAY!)",              channelName: 'Card Penguin Pokemon'      },
   { videoId: 'T_XEDV4gBAE', title: 'My Japanese Pokémon Card Investment a Year Later...',                         channelName: 'Randolph Pokemon'          },
   { videoId: 'OaYY0VbmVzk', title: "The Sad Reality of the Japan's Pokemon Card Market",                         channelName: 'Randolph Pokemon'          },
+  // Batch 5
+  { videoId: 'xH1hXzSB3Ec', title: "What's Really About To Happen To Pokémon Card Prices?",                      channelName: 'Phillips Collectibles'     },
 ];
 
 // Seed data from "Everything's About to Change... And Vintage Pokémon Will Explode"
