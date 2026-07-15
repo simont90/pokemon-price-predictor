@@ -17939,7 +17939,11 @@ function _psAiBadgeUpdate() {
   if (!badge) return;
   const ts = parseInt(localStorage.getItem(MARKET_INTEL_TS_KEY) || '0', 10);
   if (!ts) { badge.textContent = 'Never updated'; badge.className = 'ps-d1-badge'; return; }
-  const stale = ts < _marketIntel8AM();
+  const now = Date.now();
+  const cutoff = _marketIntel8AM();
+  // Only stale if the last fetch was before today's 8AM UTC AND it's currently past 8AM UTC.
+  // Before 9AM BST (= 8AM UTC) nothing can be stale against today's boundary yet.
+  const stale = ts < cutoff && now >= cutoff;
   const d = new Date(ts);
   const label = `${d.toLocaleDateString('en-GB')} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
   badge.textContent = stale ? `Stale · ${label}` : `Current · ${label}`;

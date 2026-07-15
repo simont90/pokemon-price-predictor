@@ -1971,7 +1971,7 @@ async function handleMarketIntel(request, env, ctx) {
       headers: { ...corsHeaders(request), 'Content-Type': 'application/json' },
     });
   }
-  const ch = { ...corsHeaders(request), 'Cache-Control': 'public, max-age=3600' };
+  const ch = { ...corsHeaders(request), 'Cache-Control': 'no-store' };
   let intel = MARKET_INTEL_SEED;
   if (env.SYNC_KV) {
     try {
