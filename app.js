@@ -181,6 +181,8 @@ let cardData = null;
 let setsData = null;
 let fxRate = 0.79;
 let selectedCard = null;
+let _prevPage = 'home';    // last non-predict page visited — used by card detail back button
+let _currentPage = 'home'; // page currently displayed
 // Multi-currency display (device-local, not synced)
 const DISP_CURRENCY_KEY = 'display-currency';
 let _displayCurrency = localStorage.getItem(DISP_CURRENCY_KEY) || 'GBP';
@@ -6976,7 +6978,7 @@ function setupWishlist() {
     if (!selectedCard) return;
     _showCardAiOverlay(selectedCard);
   });
-  $('cardBackBtn')?.addEventListener('click', () => go('home'));
+  $('cardBackBtn')?.addEventListener('click', () => go(_prevPage));
 
   // Delegated listeners — wired once so renderWishlist() can skip re-attaching.
   const list = $('wishlistList');
@@ -21927,6 +21929,8 @@ function setupPageNav() {
 
   function go(page) {
     if (!pages[page]) page = 'home';
+    if (page === 'predict' && _currentPage !== 'predict') _prevPage = _currentPage;
+    _currentPage = page;
     closeHomePip();
     Object.entries(pages).forEach(([k, el]) => {
       if (!el) return;
