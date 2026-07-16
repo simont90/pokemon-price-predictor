@@ -28079,9 +28079,13 @@ function _pdxShowPopout(cardId) {
   const priceStr = priceUSD > 0.01 ? fmtGBP(priceUSD) : '';
   const lang     = card.lang || 'EN';
   const jpName   = card.nj ? `<div class="pdx-pop-jp">${card.nj}</div>` : '';
+  const isJP     = lang === 'JP';
   const imgCN    = _pdxImgCN(card);
   const imgSrc   = `https://images.pokemontcg.io/${card.sc}/${imgCN}_hires.png`;
   const imgFallback = `https://images.pokemontcg.io/${card.sc}/${imgCN}.png`;
+  const imgEl    = isJP
+    ? `<div class="pdx-pop-img pdx-pop-img-jp" aria-hidden="true"></div>`
+    : `<img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onerror="if(this.src.includes('_hires')){this.onerror=function(){this.style.display='none'};this.src='${imgFallback}';}else{this.style.display='none';}">`;
 
   const overlay = document.createElement('div');
   overlay.id = 'pdxPopout';
@@ -28089,7 +28093,7 @@ function _pdxShowPopout(cardId) {
   overlay.innerHTML = `
     <div class="pdx-pop-modal">
       <button class="pdx-pop-close" type="button" aria-label="Close">✕</button>
-      <img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onerror="if(this.src.includes('_hires')){this.onerror=function(){this.style.display='none'};this.src='${imgFallback}';}else{this.style.display='none';}">
+      ${imgEl}
       <div class="pdx-pop-body">
         <span class="pdx-card-lang pdx-lang-${lang.toLowerCase()} pdx-pop-lang">${lang}</span>
         <div class="pdx-pop-name">${card.n}</div>
@@ -28147,10 +28151,14 @@ function _paintPdxCards(sorted, owned) {
     const priceUSD = getCurrentPrice(c) || 0;
     const priceStr = priceUSD > 0.01 ? fmtGBP(priceUSD) : '';
     const isOwned  = owned.has(c.i);
+    const isJP     = lang === 'JP';
     const jpTag    = c.nj ? `<span class="pdx-card-jp">${c.nj}</span>` : '';
     const imgSrc   = `https://images.pokemontcg.io/${c.sc}/${_pdxImgCN(c)}.png`;
+    const thumbEl  = isJP
+      ? `<div class="pdx-card-thumb pdx-card-thumb-jp" aria-hidden="true"></div>`
+      : `<img class="pdx-card-thumb" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.opacity='0'">`;
     return `<div class="pdx-card-row${isOwned ? ' pdx-owned' : ''}" data-id="${c.i}">` +
-      `<img class="pdx-card-thumb" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.opacity='0'">` +
+      thumbEl +
       `<span class="pdx-card-lang pdx-lang-${lang.toLowerCase()}">${lang}</span>` +
       `<div class="pdx-card-info">` +
         `<span class="pdx-card-name">${c.n}${jpTag}</span>` +

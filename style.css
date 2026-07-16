@@ -17099,6 +17099,14 @@ h1, h2, h3 {
 }
 [data-theme="light"] .pdx-card-thumb { background: rgba(0,0,0,0.04); }
 
+.pdx-card-thumb-jp {
+  border: 1px solid rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+[data-theme="light"] .pdx-card-thumb-jp { border-color: rgba(0,0,0,0.1); }
+
 .pdx-pop-btn {
   background: none;
   border: 1px solid rgba(255,255,255,0.12);
@@ -17191,6 +17199,13 @@ h1, h2, h3 {
   margin: 8px 0 16px;
   display: block;
 }
+.pdx-pop-img-jp {
+  aspect-ratio: 3 / 4;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: none;
+}
+[data-theme="light"] .pdx-pop-img-jp { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); }
 .pdx-pop-body {
   text-align: center;
   display: flex;
