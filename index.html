@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260715g">
+  <link rel="stylesheet" href="style.css?v=20260715h">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -117,6 +117,11 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.09 3.26L16.5 6.5l-3.26 1.09L12 11l-1.09-3.26L7.5 6.5l3.26-1.09z"/><path d="M19 14l.73 2.18L22 17l-2.18.73L19 20l-.73-2.18L16 17l2.18-.73z"/><circle cx="5" cy="19" r="1"/></svg>
         <span>AI Analysis</span>
         <span class="page-nav-sub">Portfolio intelligence</span>
+      </button>
+      <button class="page-nav-btn" data-page="pokedex" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>
+        <span>Pokédex</span>
+        <span class="page-nav-sub">1025 Pokémon · all languages</span>
       </button>
 
       <div class="nav-ctx-sep" id="navCtxSep" aria-hidden="true"></div>
@@ -2803,6 +2808,15 @@
       <div id="aiAnalysisBody"></div>
     </div><!-- /#pageAnalysis -->
 
+    <!-- ==== National Pokédex Page ==== -->
+    <div class="page" id="pagePokedex" data-page="pokedex" style="display:none">
+      <section class="page-intro">
+        <h2 class="page-intro-title">National Pokédex</h2>
+        <p class="page-intro-sub">1025 Pokémon — TCG cards across all languages.</p>
+      </section>
+      <div id="pokedexBody"></div>
+    </div><!-- /#pagePokedex -->
+
   </div><!-- /#app -->
 
   <!-- Floating Filter Button -->
@@ -3103,7 +3117,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260715g"></script>
+  <script src="app.js?v=20260715h"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

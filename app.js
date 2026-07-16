@@ -21921,6 +21921,7 @@ function setupPageNav() {
     know: document.getElementById('pageKnow'),
     standouts: document.getElementById('pageStandouts'),
     analysis: document.getElementById('pageAnalysis'),
+    pokedex: document.getElementById('pagePokedex'),
   };
 
   function go(page) {
@@ -21955,6 +21956,7 @@ function setupPageNav() {
     if (page === 'know') { try { _pknOnNavigate(); } catch(e) {} }
     if (page === 'standouts') { try { renderStandouts(); } catch(e) {} }
     if (page === 'analysis') { try { renderAiAnalysisPage(); } catch(e) {} }
+    if (page === 'pokedex') { try { renderPokedexPage(); } catch(e) {} }
     // URL + title: cards get their own address (#cardId); other pages reset to page hash
     if (page === 'predict' && selectedCard) {
       try { history.replaceState({ cardId: selectedCard.i }, '', '#' + selectedCard.i); } catch(e) {}
@@ -26771,6 +26773,14 @@ let _aiaRanking = null;          // [{ id, buy_now, stars, reason }] — AI-rank
 let _aiaRankingLoading = false;
 let _aiaRankingError = null;
 
+// ── National Pokédex state ────────────────────────────────────────────────────
+let _pdxIndex = null;      // { nameByDex: Map<num,str>, cardsByDex: Map<num,card[]> }
+let _pdxLangFilter = 'all'; // top-level language filter (grid + detail)
+let _pdxDetailLang = 'all'; // within-detail language tab
+let _pdxSearchQ = '';
+let _pdxView = 'grid';     // 'grid' | 'detail'
+let _pdxActiveDex = null;
+
 // ── Wishlist holds — persisted in pkm-aia-holds-v1, reset each calendar month ──
 function _aiaHoldsMonth() {
   const n = new Date();
@@ -27853,5 +27863,229 @@ function _setupMarketBrief() {
   // Try immediately, then after short delay for data load
   _populate();
   setTimeout(_populate, 2000);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// National Pokédex page
+// ══════════════════════════════════════════════════════════════════════════════
+
+const _PDX_SPECIAL_NAMES = {
+  farfetchd: "Farfetch'd",  mrmime:  'Mr. Mime',    mimejr:   'Mime Jr.',
+  hooh:      'Ho-Oh',       porygonz: 'Porygon-Z',  sirfetchd: "Sirfetch'd",
+  flabebe:   'Flabébé',     jangmoo:  'Jangmo-o',   hakamoo:   'Hakamo-o',
+  kommoomo:  'Kommo-o',     tapukoko: 'Tapu Koko',  tapulele:  'Tapu Lele',
+  tapubulu:  'Tapu Bulu',   tapufini: 'Tapu Fini',  typenull:  'Type: Null',
+};
+
+function _buildPokedexIndex() {
+  if (_pdxIndex) return _pdxIndex;
+  if (typeof POKEDEX_NUM === 'undefined' || !cardData?.cards) return null;
+
+  // Reverse map: dex# → display name (English keys only — skip katakana)
+  const nameByDex = new Map();
+  for (const [key, num] of Object.entries(POKEDEX_NUM)) {
+    if (!/^[\x00-\xFF♀♂]+$/.test(key)) continue; // skip JP/CN/KR
+    if (nameByDex.has(num)) continue;
+    nameByDex.set(num, _PDX_SPECIAL_NAMES[key] || (key.charAt(0).toUpperCase() + key.slice(1)));
+  }
+
+  // dex# → [card]
+  const cardsByDex = new Map();
+  for (const card of cardData.cards) {
+    const num = dexNumOf(card.n);
+    if (!num) continue;
+    if (!cardsByDex.has(num)) cardsByDex.set(num, []);
+    cardsByDex.get(num).push(card);
+  }
+
+  _pdxIndex = { nameByDex, cardsByDex };
+  return _pdxIndex;
+}
+
+function renderPokedexPage() {
+  const body = document.getElementById('pokedexBody');
+  if (!body) return;
+  if (_pdxView === 'detail' && _pdxActiveDex) {
+    _renderPdxDetail(body);
+  } else {
+    _pdxView = 'grid';
+    _renderPdxGridView(body);
+  }
+}
+
+function _renderPdxGridView(body) {
+  const idx = _buildPokedexIndex();
+  if (!idx) {
+    body.innerHTML = '<p style="padding:32px;text-align:center;color:var(--text-muted)">Loading card data…</p>';
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="pdx-filter-bar">
+      <select class="pdx-lang-select" id="pdxLangSelect">
+        <option value="all">All Languages</option>
+        <option value="EN">English</option>
+        <option value="JP">Japanese</option>
+        <option value="CN">Chinese</option>
+        <option value="KR">Korean</option>
+      </select>
+      <input type="search" class="pdx-search" id="pdxSearch" placeholder="Search Pokémon…" autocomplete="off">
+    </div>
+    <div id="pdxGrid" class="pdx-grid"></div>
+  `;
+
+  const sel  = document.getElementById('pdxLangSelect');
+  const srch = document.getElementById('pdxSearch');
+  if (sel)  sel.value  = _pdxLangFilter;
+  if (srch) srch.value = _pdxSearchQ;
+
+  sel?.addEventListener('change', () => { _pdxLangFilter = sel.value; _paintPdxGrid(idx); });
+  srch?.addEventListener('input',  () => { _pdxSearchQ = srch.value;  _paintPdxGrid(idx); });
+
+  _paintPdxGrid(idx);
+}
+
+function _paintPdxGrid(idx) {
+  const grid = document.getElementById('pdxGrid');
+  if (!grid) return;
+
+  const q = _pdxSearchQ.toLowerCase().trim();
+  const parts = [];
+  const entries = [...idx.nameByDex.entries()].sort((a, b) => a[0] - b[0]);
+
+  for (const [num, name] of entries) {
+    if (q && !name.toLowerCase().includes(q) && !String(num).includes(q)) continue;
+
+    const allCards  = idx.cardsByDex.get(num) || [];
+    const langCards = _pdxLangFilter === 'all' ? allCards
+                    : allCards.filter(c => (c.lang || 'EN') === _pdxLangFilter);
+    const countLabel = langCards.length > 0 ? `<span class="pdx-count">${langCards.length}</span>` : '';
+    const dimmed     = allCards.length > 0 && langCards.length === 0 ? ' pdx-no-cards' : '';
+    const noCards    = allCards.length === 0 ? ' pdx-no-cards' : '';
+
+    parts.push(
+      `<button class="binder-dex-cell pdx-cell${dimmed}${noCards}" data-dex="${num}" type="button" tabindex="0">` +
+      `<span class="binder-dex-num">#${String(num).padStart(3,'0')}</span>` +
+      `<img class="binder-dex-sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${num}.png" alt="${name}" loading="lazy" onerror="this.style.display='none'">` +
+      `<span class="binder-dex-name">${name}</span>` +
+      countLabel +
+      `</button>`
+    );
+  }
+
+  grid.innerHTML = parts.join('');
+
+  grid.onclick = (e) => {
+    const cell = e.target.closest('.pdx-cell[data-dex]');
+    if (!cell) return;
+    _pdxActiveDex  = parseInt(cell.dataset.dex, 10);
+    _pdxDetailLang = 'all';
+    _pdxView       = 'detail';
+    const b = document.getElementById('pokedexBody');
+    if (b) _renderPdxDetail(b);
+    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  };
+}
+
+function _renderPdxDetail(body) {
+  const idx = _buildPokedexIndex();
+  if (!idx || !_pdxActiveDex) return;
+
+  const dexNum   = _pdxActiveDex;
+  const name     = idx.nameByDex.get(dexNum) || 'Unknown';
+  const allCards = idx.cardsByDex.get(dexNum) || [];
+
+  // Sort: EN → JP → CN → KR, then alphabetically within each
+  const langOrder = { EN: 0, JP: 1, CN: 2, KR: 3 };
+  const sorted = [...allCards].sort((a, b) => {
+    const la = langOrder[a.lang || 'EN'] ?? 9;
+    const lb = langOrder[b.lang || 'EN'] ?? 9;
+    return la !== lb ? la - lb : (a.n || '').localeCompare(b.n || '');
+  });
+
+  const owned = new Set((JSON.parse(localStorage.getItem('pkm-portfolio') || '[]')).map(b => b.id));
+
+  // Language tab buttons — only show languages that have cards
+  const presentLangs = [...new Set(sorted.map(c => c.lang || 'EN'))];
+  const tabsHtml = ['all', ...presentLangs].map(l => {
+    const cnt = l === 'all' ? sorted.length : sorted.filter(c => (c.lang || 'EN') === l).length;
+    const isActive = _pdxDetailLang === l;
+    return `<button class="pdx-tab${isActive ? ' active' : ''}" data-lang="${l}">${l === 'all' ? 'All' : l}<span class="pdx-tab-cnt">${cnt}</span></button>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="pdx-back-bar">
+      <button class="pdx-back-btn" id="pdxBackBtn" type="button">← Back</button>
+      <span class="pdx-back-crumb">${name}</span>
+    </div>
+    <div class="pdx-detail-hdr">
+      <img class="pdx-detail-sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dexNum}.png" alt="${name}" onerror="this.style.display='none'">
+      <div class="pdx-detail-info">
+        <span class="pdx-detail-num">#${String(dexNum).padStart(3,'0')}</span>
+        <h3 class="pdx-detail-name">${name}</h3>
+        <span class="pdx-detail-total">${sorted.length} card${sorted.length !== 1 ? 's' : ''}</span>
+      </div>
+    </div>
+    <div class="pdx-tabs" id="pdxDetailTabs">${tabsHtml}</div>
+    <div class="pdx-cards-list" id="pdxCardsList"></div>
+  `;
+
+  document.getElementById('pdxBackBtn')?.addEventListener('click', () => {
+    _pdxView = 'grid';
+    _pdxActiveDex = null;
+    const b = document.getElementById('pokedexBody');
+    if (b) _renderPdxGridView(b);
+    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  });
+
+  document.getElementById('pdxDetailTabs')?.addEventListener('click', (e) => {
+    const tab = e.target.closest('.pdx-tab[data-lang]');
+    if (!tab) return;
+    _pdxDetailLang = tab.dataset.lang;
+    document.querySelectorAll('#pdxDetailTabs .pdx-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.lang === _pdxDetailLang);
+    });
+    _paintPdxCards(sorted, owned);
+  });
+
+  _paintPdxCards(sorted, owned);
+}
+
+function _paintPdxCards(sorted, owned) {
+  const list = document.getElementById('pdxCardsList');
+  if (!list) return;
+
+  const filtered = _pdxDetailLang === 'all' ? sorted
+                 : sorted.filter(c => (c.lang || 'EN') === _pdxDetailLang);
+
+  if (!filtered.length) {
+    list.innerHTML = '<p class="pdx-empty">No cards for this filter.</p>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(c => {
+    const lang     = c.lang || 'EN';
+    const setName  = setsData?.[c.sc]?.name || c.sc || '';
+    const pGBP     = usdToGbp(c.p || 0);
+    const priceStr = pGBP > 0.01 ? fmtGBP(pGBP) : '';
+    const isOwned  = owned.has(c.i);
+    const jpTag    = c.nj ? `<span class="pdx-card-jp">${c.nj}</span>` : '';
+    return `<div class="pdx-card-row${isOwned ? ' pdx-owned' : ''}" data-id="${c.i}">` +
+      `<span class="pdx-card-lang pdx-lang-${lang.toLowerCase()}">${lang}</span>` +
+      `<div class="pdx-card-info">` +
+        `<span class="pdx-card-name">${c.n}${jpTag}</span>` +
+        `<span class="pdx-card-set">${setName}</span>` +
+      `</div>` +
+      `<span class="pdx-card-price">${priceStr}</span>` +
+      (isOwned ? '<span class="pdx-owned-dot" title="In collection">●</span>' : '') +
+      `</div>`;
+  }).join('');
+
+  list.onclick = (e) => {
+    const row = e.target.closest('.pdx-card-row[data-id]');
+    if (!row) return;
+    const card = cardData.cards.find(c => c.i === row.dataset.id);
+    if (card) { selectCard(card); go('predict'); }
+  };
 }
 
