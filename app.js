@@ -733,9 +733,10 @@ function getCurrentPrice(card) {
     if (livePrice.mid > 0) return livePrice.mid;
     if (livePrice.avg7 > 0) return livePrice.avg7;
   }
-  // Check cache
+  // Check cache — mirror live priority: midpoint when both PC and TCG available
   const cached = getCachedPrice(card.i);
   if (cached) {
+    if (cached.pcUngraded > 0 && cached.tcgMarket > 0) return cached.market > 0 ? cached.market : (cached.pcUngraded + cached.tcgMarket) / 2;
     if (cached.pcUngraded > 0) return cached.pcUngraded;
     if (cached.market > 0) return cached.market;
     if (cached.mid > 0) return cached.mid;
@@ -28074,8 +28075,8 @@ function _pdxShowPopout(cardId) {
   document.getElementById('pdxPopout')?.remove();
 
   const setName  = setsData?.[card.sc]?.name || card.sc || '';
-  const pGBP     = usdToGbp(card.p || 0);
-  const priceStr = pGBP > 0.01 ? fmtGBP(pGBP) : '';
+  const priceUSD = getCurrentPrice(card) || 0;
+  const priceStr = priceUSD > 0.01 ? fmtGBP(priceUSD) : '';
   const lang     = card.lang || 'EN';
   const jpName   = card.nj ? `<div class="pdx-pop-jp">${card.nj}</div>` : '';
   const imgSrc   = `https://images.pokemontcg.io/${card.sc}/${card.cn}_hires.png`;
@@ -28119,9 +28120,9 @@ function _paintPdxCards(sorted, owned) {
                : sorted.filter(c => (c.lang || 'EN') === _pdxDetailLang);
 
   if (_pdxDetailSort === 'price-desc') {
-    filtered = [...filtered].sort((a, b) => (b.p || 0) - (a.p || 0));
+    filtered = [...filtered].sort((a, b) => (getCurrentPrice(b) || 0) - (getCurrentPrice(a) || 0));
   } else if (_pdxDetailSort === 'price-asc') {
-    filtered = [...filtered].sort((a, b) => (a.p || 0) - (b.p || 0));
+    filtered = [...filtered].sort((a, b) => (getCurrentPrice(a) || 0) - (getCurrentPrice(b) || 0));
   }
 
   if (!filtered.length) {
@@ -28132,8 +28133,8 @@ function _paintPdxCards(sorted, owned) {
   list.innerHTML = filtered.map(c => {
     const lang     = c.lang || 'EN';
     const setName  = setsData?.[c.sc]?.name || c.sc || '';
-    const pGBP     = usdToGbp(c.p || 0);
-    const priceStr = pGBP > 0.01 ? fmtGBP(pGBP) : '';
+    const priceUSD = getCurrentPrice(c) || 0;
+    const priceStr = priceUSD > 0.01 ? fmtGBP(priceUSD) : '';
     const isOwned  = owned.has(c.i);
     const jpTag    = c.nj ? `<span class="pdx-card-jp">${c.nj}</span>` : '';
     const imgSrc   = `https://images.pokemontcg.io/${c.sc}/${c.cn}.png`;
