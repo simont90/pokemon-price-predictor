@@ -28034,6 +28034,7 @@ function _renderPdxDetail(body) {
         <h3 class="pdx-detail-name">${name}</h3>
         <span class="pdx-detail-total">${sorted.length} card${sorted.length !== 1 ? 's' : ''}</span>
       </div>
+      <button class="pdx-img-refresh-btn" id="pdxImgRefreshBtn" type="button" title="Refresh card images" aria-label="Refresh card images">↻</button>
     </div>
     <div class="pdx-detail-controls">
       <div class="pdx-tabs" id="pdxDetailTabs">${tabsHtml}</div>
@@ -28045,6 +28046,19 @@ function _renderPdxDetail(body) {
     </div>
     <div class="pdx-cards-list" id="pdxCardsList"></div>
   `;
+
+  document.getElementById('pdxImgRefreshBtn')?.addEventListener('click', () => {
+    const ts = Date.now();
+    document.querySelectorAll('.pdx-card-thumb').forEach(img => {
+      if (!img.src) return;
+      img.style.opacity = '1';
+      try {
+        const u = new URL(img.src);
+        u.searchParams.set('t', ts);
+        img.src = u.href;
+      } catch (_) {}
+    });
+  });
 
   document.getElementById('pdxBackBtn')?.addEventListener('click', () => {
     _pdxView = 'grid';
