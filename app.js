@@ -26780,6 +26780,7 @@ let _pdxDetailLang = 'all'; // within-detail language tab
 let _pdxSearchQ = '';
 let _pdxView = 'grid';     // 'grid' | 'detail'
 let _pdxActiveDex = null;
+let _pdxDetailSort = 'default'; // 'default' | 'price-asc' | 'price-desc'
 
 // ── Wishlist holds — persisted in pkm-aia-holds-v1, reset each calendar month ──
 function _aiaHoldsMonth() {
@@ -27982,6 +27983,7 @@ function _paintPdxGrid(idx) {
     if (!cell) return;
     _pdxActiveDex  = parseInt(cell.dataset.dex, 10);
     _pdxDetailLang = 'all';
+    _pdxDetailSort = 'default';
     _pdxView       = 'detail';
     const b = document.getElementById('pokedexBody');
     if (b) _renderPdxDetail(b);
@@ -28028,7 +28030,14 @@ function _renderPdxDetail(body) {
         <span class="pdx-detail-total">${sorted.length} card${sorted.length !== 1 ? 's' : ''}</span>
       </div>
     </div>
-    <div class="pdx-tabs" id="pdxDetailTabs">${tabsHtml}</div>
+    <div class="pdx-detail-controls">
+      <div class="pdx-tabs" id="pdxDetailTabs">${tabsHtml}</div>
+      <select class="pdx-sort-select" id="pdxSortSelect" aria-label="Sort cards">
+        <option value="default"${_pdxDetailSort === 'default' ? ' selected' : ''}>Default order</option>
+        <option value="price-desc"${_pdxDetailSort === 'price-desc' ? ' selected' : ''}>Price: high → low</option>
+        <option value="price-asc"${_pdxDetailSort === 'price-asc' ? ' selected' : ''}>Price: low → high</option>
+      </select>
+    </div>
     <div class="pdx-cards-list" id="pdxCardsList"></div>
   `;
 
@@ -28047,6 +28056,11 @@ function _renderPdxDetail(body) {
     document.querySelectorAll('#pdxDetailTabs .pdx-tab').forEach(t => {
       t.classList.toggle('active', t.dataset.lang === _pdxDetailLang);
     });
+    _paintPdxCards(sorted, owned);
+  });
+
+  document.getElementById('pdxSortSelect')?.addEventListener('change', (e) => {
+    _pdxDetailSort = e.target.value;
     _paintPdxCards(sorted, owned);
   });
 
@@ -28101,8 +28115,14 @@ function _paintPdxCards(sorted, owned) {
   const list = document.getElementById('pdxCardsList');
   if (!list) return;
 
-  const filtered = _pdxDetailLang === 'all' ? sorted
-                 : sorted.filter(c => (c.lang || 'EN') === _pdxDetailLang);
+  let filtered = _pdxDetailLang === 'all' ? sorted
+               : sorted.filter(c => (c.lang || 'EN') === _pdxDetailLang);
+
+  if (_pdxDetailSort === 'price-desc') {
+    filtered = [...filtered].sort((a, b) => (b.p || 0) - (a.p || 0));
+  } else if (_pdxDetailSort === 'price-asc') {
+    filtered = [...filtered].sort((a, b) => (a.p || 0) - (b.p || 0));
+  }
 
   if (!filtered.length) {
     list.innerHTML = '<p class="pdx-empty">No cards for this filter.</p>';
