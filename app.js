@@ -3490,6 +3490,10 @@ function selectCard(id) {
   const pcQuery = card.cn ? `${card.n} ${card.cn}` : card.n;
   $('linkPriceCharting').href = `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(pcQuery)}`;
 
+  // Show delete button only for user-added cards
+  const _delBtn = document.getElementById('linkDeleteCard');
+  if (_delBtn) _delBtn.style.display = card._userAdded ? '' : 'none';
+
   // Reset enrich UI for each new card selection
   const enrichStatus = $('linkEnrichStatus');
   const manualWrap = $('linkTcgManualWrap');
@@ -10880,6 +10884,37 @@ function resetEditCard() {
   closeEditCard();
   selectCard(c.i);
 }
+function deleteUserCard() {
+  if (!selectedCard || !selectedCard._userAdded) return;
+  const c = selectedCard;
+  if (!confirm(`Delete "${c.n}" (${c.s})? This removes the card permanently and cannot be undone.`)) return;
+  // Remove from user-cards storage
+  const userCards = loadUserCards();
+  const next = userCards.filter(u => u.i !== c.i);
+  saveUserCards(next);
+  // Remove from live card array
+  const idx = cardData.cards.findIndex(x => x.i === c.i);
+  if (idx >= 0) cardData.cards.splice(idx, 1);
+  // Remove any metadata
+  clearCardOverride(c.i);
+  try { const cache = getPriceCache(); delete cache[c.i]; } catch {}
+  try { _sigCache.delete(c.i); } catch {}
+  try { _hcCache.delete(c.i); } catch {}
+  // Rebuild indexes
+  buildSearchIndex(cardData.cards);
+  if (typeof buildCounterpartIndex === 'function') buildCounterpartIndex(cardData.cards);
+  // Update user-card count badge if visible
+  try {
+    const userCount = cardData.cards.filter(x => x._userAdded).length;
+    const badge = document.getElementById('userCardCount');
+    if (badge) badge.textContent = userCount;
+  } catch {}
+  // Navigate away
+  selectedCard = null;
+  const section = $('selectedCardSection');
+  if (section) section.style.display = 'none';
+  go('home');
+}
 function setupEditCard() {
   $('ecClose')?.addEventListener('click', closeEditCard);
   $('ecOverlay')?.addEventListener('click', closeEditCard);
@@ -10887,6 +10922,7 @@ function setupEditCard() {
   $('ecResetBtn')?.addEventListener('click', resetEditCard);
   $('linkEditCard')?.addEventListener('click', openEditCard);
   $('linkRefreshImg')?.addEventListener('click', refreshCardImage);
+  $('linkDeleteCard')?.addEventListener('click', deleteUserCard);
   // TCGC URL → image extractor (don't auto-fill name/set/number when editing
   // an existing card — the user usually keeps those, just refreshing the art).
   wireTCGCImageInput('ecImg', 'ecImgStatus');
