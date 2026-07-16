@@ -227,7 +227,7 @@ function getCardImg(card) {
     const parts = card.i.replace('jp-', '').split('-');
     const setCode = parts[0];
     const num = parts.slice(1).join('-');
-    return `https://assets.tcgdex.net/ja/S/${setCode}/${num}/high.png`;
+    return `https://assets.tcgdex.net/ja/${setCode}/${num}/high.png`;
   }
   // EN cards: pokemontcg.io _hires.png — 734×1024 px, crisp on Retina.
   // The standard .png (245×342 px) looks blurry at the 440 px display height
@@ -28107,13 +28107,12 @@ function _pdxShowPopout(cardId) {
   const priceStr = priceUSD > 0.01 ? fmtGBP(priceUSD) : '';
   const lang     = card.lang || 'EN';
   const jpName   = card.nj ? `<div class="pdx-pop-jp">${card.nj}</div>` : '';
-  const isJP     = lang === 'JP';
-  const imgCN    = _pdxImgCN(card);
-  const imgSrc   = `https://images.pokemontcg.io/${card.sc}/${imgCN}_hires.png`;
+  const isJP        = lang === 'JP';
+  const imgCN       = _pdxImgCN(card);
+  const imgSrc      = isJP ? getCardImg(card) : `https://images.pokemontcg.io/${card.sc}/${imgCN}_hires.png`;
   const imgFallback = `https://images.pokemontcg.io/${card.sc}/${imgCN}.png`;
-  const _jpDimCheck = `if(this.naturalWidth===640&&this.naturalHeight===892)this.style.display='none'`;
-  const imgEl    = isJP
-    ? `<img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onload="${_jpDimCheck}" onerror="if(this.src.includes('_hires')){this.onerror=function(){this.style.display='none'};this.src='${imgFallback}';}else{this.style.display='none';}">`
+  const imgEl = isJP
+    ? `<img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onerror="this.style.display='none'">`
     : `<img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onerror="if(this.src.includes('_hires')){this.onerror=function(){this.style.display='none'};this.src='${imgFallback}';}else{this.style.display='none';}">`;
 
   const overlay = document.createElement('div');
@@ -28189,12 +28188,8 @@ function _paintPdxCards(sorted, owned) {
     const priceUSD = getCurrentPrice(c) || 0;
     const priceStr = priceUSD > 0.01 ? fmtGBP(priceUSD) : '';
     const isOwned  = owned.has(c.i);
-    const isJP     = lang === 'JP';
     const jpTag    = c.nj ? `<span class="pdx-card-jp">${c.nj}</span>` : '';
-    const imgSrc   = `https://images.pokemontcg.io/${c.sc}/${_pdxImgCN(c)}.png`;
-    const thumbEl  = isJP
-      ? `<img class="pdx-card-thumb" src="${imgSrc}" alt="" loading="lazy" onload="if(this.naturalWidth===640&&this.naturalHeight===892)this.style.opacity='0'" onerror="this.style.opacity='0'">`
-      : `<img class="pdx-card-thumb" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.opacity='0'">`;
+    const thumbEl  = `<img class="pdx-card-thumb" src="${getCardImg(c)}" alt="" loading="lazy" onerror="this.style.opacity='0'">`;
     return `<div class="pdx-card-row${isOwned ? ' pdx-owned' : ''}" data-id="${c.i}">` +
       thumbEl +
       `<span class="pdx-card-lang pdx-lang-${lang.toLowerCase()}">${lang}</span>` +
