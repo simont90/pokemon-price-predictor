@@ -3494,6 +3494,12 @@ function selectCard(id) {
   const _delBtn = document.getElementById('linkDeleteCard');
   if (_delBtn) _delBtn.style.display = card._userAdded ? '' : 'none';
 
+  // Pre-fill inline artwork URL input with current override
+  const _artInput = document.getElementById('linkArtworkInput');
+  const _artStatus = document.getElementById('linkArtworkStatus');
+  if (_artInput) _artInput.value = card.img || '';
+  if (_artStatus) { _artStatus.textContent = ''; _artStatus.className = 'enrich-tcg-status'; }
+
   // Reset enrich UI for each new card selection
   const enrichStatus = $('linkEnrichStatus');
   const manualWrap = $('linkTcgManualWrap');
@@ -23468,6 +23474,65 @@ function setupCardEditToggle() {
   toggle.addEventListener('click', () => {
     const open = items.classList.toggle('edit-open');
     toggle.querySelector('.cet-chev').style.transform = open ? 'rotate(180deg)' : '';
+  });
+
+  // Artwork URL — wire auto-resolve (TCGC page → direct image URL)
+  wireTCGCImageInput('linkArtworkInput', 'linkArtworkStatus');
+
+  document.getElementById('linkArtworkSave')?.addEventListener('click', async () => {
+    if (!selectedCard) return;
+    const c = selectedCard;
+    const input  = document.getElementById('linkArtworkInput');
+    const status = document.getElementById('linkArtworkStatus');
+    const btn    = document.getElementById('linkArtworkSave');
+    if (!input) return;
+    if (btn) btn.disabled = true;
+    // Resolve TCGC page URL → direct image URL if needed
+    const resolvedImg = await resolveImageInputIfTCGC('linkArtworkInput', 'linkArtworkStatus');
+    if (btn) btn.disabled = false;
+    // Persist via card override (same path as Edit Card modal)
+    const diff = resolvedImg ? { img: resolvedImg } : {};
+    if (resolvedImg) {
+      setCardOverride(c.i, { ...(loadCardOverrides()[c.i] || {}), img: resolvedImg });
+    } else {
+      const existing = loadCardOverrides()[c.i] || {};
+      delete existing.img;
+      if (Object.keys(existing).length) setCardOverride(c.i, existing);
+      else clearCardOverride(c.i);
+    }
+    c.img = resolvedImg;
+    // If user-added, also persist into the user-cards bucket
+    if (c._userAdded) {
+      const ucs = loadUserCards();
+      const idx = ucs.findIndex(u => u.i === c.i);
+      if (idx >= 0) { ucs[idx].img = resolvedImg; saveUserCards(ucs); }
+    }
+    // Refresh the card image on screen
+    if (typeof refreshCardImage === 'function') refreshCardImage();
+    if (status) {
+      status.className = 'enrich-tcg-status success';
+      status.textContent = resolvedImg ? '✓ Artwork saved.' : 'Artwork cleared.';
+    }
+  });
+
+  document.getElementById('linkArtworkClear')?.addEventListener('click', () => {
+    const input  = document.getElementById('linkArtworkInput');
+    const status = document.getElementById('linkArtworkStatus');
+    if (input) input.value = '';
+    if (status) { status.textContent = ''; status.className = 'enrich-tcg-status'; }
+    if (!selectedCard) return;
+    const c = selectedCard;
+    const existing = loadCardOverrides()[c.i] || {};
+    delete existing.img;
+    if (Object.keys(existing).length) setCardOverride(c.i, existing);
+    else clearCardOverride(c.i);
+    c.img = '';
+    if (c._userAdded) {
+      const ucs = loadUserCards();
+      const idx = ucs.findIndex(u => u.i === c.i);
+      if (idx >= 0) { ucs[idx].img = ''; saveUserCards(ucs); }
+    }
+    if (typeof refreshCardImage === 'function') refreshCardImage();
   });
 
   document.getElementById('linkRefreshSignals')?.addEventListener('click', () => {
