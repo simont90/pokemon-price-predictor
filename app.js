@@ -28079,7 +28079,9 @@ function _pdxShowPopout(cardId) {
   const priceStr = priceUSD > 0.01 ? fmtGBP(priceUSD) : '';
   const lang     = card.lang || 'EN';
   const jpName   = card.nj ? `<div class="pdx-pop-jp">${card.nj}</div>` : '';
-  const imgSrc   = `https://images.pokemontcg.io/${card.sc}/${card.cn}_hires.png`;
+  const imgCN    = _pdxImgCN(card);
+  const imgSrc   = `https://images.pokemontcg.io/${card.sc}/${imgCN}_hires.png`;
+  const imgFallback = `https://images.pokemontcg.io/${card.sc}/${imgCN}.png`;
 
   const overlay = document.createElement('div');
   overlay.id = 'pdxPopout';
@@ -28087,7 +28089,7 @@ function _pdxShowPopout(cardId) {
   overlay.innerHTML = `
     <div class="pdx-pop-modal">
       <button class="pdx-pop-close" type="button" aria-label="Close">✕</button>
-      <img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onerror="this.style.display='none'">
+      <img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onerror="if(this.src.includes('_hires')){this.onerror=function(){this.style.display='none'};this.src='${imgFallback}';}else{this.style.display='none';}">
       <div class="pdx-pop-body">
         <span class="pdx-card-lang pdx-lang-${lang.toLowerCase()} pdx-pop-lang">${lang}</span>
         <div class="pdx-pop-name">${card.n}</div>
@@ -28110,6 +28112,15 @@ function _pdxShowPopout(cardId) {
 
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
+}
+
+// Promo/special cards store cn as 0 when the collector number is alphanumeric (e.g. "SV49").
+// Derive the correct number from the card ID: strip the set-code prefix.
+function _pdxImgCN(card) {
+  if (card.cn) return card.cn;
+  const base = card.i.startsWith('jp-') ? card.i.slice(3) : card.i;
+  const prefix = card.sc + '-';
+  return base.startsWith(prefix) ? base.slice(prefix.length) : '';
 }
 
 function _paintPdxCards(sorted, owned) {
@@ -28137,7 +28148,7 @@ function _paintPdxCards(sorted, owned) {
     const priceStr = priceUSD > 0.01 ? fmtGBP(priceUSD) : '';
     const isOwned  = owned.has(c.i);
     const jpTag    = c.nj ? `<span class="pdx-card-jp">${c.nj}</span>` : '';
-    const imgSrc   = `https://images.pokemontcg.io/${c.sc}/${c.cn}.png`;
+    const imgSrc   = `https://images.pokemontcg.io/${c.sc}/${_pdxImgCN(c)}.png`;
     return `<div class="pdx-card-row${isOwned ? ' pdx-owned' : ''}" data-id="${c.i}">` +
       `<img class="pdx-card-thumb" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.opacity='0'">` +
       `<span class="pdx-card-lang pdx-lang-${lang.toLowerCase()}">${lang}</span>` +
