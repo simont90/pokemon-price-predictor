@@ -22068,7 +22068,7 @@ function setupPageNav() {
   //   #<cardId>   — set by selectCard() / pwaPushCard, works as a bookmark
   const _deepCard = new URLSearchParams(location.search).get('card');
   const initial = (location.hash || '#home').replace('#', '');
-  const isKnownPage = ['home', 'predict', 'discover', 'tools', 'binder', 'budget', 'vintage', 'know'].includes(initial);
+  const isKnownPage = ['home', 'predict', 'discover', 'tools', 'binder', 'budget', 'vintage', 'know', 'standouts', 'analysis', 'pokedex'].includes(initial);
   const _hashCard = !isKnownPage && initial ? initial : null;
   const cardToOpen = _deepCard || _hashCard;
   if (cardToOpen) {
@@ -27878,6 +27878,8 @@ const _PDX_SPECIAL_NAMES = {
 };
 
 function _buildPokedexIndex() {
+  // Rebuild if cached index has 0 card mappings but card data is now available
+  if (_pdxIndex && _pdxIndex.cardsByDex.size === 0 && cardData?.cards?.length) _pdxIndex = null;
   if (_pdxIndex) return _pdxIndex;
   if (typeof POKEDEX_NUM === 'undefined' || !cardData?.cards) return null;
 
