@@ -26785,7 +26785,8 @@ let _pdxDetailLang = 'all'; // within-detail language tab
 let _pdxSearchQ = '';
 let _pdxView = 'grid';     // 'grid' | 'detail'
 let _pdxActiveDex = null;
-let _pdxDetailSort = 'default'; // 'default' | 'price-asc' | 'price-desc'
+let _pdxDetailSort   = 'default'; // 'default' | 'price-asc' | 'price-desc'
+let _pdxDetailSearch = '';        // filter within detail — set name or collector number
 
 // ── Wishlist holds — persisted in pkm-aia-holds-v1, reset each calendar month ──
 function _aiaHoldsMonth() {
@@ -27986,9 +27987,10 @@ function _paintPdxGrid(idx) {
   grid.onclick = (e) => {
     const cell = e.target.closest('.pdx-cell[data-dex]');
     if (!cell) return;
-    _pdxActiveDex  = parseInt(cell.dataset.dex, 10);
-    _pdxDetailLang = 'all';
-    _pdxDetailSort = 'default';
+    _pdxActiveDex    = parseInt(cell.dataset.dex, 10);
+    _pdxDetailLang   = 'all';
+    _pdxDetailSort   = 'default';
+    _pdxDetailSearch = '';
     _pdxView       = 'detail';
     const b = document.getElementById('pokedexBody');
     if (b) _renderPdxDetail(b);
@@ -28036,6 +28038,9 @@ function _renderPdxDetail(body) {
       </div>
       <button class="pdx-img-refresh-btn" id="pdxImgRefreshBtn" type="button" title="Refresh card images" aria-label="Refresh card images">↻</button>
     </div>
+    <div class="pdx-detail-search-wrap">
+      <input class="pdx-detail-search" id="pdxDetailSearch" type="search" placeholder="Search by set name or card number…" value="${_pdxDetailSearch}" autocomplete="off" spellcheck="false">
+    </div>
     <div class="pdx-detail-controls">
       <div class="pdx-tabs" id="pdxDetailTabs">${tabsHtml}</div>
       <select class="pdx-sort-select" id="pdxSortSelect" aria-label="Sort cards">
@@ -28080,6 +28085,11 @@ function _renderPdxDetail(body) {
 
   document.getElementById('pdxSortSelect')?.addEventListener('change', (e) => {
     _pdxDetailSort = e.target.value;
+    _paintPdxCards(sorted, owned);
+  });
+
+  document.getElementById('pdxDetailSearch')?.addEventListener('input', (e) => {
+    _pdxDetailSearch = e.target.value;
     _paintPdxCards(sorted, owned);
   });
 
@@ -28152,6 +28162,15 @@ function _paintPdxCards(sorted, owned) {
 
   let filtered = _pdxDetailLang === 'all' ? sorted
                : sorted.filter(c => (c.lang || 'EN') === _pdxDetailLang);
+
+  if (_pdxDetailSearch) {
+    const q = _pdxDetailSearch.toLowerCase();
+    filtered = filtered.filter(c => {
+      const setName = (setsData?.[c.sc]?.name || c.sc || '').toLowerCase();
+      const cn = String(c.cn || _pdxImgCN(c) || '').toLowerCase();
+      return setName.includes(q) || cn.includes(q);
+    });
+  }
 
   if (_pdxDetailSort === 'price-desc') {
     filtered = [...filtered].sort((a, b) => (getCurrentPrice(b) || 0) - (getCurrentPrice(a) || 0));
