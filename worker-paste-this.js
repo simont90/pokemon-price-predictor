@@ -1824,6 +1824,7 @@ const MARKET_PINNED_VIDEOS = [
   { videoId: 'OaYY0VbmVzk', title: "The Sad Reality of the Japan's Pokemon Card Market",                         channelName: 'Randolph Pokemon'          },
   // Batch 5
   { videoId: 'xH1hXzSB3Ec', title: "What's Really About To Happen To Pokémon Card Prices?",                      channelName: 'Phillips Collectibles'     },
+  { videoId: 'HpKbB3CGmN4', title: 'a broke persons guide to collecting pokemon cards in 2026',                   channelName: 'Snomnom'                   },
 ];
 
 // Seed data from "Everything's About to Change... And Vintage Pokémon Will Explode"
