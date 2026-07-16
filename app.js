@@ -28087,8 +28087,9 @@ function _pdxShowPopout(cardId) {
   const imgCN    = _pdxImgCN(card);
   const imgSrc   = `https://images.pokemontcg.io/${card.sc}/${imgCN}_hires.png`;
   const imgFallback = `https://images.pokemontcg.io/${card.sc}/${imgCN}.png`;
+  const _jpDimCheck = `if(this.naturalWidth===640&&this.naturalHeight===892)this.style.display='none'`;
   const imgEl    = isJP
-    ? `<div class="pdx-pop-img pdx-pop-img-jp" aria-hidden="true"></div>`
+    ? `<img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onload="${_jpDimCheck}" onerror="if(this.src.includes('_hires')){this.onerror=function(){this.style.display='none'};this.src='${imgFallback}';}else{this.style.display='none';}">`
     : `<img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onerror="if(this.src.includes('_hires')){this.onerror=function(){this.style.display='none'};this.src='${imgFallback}';}else{this.style.display='none';}">`;
 
   const overlay = document.createElement('div');
@@ -28159,7 +28160,7 @@ function _paintPdxCards(sorted, owned) {
     const jpTag    = c.nj ? `<span class="pdx-card-jp">${c.nj}</span>` : '';
     const imgSrc   = `https://images.pokemontcg.io/${c.sc}/${_pdxImgCN(c)}.png`;
     const thumbEl  = isJP
-      ? `<div class="pdx-card-thumb pdx-card-thumb-jp" aria-hidden="true"></div>`
+      ? `<img class="pdx-card-thumb" src="${imgSrc}" alt="" loading="lazy" onload="if(this.naturalWidth===640&&this.naturalHeight===892)this.style.opacity='0'" onerror="this.style.opacity='0'">`
       : `<img class="pdx-card-thumb" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.opacity='0'">`;
     return `<div class="pdx-card-row${isOwned ? ' pdx-owned' : ''}" data-id="${c.i}">` +
       thumbEl +
