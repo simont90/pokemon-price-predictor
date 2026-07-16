@@ -28053,6 +28053,50 @@ function _renderPdxDetail(body) {
   _paintPdxCards(sorted, owned);
 }
 
+function _pdxShowPopout(cardId) {
+  const card = cardData.cards.find(c => c.i === cardId);
+  if (!card) return;
+
+  document.getElementById('pdxPopout')?.remove();
+
+  const setName  = setsData?.[card.sc]?.name || card.sc || '';
+  const pGBP     = usdToGbp(card.p || 0);
+  const priceStr = pGBP > 0.01 ? fmtGBP(pGBP) : '';
+  const lang     = card.lang || 'EN';
+  const jpName   = card.nj ? `<div class="pdx-pop-jp">${card.nj}</div>` : '';
+  const imgSrc   = `https://images.pokemontcg.io/${card.sc}/${card.cn}_hires.png`;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'pdxPopout';
+  overlay.className = 'pdx-pop-overlay';
+  overlay.innerHTML = `
+    <div class="pdx-pop-modal">
+      <button class="pdx-pop-close" type="button" aria-label="Close">✕</button>
+      <img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onerror="this.style.display='none'">
+      <div class="pdx-pop-body">
+        <span class="pdx-card-lang pdx-lang-${lang.toLowerCase()} pdx-pop-lang">${lang}</span>
+        <div class="pdx-pop-name">${card.n}</div>
+        ${jpName}
+        <div class="pdx-pop-meta">${setName}</div>
+        ${priceStr ? `<div class="pdx-pop-price">${priceStr}</div>` : ''}
+        <button class="pdx-pop-open" data-id="${cardId}" type="button">Open full card →</button>
+      </div>
+    </div>
+  `;
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay || e.target.closest('.pdx-pop-close')) {
+      overlay.remove();
+      return;
+    }
+    const openBtn = e.target.closest('.pdx-pop-open[data-id]');
+    if (openBtn) { overlay.remove(); selectCard(openBtn.dataset.id); go('predict'); }
+  });
+
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('open'));
+}
+
 function _paintPdxCards(sorted, owned) {
   const list = document.getElementById('pdxCardsList');
   if (!list) return;
@@ -28072,7 +28116,9 @@ function _paintPdxCards(sorted, owned) {
     const priceStr = pGBP > 0.01 ? fmtGBP(pGBP) : '';
     const isOwned  = owned.has(c.i);
     const jpTag    = c.nj ? `<span class="pdx-card-jp">${c.nj}</span>` : '';
+    const imgSrc   = `https://images.pokemontcg.io/${c.sc}/${c.cn}.png`;
     return `<div class="pdx-card-row${isOwned ? ' pdx-owned' : ''}" data-id="${c.i}">` +
+      `<img class="pdx-card-thumb" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.opacity='0'">` +
       `<span class="pdx-card-lang pdx-lang-${lang.toLowerCase()}">${lang}</span>` +
       `<div class="pdx-card-info">` +
         `<span class="pdx-card-name">${c.n}${jpTag}</span>` +
@@ -28080,14 +28126,19 @@ function _paintPdxCards(sorted, owned) {
       `</div>` +
       `<span class="pdx-card-price">${priceStr}</span>` +
       (isOwned ? '<span class="pdx-owned-dot" title="In collection">●</span>' : '') +
+      `<button class="pdx-pop-btn" data-id="${c.i}" type="button" title="Quick view" aria-label="Quick view">⊕</button>` +
       `</div>`;
   }).join('');
 
-  list.onclick = (e) => {
+  list.addEventListener('click', (e) => {
+    // Pop-out button — show quick preview without navigating
+    const popBtn = e.target.closest('.pdx-pop-btn[data-id]');
+    if (popBtn) { e.stopPropagation(); _pdxShowPopout(popBtn.dataset.id); return; }
+    // Row click — open in Cards page
     const row = e.target.closest('.pdx-card-row[data-id]');
     if (!row) return;
-    const card = cardData.cards.find(c => c.i === row.dataset.id);
-    if (card) { selectCard(card); go('predict'); }
-  };
+    selectCard(row.dataset.id);
+    go('predict');
+  });
 }
 
