@@ -7999,9 +7999,11 @@ function renderBinderPage() {
   }
 
   const byDex = (a, b) => (groupDex[a] - groupDex[b]) || a.localeCompare(b);
+  // prio sort: starred species first, then by need/have tier, then by dex number
+  const prioRank = sp => (isBinderPriority(sp) ? 0 : 1);
   let sortedSpecies = Object.keys(groups).sort((a, b) =>
     sortMode === 'az'    ? a.localeCompare(b) :
-    sortMode === 'prio'  ? (groupTier[a] - groupTier[b]) || byDex(a, b) :
+    sortMode === 'prio'  ? (prioRank(a) - prioRank(b)) || (groupTier[a] - groupTier[b]) || byDex(a, b) :
     sortMode === 'price' ? (groupPrice[a] - groupPrice[b]) || byDex(a, b) :
                            byDex(a, b));
 
