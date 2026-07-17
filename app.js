@@ -7553,6 +7553,12 @@ function setupFullArtBinder() {
   $('binderDetailClose')?.addEventListener('click', closeBinderDetail);
   $('binderDetailOverlay')?.addEventListener('click', closeBinderDetail);
 
+  $('binderDetailSplit')?.addEventListener('click', () => {
+    const species = $('binderDetailSplit')?.dataset.species;
+    if (!species) return;
+    _splitBinderGroup(species);
+  });
+
   $('binderDetailPriority')?.addEventListener('click', () => {
     const species = $('binderDetailPriority')?.dataset.species;
     if (!species) return;
@@ -8325,6 +8331,32 @@ function _openBinderDetailRender(species) {
       ? 'Remove priority — click to deprioritise'
       : 'Mark as priority — boosts in standouts and recommendations');
   }
+  // Show Split button only when the group contains more than one distinct Pokémon name
+  const splitBtn = el('binderDetailSplit');
+  if (splitBtn) {
+    splitBtn.dataset.species = species;
+    const distinctNames = new Set((c.items || []).map(b => _binderSplitName(b.name)));
+    splitBtn.style.display = distinctNames.size > 1 ? '' : 'none';
+  }
+}
+
+// Normalise a binder card name to its Pokémon component — strips trainer prefixes
+// like "N's", "Team Rocket's", "(JP)" suffix, and similar so cards can be auto-split.
+function _binderSplitName(name) {
+  if (!name) return 'Unknown';
+  return name.replace(/\s*\(JP\)\s*$/i, '').trim();
+}
+
+// Split the current species group by distinct Pokémon name — each name becomes its own group.
+function _splitBinderGroup(species) {
+  const items = fullArtBinder.filter(b => (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === species);
+  if (!items.length) return;
+  for (const b of items) {
+    binderSpeciesOverrides[b.id] = _binderSplitName(b.name);
+  }
+  saveBinderSpeciesOverrides();
+  closeBinderDetail();
+  renderBinderPage();
 }
 
 function closeBinderDetail() {
