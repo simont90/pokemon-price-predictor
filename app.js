@@ -7513,6 +7513,20 @@ function setupFullArtBinder() {
   $('binderDetailClose')?.addEventListener('click', closeBinderDetail);
   $('binderDetailOverlay')?.addEventListener('click', closeBinderDetail);
 
+  $('binderDetailPriority')?.addEventListener('click', () => {
+    const species = $('binderDetailPriority')?.dataset.species;
+    if (!species) return;
+    toggleBinderPriority(species);
+    const btn = $('binderDetailPriority');
+    if (btn) {
+      btn.classList.toggle('active', isBinderPriority(species));
+      btn.setAttribute('title', isBinderPriority(species)
+        ? 'Remove priority — click to deprioritise'
+        : 'Mark as priority — boosts in standouts and recommendations');
+    }
+    renderBinderPage();
+  });
+
   // Escape key closes the panel
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && $('binderDetailPanel')?.classList.contains('open')) {
@@ -7559,6 +7573,23 @@ function updateFullArtBinderButton() {
 
 function saveFullArtBinder() {
   localStorage.setItem('pkm-fullart-binder-v1', JSON.stringify(fullArtBinder));
+}
+
+// ── Binder priority ─────────────────────────────────────────────────────
+const BINDER_PRIORITY_KEY = 'pkm-binder-priority-v1';
+function loadBinderPriority() {
+  try { return new Set(JSON.parse(localStorage.getItem(BINDER_PRIORITY_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function saveBinderPriority(set) {
+  localStorage.setItem(BINDER_PRIORITY_KEY, JSON.stringify([...set]));
+}
+let _binderPriority = loadBinderPriority();
+function isBinderPriority(species) { return _binderPriority.has(species); }
+function toggleBinderPriority(species) {
+  if (_binderPriority.has(species)) _binderPriority.delete(species);
+  else _binderPriority.add(species);
+  saveBinderPriority(_binderPriority);
 }
 
 // ── Binder slot status ─────────────────────────────────────────────────
@@ -8088,7 +8119,7 @@ function renderBinderPage() {
       ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${groupDex[species]}.png`
       : null;
 
-    html += `<div class="binder-dex-cell${tier === 0 ? ' binder-dex-need' : ' binder-dex-have'}"
+    html += `<div class="binder-dex-cell${tier === 0 ? ' binder-dex-need' : ' binder-dex-have'}${isBinderPriority(species) ? ' binder-dex-priority' : ''}"
          data-species="${esc(species)}" role="button" tabindex="0">
       <span class="binder-dex-num">${isFinite(groupDex[species]) ? '#' + String(groupDex[species]).padStart(4, '0') : '—'}</span>
       ${spriteUrl ? `<img class="binder-dex-sprite" src="${spriteUrl}" alt="${esc(species)}" loading="lazy" decoding="async">` : '<div class="binder-dex-sprite binder-dex-sprite-ph"></div>'}
@@ -8226,9 +8257,18 @@ function _openBinderDetailRender(species) {
   }
   if (el('binderDetailActions')) el('binderDetailActions').innerHTML = inlineActions || '';
   if (el('binderDetailBody'))    el('binderDetailBody').innerHTML    = _buildBinderPanelBody(c.items || [], c.setBuckets);
-  // Keep rename button's data-species in sync so _handleBinderClick finds it
+  // Keep rename / priority buttons' data-species in sync
   const renameBtn = el('binderDetailRename');
   if (renameBtn) renameBtn.dataset.species = species;
+  const priorityBtn = el('binderDetailPriority');
+  if (priorityBtn) {
+    priorityBtn.dataset.species = species;
+    const isPrio = isBinderPriority(species);
+    priorityBtn.classList.toggle('active', isPrio);
+    priorityBtn.setAttribute('title', isPrio
+      ? 'Remove priority — click to deprioritise'
+      : 'Mark as priority — boosts in standouts and recommendations');
+  }
 }
 
 function closeBinderDetail() {
@@ -18136,6 +18176,12 @@ function aiBuildContext() {
     }
   } catch (e) { console.warn('ctx watchlist', e); }
 
+  // Binder priority species — boosted in standouts and recommendations
+  try {
+    const prio = [..._binderPriority];
+    if (prio.length) ctx.binder_priority_species = prio;
+  } catch (e) { console.warn('ctx binder_priority', e); }
+
   // Selected card — full analysis snapshot so the AI can give card-specific advice
   try {
     if (selectedCard) {
@@ -18255,6 +18301,10 @@ function aiSystemPrompt(ctx) {
     ? `ACTIVE FOCUS: "${ctx.active_focus.label}" — ${ctx.active_focus.desc}. The score badges the user sees throughout the app already reflect this focus (matching cards are boosted, non-matching are penalised). When making recommendations, prioritise cards that fit this theme and say so explicitly. For card_market suggestions, filter or rank by this focus. If the user asks something off-focus, answer it but note how it relates to their goal.`
     : '';
 
+  const priorityLine = ctx.binder_priority_species?.length
+    ? `BINDER PRIORITY: The user has starred these species as top targets in their Full Art Binder: ${ctx.binder_priority_species.join(', ')}. Boost any cards featuring these Pokémon when making standout picks, recommendations, or buy suggestions. Always mention them first when they match the topic.`
+    : '';
+
   const cardLine = ctx.selected_card
     ? `ACTIVE CARD: The user has [[card:${ctx.selected_card.id}|${ctx.selected_card.name}]] loaded on screen. Investment stars: ${ctx.selected_card.investment_stars ?? 'n/a'}/5. PSA 10 gem rate: ${ctx.selected_card.psa10_gem_rate_pct != null ? ctx.selected_card.psa10_gem_rate_pct + '%' : 'unknown'}. When asked to analyse it, use signal (${ctx.selected_card.signal || 'n/a'}), signal_reasons, desirability (${ctx.selected_card.desirability}), best_strategy, and forecast fields to give a complete verdict: buy/hold/sell, whether to grade, 5-year trajectory, and risks. Cite the actual numbers — don't be vague.`
     : '';
@@ -18275,6 +18325,7 @@ ROLE: Give crisp, data-driven advice on buying, selling, grading and timing the 
 ${marketIntelSection}
 ${budgetLine}
 ${focusLine}
+${priorityLine}
 ${cardLine}
 
 USER CONTEXT (always reflects their latest local state — do not ask for it):
@@ -23594,6 +23645,7 @@ const SYNC_KEYS = [
   'pkm-binder-species-overrides-v1', // Binder species name overrides (rename "Mega" → "Charizard" etc.)
   'pkm-binder-pairings-v1',      // Manual EN/JP card pairings within binder groups
   'pkm-binder-sort-v1',          // Binder page sort order preference
+  'pkm-binder-priority-v1',      // Priority species for standouts / recommendations
   'pkm-ace-prices-v1',           // ACE Grading sold prices by grade per card
   'pkm-vintage-v1',              // Vintage page targets (WOTC-era PSA hunt list)
   'pkm-dupe-dismissed-v1',        // Dismissed duplicate / counterpart pairs
@@ -23703,6 +23755,7 @@ function syncApplyPayload(payload, mode) {
     if (typeof acquisitions !== 'undefined') acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}');
     if (typeof binderSpeciesOverrides !== 'undefined') binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species-overrides-v1') || '{}');
     if (typeof binderPairings !== 'undefined') binderPairings = JSON.parse(localStorage.getItem('pkm-binder-pairings-v1') || '{}');
+    if (typeof _binderPriority !== 'undefined') _binderPriority = loadBinderPriority();
     // Reset seen set and price cache so next read re-fetches from D1
     _priceSeen = null;
     _priceCache = {};
@@ -26957,8 +27010,13 @@ async function _aiaFetchRanking(cards, monthRemain) {
     ? `Total monthly budget remaining: ${fmtGBPDirect(monthRemain)} for ALL purchases combined this month — not per card. Mark buy_now:true only for a curated selection whose COMBINED cost stays within this total. If the best card alone costs more than the budget, leave all as false.`
     : '';
 
+  const prioritySpecies = [..._binderPriority];
+  const priorityCtx = prioritySpecies.length
+    ? `\n\nUser binder priority species (boost these): ${prioritySpecies.join(', ')}. Cards featuring these Pokémon should be ranked higher and given stars:3 where fundamentals support it.`
+    : '';
+
   const systemPrompt = `You are a Pokémon TCG investment analyst. Rank the provided cards by purchase priority. Set buy_now:true only for cards worth buying this month given the budget. Every card MUST have: "reason" (one sentence, max 12 words explaining the decision) and "stars" (1–3 integer: 3=standout high-conviction buy, 2=solid pick, 1=watchlist/wait). Respond ONLY with a JSON array, no prose, no markdown. Format: [{"id":"...","buy_now":true,"stars":3,"reason":"scarce holo, PSA 10 pop low, prices rising"},...]. Rank highest priority first.`;
-  const userPrompt   = `${budgetCtx}\n\nCards:\n${cardList}\n\nMarket signals: ${intelCtx || 'Use general TCG knowledge.'}${jpCtx}\n\nJSON array only:`;
+  const userPrompt   = `${budgetCtx}\n\nCards:\n${cardList}\n\nMarket signals: ${intelCtx || 'Use general TCG knowledge.'}${jpCtx}${priorityCtx}\n\nJSON array only:`;
 
   let full = '';
   try {

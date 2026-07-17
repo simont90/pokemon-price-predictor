@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260716b">
+  <link rel="stylesheet" href="style.css?v=20260716c">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2640,6 +2640,7 @@
             <div class="binder-detail-sub" id="binderDetailSub"></div>
             <div class="binder-detail-btns">
               <button class="binder-species-edit binder-detail-rename" id="binderDetailRename" data-species="" title="Rename species group">&#x270E; Rename</button>
+              <button class="binder-detail-priority-btn" id="binderDetailPriority" data-species="" title="Mark as priority — boosts in standouts and recommendations">&#9733; Priority</button>
             </div>
           </div>
         </div>
@@ -3128,7 +3129,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260716b"></script>
+  <script src="app.js?v=20260716c"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
