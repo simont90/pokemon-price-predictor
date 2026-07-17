@@ -7509,6 +7509,7 @@ function setupFullArtBinder() {
   }
 
   // Close button and overlay
+  $('binderDetailBack')?.addEventListener('click', closeBinderDetail);
   $('binderDetailClose')?.addEventListener('click', closeBinderDetail);
   $('binderDetailOverlay')?.addEventListener('click', closeBinderDetail);
 
