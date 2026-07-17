@@ -7128,6 +7128,46 @@ function setupFullArtBinder() {
       saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
       return;
     }
+
+    const moveBtn = e.target.closest('.bdl-move-btn');
+    if (moveBtn) {
+      e.stopPropagation();
+      const id = moveBtn.dataset.id;
+      const row = moveBtn.closest('.bdl-row');
+      if (!row) return;
+      row.querySelector('.bdl-acts').style.display = 'none';
+      const editor = row.querySelector('.bdl-move-editor');
+      if (editor) {
+        editor.style.display = 'flex';
+        editor.querySelector('.bdl-move-input')?.focus();
+      }
+      return;
+    }
+
+    const moveCancel = e.target.closest('.bdl-move-cancel');
+    if (moveCancel) {
+      e.stopPropagation();
+      const row = moveCancel.closest('.bdl-row');
+      if (!row) return;
+      row.querySelector('.bdl-acts').style.display = '';
+      row.querySelector('.bdl-move-editor').style.display = 'none';
+      return;
+    }
+
+    const moveConfirm = e.target.closest('.bdl-move-confirm');
+    if (moveConfirm) {
+      e.stopPropagation();
+      const id = moveConfirm.dataset.id;
+      const row = moveConfirm.closest('.bdl-row');
+      const input = row?.querySelector('.bdl-move-input');
+      const target = (input?.value || '').trim();
+      if (!target) { input?.focus(); return; }
+      binderSpeciesOverrides[id] = target;
+      saveBinderSpeciesOverrides();
+      renderBinderPage();
+      openBinderDetail(target);
+      return;
+    }
     const statusBtn = e.target.closest('.binder-group-status-btn');
     if (statusBtn) {
       e.stopPropagation();
@@ -7841,6 +7881,13 @@ function _buildBinderPanelBody(items, setBuckets) {
             ${binderStatusBtn(b, 'binder-pg-owned bdl-status-btn')}
             <button class="binder-pg-remove bdl-remove-btn" data-id="${b.id}" title="Remove from binder">✕</button>
             <button class="bdl-view-btn" data-id="${b.id}" title="View card analysis">↗</button>
+            <button class="bdl-move-btn" data-id="${b.id}" title="Move to a different species group">↪</button>
+          </div>
+          <div class="bdl-move-editor" style="display:none" data-id="${b.id}">
+            <input class="bdl-move-input" list="bdl-move-list-${b.id}" placeholder="Type species name…" autocomplete="off" spellcheck="false">
+            <datalist id="bdl-move-list-${b.id}">${_binderReorgGroups().map(g => `<option value="${esc(g)}">`).join('')}</datalist>
+            <button class="bdl-move-confirm" data-id="${b.id}">Move</button>
+            <button class="bdl-move-cancel" data-id="${b.id}">Cancel</button>
           </div>
           ${completeBtn}
         </div>`;
@@ -8178,6 +8225,13 @@ function renderBinderPage() {
             ${binderStatusBtn(b, 'binder-pg-owned bdl-status-btn')}
             <button class="binder-pg-remove bdl-remove-btn" data-id="${b.id}" title="Remove from binder">✕</button>
             <button class="bdl-view-btn" data-id="${b.id}" title="View card analysis">↗</button>
+            <button class="bdl-move-btn" data-id="${b.id}" title="Move to a different species group">↪</button>
+          </div>
+          <div class="bdl-move-editor" style="display:none" data-id="${b.id}">
+            <input class="bdl-move-input" list="bdl-move-list-flat-${b.id}" placeholder="Type species name…" autocomplete="off" spellcheck="false">
+            <datalist id="bdl-move-list-flat-${b.id}">${_binderReorgGroups().map(g => `<option value="${esc(g)}">`).join('')}</datalist>
+            <button class="bdl-move-confirm" data-id="${b.id}">Move</button>
+            <button class="bdl-move-cancel" data-id="${b.id}">Cancel</button>
           </div>
           ${completeBtn}
         </div>`;
