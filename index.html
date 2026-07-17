@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260716f">
+  <link rel="stylesheet" href="style.css?v=20260716g">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -700,6 +700,8 @@
                 <select id="mcLang">
                   <option value="EN">English</option>
                   <option value="JP">Japanese</option>
+                  <option value="ZH">Chinese</option>
+                  <option value="KR">Korean</option>
                 </select>
               </label>
             </div>
@@ -764,6 +766,8 @@
               <select id="ecLang">
                 <option value="EN">English</option>
                 <option value="JP">Japanese</option>
+                <option value="ZH">Chinese</option>
+                <option value="KR">Korean</option>
               </select>
             </label>
           </div>
@@ -3130,7 +3134,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260716f"></script>
+  <script src="app.js?v=20260716g"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
