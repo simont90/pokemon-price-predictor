@@ -24857,6 +24857,21 @@ function syncBindOnce() {
     setTimeout(() => syncCloudPull({ mode: 'merge' }), 800);
   }
 
+  // Pull on visibility restore — fires when the user switches back to the tab/app.
+  // Minimum 5-minute gap so rapid tab switching doesn't hammer the worker.
+  let _syncLastPullTs = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    const minGap = 5 * 60 * 1000;
+    if (Date.now() - _syncLastPullTs < minGap) return;
+    _syncLastPullTs = Date.now();
+    if (authIsActive()) {
+      authSyncPull({ mode: 'merge' });
+    } else if (syncGetPairCode() && syncGetEndpoint()) {
+      syncCloudPull({ mode: 'merge' });
+    }
+  });
+
   // Daily 9 AM pull — keeps every device in sync each morning without
   // needing a manual push. Uses a device-local key (not in SYNC_KEYS)
   // to track whether today's run has already happened.
