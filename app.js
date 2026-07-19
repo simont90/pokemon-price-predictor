@@ -2508,8 +2508,11 @@ async function fetchLivePrice(card) {
   try {
     // D1-first: try the edge price database before hitting PriceCharting directly.
     // D1 hit → ~50ms; D1 miss → PriceCharting fetch + seeds D1 for future lookups.
+    // Skip D1 when the user has a PC override — D1 holds stale data for the old match.
     const workerUrl = getMktWorkerUrl();
     let d1Price = null;
+    const _hasPCOverride = !!(getPCOverride(card.i)?.id);
+    if (!_hasPCOverride) {
     try {
       const _meta = {};
       _meta[card.i] = { n: card.n || '', s: card.s || '', cn: card.cn || '', lang: (card.lang || 'EN').toLowerCase() };
@@ -2523,6 +2526,7 @@ async function fetchLivePrice(card) {
         if (d1Entry && (d1Entry.pcUngraded > 0 || d1Entry.pcPsa10 > 0)) d1Price = d1Entry;
       }
     } catch {}
+    }
 
     if (d1Price) {
       if (thisId !== livePriceFetchId) return;
