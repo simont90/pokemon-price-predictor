@@ -23777,8 +23777,24 @@ function syncGenerateCode() {
 
 // Build the snapshot we send (or save to file). Includes a version flag so a
 // future migration can recognise older blobs and a per-device id for diagnostics.
+// Per-key modification timestamps — device-local, NOT synced.
+// Written whenever a SYNC_KEY changes so the payload can carry them.
+const SYNC_KEY_TS_KEY = 'pkm-sync-key-ts';
+function _getSyncKeyTs() {
+  try { return JSON.parse(localStorage.getItem(SYNC_KEY_TS_KEY) || '{}'); } catch { return {}; }
+}
+function _setSyncKeyTs(k) {
+  try {
+    const all = _getSyncKeyTs();
+    all[k] = Date.now();
+    // Use the raw setter so this doesn't recurse through the SYNC_KEYS hook
+    Object.getPrototypeOf(localStorage).setItem.call(localStorage, SYNC_KEY_TS_KEY, JSON.stringify(all));
+  } catch {}
+}
+
 function syncBuildPayload() {
   const data = {};
+  const keyTs = _getSyncKeyTs();
   for (const k of SYNC_KEYS) {
     try {
       const v = localStorage.getItem(k);
@@ -23790,6 +23806,7 @@ function syncBuildPayload() {
     ts: Date.now(),
     device: (navigator.userAgent || '').slice(0, 80),
     keys: Object.keys(data).length,
+    keyTs,
     data,
   };
 }
@@ -23811,25 +23828,35 @@ function syncApplyPayload(payload, mode) {
         applied.push(k);
         continue;
       }
-      // merge — best effort union for arrays / shallow-merge for objects
+      // merge — last-write-wins per key for arrays (prevents deleted items coming back),
+      // shallow-merge for objects, remote-wins for scalars.
       const local = JSON.parse(localStorage.getItem(k) || 'null');
       let remote;
       try { remote = JSON.parse(remoteRaw); } catch { remote = remoteRaw; }
       let merged = remote;
       if (Array.isArray(local) && Array.isArray(remote)) {
-        const byId = new Map();
-        for (const item of local) {
-          const id = (item && (item.id || item.i || item.url)) || JSON.stringify(item);
-          byId.set(id, item);
+        // Compare per-key timestamps to decide which side wins outright.
+        // If local was modified more recently, keep local entirely (deletions are preserved).
+        // If remote is newer, replace with remote. Fall back to union only when timestamps unknown.
+        const localTs  = (_getSyncKeyTs())[k] || 0;
+        const remoteTs = (payload.keyTs && payload.keyTs[k]) || 0;
+        if (localTs && remoteTs) {
+          merged = localTs >= remoteTs ? local : remote;
+        } else {
+          // No timestamps available — fall back to union (legacy payloads)
+          const byId = new Map();
+          for (const item of local) {
+            const id = (item && (item.id || item.i || item.url)) || JSON.stringify(item);
+            byId.set(id, item);
+          }
+          for (const item of remote) {
+            const id = (item && (item.id || item.i || item.url)) || JSON.stringify(item);
+            const existing = byId.get(id);
+            if (!existing) byId.set(id, item);
+            else if (item && existing && item.ts && existing.ts && item.ts > existing.ts) byId.set(id, item);
+          }
+          merged = Array.from(byId.values());
         }
-        for (const item of remote) {
-          const id = (item && (item.id || item.i || item.url)) || JSON.stringify(item);
-          // Remote wins on conflict if it has a newer ts, otherwise keep local
-          const existing = byId.get(id);
-          if (!existing) byId.set(id, item);
-          else if (item && existing && item.ts && existing.ts && item.ts > existing.ts) byId.set(id, item);
-        }
-        merged = Array.from(byId.values());
       } else if (local && typeof local === 'object' && remote && typeof remote === 'object') {
         merged = { ...local, ...remote };
       }
@@ -24195,7 +24222,10 @@ function syncInstallAutoPushHooks() {
   const origSet = localStorage.setItem.bind(localStorage);
   localStorage.setItem = function(k, v) {
     origSet(k, v);
-    if (SYNC_KEYS.includes(k)) syncSchedulePush();
+    if (SYNC_KEYS.includes(k)) {
+      _setSyncKeyTs(k);
+      syncSchedulePush();
+    }
   };
 }
 
@@ -24859,11 +24889,14 @@ function syncBindOnce() {
 
   // Pull on visibility restore — fires when the user switches back to the tab/app.
   // Minimum 5-minute gap so rapid tab switching doesn't hammer the worker.
+  // Skip if a push is pending to avoid a race where stale remote data overwrites
+  // a local deletion that hasn't been pushed yet.
   let _syncLastPullTs = Date.now();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     const minGap = 5 * 60 * 1000;
     if (Date.now() - _syncLastPullTs < minGap) return;
+    if (_syncPushTimer) return; // push pending — let it land before pulling
     _syncLastPullTs = Date.now();
     if (authIsActive()) {
       authSyncPull({ mode: 'merge' });
