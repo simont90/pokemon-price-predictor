@@ -7625,6 +7625,12 @@ function saveFullArtBinder() {
   localStorage.setItem('pkm-fullart-binder-v1', JSON.stringify(fullArtBinder));
 }
 
+// ── ETB Sets / Hit Binder ────────────────────────────────────────────────
+const ETB_SETS_KEY = 'pkm-etb-sets-v1';
+function loadEtbSets() { try { return JSON.parse(localStorage.getItem(ETB_SETS_KEY) || '{}'); } catch { return {}; } }
+function saveEtbSets(obj) { localStorage.setItem(ETB_SETS_KEY, JSON.stringify(obj)); }
+let _etbSets = loadEtbSets();
+
 // ── Binder priority ─────────────────────────────────────────────────────
 const BINDER_PRIORITY_KEY = 'pkm-binder-priority-v1';
 function loadBinderPriority() {
@@ -22106,6 +22112,7 @@ function setupPageNav() {
     binder: document.getElementById('pageBinder'),
     budget: document.getElementById('pageBudget'),
     vintage: document.getElementById('pageVintage'),
+    sets:    document.getElementById('pageSets'),
 
     know: document.getElementById('pageKnow'),
     standouts: document.getElementById('pageStandouts'),
@@ -22143,6 +22150,7 @@ function setupPageNav() {
     if (page === 'tools') { try { updateToolsDupeBadge(); _loadMapQ(); _updateMapQBadge(); } catch(e) {} }
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
     if (page === 'vintage') { try { renderVintagePage(); } catch(e) {} }
+    if (page === 'sets')   { try { renderSetsPage();   } catch(e) {} }
 
     if (page === 'know') { try { _pknOnNavigate(); } catch(e) {} }
     if (page === 'standouts') { try { renderStandouts(); } catch(e) {} }
@@ -22259,7 +22267,7 @@ function setupPageNav() {
   //   #<cardId>   — set by selectCard() / pwaPushCard, works as a bookmark
   const _deepCard = new URLSearchParams(location.search).get('card');
   const initial = (location.hash || '#home').replace('#', '');
-  const isKnownPage = ['home', 'predict', 'discover', 'tools', 'binder', 'budget', 'vintage', 'know', 'standouts', 'analysis', 'pokedex'].includes(initial);
+  const isKnownPage = ['home', 'predict', 'discover', 'tools', 'binder', 'budget', 'vintage', 'sets', 'know', 'standouts', 'analysis', 'pokedex'].includes(initial);
   const _hashCard = !isKnownPage && initial ? initial : null;
   const cardToOpen = _deepCard || _hashCard;
   if (cardToOpen) {
@@ -23554,6 +23562,7 @@ function setupHeaderMenu() {
   document.getElementById('hmpCollection')?.addEventListener('click', () => { close(); document.getElementById('portfolioToggle')?.click(); });
   document.getElementById('hmpWishlist')?.addEventListener('click',   () => { close(); document.getElementById('wishlistToggle')?.click(); });
   document.getElementById('hmpBinder')?.addEventListener('click',     () => { close(); go('binder'); });
+  document.getElementById('hmpSets')?.addEventListener('click',       () => { close(); go('sets'); });
   document.getElementById('hmpAlerts')?.addEventListener('click',     () => { close(); document.getElementById('alertsToggle')?.click(); });
   document.getElementById('hmpCompare')?.addEventListener('click',    () => { close(); document.getElementById('compareToggle')?.click(); });
   document.getElementById('hmpLookup')?.addEventListener('click',     () => { close(); document.getElementById('quickLookupToggle')?.click(); });
@@ -23739,6 +23748,7 @@ const SYNC_KEYS = [
   'pkm-binder-sort-v1',          // Binder page sort order preference
   'pkm-binder-priority-v1',      // Priority species for standouts / recommendations
   'pkm-ace-prices-v1',           // ACE Grading sold prices by grade per card
+  'pkm-etb-sets-v1',             // Sets page: sets where user has an ETB
   'pkm-vintage-v1',              // Vintage page targets (WOTC-era PSA hunt list)
   'pkm-dupe-dismissed-v1',        // Dismissed duplicate / counterpart pairs
   'pkm-price-seen-v1',           // Ever-fetched card IDs (persists across cache evictions)
@@ -23880,6 +23890,7 @@ function syncApplyPayload(payload, mode) {
     if (typeof binderSpeciesOverrides !== 'undefined') binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species-overrides-v1') || '{}');
     if (typeof binderPairings !== 'undefined') binderPairings = JSON.parse(localStorage.getItem('pkm-binder-pairings-v1') || '{}');
     if (typeof _binderPriority !== 'undefined') _binderPriority = loadBinderPriority();
+    if (typeof _etbSets !== 'undefined') _etbSets = loadEtbSets();
     // Reset seen set and price cache so next read re-fetches from D1
     _priceSeen = null;
     _priceCache = {};
@@ -25853,6 +25864,211 @@ async function _vgFetchPrices(cardId, el) {
     if (fresh) setCachedPrice(card.i, fresh);
   } catch (e) {}
   if (ladderEl) ladderEl.innerHTML = _vgLadderHTML(card);
+}
+
+// ── Sets / ETB Hit Binder page ────────────────────────────────────────────
+let _setsPageSeries  = 'sv';
+let _setsExpandedId  = null;
+let _setsHitCache    = null; // Map<setId, card[]> — built once per page load
+
+// Rarity priority for hit card sorting (most desirable first)
+const _SETS_HIT_RARITIES = new Set(['SIR','SAR','MHR','SHR','SHUR','HR','UR','IR','AR']);
+const _SETS_HIT_PRIO     = { SIR:0, SAR:1, MHR:2, SHR:3, SHUR:4, HR:5, UR:6, IR:7, AR:8 };
+
+function _buildSetsHitCache() {
+  if (_setsHitCache || !cardData?.cards) return;
+  _setsHitCache = new Map();
+  for (const c of cardData.cards) {
+    if (c.lang && c.lang !== 'EN') continue;
+    const rc = c.rc || '';
+    if (!_SETS_HIT_RARITIES.has(rc)) continue;
+    const setId = c.i ? c.i.split('-')[0] : '';
+    if (!setId) continue;
+    let bucket = _setsHitCache.get(setId);
+    if (!bucket) { bucket = []; _setsHitCache.set(setId, bucket); }
+    bucket.push(c);
+  }
+}
+
+function renderSetsPage() {
+  const el = document.getElementById('pageSets');
+  if (!el || el.style.display === 'none') return;
+
+  if (!cardData?.cards || !setsData) {
+    el.innerHTML = '<div class="sets-page"><p class="sets-loading">Loading card database…</p></div>';
+    setTimeout(() => { if (el.style.display !== 'none') renderSetsPage(); }, 400);
+    return;
+  }
+
+  _buildSetsHitCache();
+
+  const portfolioIds = new Set(portfolio.map(p => p.id || p.i).filter(Boolean));
+  const binderIds    = new Set(fullArtBinder.map(b => b.id).filter(Boolean));
+  const wishlistIds  = new Set(wishlist.map(w => w.id || w.i).filter(Boolean));
+
+  // Filter & sort sets: newest first, skip promo/trainer-gallery subsets
+  const SKIP_SUFFIX = /tg$|gg$|sve$|_sv$/;
+  const SKIP_NAMES  = /trainer.gallery|galarian.gallery|promo/i;
+  const allSets = Object.entries(setsData)
+    .filter(([id, s]) => s.releaseDate && !SKIP_SUFFIX.test(id) && !SKIP_NAMES.test(s.name || ''))
+    .sort((a, b) => b[1].releaseDate.localeCompare(a[1].releaseDate));
+
+  const seriesFiltered =
+    _setsPageSeries === 'sv'   ? allSets.filter(([id]) => id.startsWith('sv') && !id.startsWith('svp')) :
+    _setsPageSeries === 'swsh' ? allSets.filter(([id]) => id.startsWith('swsh')) :
+    _setsPageSeries === 'older'? allSets.filter(([id]) => !id.startsWith('sv') && !id.startsWith('swsh')) :
+    allSets;
+
+  const etbCount = Object.keys(_etbSets).filter(n => _etbSets[n]).length;
+
+  let html = `<div class="sets-page">
+    <div class="sets-hdr">
+      <div class="sets-hdr-top">
+        <h2 class="sets-title">Sets</h2>
+        ${etbCount ? `<span class="sets-etb-total">${etbCount} ETB${etbCount > 1 ? 's' : ''} tracked</span>` : ''}
+      </div>
+      <p class="sets-subtitle">Mark sets where you have an ETB — see which Ex / IR / SIR cards to pick up for your Hit Binder.</p>
+      <div class="sets-series-row">
+        <button class="sets-sf${_setsPageSeries==='sv'   ?' sets-sf--active':''}" data-sf="sv">Scarlet &amp; Violet</button>
+        <button class="sets-sf${_setsPageSeries==='swsh' ?' sets-sf--active':''}" data-sf="swsh">Sword &amp; Shield</button>
+        <button class="sets-sf${_setsPageSeries==='older'?' sets-sf--active':''}" data-sf="older">Older</button>
+        <button class="sets-sf${_setsPageSeries==='all'  ?' sets-sf--active':''}" data-sf="all">All</button>
+      </div>
+    </div>
+    <div class="sets-grid">`;
+
+  for (const [setId, setMeta] of seriesFiltered) {
+    const hits    = _setsHitCache?.get(setId) || [];
+    const hasEtb  = !!_etbSets[setMeta.name];
+    const isOpen  = _setsExpandedId === setId;
+    const needed  = hasEtb ? hits.filter(c => !portfolioIds.has(c.i) && !binderIds.has(c.i)).length : 0;
+    const owned   = hasEtb ? hits.filter(c => portfolioIds.has(c.i)).length : 0;
+    const yr      = (setMeta.releaseDate || '').slice(0, 4);
+
+    html += `<div class="sets-card${hasEtb?' sets-card--etb':''}${isOpen?' sets-card--open':''}">
+      <div class="sets-card-header" data-sets-toggle="${esc(setId)}">
+        <div class="sets-logo-wrap">
+          <img class="sets-logo" src="https://images.pokemontcg.io/${esc(setId)}/logo.png"
+               alt="${esc(setMeta.name)}" loading="lazy"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <div class="sets-logo-fallback">${esc((setMeta.name||'?').slice(0,3))}</div>
+        </div>
+        <div class="sets-card-info">
+          <div class="sets-card-name">${esc(setMeta.name)}</div>
+          <div class="sets-card-meta">${yr} · ${setMeta.printedTotal || '?'} cards · ${hits.length} hits</div>
+          ${hasEtb && needed > 0 ? `<div class="sets-need-badge">${needed} still needed</div>` : ''}
+          ${hasEtb && hits.length > 0 && needed === 0 ? `<div class="sets-all-done">All hits tracked ✓</div>` : ''}
+        </div>
+        <button class="sets-etb-btn${hasEtb?' sets-etb-btn--on':''}" data-etb="${esc(setMeta.name)}"
+                title="${hasEtb?'Remove ETB mark':'I have an ETB for this set'}">
+          ${hasEtb ? '✓ ETB' : '+ ETB'}
+        </button>
+      </div>`;
+
+    if (isOpen) {
+      if (hits.length === 0) {
+        html += `<div class="sets-hit-list sets-hit-empty">No hit cards in database for this set.</div>`;
+      } else {
+        const sorted = [...hits].sort((a, b) => {
+          const stA = portfolioIds.has(a.i) ? 2 : binderIds.has(a.i) ? 1 : 0;
+          const stB = portfolioIds.has(b.i) ? 2 : binderIds.has(b.i) ? 1 : 0;
+          if (stA !== stB) return stA - stB;
+          return ((_SETS_HIT_PRIO[a.rc] ?? 9) - (_SETS_HIT_PRIO[b.rc] ?? 9));
+        });
+        html += `<div class="sets-hit-list">
+          <div class="sets-hit-hdr">
+            <span>${hits.length} hit cards · ${needed} needed · ${owned} owned</span>
+          </div>`;
+        for (const c of sorted) {
+          const inColl   = portfolioIds.has(c.i);
+          const inBinder = !inColl && binderIds.has(c.i);
+          const inWish   = !inColl && !inBinder && wishlistIds.has(c.i);
+          const dotCls   = inColl ? 'owned' : inBinder ? 'targeted' : 'needed';
+          const priceGbp = c.p ? fmtGBP(usdToGbp(c.p)) : '';
+          html += `<div class="sets-hit-row" data-card-id="${esc(c.i)}">
+            <span class="sets-hit-dot sets-hit-dot--${dotCls}"></span>
+            <span class="sets-hit-name">${esc(c.n)}</span>
+            <span class="sets-rc sets-rc--${(c.rc||'').toLowerCase()}">${esc(c.rc||'')}</span>
+            ${priceGbp ? `<span class="sets-hit-price">${esc(priceGbp)}</span>` : ''}
+            <div class="sets-hit-actions">
+              ${inColl ? `<span class="sets-hit-status">In collection</span>` :
+                inBinder ? `<span class="sets-hit-status">In binder</span>` :
+                inWish ? `<span class="sets-hit-status">On wishlist</span>` : ''}
+              <button class="sets-hit-act" data-sv="${esc(c.i)}" title="View card">↗</button>
+              ${!inColl && !inBinder ? `<button class="sets-hit-act sets-hit-act--binder" data-sb="${esc(c.i)}" title="Add to Hit Binder">+ Binder</button>` : ''}
+              ${!inColl && !inWish   ? `<button class="sets-hit-act sets-hit-act--wish"   data-sw="${esc(c.i)}" title="Add to Wishlist">♥</button>` : ''}
+            </div>
+          </div>`;
+        }
+        html += `</div>`;
+      }
+    }
+
+    html += `</div>`;
+  }
+
+  html += `</div></div>`;
+  el.innerHTML = html;
+
+  // Wire filter buttons
+  el.querySelectorAll('[data-sf]').forEach(btn => {
+    btn.addEventListener('click', () => { _setsPageSeries = btn.dataset.sf; _setsExpandedId = null; renderSetsPage(); });
+  });
+
+  // Wire set expand/collapse
+  el.querySelectorAll('[data-sets-toggle]').forEach(hdr => {
+    hdr.addEventListener('click', e => {
+      if (e.target.closest('[data-etb]')) return;
+      const id = hdr.dataset.setsToggle;
+      _setsExpandedId = _setsExpandedId === id ? null : id;
+      renderSetsPage();
+    });
+  });
+
+  // Wire ETB toggle
+  el.querySelectorAll('[data-etb]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const name = btn.dataset.etb;
+      if (_etbSets[name]) delete _etbSets[name];
+      else _etbSets[name] = true;
+      saveEtbSets(_etbSets);
+      renderSetsPage();
+    });
+  });
+
+  // Wire hit card actions
+  el.querySelectorAll('[data-sv]').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); selectCard(btn.dataset.sv); go('predict'); });
+  });
+
+  el.querySelectorAll('[data-sb]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const card = cardData?.cards.find(c => c.i === btn.dataset.sb);
+      if (!card) return;
+      if (!fullArtBinder.find(b => b.id === card.i)) {
+        fullArtBinder.push({ id: card.i, name: card.n, set: card.s, cn: card.cn, lang: card.lang || 'EN', added: Date.now() });
+        saveFullArtBinder();
+        updateFullArtBinderButton();
+      }
+      renderSetsPage();
+    });
+  });
+
+  el.querySelectorAll('[data-sw]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const card = cardData?.cards.find(c => c.i === btn.dataset.sw);
+      if (!card) return;
+      if (!wishlist.find(w => (w.id || w.i) === card.i)) {
+        wishlist.push({ id: card.i, i: card.i, n: card.n, name: card.n, set: card.s, cn: card.cn, lang: card.lang || 'EN', added: Date.now() });
+        saveWishlist();
+        updateWishlistButton();
+      }
+      renderSetsPage();
+    });
+  });
 }
 
 function _vgWire(el) {
