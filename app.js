@@ -23840,10 +23840,12 @@ function syncApplyPayload(payload, mode) {
         // If remote is newer, replace with remote. Fall back to union only when timestamps unknown.
         const localTs  = (_getSyncKeyTs())[k] || 0;
         const remoteTs = (payload.keyTs && payload.keyTs[k]) || 0;
-        if (localTs && remoteTs) {
+        if (localTs || remoteTs) {
+          // At least one side has a timestamp: 0 loses to any real timestamp,
+          // so local wins if it was written more recently, remote wins otherwise.
           merged = localTs >= remoteTs ? local : remote;
         } else {
-          // No timestamps available — fall back to union (legacy payloads)
+          // Neither side has ever stamped this key — fall back to union (legacy payloads)
           const byId = new Map();
           for (const item of local) {
             const id = (item && (item.id || item.i || item.url)) || JSON.stringify(item);
