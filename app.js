@@ -23783,10 +23783,10 @@ const SYNC_KEY_TS_KEY = 'pkm-sync-key-ts';
 function _getSyncKeyTs() {
   try { return JSON.parse(localStorage.getItem(SYNC_KEY_TS_KEY) || '{}'); } catch { return {}; }
 }
-function _setSyncKeyTs(k) {
+function _setSyncKeyTs(k, ts) {
   try {
     const all = _getSyncKeyTs();
-    all[k] = Date.now();
+    all[k] = (ts !== undefined) ? ts : Date.now();
     // Use the raw setter so this doesn't recurse through the SYNC_KEYS hook
     Object.getPrototypeOf(localStorage).setItem.call(localStorage, SYNC_KEY_TS_KEY, JSON.stringify(all));
   } catch {}
@@ -23844,6 +23844,9 @@ function syncApplyPayload(payload, mode) {
           // At least one side has a timestamp: 0 loses to any real timestamp,
           // so local wins if it was written more recently, remote wins otherwise.
           merged = localTs >= remoteTs ? local : remote;
+          // Propagate remote timestamp when remote wins so our next push carries
+          // the correct ordering and doesn't re-clobber with a 0 timestamp.
+          if (remoteTs > localTs) _setSyncKeyTs(k, remoteTs);
         } else {
           // Neither side has ever stamped this key — fall back to union (legacy payloads)
           const byId = new Map();
@@ -24134,11 +24137,11 @@ async function authSyncPull({ mode } = {}) {
 async function _syncOnHomeNav() {
   try {
     if (authIsActive()) {
-      await authSyncPush({ silent: true });
       await authSyncPull({ mode: 'merge' });
+      await authSyncPush({ silent: true });
     } else if (syncGetPairCode() && syncGetEndpoint()) {
-      await syncCloudPush({ silent: true });
       await syncCloudPull({ mode: 'merge' });
+      await syncCloudPush({ silent: true });
     }
   } catch {}
 }
@@ -24810,8 +24813,8 @@ function syncBindOnce() {
     await authDoLogin(u, p, true);
   });
   document.getElementById('authSyncNowBtn')?.addEventListener('click', async () => {
-    await authSyncPush({ silent: false });
     await authSyncPull({ mode: 'merge' });
+    await authSyncPush({ silent: false });
   });
   document.getElementById('authPushBtn')?.addEventListener('click', async () => {
     await authSyncPush({ silent: false });
