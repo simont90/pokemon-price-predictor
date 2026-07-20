@@ -25914,9 +25914,10 @@ function renderSetsPage() {
     .sort((a, b) => b[1].releaseDate.localeCompare(a[1].releaseDate));
 
   const seriesFiltered =
-    _setsPageSeries === 'sv'   ? allSets.filter(([id]) => id.startsWith('sv') && !id.startsWith('svp')) :
-    _setsPageSeries === 'swsh' ? allSets.filter(([id]) => id.startsWith('swsh')) :
-    _setsPageSeries === 'older'? allSets.filter(([id]) => !id.startsWith('sv') && !id.startsWith('swsh')) :
+    _setsPageSeries === 'sv'      ? allSets.filter(([id]) => id.startsWith('sv') && !id.startsWith('svp')) :
+    _setsPageSeries === 'swsh'    ? allSets.filter(([id]) => id.startsWith('swsh')) :
+    _setsPageSeries === 'megaevo' ? allSets.filter(([, s]) => s.series === 'Mega Evolution') :
+    _setsPageSeries === 'older'   ? allSets.filter(([id]) => !id.startsWith('sv') && !id.startsWith('swsh')) :
     allSets;
 
   const etbCount = Object.keys(_etbSets).filter(n => _etbSets[n]).length;
@@ -25929,10 +25930,11 @@ function renderSetsPage() {
       </div>
       <p class="sets-subtitle">Mark sets where you have an ETB — see which Ex / IR / SIR cards to pick up for your Hit Binder.</p>
       <div class="sets-series-row">
-        <button class="sets-sf${_setsPageSeries==='sv'   ?' sets-sf--active':''}" data-sf="sv">Scarlet &amp; Violet</button>
-        <button class="sets-sf${_setsPageSeries==='swsh' ?' sets-sf--active':''}" data-sf="swsh">Sword &amp; Shield</button>
-        <button class="sets-sf${_setsPageSeries==='older'?' sets-sf--active':''}" data-sf="older">Older</button>
-        <button class="sets-sf${_setsPageSeries==='all'  ?' sets-sf--active':''}" data-sf="all">All</button>
+        <button class="sets-sf${_setsPageSeries==='sv'      ?' sets-sf--active':''}" data-sf="sv">Scarlet &amp; Violet</button>
+        <button class="sets-sf${_setsPageSeries==='swsh'    ?' sets-sf--active':''}" data-sf="swsh">Sword &amp; Shield</button>
+        <button class="sets-sf${_setsPageSeries==='megaevo' ?' sets-sf--active':''}" data-sf="megaevo">Mega Evo</button>
+        <button class="sets-sf${_setsPageSeries==='older'   ?' sets-sf--active':''}" data-sf="older">Older</button>
+        <button class="sets-sf${_setsPageSeries==='all'     ?' sets-sf--active':''}" data-sf="all">All</button>
       </div>
     </div>
     <div class="sets-grid">`;
