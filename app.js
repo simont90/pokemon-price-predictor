@@ -25950,8 +25950,9 @@ function renderSetsPage() {
         <div class="sets-logo-wrap">
           <img class="sets-logo" src="https://images.pokemontcg.io/${esc(setId)}/logo.png"
                alt="${esc(setMeta.name)}" loading="lazy"
+               onload="if(this.naturalWidth<80){this.style.display='none';this.nextElementSibling.style.display='flex'}"
                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-          <div class="sets-logo-fallback">${esc((setMeta.name||'?').slice(0,3))}</div>
+          <div class="sets-logo-fallback">${esc((setMeta.name||'?').slice(0,14))}</div>
         </div>
         <div class="sets-card-info">
           <div class="sets-card-name">${esc(setMeta.name)}</div>
@@ -25988,7 +25989,7 @@ function renderSetsPage() {
           const thumbUrl = c.sc ? `https://images.pokemontcg.io/${esc(c.sc)}/${esc(c.cn||c.ns||'')}.png` : '';
           html += `<div class="sets-hit-row" data-card-id="${esc(c.i)}">
             ${thumbUrl
-              ? `<img class="sets-hit-thumb" src="${thumbUrl}" alt="${esc(c.n)}" loading="lazy" onerror="this.style.display='none'">`
+              ? `<img class="sets-hit-thumb" src="${thumbUrl}" alt="${esc(c.n)}" loading="lazy" onerror="this.outerHTML='<div class=\\'sets-hit-thumb sets-hit-thumb--ph\\'></div>'">`
               : `<div class="sets-hit-thumb sets-hit-thumb--ph"></div>`}
             <span class="sets-hit-dot sets-hit-dot--${dotCls}"></span>
             <div class="sets-hit-main">

@@ -17500,8 +17500,9 @@ h1, h2, h3 {
 .sets-logo-wrap { flex-shrink: 0; width: 72px; height: 36px; display: flex; align-items: center; justify-content: center; }
 .sets-logo { max-width: 72px; max-height: 36px; object-fit: contain; display: block; }
 .sets-logo-fallback { display: none; width: 72px; height: 36px; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.5px; text-align: center;
-  background: var(--surface); border-radius: 6px; }
+  font-size: 9px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.2px; text-align: center;
+  background: var(--surface); border-radius: 6px; padding: 2px 4px; line-height: 1.25;
+  word-break: break-word; }
 .sets-card-info { flex: 1; min-width: 0; }
 .sets-card-name { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sets-card-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
