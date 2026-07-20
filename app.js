@@ -25985,16 +25985,21 @@ function renderSetsPage() {
           const inWish   = !inColl && !inBinder && wishlistIds.has(c.i);
           const dotCls   = inColl ? 'owned' : inBinder ? 'targeted' : 'needed';
           const priceGbp = c.p ? fmtGBP(usdToGbp(c.p)) : '';
+          const thumbUrl = c.sc ? `https://images.pokemontcg.io/${esc(c.sc)}/${esc(c.cn||c.ns||'')}.png` : '';
           html += `<div class="sets-hit-row" data-card-id="${esc(c.i)}">
+            ${thumbUrl
+              ? `<img class="sets-hit-thumb" src="${thumbUrl}" alt="${esc(c.n)}" loading="lazy" onerror="this.style.display='none'">`
+              : `<div class="sets-hit-thumb sets-hit-thumb--ph"></div>`}
             <span class="sets-hit-dot sets-hit-dot--${dotCls}"></span>
-            <span class="sets-hit-name">${esc(c.n)}</span>
-            <span class="sets-rc sets-rc--${(c.rc||'').toLowerCase()}">${esc(c.rc||'')}</span>
+            <div class="sets-hit-main">
+              <span class="sets-hit-name">${esc(c.n)}</span>
+              <span class="sets-rc sets-rc--${(c.rc||'').toLowerCase()}">${esc(c.rc||'')}</span>
+            </div>
             ${priceGbp ? `<span class="sets-hit-price">${esc(priceGbp)}</span>` : ''}
             <div class="sets-hit-actions">
-              ${inColl ? `<span class="sets-hit-status">In collection</span>` :
-                inBinder ? `<span class="sets-hit-status">In binder</span>` :
-                inWish ? `<span class="sets-hit-status">On wishlist</span>` : ''}
               <button class="sets-hit-act" data-sv="${esc(c.i)}" title="View card">↗</button>
+              <button class="sets-hit-act${inColl?' sets-hit-act--coll-on':' sets-hit-act--coll'}" data-sc="${esc(c.i)}"
+                      title="${inColl?'Remove from My Collection':'Add to My Collection'}">${inColl?'✓ Coll':'+ Coll'}</button>
               ${!inColl && !inBinder ? `<button class="sets-hit-act sets-hit-act--binder" data-sb="${esc(c.i)}" title="Add to Hit Binder">+ Binder</button>` : ''}
               ${!inColl && !inWish   ? `<button class="sets-hit-act sets-hit-act--wish"   data-sw="${esc(c.i)}" title="Add to Wishlist">♥</button>` : ''}
             </div>
@@ -26040,6 +26045,30 @@ function renderSetsPage() {
   // Wire hit card actions
   el.querySelectorAll('[data-sv]').forEach(btn => {
     btn.addEventListener('click', e => { e.stopPropagation(); selectCard(btn.dataset.sv); go('predict'); });
+  });
+
+  el.querySelectorAll('[data-sc]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const card = cardData?.cards.find(c => c.i === btn.dataset.sc);
+      if (!card) return;
+      const idx = portfolio.findIndex(p => p.id === card.i);
+      if (idx >= 0) {
+        portfolio.splice(idx, 1);
+      } else {
+        portfolio.push({
+          id: card.i, name: card.n, set: card.s,
+          img: getCardImg(card),
+          price: getCurrentPrice(card),
+          addedDate: new Date().toISOString(),
+          addedPriceGBP: usdToGbp(getCurrentPrice(card)),
+          copies: 1,
+        });
+      }
+      savePortfolio();
+      updatePortfolioButton();
+      renderSetsPage();
+    });
   });
 
   el.querySelectorAll('[data-sb]').forEach(btn => {

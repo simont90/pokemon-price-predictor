@@ -17515,14 +17515,17 @@ h1, h2, h3 {
 .sets-hit-list { border-top: 1px solid var(--border); }
 .sets-hit-empty { padding: 12px 16px; font-size: 12px; color: var(--text-muted); }
 .sets-hit-hdr { padding: 8px 14px; font-size: 11px; color: var(--text-muted); background: rgba(0,0,0,0.1); font-weight: 500; }
-.sets-hit-row { display: flex; align-items: center; gap: 7px; padding: 7px 14px;
+.sets-hit-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 12px;
   border-top: 1px solid rgba(255,255,255,0.04); font-size: 13px; }
 .sets-hit-row:first-of-type { border-top: none; }
+.sets-hit-thumb { width: 36px; height: 50px; object-fit: contain; border-radius: 4px; flex-shrink: 0; display: block; }
+.sets-hit-thumb--ph { width: 36px; height: 50px; border-radius: 4px; background: var(--surface); flex-shrink: 0; }
 .sets-hit-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .sets-hit-dot--needed   { background: #f97316; }
 .sets-hit-dot--targeted { background: var(--accent); }
 .sets-hit-dot--owned    { background: #4ade80; }
-.sets-hit-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.sets-hit-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; }
+.sets-hit-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .sets-rc { flex-shrink: 0; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
   background: rgba(255,255,255,0.08); color: var(--text-muted); letter-spacing: 0.3px; }
 .sets-rc--sir  { background: rgba(232,182,52,0.18); color: #e8b634; }
@@ -17545,6 +17548,9 @@ h1, h2, h3 {
 .sets-hit-act--binder:hover { background: rgba(85,239,196,0.12); }
 .sets-hit-act--wish { border-color: #fd79a8; color: #fd79a8; }
 .sets-hit-act--wish:hover { background: rgba(253,121,168,0.12); }
+.sets-hit-act--coll { border-color: #74b9ff; color: #74b9ff; }
+.sets-hit-act--coll:hover { background: rgba(116,185,255,0.12); }
+.sets-hit-act--coll-on { border-color: #4ade80; color: #4ade80; background: rgba(74,222,128,0.1); }
 
 /* Light theme overrides */
 [data-theme="light"] .sets-card { background: #fff; border-color: #e5e7eb; }
