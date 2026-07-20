@@ -25950,7 +25950,7 @@ function renderSetsPage() {
         <div class="sets-logo-wrap">
           <img class="sets-logo" src="https://images.pokemontcg.io/${esc(setId)}/logo.png"
                alt="${esc(setMeta.name)}" loading="lazy"
-               onload="if(this.naturalWidth<80){this.style.display='none';this.nextElementSibling.style.display='flex'}"
+               onload="if(this.naturalWidth<=this.naturalHeight){this.style.display='none';this.nextElementSibling.style.display='flex'}"
                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
           <div class="sets-logo-fallback">${esc((setMeta.name||'?').slice(0,14))}</div>
         </div>
