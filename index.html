@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260720d">
+  <link rel="stylesheet" href="style.css?v=20260720e">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1768,6 +1768,7 @@
                 <option value="9">PSA 9 — Mint</option>
                 <option value="8">PSA 8 — NM-MT</option>
                 <option value="7">PSA 7 — Near Mint</option>
+                <option value="6">PSA 6 — EX-MT</option>
               </select>
             </div>
             <div class="acq-field acq-field-small">
@@ -3142,7 +3143,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260720d"></script>
+  <script src="app.js?v=20260720e"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
