@@ -190,6 +190,7 @@ let _currencyRates   = { GBP: 1, USD: 1.27, EUR: 1.17, JPY: 190, AUD: 2.01, CAD:
 const _CURRENCY_SYMS = { GBP: '£', USD: '$', EUR: '€', JPY: '¥', AUD: 'A$', CAD: 'C$' };
 let _lastLiveData    = null;
 let _marketPCVariant = 'unlimited'; // active variant in the PC panel: 'unlimited' | '1sted' | 'shadowless'
+let _livePriceVariant = null;       // 1st Ed / Shadowless price data when variant is active — fed into Hold Strategy
 let searchIndex = [];
 const $ = id => document.getElementById(id);
 
@@ -2888,7 +2889,9 @@ window.switchMarketPCVariant = async function(variant) {
   _updatePCVariantButtons(selectedCard);
 
   if (variant === 'unlimited') {
+    _livePriceVariant = null;
     if (_lastLiveData) _applyPCCells(_lastLiveData);
+    if (typeof renderHoldStrategy === 'function') try { renderHoldStrategy(selectedCard); } catch {}
     return;
   }
 
@@ -2924,6 +2927,9 @@ window.switchMarketPCVariant = async function(variant) {
   }
   const varLabel = variant === '1sted' ? '1st Edition' : 'Shadowless';
   _applyPCCells(merged, varLabel + ' · ' + (selectedCard.n || ''));
+  // Feed variant prices into Hold Strategy so PSA tiles reflect 1st Ed / Shadowless pricing
+  _livePriceVariant = merged;
+  if (typeof renderHoldStrategy === 'function') try { renderHoldStrategy(selectedCard); } catch {}
 };
 
 // Render live pricing panel
@@ -3350,6 +3356,7 @@ function selectCard(id) {
   selectedCard = card;
   _holdWinnerKey = null;  // reset until renderHoldStrategy runs for this card
   _holdWinnerDesc = '';
+  _livePriceVariant = null; // clear any active variant override on card change
   _mktGradeRows  = null;
   _marketPCVariant = 'unlimited'; // reset variant picker on card change
 
@@ -15327,7 +15334,9 @@ function renderHoldStrategy(card) {
   // ----- Strategies 3-6: Buy (or Keep) graded at each PSA tier -----
   // Always computed — PSA 1–10 tiles appear alongside ACE and raw.
   // Prefer live PriceCharting grade prices over ratio-based estimates when available.
-  const _rhsLp = (livePrice && selectedCard && card.i === selectedCard.i)
+  const _rhsLp = (_livePriceVariant && selectedCard && card.i === selectedCard.i)
+    ? _livePriceVariant
+    : (livePrice && selectedCard && card.i === selectedCard.i)
     ? livePrice
     : (getCachedPrice(card.i) || {});
   const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
@@ -15638,8 +15647,8 @@ function renderHoldStrategy(card) {
   // If bestLongTermPick is PSA N, hide PSA 1…N-1. Otherwise hide PSA 1–6 (show 7–10).
   const _ltpGradeNum = (bestLongTermPick && bestLongTermPick.key.startsWith('psa'))
     ? parseInt(bestLongTermPick.key.replace('psa', ''))
-    : 7;
-  const _hiddenGradeNums = new Set([1, 2, 3, 4, 5, 6].filter(g => g < _ltpGradeNum));
+    : 6;
+  const _hiddenGradeNums = new Set([1, 2, 3, 4, 5].filter(g => g < _ltpGradeNum));
 
   // ---- Stats header bar ----
   const _bestROI   = bestLongTermPick ? bestLongTermPick.roi : null;
@@ -17594,6 +17603,10 @@ const PSA10_FROM_RAW = {
 //   'none'      — could not determine an anchor
 function getPsa10Anchor(card) {
   if (!card) return { usd: 0, source: 'none' };
+  // Variant (1st Ed / Shadowless) price takes top priority when active
+  if (_livePriceVariant && selectedCard && card.i === selectedCard.i && _livePriceVariant.pcPsa10 > 0) {
+    return { usd: _livePriceVariant.pcPsa10, source: 'live-variant' };
+  }
   // Live PriceCharting PSA 10 takes priority for the currently-selected card
   if (typeof livePrice !== 'undefined' && livePrice
       && selectedCard && card.i === selectedCard.i
