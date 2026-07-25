@@ -2905,7 +2905,7 @@ window.switchMarketPCVariant = async function(variant) {
   try {
     if (variant === '1sted') {
       pd = _getCached1edPrice(selectedCard.i);
-      if (!pd || !_priceCacheIsValid(pd._ts)) pd = await _hvg1edFetchOne(selectedCard);
+      if (!pd || !_priceCacheIsValid(pd._ts) || pd.pcPsa6 === undefined) pd = await _hvg1edFetchOne(selectedCard);
     } else if (variant === 'shadowless') {
       pd = _getCachedShadowlessPrice(selectedCard.i);
       if (!pd || !_priceCacheIsValid(pd._ts)) pd = await _hvgShadowlessFetchOne(selectedCard);
@@ -21348,6 +21348,8 @@ async function _hvg1edFetchOne(card) {
       pcPsa9:  fg.pcPsa9  || 0,
       pcPsa8:  fg.pcPsa8  || 0,
       pcPsa7:  fg.pcPsa7  || 0,
+      pcPsa6:  fg.pcPsa6  || 0,
+      pcPsa5:  fg.pcPsa5  || 0,
       _ts: Date.now(),
     };
     _set1edPrice(card.i, data);
