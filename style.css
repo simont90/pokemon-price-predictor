@@ -5784,6 +5784,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 }
 .acq-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .acq-field-small { /* sits next to wider fields */ }
+.acq-field-full { grid-column: 1 / -1; }  /* spans all columns */
 .acq-field label {
   font-size: 11px; color: var(--text-muted);
   letter-spacing: 0.04em; text-transform: uppercase;
@@ -5797,6 +5798,18 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
 .acq-input:focus { outline: none; border-color: var(--green); background: var(--surface); }
 .acq-select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 .acq-help { font-size: 10.5px; color: var(--text-faint); margin-top: 2px; }
+.acq-var-label { font-size: 11px; color: var(--text-muted); letter-spacing: 0.04em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+.acq-var-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.acq-var-btn {
+  font-size: 12px; font-weight: 600; padding: 5px 12px;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-raised); color: var(--text-muted);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.acq-var-btn--on {
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(232,182,52,0.1);
+}
 
 .acq-save-btn {
   display: flex; align-items: center; gap: 7px;

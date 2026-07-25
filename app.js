@@ -16760,6 +16760,36 @@ function renderAcquisition() {
   setIfNotFocused('acqSlabDate', acq.slabDate);
   setIfNotFocused('acqSlabWhere', acq.slabWhere);
 
+  // ---- Slab version picker (Unlimited / 1st Ed / Shadowless) ----
+  const varRow = document.getElementById('acqSlabVariantRow');
+  if (varRow && acq.source === 'slab') {
+    const is1edEl = card && card.lang !== 'JP' && (typeof _SO_FIRST_ED_SETS !== 'undefined') && _SO_FIRST_ED_SETS.has(card.sc);
+    const isShadowEl = card && card.lang !== 'JP' && (typeof _HVG_SHADOWLESS_SETS !== 'undefined') && _HVG_SHADOWLESS_SETS.has(card.sc);
+    if (is1edEl || isShadowEl) {
+      const curVariant = acq.slabVariant || 'unlimited';
+      varRow.style.display = '';
+      varRow.innerHTML = `<label class="acq-var-label">Version</label><div class="acq-var-btns">` +
+        `<button class="acq-var-btn${curVariant==='unlimited'?' acq-var-btn--on':''}" data-acq-var="unlimited">Unlimited</button>` +
+        (isShadowEl ? `<button class="acq-var-btn${curVariant==='shadowless'?' acq-var-btn--on':''}" data-acq-var="shadowless">Shadowless</button>` : '') +
+        (is1edEl   ? `<button class="acq-var-btn${curVariant==='1sted'?' acq-var-btn--on':''}" data-acq-var="1sted">1st Edition</button>` : '') +
+        `</div>`;
+      varRow.querySelectorAll('[data-acq-var]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const v = btn.dataset.acqVar;
+          updateAcq({ slabVariant: v });
+          varRow.querySelectorAll('[data-acq-var]').forEach(b => b.classList.toggle('acq-var-btn--on', b === btn));
+          if (typeof switchMarketPCVariant === 'function') switchMarketPCVariant(v);
+        });
+      });
+      // Auto-apply the saved variant whenever this section renders
+      if (curVariant !== 'unlimited' && curVariant !== (_marketPCVariant || 'unlimited')) {
+        if (typeof switchMarketPCVariant === 'function') switchMarketPCVariant(curVariant);
+      }
+    } else {
+      varRow.style.display = 'none';
+    }
+  }
+
   // Compute ROI readout
   const costGBP = getAcqCostBasisGBP(card.i);
   if (!acq.source || !Number.isFinite(costGBP) || costGBP <= 0) {
@@ -17108,6 +17138,7 @@ function setupAcquisition() {
   wire('acqSlabPrice', 'slabPriceGBP', v => v === '' ? '' : parseFloat(v));
   wire('acqSlabDate', 'slabDate');
   wire('acqSlabWhere', 'slabWhere');
+  // slabVariant is wired via button clicks in renderAcquisition, not a form element
   // Slab grade/price changes affect the Hold Strategy tile labels & cost basis.
   ['acqSlabGrade', 'acqSlabPrice'].forEach(id => {
     const el = document.getElementById(id);
