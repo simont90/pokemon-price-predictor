@@ -15386,7 +15386,7 @@ function renderHoldStrategy(card) {
   const aceVariance_r = hasAceAnchor ? 0.45 : 0.20;
 
   const strategies = [
-    { label: ownedCard ? 'Keep Raw' : 'Buy Raw', key: 'raw',    desc: rawDesc,    today: rawEntryUSD, yr5: rawSell5USD,  profit: rawProfitUSD, roi: rawRoi,    risk: 'low',      variance: 0.20,       acqCost: usingAcqCost },
+    { label: (ownedCard && !slabAcq) ? 'Keep Raw' : 'Buy Raw', key: 'raw',    desc: rawDesc,    today: rawEntryUSD, yr5: rawSell5USD,  profit: rawProfitUSD, roi: rawRoi,    risk: slabAcq ? 'med' : 'low',      variance: 0.20,       acqCost: usingAcqCost },
     { label: gambleLabel,  key: 'gamble', desc: gambleDesc, today: gradeCost,  yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: gradingWaitMonths, waitDisplay: gradingWaitDisplay, lossProb, lossEV, acqCost: usingAcqCost },
     { label: aceLabel_r,   key: 'ace',    desc: aceDesc_r,  today: aceCost_r,  yr5: aceSell5EV_r, profit: aceProfit_r, roi: aceRoi_r, risk: aceRisk_r, variance: aceVariance_r, waitMonths: aceWaitMonths_r, waitDisplay: aceWaitDisplay_r, lossProb: 0, lossEV: 0, acqCost: usingAcqCost, aceMode: true },
     ...gradedStrategies.map(s => ({
@@ -15399,7 +15399,7 @@ function renderHoldStrategy(card) {
           : s.grade === 5  ? 'Played condition'
           : s.grade === 4  ? 'Heavily played'
           : 'Poor — completion only',
-      risk: s.grade === 10 ? 'low' : 'med',
+      risk: s.isOwnedSlab ? 'low' : s.grade === 10 ? 'low' : 'med',
       variance: s.grade === 10 ? 0.15 : s.grade === 9 ? 0.22 : s.grade === 8 ? 0.28 : s.grade === 7 ? 0.32 : s.grade === 6 ? 0.38 : s.grade === 5 ? 0.42 : s.grade === 4 ? 0.45 : s.grade === 3 ? 0.48 : s.grade === 2 ? 0.50 : 0.52,
     })),
   ];
@@ -15438,7 +15438,10 @@ function renderHoldStrategy(card) {
   strategies.forEach(s => {
     const upsideGBP = Math.max(0, gbpFromUSD(s.profit));
     const upsideBonus = Math.min(15, upsideGBP / 50); // up to +15 for big absolute profit
-    s.riskAdjusted = s.roi - (s.variance * 100 * 0.35) + upsideBonus;
+    // Owned-slab bonus: you already hold this card, so prefer it over a similar-ROI buy option.
+    // Eliminates the illogical "buy raw instead" badge when you own a slab with equal ROI.
+    const ownedBonus = s.isOwnedSlab ? 12 : 0;
+    s.riskAdjusted = s.roi - (s.variance * 100 * 0.35) + upsideBonus + ownedBonus;
   });
 
   // Cheap-entry normalisation: mirrors the same logic in computeHoldCore.
@@ -15498,7 +15501,9 @@ function renderHoldStrategy(card) {
     } else if (bestLongTermPick.key === 'ace') {
       _holdWinnerDesc = `Slab with ACE ${aceInfo_r.label} · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
     } else {
-      _holdWinnerDesc = `Buy ${bestLongTermPick.key.replace('psa', 'PSA ')} slab · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
+      const _wIsOwned = bestLongTermPick.isOwnedSlab;
+      const _wVerb = _wIsOwned ? 'Keep' : 'Buy';
+      _holdWinnerDesc = `${_wVerb} ${bestLongTermPick.key.replace('psa', 'PSA ')} slab · ${_wROI}% projected ROI · ${fmtGBPDirect(_wProfGBP)} profit over 5 yrs`;
     }
   } else {
     _holdWinnerDesc = '';
@@ -16666,7 +16671,7 @@ function getAcqSlabInfo(cardId) {
   if (!a || a.source !== 'slab') return null;
   const grade = parseInt(a.slabGrade, 10);
   const costGBP = parseFloat(a.slabPriceGBP);
-  if (![7, 8, 9, 10].includes(grade) || !Number.isFinite(costGBP) || costGBP <= 0) return null;
+  if (!grade || grade < 1 || grade > 10 || !Number.isFinite(costGBP) || costGBP <= 0) return null;
   return { grade, costGBP, date: a.slabDate || null, where: a.slabWhere || null };
 }
 
