@@ -3976,10 +3976,11 @@ async function _loadCardAiBrief(card) {
 const _holdFactsCache = new Map();
 
 const _HAF_SECTIONS = [
-  { key: 'BUY RAW',     cls: 'haf-lbl-raw',    path: 'M3 3v18h18M7 16l4-4 4 4 4-4' },
-  { key: 'GRADE IT',    cls: 'haf-lbl-grade',  path: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z' },
-  { key: 'BUY GRADED',  cls: 'haf-lbl-market', path: 'M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM12 12h.01' },
-  { key: 'BOTTOM LINE', cls: 'haf-lbl-risk',   path: 'M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
+  { key: 'BUY RAW',     cls: 'haf-lbl-raw',      path: 'M3 3v18h18M7 16l4-4 4 4 4-4' },
+  { key: 'GRADE IT',    cls: 'haf-lbl-grade',    path: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z' },
+  { key: 'BUY GRADED',  cls: 'haf-lbl-market',  path: 'M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM12 12h.01' },
+  { key: 'VARIANTS',    cls: 'haf-lbl-variants', path: 'M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4' },
+  { key: 'BOTTOM LINE', cls: 'haf-lbl-risk',     path: 'M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
 ];
 
 function _parseHoldFacts(text, data) {
@@ -4024,9 +4025,10 @@ function _parseHoldFacts(text, data) {
   }
   pills += '</div>';
 
-  // 3 signal cards in 2-col grid
+  // Signal cards: 3 always + optional VARIANTS
+  const signalSecs = _HAF_SECTIONS.filter(s => s.key !== 'BOTTOM LINE');
   let grid = '<div class="haf-signal-grid">';
-  for (const sec of _HAF_SECTIONS.slice(0, 3)) {
+  for (const sec of signalSecs) {
     const p = parsed[sec.key];
     if (!p) continue;
     const metric = metrics[sec.key];
@@ -4048,7 +4050,7 @@ function _parseHoldFacts(text, data) {
   const bl = parsed['BOTTOM LINE'];
   const insight = bl ? `<div class="haf-insight">
     <div class="haf-insight-head">
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="${_HAF_SECTIONS[3].path}"/></svg>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="${_HAF_SECTIONS[4].path}"/></svg>
       KEY INSIGHT
     </div>
     <p class="haf-insight-body">${_e(bl.desc)}</p>
@@ -4074,7 +4076,7 @@ async function _loadHoldStrategyFacts(card, data) {
 
   const _budgetGBP  = getMaxBudgetGBP();
   const _hasBudget  = _budgetGBP < BUDGET_DEFAULT;
-  const cacheKey = `${card.i}_${(data.rawGBP||0).toFixed(0)}_${(data.psaGBP||0).toFixed(0)}_${data.roiGrade||0}_${_hasBudget ? _budgetGBP : 0}`;
+  const cacheKey = `${card.i}_${(data.rawGBP||0).toFixed(0)}_${(data.psaGBP||0).toFixed(0)}_${data.roiGrade||0}_${_hasBudget ? _budgetGBP : 0}_${(data.ed1Psa10GBP||0).toFixed(0)}_${(data.slPsa10GBP||0).toFixed(0)}`;
   if (_holdFactsCache.has(cacheKey)) {
     body.innerHTML = _holdFactsCache.get(cacheKey);
     _wireHafShowMore(body);
@@ -4102,7 +4104,13 @@ async function _loadHoldStrategyFacts(card, data) {
   // How many raw submissions a collector must expect to make before hitting PSA 10 once.
   const copiesNeeded = (gemRatePct != null && gemRatePct > 0) ? Math.ceil(100 / gemRatePct) : null;
 
-  const systemPrompt = `You are a Pokémon TCG investment analyst writing for an advanced collector. Evaluate every strategy for this card using exactly 4 labelled sections:
+  const hasVariants = (data.ed1Psa10GBP > 0) || (data.slPsa10GBP > 0);
+  const variantSection = hasVariants ? `
+
+[VARIANTS]
+Compare the available printings — Unlimited${data.ed1Psa10GBP > 0 ? ', 1st Edition' : ''}${data.slPsa10GBP > 0 ? ', Shadowless' : ''}. For each printing with price data provided, state the PSA 10 entry price and 5yr ROI, then name the single best printing to target and why — consider premium vs liquidity and value retention. 2–3 sentences.` : '';
+
+  const systemPrompt = `You are a Pokémon TCG investment analyst writing for an advanced collector. Evaluate every strategy for this card using exactly ${hasVariants ? 5 : 4} labelled sections:
 
 [BUY RAW]
 Is buying and holding the raw (ungraded) card worth it? State YES, NO, or BORDERLINE and give the reason. If pack pull data is provided, compare the rip cost vs buying the single and state which is cheaper. 2–3 sentences.
@@ -4111,12 +4119,12 @@ Is buying and holding the raw (ungraded) card worth it? State YES, NO, or BORDER
 Is Buy Raw + Grade PSA worth it? Is Buy Raw + Grade ACE worth it? IMPORTANT: The 5yr ROI and profit shown for "Buy Raw + Grade PSA" are probability-weighted expected values across all grade outcomes — they are not guaranteed returns from a single submission. At a low gem rate (below 30%), most submissions will not hit PSA 10; factor in how many copies must be submitted on average to get one PSA 10 (provided in the data). If the gem rate is below 25% and grading fees consume the practical upside, say so clearly. State which grading path (if either) makes sense. 2–3 sentences.
 
 [BUY GRADED]
-Which pre-slabbed PSA grades make sense to buy? Evaluate PSA 7, 8, 9, and 10 — name each and state whether it is worth buying and why. If the collector has a budget constraint, flag any grade that exceeds it. 2–3 sentences.
+Which pre-slabbed PSA grades make sense to buy? Evaluate PSA 7, 8, 9, and 10 — name each and state whether it is worth buying and why. If the collector has a budget constraint, flag any grade that exceeds it. 2–3 sentences.${variantSection}
 
 [BOTTOM LINE]
-One clear recommendation: exactly what should this collector do. CRITICAL: this must be fully consistent with your evaluations in [BUY RAW], [GRADE IT], and [BUY GRADED] — if you said grading is poor value, do not recommend "Buy Raw + Grade" here. If a budget is stated and the ideal strategy exceeds it, say so and give the best in-budget alternative explicitly. Mention the 5yr price forecast range if provided. State the single biggest risk. 2–3 sentences.
+One clear recommendation: exactly what should this collector do. CRITICAL: this must be fully consistent with your evaluations in [BUY RAW], [GRADE IT], [BUY GRADED]${hasVariants ? ', and [VARIANTS]' : ''} — if you said grading is poor value, do not recommend "Buy Raw + Grade" here. If a budget is stated and the ideal strategy exceeds it, say so and give the best in-budget alternative explicitly.${hasVariants ? ' State which printing to target.' : ''} Mention the 5yr price forecast range if provided. State the single biggest risk. 2–3 sentences.
 
-Rules: use £ for all prices. Be direct and specific. No markdown, no bullet points, no filler phrases. All four sections must tell a coherent story — never contradict yourself between sections.`;
+Rules: use £ for all prices. Be direct and specific. No markdown, no bullet points, no filler phrases. All sections must tell a coherent story — never contradict yourself between sections.`;
 
   const lines = [
     `${card.n}${card.s ? ' · ' + card.s : ''}`,
@@ -4131,6 +4139,11 @@ Rules: use £ for all prices. Be direct and specific. No markdown, no bullet poi
     psa10GBP != null ? `Buy PSA 10: £${psa10GBP} entry (incl. UK shipping), 5yr ROI ${psa10Roi}%${_hasBudget && psa10GBP > _budgetGBP ? ' [OVER BUDGET]' : ''}` : null,
     winnerLabel ? `System recommendation: ${winnerLabel}` : null,
     (fc5yrConGBP != null && fc5yrExpGBP != null && fc5yrOptGBP != null) ? `5yr price forecast (raw): conservative £${fc5yrConGBP}, expected £${fc5yrExpGBP}, optimistic £${fc5yrOptGBP}` : null,
+    // Variant pricing (1st Edition / Shadowless) when cached
+    data.ed1Psa10GBP > 0 ? `1st Edition PSA 10: £${Math.round(data.ed1Psa10GBP)} entry, 5yr ROI ${data.ed1Psa10Roi ?? '?'}%${data.ed1Psa9GBP > 0 ? `; PSA 9: £${Math.round(data.ed1Psa9GBP)}, ROI ${data.ed1Psa9Roi ?? '?'}%` : ''}` : null,
+    data.ed1RawGBP  > 0 ? `1st Edition raw (estimated): £${Math.round(data.ed1RawGBP)}` : null,
+    data.slPsa10GBP > 0 ? `Shadowless PSA 10: £${Math.round(data.slPsa10GBP)} entry, 5yr ROI ${data.slPsa10Roi ?? '?'}%${data.slPsa9GBP > 0 ? `; PSA 9: £${Math.round(data.slPsa9GBP)}, ROI ${data.slPsa9Roi ?? '?'}%` : ''}` : null,
+    data.slRawGBP   > 0 ? `Shadowless raw (estimated): £${Math.round(data.slRawGBP)}`  : null,
   ].filter(Boolean).join('\n');
 
   try {
@@ -15917,6 +15930,43 @@ function renderHoldStrategy(card) {
     _fc5yrExpGBP = Math.round(_fc.scenarios.expected[4].priceUSD    * fx);
     _fc5yrOptGBP = Math.round(_fc.scenarios.optimistic[4].priceUSD  * fx);
   } catch {}
+  // Variant prices for AI analysis (1st Edition / Shadowless)
+  let _ed1Psa10GBP = 0, _ed1Psa10Roi = null, _ed1Psa9GBP = 0, _ed1Psa9Roi = null, _ed1RawGBP = 0;
+  let _slPsa10GBP  = 0, _slPsa10Roi  = null, _slPsa9GBP  = 0, _slPsa9Roi  = null, _slRawGBP  = 0;
+  if (card.lang !== 'JP') {
+    if (_SO_FIRST_ED_SETS.has(card.sc)) {
+      const _1ed = _getCached1edPrice(card.i);
+      if (_1ed && _1ed.pcPsa10 > 0) {
+        const p10 = _1ed.pcPsa10;
+        const yr5_10 = projectGradePrice(card, 10, p10, 5);
+        _ed1Psa10GBP  = Math.round(p10 * fx);
+        _ed1Psa10Roi  = Math.round((yr5_10 - p10) / p10 * 100);
+        _ed1RawGBP    = Math.round((p10 * 0.12) * fx); // rough raw ratio
+        if (_1ed.pcPsa9 > 0) {
+          const p9 = _1ed.pcPsa9;
+          const yr5_9 = projectGradePrice(card, 9, p9, 5);
+          _ed1Psa9GBP = Math.round(p9 * fx);
+          _ed1Psa9Roi = Math.round((yr5_9 - p9) / p9 * 100);
+        }
+      }
+    }
+    if (_HVG_SHADOWLESS_SETS.has(card.sc)) {
+      const _sl = _getCachedShadowlessPrice(card.i);
+      if (_sl && _sl.pcPsa10 > 0) {
+        const p10 = _sl.pcPsa10;
+        const yr5_10 = projectGradePrice(card, 10, p10, 5);
+        _slPsa10GBP  = Math.round(p10 * fx);
+        _slPsa10Roi  = Math.round((yr5_10 - p10) / p10 * 100);
+        _slRawGBP    = Math.round((p10 * 0.12) * fx);
+        if (_sl.pcPsa9 > 0) {
+          const p9 = _sl.pcPsa9;
+          const yr5_9 = projectGradePrice(card, 9, p9, 5);
+          _slPsa9GBP = Math.round(p9 * fx);
+          _slPsa9Roi = Math.round((yr5_9 - p9) / p9 * 100);
+        }
+      }
+    }
+  }
   setTimeout(() => {
     try {
       _loadHoldStrategyFacts(card, {
@@ -15952,6 +16002,16 @@ function renderHoldStrategy(card) {
         fc5yrConGBP:    _fc5yrConGBP,
         fc5yrExpGBP:    _fc5yrExpGBP,
         fc5yrOptGBP:    _fc5yrOptGBP,
+        ed1Psa10GBP:    _ed1Psa10GBP || null,
+        ed1Psa10Roi:    _ed1Psa10Roi,
+        ed1Psa9GBP:     _ed1Psa9GBP  || null,
+        ed1Psa9Roi:     _ed1Psa9Roi,
+        ed1RawGBP:      _ed1RawGBP   || null,
+        slPsa10GBP:     _slPsa10GBP  || null,
+        slPsa10Roi:     _slPsa10Roi,
+        slPsa9GBP:      _slPsa9GBP   || null,
+        slPsa9Roi:      _slPsa9Roi,
+        slRawGBP:       _slRawGBP    || null,
       });
     } catch {}
   }, 300);
