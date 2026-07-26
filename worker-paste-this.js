@@ -851,6 +851,8 @@ async function handle(request, env, ctx) {
   if (url.pathname === '/tcg-price') return handleTcgPrice(request, url);
   if (url.pathname === '/price-warm') return handlePriceWarm(request, env, url);
   if (url.pathname === '/prices') return handlePricesBatch(request, env, url);
+  if (url.pathname === '/pop')   return handlePopQuery(request, env, url);
+  if (url.pathname === '/sales') return handleSalesQuery(request, env, url);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 
   const q = url.searchParams.get('q') || '';
@@ -2181,6 +2183,111 @@ async function refreshMarketIntel(env) {
     { expirationTtl: 365 * 24 * 3600 });
 }
 
+// ---- Population & sales data KV helpers ----
+// KV keys: pop:<cardId>  /  sales:<cardId>
+const POP_KV_TTL   = 7 * 24 * 3600;  // 7 days — PSA pop changes slowly
+const SALES_KV_TTL = 24 * 3600;      // 24 hours — sales comps refresh daily
+
+async function _kvGetPop(env, cardId) {
+  if (!env.SYNC_KV) return null;
+  try {
+    const raw = await env.SYNC_KV.get(`pop:${cardId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+async function _kvPutPop(env, cardId, data) {
+  if (!env.SYNC_KV) return;
+  await env.SYNC_KV.put(`pop:${cardId}`, JSON.stringify(data), { expirationTtl: POP_KV_TTL });
+}
+
+async function _kvGetSales(env, cardId) {
+  if (!env.SYNC_KV) return null;
+  try {
+    const raw = await env.SYNC_KV.get(`sales:${cardId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+async function _kvPutSales(env, cardId, data) {
+  if (!env.SYNC_KV) return;
+  await env.SYNC_KV.put(`sales:${cardId}`, JSON.stringify(data), { expirationTtl: SALES_KV_TTL });
+}
+
+// Pikawiz population fetcher stub.
+// Pikawiz pages list grade totals per card.  The live fetch logic should be
+// completed once the URL structure is confirmed; for now the stub returns null
+// so the client degrades gracefully to confidence-badge-free display.
+async function _fetchPikawizPop(cardId) {
+  // TODO: implement when Pikawiz URL structure is confirmed
+  // Typical pattern: https://pikawiz.com/cards/pop-report/<set-slug>
+  return null;
+}
+
+// Card Ladder sales data fetcher stub.
+// Returns {sales:{1..10:{avg,low,high,count,change90}}} or null.
+async function _fetchCardLadderSales(cardId) {
+  // TODO: implement when Card Ladder per-card page structure is confirmed
+  return null;
+}
+
+// GET  /pop?cardId=   — returns cached pop data or fetches fresh and caches it
+// PUT  /pop?cardId=   — stores caller-supplied pop data (body: JSON {pop:{...}})
+async function handlePopQuery(request, env, url) {
+  const ch = corsHeaders(request);
+  const cardId = url.searchParams.get('cardId');
+  if (!cardId) return new Response(JSON.stringify({ error: 'cardId required' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } });
+
+  if (request.method === 'PUT') {
+    try {
+      const body = await request.json();
+      if (!body || !body.pop) return new Response(JSON.stringify({ error: 'body must contain pop' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } });
+      await _kvPutPop(env, cardId, { pop: body.pop, ts: Date.now() });
+      return new Response(JSON.stringify({ ok: true }), { headers: { ...ch, 'Content-Type': 'application/json' } });
+    } catch { return new Response(JSON.stringify({ error: 'invalid JSON' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } }); }
+  }
+
+  // GET — serve from KV cache, refresh in background if stale
+  let cached = await _kvGetPop(env, cardId);
+  if (!cached) {
+    const live = await _fetchPikawizPop(cardId);
+    if (live) {
+      cached = { pop: live, ts: Date.now() };
+      await _kvPutPop(env, cardId, cached);
+    }
+  }
+  if (!cached) return new Response(JSON.stringify({ pop: null, ts: 0 }), { headers: { ...ch, 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(cached), { headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' } });
+}
+
+// GET  /sales?cardId=  — returns cached sales data or fetches fresh and caches it
+// PUT  /sales?cardId=  — stores caller-supplied sales data
+async function handleSalesQuery(request, env, url) {
+  const ch = corsHeaders(request);
+  const cardId = url.searchParams.get('cardId');
+  if (!cardId) return new Response(JSON.stringify({ error: 'cardId required' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } });
+
+  if (request.method === 'PUT') {
+    try {
+      const body = await request.json();
+      if (!body || !body.sales) return new Response(JSON.stringify({ error: 'body must contain sales' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } });
+      await _kvPutSales(env, cardId, { sales: body.sales, ts: Date.now() });
+      return new Response(JSON.stringify({ ok: true }), { headers: { ...ch, 'Content-Type': 'application/json' } });
+    } catch { return new Response(JSON.stringify({ error: 'invalid JSON' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } }); }
+  }
+
+  let cached = await _kvGetSales(env, cardId);
+  if (!cached) {
+    const live = await _fetchCardLadderSales(cardId);
+    if (live) {
+      cached = { sales: live, ts: Date.now() };
+      await _kvPutSales(env, cardId, cached);
+    }
+  }
+  if (!cached) return new Response(JSON.stringify({ sales: null, ts: 0 }), { headers: { ...ch, 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(cached), { headers: { ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=1800' } });
+}
+
 async function handleCronRefresh(env) {
   if (!env.SYNC_KV) return;
   let listed;
@@ -2231,6 +2338,30 @@ async function handleCronRefresh(env) {
   try { await refreshMarketIntel(env); } catch {}
   // Refresh stale D1 entries so the next day's prices are ready at 6AM
   if (env.PRICES_DB) try { await _d1CronRefreshStale(env.PRICES_DB); } catch {}
+  // Refresh population data for unique cards across all synced collections
+  // Pikawiz fetcher is a stub — runs silently until implemented
+  try {
+    const allCardIds = new Set();
+    for (const { name: kvKey } of (listed?.keys || [])) {
+      const pairCode = kvKey.slice('sync:'.length);
+      if (!PAIR_CODE_REGEX.test(pairCode)) continue;
+      const raw = await env.SYNC_KV.get(kvKey).catch(() => null);
+      if (!raw) continue;
+      let snap; try { snap = JSON.parse(raw); } catch { continue; }
+      for (const key of ['pkm-portfolio', 'pkm-wishlist', 'pkm-watchlist-v1']) {
+        for (const card of _warmSnapKey(snap, key)) {
+          const id = card.i || card.id || card.cardId;
+          if (id) allCardIds.add(id);
+        }
+      }
+    }
+    for (const cardId of allCardIds) {
+      const existing = await _kvGetPop(env, cardId).catch(() => null);
+      if (existing && (Date.now() - existing.ts) < POP_KV_TTL * 1000 * 0.8) continue; // not stale yet
+      const fresh = await _fetchPikawizPop(cardId).catch(() => null);
+      if (fresh) await _kvPutPop(env, cardId, { pop: fresh, ts: Date.now() }).catch(() => {});
+    }
+  } catch {}
 }
 
 // Refresh the oldest stale entries in D1, capped to keep within Worker time limits.

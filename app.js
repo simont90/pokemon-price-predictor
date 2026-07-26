@@ -189,6 +189,8 @@ let _displayCurrency = localStorage.getItem(DISP_CURRENCY_KEY) || 'GBP';
 let _currencyRates   = { GBP: 1, USD: 1.27, EUR: 1.17, JPY: 190, AUD: 2.01, CAD: 1.74 };
 const _CURRENCY_SYMS = { GBP: '£', USD: '$', EUR: '€', JPY: '¥', AUD: 'A$', CAD: 'C$' };
 let _lastLiveData    = null;
+const _popDataCache   = new Map(); // cardId → {pop:{1..10:count}, sales:{1..10:{avg,low,high,count,change90}}, ts}
+const _salesDataCache = new Map(); // cardId → same shape; separate so pop/sales can refresh independently
 let _marketPCVariant = 'unlimited'; // active variant in the PC panel: 'unlimited' | '1sted' | 'shadowless'
 let _livePriceVariant = null;       // 1st Ed / Shadowless price data when variant is active — fed into Hold Strategy
 let searchIndex = [];
@@ -11580,6 +11582,76 @@ const GRADE_GROWTH_PREMIUM = {
   1:  0.60,
 };
 
+// --- Population liquidity thresholds ---
+const POP_THICK   = 500;  // pop ≥ this OR sales ≥ SALES_THICK → thick (trust the average)
+const POP_THIN    = 250;  // pop < this AND sales < SALES_THIN  → thin (wide uncertainty)
+const SALES_THICK = 15;   // sales/90d ≥ this → thick
+const SALES_THIN  =  5;   // sales/90d < this → thin
+// Growth-rate discount applied per liquidity tier (thin grades appreciate slower —
+// dilution risk and sparse comps mean price discovery is noisy).
+const POP_LIQ_DISC = { thick: 1.0, medium: 0.88, thin: 0.72 };
+
+// 'thick' | 'medium' | 'thin' confidence label for a single grade
+function _liquidityLabel(pop, sales90d) {
+  const p = pop      ?? 0;
+  const s = sales90d ?? 0;
+  if (p >= POP_THICK || s >= SALES_THICK) return 'thick';
+  if (p <  POP_THIN  && s <  SALES_THIN)  return 'thin';
+  return 'medium';
+}
+
+// Probability a submission lands at minGrade or higher, given the full pop curve
+function _gradeSuccessProb(popCurve, minGrade) {
+  if (!popCurve) return null;
+  const total = Object.values(popCurve).reduce((a, b) => a + b, 0);
+  if (!total) return null;
+  const above = Object.entries(popCurve)
+    .filter(([g]) => parseInt(g, 10) >= minGrade)
+    .reduce((a, [, n]) => a + n, 0);
+  return above / total;
+}
+
+// Returns a Set of grades that are the UPPER side of a price wall (>50% step from grade below).
+// gradePrices: {grade: priceUSD}
+function _detectWalls(gradePrices) {
+  const walls = new Set();
+  for (let g = 1; g < 10; g++) {
+    const lo = gradePrices[g], hi = gradePrices[g + 1];
+    if (!lo || !hi || lo <= 0) continue;
+    if ((hi - lo) / lo > 0.50) walls.add(g + 1);
+  }
+  return walls;
+}
+
+// In-flight guard so we don't fire duplicate pop/sales fetches for the same card
+const _popFetchInFlight = new Set();
+
+async function _fetchPopData(cardId) {
+  if (!cardId) return null;
+  if (_popDataCache.has(cardId)) return _popDataCache.get(cardId);
+  const base = typeof getMktWorkerUrl === 'function' ? getMktWorkerUrl() : 'https://pokemon-marketplace.simontariq.workers.dev';
+  try {
+    const res = await fetch(`${base}/pop?cardId=${encodeURIComponent(cardId)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && data.pop) { _popDataCache.set(cardId, data); return data; }
+    return null;
+  } catch { return null; }
+}
+
+async function _fetchSalesData(cardId) {
+  if (!cardId) return null;
+  if (_salesDataCache.has(cardId)) return _salesDataCache.get(cardId);
+  const base = typeof getMktWorkerUrl === 'function' ? getMktWorkerUrl() : 'https://pokemon-marketplace.simontariq.workers.dev';
+  try {
+    const res = await fetch(`${base}/sales?cardId=${encodeURIComponent(cardId)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && data.sales) { _salesDataCache.set(cardId, data); return data; }
+    return null;
+  } catch { return null; }
+}
+
 // Returns an adjusted PSA 9/8 ratio based on gem rate.
 // Low gem rate = scarce PSA 10s = wider premium gap vs lower grades.
 // High gem rate = many PSA 10s = grades 8/9 relatively closer.
@@ -11602,7 +11674,9 @@ function estimateGradePrice(card, grade, psa10Price) {
 
 // Project a grade's price forward `years`, using the same base rate the
 // 5yr forecast uses, scaled by the grade-growth premium.
-function projectGradePrice(card, grade, currentGradePrice, years) {
+// Optional 5th arg `popData` ({pop:{g:count}, sales:{g:{count}}}) applies a
+// liquidity discount to thin-data grades (reduces modelled growth rate).
+function projectGradePrice(card, grade, currentGradePrice, years, popData) {
   if (!currentGradePrice) return 0;
   const rarityRate = (RARITY_RATES[card.rc] || RARITY_RATES['']).base;
   const charMult = getCharacterMultiplier(card.n);
@@ -11612,7 +11686,14 @@ function projectGradePrice(card, grade, currentGradePrice, years) {
   const momentum = getMarketMomentum();
   // Momentum fade: full impact yr1, half yr2, neutral yr3+
   const momFade = years === 1 ? momentum.mult : years === 2 ? (1 + (momentum.mult - 1) * 0.5) : 1.0;
-  const adjRate = annualRate * momFade;
+  // Liquidity discount: thin-data grades grow slower (dilution risk, noisy comps)
+  let liqDisc = 1.0;
+  if (popData) {
+    const gradePop   = popData.pop?.[grade]          ?? null;
+    const gradeSales = popData.sales?.[grade]?.count ?? null;
+    liqDisc = POP_LIQ_DISC[_liquidityLabel(gradePop, gradeSales)] ?? 1.0;
+  }
+  const adjRate = annualRate * momFade * liqDisc;
   return currentGradePrice * Math.pow(1 + adjRate, years);
 }
 
@@ -11693,17 +11774,23 @@ function renderPsaGradeRange(card, pullCost, desirability) {
   const rawPriceUSD = getCurrentPrice(card);
   const grades = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
+  // Use cached pop/sales data if available — applied to projectGradePrice for liquidity discounts
+  const _psaCachedPop = card.i ? (_popDataCache.get(card.i) || null) : null;
+
   // Compute all years 0-5 for each grade
   _psaChartRows = grades.map(g => {
     const todayUSD = estimateGradePrice(card, g, psa10Price);
-    const prices = [0,1,2,3,4,5].map(yr => yr === 0 ? todayUSD : projectGradePrice(card, g, todayUSD, yr));
+    const prices = [0,1,2,3,4,5].map(yr => yr === 0 ? todayUSD : projectGradePrice(card, g, todayUSD, yr, _psaCachedPop));
     const roi5 = todayUSD > 0 ? ((prices[5] - todayUSD) / todayUSD) * 100 : 0;
     let verdict;
     if (roi5 >= 50) verdict = 'Strong pick';
     else if (roi5 >= 25) verdict = 'Worth a look';
     else if (roi5 >= 10) verdict = 'Fair';
     else verdict = 'Skip';
-    return { g, prices, roi5, verdict };
+    const gradePop   = _psaCachedPop?.pop?.[g]          ?? null;
+    const gradeSales = _psaCachedPop?.sales?.[g]?.count ?? null;
+    const liq = _psaCachedPop ? _liquidityLabel(gradePop, gradeSales) : null;
+    return { g, prices, roi5, verdict, liq };
   });
 
   const bestRow = _psaChartRows.reduce((b, r) => r.roi5 > b.roi5 ? r : b);
@@ -11714,9 +11801,12 @@ function renderPsaGradeRange(card, pullCost, desirability) {
     togglesEl.innerHTML = grades.map(g => {
       const active = _psaActiveGrades.has(g);
       const isBest = g === bestRow.g;
+      const row    = _psaChartRows.find(r => r.g === g);
+      const liqTag = row.liq ? ` <span class="liq-badge liq-${row.liq}">${row.liq[0].toUpperCase()}</span>` : '';
+      const title  = `${isBest ? 'Best 5yr ROI · ' : ''}${row.verdict}${row.liq ? ` · ${row.liq} data` : ''}`;
       return `<button class="psa-grade-btn${active ? ' is-active' : ''}" data-grade="${g}"
-        style="--gc:${PSA_COLORS[g]}" title="${isBest ? 'Best 5yr ROI · ' : ''}${_psaChartRows.find(r=>r.g===g).verdict}">
-        PSA ${g}${isBest ? ' ★' : ''}
+        style="--gc:${PSA_COLORS[g]}" title="${title}">
+        PSA ${g}${isBest ? ' ★' : ''}${liqTag}
       </button>`;
     }).join('');
     togglesEl.querySelectorAll('.psa-grade-btn').forEach(btn => {
@@ -11738,10 +11828,20 @@ function renderPsaGradeRange(card, pullCost, desirability) {
   const rateLabel = (RARITY_RATES[card.rc] || RARITY_RATES['']).label;
   const annualPctAt10 = (((_psaChartRows[0].prices[1] / _psaChartRows[0].prices[0]) - 1) * 100).toFixed(1);
   const rawPart = (rawPriceUSD && rawPriceUSD > 0) ? ` · raw ≈ ${fmtGBP(rawPriceUSD)}` : '';
+  // Wall detection: find grade steps >50%
+  const _gradePricesForWalls = {};
+  _psaChartRows.forEach(r => { _gradePricesForWalls[r.g] = r.prices[0]; });
+  const _psaWalls = _detectWalls(_gradePricesForWalls);
+  const wallDesc = _psaWalls.size > 0
+    ? ` · Price wall at PSA ${[..._psaWalls].sort((a, b) => b - a).join('/')}`
+    : '';
+  const confNote = _psaCachedPop
+    ? ` · <span class="liq-badge liq-thick">T</span> thick <span class="liq-badge liq-medium">M</span> medium <span class="liq-badge liq-thin">Tn</span> thin = data confidence`
+    : ' · <span class="liq-footnote-hint">Fetching population data…</span>';
   $('psaRangeFootnote').innerHTML = `
     Anchored on PSA 10 = ${fmtGBP(psa10Price)}${rawPart} · ${rateLabel} · ${annualPctAt10}% annual growth at PSA 10.
     Model suggests <strong>PSA ${bestRow.g}</strong> offers the strongest 5yr ROI (${bestRow.roi5 >= 0 ? '+' : ''}${bestRow.roi5.toFixed(0)}%).
-    Toggle grades above to compare. Ratios are typical-modern; individual cards can deviate ±30%.
+    Toggle grades above to compare. Ratios are typical-modern; individual cards can deviate ±30%.${wallDesc}${confNote}
   `;
 
   // Draw immediately if visible, otherwise wait for section expand or column resize
@@ -11761,6 +11861,17 @@ function renderPsaGradeRange(card, pullCost, desirability) {
       ro.observe(canvas);
     }
   });
+
+  // Background fetch pop+sales data if not already cached — re-renders once data arrives
+  if (card.i && !_psaCachedPop && !_popFetchInFlight.has(card.i)) {
+    _popFetchInFlight.add(card.i);
+    Promise.all([_fetchPopData(card.i), _fetchSalesData(card.i)]).finally(() => {
+      _popFetchInFlight.delete(card.i);
+      if (_popDataCache.has(card.i) && selectedCard && selectedCard.i === card.i) {
+        renderPsaGradeRange(card, pullCost, desirability);
+      }
+    });
+  }
 }
 
 function drawPsaChart(hoverYr) {
@@ -15784,6 +15895,9 @@ function renderHoldStrategy(card) {
   const _roiArrow  = roi => roi >= 5 ? '↗' : roi >= -5 ? '→' : '↘';
   const _roiArrCls = roi => roi >= 5 ? 'hold-pos' : roi >= -5 ? 'hold-flat' : 'hold-neg';
 
+  // Pop/sales data cached from previous fetch for this card (used for confidence badges)
+  const _holdCachedPop = card.i ? (_popDataCache.get(card.i) || null) : null;
+
   const rows = strategies.filter(s => !s.na).map(s => {
     const todayGBP_tile = s.today * fx;
     const isOverBudget  = _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
@@ -15799,6 +15913,23 @@ function renderHoldStrategy(card) {
     const waitStr  = s.waitMonths ? ` · ~${s.waitDisplay || Math.round(s.waitMonths) + ' mo'}` : '';
     const lossStr  = (s.lossProb > 0) ? `<span class="hold-row-loss">${(s.lossProb*100).toFixed(0)}% loss case</span>` : '';
 
+    // Liquidity badge for PSA grade rows (shown when pop data is cached)
+    let liqBadge = '';
+    if (gradeNum && _holdCachedPop) {
+      const gradePop   = _holdCachedPop.pop?.[gradeNum]          ?? null;
+      const gradeSales = _holdCachedPop.sales?.[gradeNum]?.count ?? null;
+      const liq = _liquidityLabel(gradePop, gradeSales);
+      liqBadge = `<span class="liq-badge liq-${liq}" title="${liq} data confidence (pop: ${gradePop ?? '–'}, sales/90d: ${gradeSales ?? '–'})">${liq === 'thick' ? 'T' : liq === 'medium' ? 'M' : 'Tn'}</span>`;
+    }
+    // Grade-it-yourself: show P(PSA 8+) from population distribution
+    let gradeProbStr = '';
+    if (s.key === 'gamble' && _holdCachedPop) {
+      const prob = _gradeSuccessProb(_holdCachedPop.pop, 8);
+      if (prob != null) {
+        gradeProbStr = `<span class="hold-row-grad-prob">PSA 8+ prob: ${(prob * 100).toFixed(0)}%</span>`;
+      }
+    }
+
     return `<div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${s.overridden ? 'hold-tile-overridden' : ''} ${isCollapsed ? 'hold-tile-collapsed' : ''}"${isCollapsed ? ' style="display:none"' : ''}>
       ${isOverBudget ? '<div class="hold-over-budget-tag">Above budget</div>' : (isWinner ? '<div class="hold-winner-tag">★ Best pick</div>' : '')}
       ${s.overridden ? `<div class="hold-tile-override-tag" title="Price override">${s.marketOverrideGBP != null ? 'Mkt' : 'Override'} £${(+s.overrideGBP).toFixed(2)}</div>` : ''}
@@ -15807,7 +15938,7 @@ function renderHoldStrategy(card) {
           <span class="hold-row-label">${s.label}</span>
           <span class="hold-row-cost">${entryCtx}${waitStr}</span>
           <span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>
-          ${lossStr}
+          ${liqBadge}${gradeProbStr}${lossStr}
         </div>
         <div class="hold-row-right">
           <div class="hold-row-roi ${_roiArrCls(s.roi)}">${_roiArrow(s.roi)} ${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</div>
@@ -16077,6 +16208,17 @@ function renderHoldStrategy(card) {
       });
     } catch {}
   }, 300);
+
+  // Background fetch pop+sales if not yet cached — re-renders badges once data arrives
+  if (card.i && !_holdCachedPop && !_popFetchInFlight.has(card.i)) {
+    _popFetchInFlight.add(card.i);
+    Promise.all([_fetchPopData(card.i), _fetchSalesData(card.i)]).finally(() => {
+      _popFetchInFlight.delete(card.i);
+      if (_popDataCache.has(card.i) && selectedCard && selectedCard.i === card.i) {
+        renderHoldStrategy(card);
+      }
+    });
+  }
 }
 
 // =============================================================
