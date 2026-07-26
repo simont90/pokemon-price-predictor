@@ -11802,11 +11802,12 @@ function renderPsaGradeRange(card, pullCost, desirability) {
       const active = _psaActiveGrades.has(g);
       const isBest = g === bestRow.g;
       const row    = _psaChartRows.find(r => r.g === g);
+      const annualPct = row.prices[0] > 0 ? ((row.prices[1] / row.prices[0]) - 1) * 100 : 0;
       const liqTag = row.liq ? ` <span class="liq-badge liq-${row.liq}">${row.liq[0].toUpperCase()}</span>` : '';
-      const title  = `${isBest ? 'Best 5yr ROI · ' : ''}${row.verdict}${row.liq ? ` · ${row.liq} data` : ''}`;
+      const title  = `${isBest ? 'Best 5yr ROI · ' : ''}${row.verdict} · ${annualPct.toFixed(1)}%/yr · ${row.roi5.toFixed(0)}% 5yr ROI${row.liq ? ` · ${row.liq} data` : ''}`;
       return `<button class="psa-grade-btn${active ? ' is-active' : ''}" data-grade="${g}"
         style="--gc:${PSA_COLORS[g]}" title="${title}">
-        PSA ${g}${isBest ? ' ★' : ''}${liqTag}
+        PSA ${g}${isBest ? ' ★' : ''} <span class="psa-grade-rate">${annualPct.toFixed(1)}%</span>${liqTag}
       </button>`;
     }).join('');
     togglesEl.querySelectorAll('.psa-grade-btn').forEach(btn => {
@@ -11824,24 +11825,37 @@ function renderPsaGradeRange(card, pullCost, desirability) {
     });
   }
 
-  // Footnote
+  // Footnote — per-grade annual rates and wall detection
   const rateLabel = (RARITY_RATES[card.rc] || RARITY_RATES['']).label;
-  const annualPctAt10 = (((_psaChartRows[0].prices[1] / _psaChartRows[0].prices[0]) - 1) * 100).toFixed(1);
   const rawPart = (rawPriceUSD && rawPriceUSD > 0) ? ` · raw ≈ ${fmtGBP(rawPriceUSD)}` : '';
+
   // Wall detection: find grade steps >50%
   const _gradePricesForWalls = {};
   _psaChartRows.forEach(r => { _gradePricesForWalls[r.g] = r.prices[0]; });
   const _psaWalls = _detectWalls(_gradePricesForWalls);
-  const wallDesc = _psaWalls.size > 0
-    ? ` · Price wall at PSA ${[..._psaWalls].sort((a, b) => b - a).join('/')}`
+
+  // Per-grade annual rate table (grades 10 down to 6)
+  const _rateRows = [10, 9, 8, 7, 6].map(g => {
+    const r = _psaChartRows.find(row => row.g === g);
+    if (!r || !r.prices[0]) return null;
+    const pct = ((r.prices[1] / r.prices[0]) - 1) * 100;
+    const isWall = _psaWalls.has(g);
+    const liqTag = r.liq ? `<span class="liq-badge liq-${r.liq}" style="font-size:8px;padding:1px 4px">${r.liq[0].toUpperCase()}</span>` : '';
+    const wallTag = isWall ? ' ⚑' : '';
+    return `<span class="psa-rate-item" title="PSA ${g}: ${pct.toFixed(1)}%/yr annual · ${r.roi5.toFixed(0)}% 5yr ROI${isWall ? ' · price wall above' : ''}">PSA ${g}: ${pct.toFixed(1)}%${wallTag}${liqTag}</span>`;
+  }).filter(Boolean).join(' · ');
+
+  const wallNote = _psaWalls.size > 0
+    ? ` · ⚑ wall = >50% price step to next grade`
     : '';
   const confNote = _psaCachedPop
-    ? ` · <span class="liq-badge liq-thick">T</span> thick <span class="liq-badge liq-medium">M</span> medium <span class="liq-badge liq-thin">Tn</span> thin = data confidence`
-    : ' · <span class="liq-footnote-hint">Fetching population data…</span>';
+    ? ` · <span class="liq-badge liq-thick">T</span> thick <span class="liq-badge liq-medium">M</span> medium <span class="liq-badge liq-thin">Tn</span> thin = pop data confidence`
+    : ' · <span class="liq-footnote-hint">Population data: not yet collected — rates from model only</span>';
+
   $('psaRangeFootnote').innerHTML = `
-    Anchored on PSA 10 = ${fmtGBP(psa10Price)}${rawPart} · ${rateLabel} · ${annualPctAt10}% annual growth at PSA 10.
+    Anchored on PSA 10 = ${fmtGBP(psa10Price)}${rawPart} · ${rateLabel}.
     Model suggests <strong>PSA ${bestRow.g}</strong> offers the strongest 5yr ROI (${bestRow.roi5 >= 0 ? '+' : ''}${bestRow.roi5.toFixed(0)}%).
-    Toggle grades above to compare. Ratios are typical-modern; individual cards can deviate ±30%.${wallDesc}${confNote}
+    <span class="psa-rate-breakdown">Annual growth by grade: ${_rateRows}</span>${wallNote}${confNote}
   `;
 
   // Draw immediately if visible, otherwise wait for section expand or column resize
@@ -15479,6 +15493,9 @@ function renderHoldStrategy(card) {
     const _vdSub = _holdStratVariant === '1sted' ? _getCached1edPrice(card.i) : _getCachedShadowlessPrice(card.i);
     if (_vdSub?.pcPsa10 > 0) _rhsLp = _vdSub;
   }
+  // Resolve pop cache early — needed for both projection discount and badge display
+  const _holdCachedPop = card.i ? (_popDataCache.get(card.i) || null) : null;
+
   const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
     const isOwnedSlab = slabAcq && slabAcq.grade === g;
     const liveUSD_r = g === 9 ? (_rhsLp.pcPsa9 > 0 ? _rhsLp.pcPsa9 : _rhsLp.pcGrade9 > 0 ? _rhsLp.pcGrade9 : 0)
@@ -15491,14 +15508,15 @@ function renderHoldStrategy(card) {
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
     // For owned slabs: cost basis is what was paid; projections still anchor to current market.
     const today = isOwnedSlab ? slabAcq.costGBP / fx : baseUSD + slabShipGBP / fx;
-    const yr5 = projectGradePrice(card, g, baseUSD, 5);
+    const yr5 = projectGradePrice(card, g, baseUSD, 5, _holdCachedPop);
     const sell = yr5 * (1 - BUY_SELL_FRICTION);
     const profit = sell - today;
     const roi = today > 0 ? (profit / today) * 100 : 0;
+    const annualRate = baseUSD > 0 ? (Math.pow(yr5 / baseUSD, 0.2) - 1) * 100 : 0;
     const label = isOwnedSlab ? `Keep PSA ${g}` : `Buy PSA ${g}`;
     const slabMarketGBP = isOwnedSlab ? usdToGbp(baseUSD) : null;
     const slabGainGBP = isOwnedSlab ? (slabMarketGBP - slabAcq.costGBP) : null;
-    return { label, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi, isOwnedSlab, slabMarketGBP, slabGainGBP };
+    return { label, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi, annualRate, isOwnedSlab, slabMarketGBP, slabGainGBP };
   });
 
   // Labels and descs for each strategy tile
@@ -15895,9 +15913,6 @@ function renderHoldStrategy(card) {
   const _roiArrow  = roi => roi >= 5 ? '↗' : roi >= -5 ? '→' : '↘';
   const _roiArrCls = roi => roi >= 5 ? 'hold-pos' : roi >= -5 ? 'hold-flat' : 'hold-neg';
 
-  // Pop/sales data cached from previous fetch for this card (used for confidence badges)
-  const _holdCachedPop = card.i ? (_popDataCache.get(card.i) || null) : null;
-
   const rows = strategies.filter(s => !s.na).map(s => {
     const todayGBP_tile = s.today * fx;
     const isOverBudget  = _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
@@ -15921,12 +15936,26 @@ function renderHoldStrategy(card) {
       const liq = _liquidityLabel(gradePop, gradeSales);
       liqBadge = `<span class="liq-badge liq-${liq}" title="${liq} data confidence (pop: ${gradePop ?? '–'}, sales/90d: ${gradeSales ?? '–'})">${liq === 'thick' ? 'T' : liq === 'medium' ? 'M' : 'Tn'}</span>`;
     }
-    // Grade-it-yourself: show P(PSA 8+) from population distribution
+
+    // Per-grade annual growth rate label (always shown for PSA grade tiles)
+    const annualRateStr = (gradeNum && s.annualRate != null)
+      ? `<span class="hold-row-annual-rate" title="Projected annual growth rate for this grade">${s.annualRate.toFixed(1)}%/yr</span>`
+      : '';
+
+    // Grade-it-yourself: P(PSA 8+) — use real pop data when available, gem-rate model otherwise
     let gradeProbStr = '';
-    if (s.key === 'gamble' && _holdCachedPop) {
-      const prob = _gradeSuccessProb(_holdCachedPop.pop, 8);
+    if (s.key === 'gamble') {
+      let prob = null;
+      if (_holdCachedPop) {
+        prob = _gradeSuccessProb(_holdCachedPop.pop, 8);
+      }
+      if (prob == null) {
+        // Derive from gem rate via SUBGEM_DISTRIBUTION (always available)
+        prob = gradeOutcomes.filter(o => o.grade >= 8).reduce((a, o) => a + o.prob, 0);
+      }
+      const probSrc = _holdCachedPop ? '' : ' est.';
       if (prob != null) {
-        gradeProbStr = `<span class="hold-row-grad-prob">PSA 8+ prob: ${(prob * 100).toFixed(0)}%</span>`;
+        gradeProbStr = `<span class="hold-row-grad-prob" title="Probability of grading PSA 8 or better${_holdCachedPop ? ' (from PSA population)' : ' (model estimate from gem rate)'}">PSA 8+ prob: ${(prob * 100).toFixed(0)}%${probSrc}</span>`;
       }
     }
 
@@ -15938,7 +15967,7 @@ function renderHoldStrategy(card) {
           <span class="hold-row-label">${s.label}</span>
           <span class="hold-row-cost">${entryCtx}${waitStr}</span>
           <span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>
-          ${liqBadge}${gradeProbStr}${lossStr}
+          ${annualRateStr}${liqBadge}${gradeProbStr}${lossStr}
         </div>
         <div class="hold-row-right">
           <div class="hold-row-roi ${_roiArrCls(s.roi)}">${_roiArrow(s.roi)} ${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</div>

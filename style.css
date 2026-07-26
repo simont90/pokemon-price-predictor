@@ -3658,6 +3658,14 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   background: color-mix(in srgb, var(--gc, var(--accent)) 13%, transparent);
 }
 .psa-grade-btn:not(.is-active):hover { color: var(--text); border-color: var(--border-light); }
+/* Per-grade annual rate shown inside grade toggle pill */
+.psa-grade-rate {
+  font-size: 9px; font-weight: 500; opacity: 0.75;
+  margin-left: 3px; font-family: var(--font-mono, monospace);
+}
+/* Footnote per-grade rate breakdown */
+.psa-rate-breakdown { display: block; margin-top: 4px; font-size: 11px; }
+.psa-rate-item { white-space: nowrap; }
 
 /* Chart */
 .psa-chart-wrap { position: relative; }
@@ -5341,6 +5349,13 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   padding: 2px 7px; border-radius: 5px;
   background: rgba(74, 158, 255, 0.12); color: #7dd3fc;
   font-family: var(--font); font-size: 10px; font-weight: 600;
+}
+/* Per-grade projected annual growth rate on Hold Strategy tiles */
+.hold-row-annual-rate {
+  display: inline-block;
+  padding: 2px 6px; border-radius: 5px;
+  background: rgba(232, 182, 52, 0.10); color: var(--accent);
+  font-family: var(--font-mono, monospace); font-size: 10px; font-weight: 600;
 }
 
 .hold-risk {
