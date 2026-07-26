@@ -16307,6 +16307,121 @@ async function seedAllPricesToD1() {
   }
 }
 
+// ── 1st Edition Price Seed ───────────────────────────────────────────────────
+// Pre-populate the 1st Edition price cache for all WOTC-era EN cards eligible
+// for 1st Edition pricing. Runs card-by-card (not batched) since each lookup
+// is a two-step PriceCharting search + grade breakdown. Skips cards that
+// already have a fresh cache entry.
+const _1ED_SEED_KEY = 'pkm-1ed-seed-v1';
+let _1edSeedState = { running: false, cancel: false };
+
+function _1edSeedLoad() {
+  try { return JSON.parse(localStorage.getItem(_1ED_SEED_KEY) || 'null') || null; } catch { return null; }
+}
+function _1edSeedSave(s) {
+  try { localStorage.setItem(_1ED_SEED_KEY, JSON.stringify(s)); } catch {}
+}
+function _1edSeedUi(cursor, total, cardName, etaStr) {
+  const pct = total > 0 ? Math.round(cursor / total * 100) : 0;
+  $('ps1edProgress')        && ($('ps1edProgress').style.display = 'block');
+  $('ps1edProgressLabel')   && ($('ps1edProgressLabel').textContent   = 'Seeding 1st Edition…');
+  $('ps1edProgressCounter') && ($('ps1edProgressCounter').textContent = `${cursor.toLocaleString()} / ${total.toLocaleString()}`);
+  $('ps1edProgressFill')    && ($('ps1edProgressFill').style.width    = pct + '%');
+  $('ps1edProgressCard')    && ($('ps1edProgressCard').textContent    = cardName || '');
+  $('ps1edProgressEta')     && etaStr && ($('ps1edProgressEta').textContent = etaStr);
+  const badge = $('ps1edBadge');
+  if (badge) { badge.textContent = `${cursor.toLocaleString()} / ${total.toLocaleString()} seeded`; badge.className = 'ps-d1-badge ps-d1-badge-running'; }
+}
+function _1edBadgeUpdate() {
+  const badge = $('ps1edBadge');
+  if (!badge) return;
+  const saved = _1edSeedLoad();
+  if (saved?.complete) {
+    badge.textContent = `All ${(saved.total || 0).toLocaleString()} cards seeded`;
+    badge.className = 'ps-d1-badge ps-d1-badge-done';
+  } else if (saved?.cursor > 0) {
+    badge.textContent = `${saved.cursor.toLocaleString()} / ${(saved.total || 0).toLocaleString()} — paused`;
+    badge.className = 'ps-d1-badge ps-d1-badge-warn';
+  } else {
+    badge.textContent = 'Not started';
+    badge.className = 'ps-d1-badge';
+  }
+}
+
+async function seedAllFirstEdPrices() {
+  if (_1edSeedState.running || _d1SeedState.running || _psState.running) {
+    psLog('Another refresh is already running — wait for it to finish first.', 'warn');
+    return;
+  }
+  if (!cardData?.cards?.length) {
+    psLog('Card database not loaded yet — try again in a moment.', 'warn');
+    return;
+  }
+
+  // Build a combined list: 1st Edition for all WOTC-era EN sets, Shadowless for Base Set.
+  // Each entry records which variant to fetch so the loop knows which function to call.
+  const work = [];
+  for (const c of cardData.cards) {
+    if (c.lang === 'JP') continue;
+    if (_SO_FIRST_ED_SETS.has(c.sc))    work.push({ card: c, variant: '1sted' });
+    if (_HVG_SHADOWLESS_SETS.has(c.sc)) work.push({ card: c, variant: 'shadowless' });
+  }
+  const total    = work.length;
+  const DELAY_MS = 1200;
+
+  const saved  = _1edSeedLoad();
+  let cursor   = (saved?.total === total && saved?.cursor > 0 && !saved?.complete) ? saved.cursor : 0;
+
+  _1edSeedState = { running: true, cancel: false };
+  document.getElementById('psSeed1edBtn')?.setAttribute('disabled', '');
+  const stopBtn = document.getElementById('psSeed1edStopBtn');
+  if (stopBtn) stopBtn.style.display = '';
+
+  psClearLog();
+  const resumeMsg = cursor > 0 ? ` (resuming from ${cursor.toLocaleString()})` : '';
+  psLog(`Vintage variant seeding started · ${total.toLocaleString()} entries (1st Ed + Shadowless)${resumeMsg}`, 'info');
+
+  const startMs = Date.now();
+
+  while (cursor < total && !_1edSeedState.cancel) {
+    const { card, variant } = work[cursor];
+    const isFresh = v => v && _priceCacheIsValid(v._ts);
+    if (variant === '1sted') {
+      if (!isFresh(_getCached1edPrice(card.i))) {
+        try { await _hvg1edFetchOne(card); } catch {}
+      }
+    } else if (variant === 'shadowless') {
+      if (!isFresh(_getCachedShadowlessPrice(card.i))) {
+        try { await _hvgShadowlessFetchOne(card); } catch {}
+      }
+    }
+    const elapsed = (Date.now() - startMs) / 1000;
+    const done    = cursor + 1;
+    const rate    = elapsed > 0 ? done / elapsed : 1;
+    const etaSec  = rate > 0 ? Math.round((total - done) / rate) : 0;
+    const etaStr  = done >= total ? '' : etaSec > 60 ? `~${Math.ceil(etaSec / 60)}m left` : `~${etaSec}s left`;
+    const varLabel = variant === '1sted' ? '1st Ed' : 'Shadowless';
+    _1edSeedUi(done, total, `${card.n || ''} (${varLabel})`, etaStr);
+    cursor++;
+    _1edSeedSave({ cursor, total, ts: Date.now() });
+    if (cursor < total && !_1edSeedState.cancel) await new Promise(r => setTimeout(r, DELAY_MS));
+  }
+
+  _1edSeedState.running = false;
+  document.getElementById('psSeed1edBtn')?.removeAttribute('disabled');
+  if (stopBtn) stopBtn.style.display = 'none';
+
+  if (!_1edSeedState.cancel) {
+    _1edSeedSave({ cursor: total, total, ts: Date.now(), complete: true });
+    const badge = $('ps1edBadge');
+    if (badge) { badge.textContent = `All ${total.toLocaleString()} variants seeded`; badge.className = 'ps-d1-badge ps-d1-badge-done'; }
+    $('ps1edProgressCard') && ($('ps1edProgressCard').textContent = 'Complete — 1st Edition and Shadowless prices now instant on the Vintage page.');
+    psLog(`Vintage variant seeding complete · ${total.toLocaleString()} entries.`, 'ok');
+  } else {
+    psLog(`Vintage variant seeding paused at ${cursor.toLocaleString()} / ${total.toLocaleString()} entries. Resume any time.`, 'warn');
+  }
+}
+
 // Refresh a single card by id — returns {ok, error, data}
 async function psRefreshOne(id) {
   if (!cardData) return { ok: false, error: 'Catalog not loaded' };
@@ -16579,6 +16694,10 @@ function setupPriceSync() {
   sel('psSeedD1Btn')?.addEventListener('click', () => seedAllPricesToD1());
   sel('psSeedD1StopBtn')?.addEventListener('click', () => { _d1SeedState.cancel = true; });
   _d1BadgeUpdate();
+
+  sel('psSeed1edBtn')?.addEventListener('click', () => seedAllFirstEdPrices());
+  sel('psSeed1edStopBtn')?.addEventListener('click', () => { _1edSeedState.cancel = true; });
+  _1edBadgeUpdate();
 
   sel('psUpdateAiBtn')?.addEventListener('click', () => refreshMarketIntelNow(false));
   // Auto-refresh market intel if stale (last fetch before today's 8AM UTC)
@@ -21309,7 +21428,7 @@ function _hvgShadowlessLadder(card) {
   if (!pd || !(pd.pcPsa10 > 0)) return { rawGBP: 0, ladder: [] };
   const psa10gbp = usdToGbp(pd.pcPsa10);
   const ladder = [];
-  for (const g of [10, 9, 8, 7]) {
+  for (const g of [10, 9, 8, 7, 6, 5]) {
     const key = g === 10 ? 'pcPsa10' : `pcPsa${g}`;
     const usd = pd[key] || 0;
     if (usd > 0) ladder.push({ g, gbp: usdToGbp(usd) });
@@ -21333,6 +21452,8 @@ async function _hvgShadowlessFetchOne(card) {
       pcPsa9:  fg.pcPsa9  || 0,
       pcPsa8:  fg.pcPsa8  || 0,
       pcPsa7:  fg.pcPsa7  || 0,
+      pcPsa6:  fg.pcPsa6  || 0,
+      pcPsa5:  fg.pcPsa5  || 0,
       _ts: Date.now(),
     };
     _setShadowlessPrice(card.i, data);
@@ -21358,7 +21479,7 @@ function _hvg1edLadder(card) {
   if (!pd || !(pd.pcPsa10 > 0)) return { rawGBP: 0, ladder: [] };
   const psa10gbp = usdToGbp(pd.pcPsa10);
   const ladder = [];
-  for (const g of [10, 9, 8, 7]) {
+  for (const g of [10, 9, 8, 7, 6, 5]) {
     const key = g === 10 ? 'pcPsa10' : `pcPsa${g}`;
     const usd = pd[key] || 0;
     if (usd > 0) ladder.push({ g, gbp: usdToGbp(usd) });
@@ -25430,6 +25551,7 @@ let _vgSelectedSet = 'base1';
 let _vgSelectedSetJP = 'neo1';
 let _vgLang = 'en';
 let _vgSort = 'num';
+let _vgVariant = 'unlimited'; // 'unlimited' | '1sted'
 
 function _vintageSets() {
   if (typeof setsData === 'undefined' || !setsData) return [];
@@ -25489,6 +25611,21 @@ function _vgSetCards(setCode) {
 // live PriceCharting per-grade data (cached) → static DB PSA 10.
 // Grades with no live data show gbp=0 (rendered as "—"); no ratio estimates.
 function _vgLadder(card) {
+  // Variant pricing: 1st Edition or Shadowless — use the appropriate cached ladder
+  if (_vgVariant !== 'unlimited' && card.lang !== 'JP') {
+    const is1ed       = _vgVariant === '1sted'      && typeof _SO_FIRST_ED_SETS      !== 'undefined' && _SO_FIRST_ED_SETS.has(card.sc);
+    const isShadowless = _vgVariant === 'shadowless' && typeof _HVG_SHADOWLESS_SETS  !== 'undefined' && _HVG_SHADOWLESS_SETS.has(card.sc);
+    if (is1ed || isShadowless) {
+      const ed = is1ed ? _hvg1edLadder(card) : _hvgShadowlessLadder(card);
+      const hasData = ed.ladder.length > 0;
+      const ladder = VINTAGE_GRADES.map(g => {
+        const row = ed.ladder.find(r => r.g === g);
+        const gbp = row ? row.gbp : 0;
+        return { g, gbp, src: (hasData && gbp > 0) ? 'pc' : 'est', score: null };
+      });
+      return { rawGBP: ed.rawGBP, ladder, hasLive: hasData, bestScore: null };
+    }
+  }
   const pd = getCachedPrice(card.i) || getLastKnownPrice(card.i);
   const rawUSD  = pd ? (pd.pcUngraded || pd.market || pd.mid || card.p || 0) : (card.p || 0);
   const pc10    = pd?.pcPsa10 > 0 ? pd.pcPsa10 : 0;
@@ -25868,6 +26005,12 @@ function renderVintagePage() {
 
   const setInfo = sets.find(s => s.code === activeSet);
   const rows = cards.map(c => _vgCardRowHTML(c, data)).join('');
+  const setIs1ed        = !isJP && typeof _SO_FIRST_ED_SETS     !== 'undefined' && _SO_FIRST_ED_SETS.has(activeSet);
+  const setIsShadowless = !isJP && typeof _HVG_SHADOWLESS_SETS  !== 'undefined' && _HVG_SHADOWLESS_SETS.has(activeSet);
+  const setHasVariants  = setIs1ed || setIsShadowless;
+  // Reset variant if it no longer applies to the active set
+  if (_vgVariant === '1sted'      && !setIs1ed)        _vgVariant = 'unlimited';
+  if (_vgVariant === 'shadowless' && !setIsShadowless) _vgVariant = 'unlimited';
   const subLine = isJP
     ? 'Japanese WOTC-era sets · 2000 – 2003 · tap a card for its grade ladder'
     : 'WOTC era 1999 – 2003 · PSA-first collecting · tap a card for its grade ladder';
@@ -25887,6 +26030,11 @@ function renderVintagePage() {
         </div>
         <div class="vg-page-sub">${subLine}</div>
       </div>
+      ${setHasVariants ? `<div class="vg-variant-toggle">
+        <button class="vg-variant-btn${_vgVariant === 'unlimited' ? ' vg-variant-active' : ''}" data-vg-variant="unlimited">Unlimited</button>
+        ${setIs1ed        ? `<button class="vg-variant-btn${_vgVariant === '1sted'      ? ' vg-variant-active' : ''}" data-vg-variant="1sted">1st Edition</button>` : ''}
+        ${setIsShadowless ? `<button class="vg-variant-btn${_vgVariant === 'shadowless' ? ' vg-variant-active' : ''}" data-vg-variant="shadowless">Shadowless</button>` : ''}
+      </div>` : ''}
       ${jpNote}
       ${_vgTargetsHTML(data)}
       <div class="vg-set-chips">${chips}</div>
@@ -25911,8 +26059,14 @@ async function _vgFetchPrices(cardId, el) {
   const ladderEl = el.querySelector(`[data-vg-ladder="${CSS.escape(cardId)}"]`);
   if (ladderEl) ladderEl.innerHTML = '<div class="vg-ladder-note">Fetching live sold prices…</div>';
   try {
-    const fresh = await fetchFreshPriceData(card);
-    if (fresh) setCachedPrice(card.i, fresh);
+    if (_vgVariant === '1sted' && card.lang !== 'JP' && typeof _SO_FIRST_ED_SETS !== 'undefined' && _SO_FIRST_ED_SETS.has(card.sc)) {
+      await _hvg1edFetchOne(card);
+    } else if (_vgVariant === 'shadowless' && card.lang !== 'JP' && typeof _HVG_SHADOWLESS_SETS !== 'undefined' && _HVG_SHADOWLESS_SETS.has(card.sc)) {
+      await _hvgShadowlessFetchOne(card);
+    } else {
+      const fresh = await fetchFreshPriceData(card);
+      if (fresh) setCachedPrice(card.i, fresh);
+    }
   } catch (e) {}
   if (ladderEl) ladderEl.innerHTML = _vgLadderHTML(card);
 }
@@ -26162,6 +26316,10 @@ function _vgWire(el) {
     // EN/JP language toggle
     const langBtn = e.target.closest('[data-vg-lang]');
     if (langBtn) { _vgLang = langBtn.dataset.vgLang; renderVintagePage(); return; }
+
+    // Unlimited / 1st Edition variant toggle
+    const variantBtn = e.target.closest('[data-vg-variant]');
+    if (variantBtn) { _vgVariant = variantBtn.dataset.vgVariant; renderVintagePage(); return; }
 
     // Set chip
     const chip = e.target.closest('[data-vg-set]');

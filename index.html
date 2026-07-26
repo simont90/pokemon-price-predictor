@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260720m">
+  <link rel="stylesheet" href="style.css?v=20260720o">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2363,6 +2363,34 @@
               <div class="ps-d1-progress-card" id="psD1ProgressCard"></div>
             </div>
           </div>
+          <div class="ps-d1-seed" id="ps1edSeedSection">
+            <div class="ps-d1-seed-hd">
+              <div class="ps-d1-seed-title">Vintage Variant Prices</div>
+              <span class="ps-d1-badge" id="ps1edBadge">Not started</span>
+            </div>
+            <div class="ps-d1-seed-sub">Pre-load 1st Edition PSA prices for all WOTC-era EN cards (Base, Jungle, Fossil, Gym, Neo series) and Shadowless prices for Base Set. Stored locally — makes variant pricing on the Vintage page instant without waiting for live fetches.</div>
+            <div class="ps-d1-seed-btns">
+              <button class="ps-btn ps-btn-primary" id="psSeed1edBtn" type="button">
+                <span class="ps-btn-ico">★</span>
+                <span class="ps-btn-text">Seed Variant Prices</span>
+                <span class="ps-btn-hint">~25 min · 1st Edition + Shadowless · safe to pause and resume</span>
+              </button>
+              <button class="ps-btn" id="psSeed1edStopBtn" type="button" style="display:none">
+                <span class="ps-btn-ico">✕</span>
+                <span class="ps-btn-text">Pause seeding</span>
+                <span class="ps-btn-hint">Progress is saved — resume any time</span>
+              </button>
+            </div>
+            <div class="ps-d1-progress" id="ps1edProgress" style="display:none">
+              <div class="ps-d1-progress-head">
+                <span id="ps1edProgressLabel">Seeding…</span>
+                <span id="ps1edProgressCounter">0 / 0</span>
+                <span id="ps1edProgressEta"></span>
+              </div>
+              <div class="ps-progress-bar"><div class="ps-progress-fill" id="ps1edProgressFill"></div></div>
+              <div class="ps-d1-progress-card" id="ps1edProgressCard"></div>
+            </div>
+          </div>
           <div class="ps-ai-update" id="psAiUpdateSection">
             <div class="ps-d1-seed-hd">
               <div class="ps-d1-seed-title">🤖 Update AI</div>
@@ -3144,7 +3172,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260720m"></script>
+  <script src="app.js?v=20260720o"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
