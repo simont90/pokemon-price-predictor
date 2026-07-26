@@ -463,6 +463,7 @@ let _priorityFetchDone = Promise.resolve();
 let _priorityFetchRelease = null;
 let lastModelPriceUSD = 0; // Last result from predictPrice — used by inline deal checks
 let _holdWinnerKey = null;  // Winner key from last renderHoldStrategy run — drives owned-card badge
+let _holdStratVariant = 'unlimited'; // 'unlimited' | '1sted' | 'shadowless' — drives variant price override in renderHoldStrategy
 let _holdWinnerDesc = '';   // One-line summary of the winner — shown in signal section
 let _mktGradeRows  = null;  // Last computed grade rows from renderMarketplaceScan — used by insight refresh
 
@@ -3355,6 +3356,7 @@ function selectCard(id) {
   if (!card) return;
   selectedCard = card;
   _holdWinnerKey = null;  // reset until renderHoldStrategy runs for this card
+  _holdStratVariant = 'unlimited'; // reset variant on card change
   _holdWinnerDesc = '';
   _livePriceVariant = null; // clear any active variant override on card change
   _mktGradeRows  = null;
@@ -15139,8 +15141,17 @@ function renderHoldStrategy(card) {
   const section = $('holdStrategySection');
   if (!section || !card) return;
   const anchor = getPsa10Anchor(card);
-  const psa10Price = anchor.usd;
+  let psa10Price = anchor.usd;
   const rawUSD = getCurrentPrice(card);
+
+  // Variant override: if a non-Unlimited variant is selected and the card is eligible,
+  // swap psa10Price with the cached variant PSA 10 price.
+  const _holdVariantEligible = card.lang !== 'JP' && (_SO_FIRST_ED_SETS.has(card.sc) || _HVG_SHADOWLESS_SETS.has(card.sc));
+  if (_holdVariantEligible && _holdStratVariant !== 'unlimited') {
+    const _vd = _holdStratVariant === '1sted' ? _getCached1edPrice(card.i) : _getCachedShadowlessPrice(card.i);
+    if (_vd?.pcPsa10 > 0) psa10Price = _vd.pcPsa10;
+    else _holdStratVariant = 'unlimited'; // fallback if no data
+  }
 
   // Need both a raw and a PSA 10 anchor to do the comparison.
   if (!psa10Price || psa10Price <= 0 || !rawUSD || rawUSD <= 0) {
@@ -15347,11 +15358,16 @@ function renderHoldStrategy(card) {
   // ----- Strategies 3-6: Buy (or Keep) graded at each PSA tier -----
   // Always computed — PSA 1–10 tiles appear alongside ACE and raw.
   // Prefer live PriceCharting grade prices over ratio-based estimates when available.
-  const _rhsLp = (_livePriceVariant && selectedCard && card.i === selectedCard.i)
+  let _rhsLp = (_livePriceVariant && selectedCard && card.i === selectedCard.i)
     ? _livePriceVariant
     : (livePrice && selectedCard && card.i === selectedCard.i)
     ? livePrice
     : (getCachedPrice(card.i) || {});
+  // Variant override: use cached 1st Ed / Shadowless sub-grade prices when a variant is selected.
+  if (_holdVariantEligible && _holdStratVariant !== 'unlimited') {
+    const _vdSub = _holdStratVariant === '1sted' ? _getCached1edPrice(card.i) : _getCachedShadowlessPrice(card.i);
+    if (_vdSub?.pcPsa10 > 0) _rhsLp = _vdSub;
+  }
   const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
     const isOwnedSlab = slabAcq && slabAcq.grade === g;
     const liveUSD_r = g === 9 ? (_rhsLp.pcPsa9 > 0 ? _rhsLp.pcPsa9 : _rhsLp.pcGrade9 > 0 ? _rhsLp.pcGrade9 : 0)
@@ -15687,7 +15703,82 @@ function renderHoldStrategy(card) {
       <div class="hold-stat-val ${_bestROI != null && _bestROI >= 0 ? 'hold-pos' : 'hold-neg'}">${_bestROI != null ? (_bestROI >= 0 ? '+' : '') + _bestROI.toFixed(1) + '%' : '—'}</div>
     </div>
   </div>
-  <div class="hold-opps-label">STRATEGIES · 5YR OUTLOOK</div>`;
+  <div class="hold-opps-label">STRATEGIES · 5YR OUTLOOK${_holdVariantEligible && _holdStratVariant !== 'unlimited' ? ` · ${_holdStratVariant === '1sted' ? '1st Edition' : 'Shadowless'}` : ''}</div>`;
+
+  // ---- Variant price comparison (1st Edition / Shadowless vs Unlimited) ----
+  // Computed here so both the UI block and the AI setTimeout can use the same values.
+  let _ed1Psa10GBP = 0, _ed1Psa10Roi = null, _ed1Psa9GBP = 0, _ed1Psa9Roi = null, _ed1RawGBP = 0;
+  let _slPsa10GBP  = 0, _slPsa10Roi  = null, _slPsa9GBP  = 0, _slPsa9Roi  = null, _slRawGBP  = 0;
+  const _isVariantCard = card.lang !== 'JP' && (_SO_FIRST_ED_SETS.has(card.sc) || _HVG_SHADOWLESS_SETS.has(card.sc));
+  if (_isVariantCard) {
+    if (_SO_FIRST_ED_SETS.has(card.sc)) {
+      const _1ed = _getCached1edPrice(card.i);
+      if (_1ed && _1ed.pcPsa10 > 0) {
+        const p10 = _1ed.pcPsa10;
+        const yr5_10 = projectGradePrice(card, 10, p10, 5);
+        _ed1Psa10GBP = Math.round(p10 * fx);
+        _ed1Psa10Roi = Math.round((yr5_10 - p10) / p10 * 100);
+        _ed1RawGBP   = Math.round((p10 * 0.12) * fx);
+        if (_1ed.pcPsa9 > 0) {
+          const p9 = _1ed.pcPsa9;
+          _ed1Psa9GBP = Math.round(p9 * fx);
+          _ed1Psa9Roi = Math.round((projectGradePrice(card, 9, p9, 5) - p9) / p9 * 100);
+        }
+      }
+    }
+    if (_HVG_SHADOWLESS_SETS.has(card.sc)) {
+      const _sl = _getCachedShadowlessPrice(card.i);
+      if (_sl && _sl.pcPsa10 > 0) {
+        const p10 = _sl.pcPsa10;
+        const yr5_10 = projectGradePrice(card, 10, p10, 5);
+        _slPsa10GBP = Math.round(p10 * fx);
+        _slPsa10Roi = Math.round((yr5_10 - p10) / p10 * 100);
+        _slRawGBP   = Math.round((p10 * 0.12) * fx);
+        if (_sl.pcPsa9 > 0) {
+          const p9 = _sl.pcPsa9;
+          _slPsa9GBP = Math.round(p9 * fx);
+          _slPsa9Roi = Math.round((projectGradePrice(card, 9, p9, 5) - p9) / p9 * 100);
+        }
+      }
+    }
+  }
+
+  // Build variant comparison block — shown as a live toggle when at least one non-Unlimited
+  // variant has cached price data. Clicking a row switches the strategy tiles below.
+  let variantBlock = '';
+  // Unlimited PSA 10 values come from the anchor price (already resolved above).
+  const _anchorPsa10USD = getPsa10Anchor(card).usd; // always Unlimited for the comparison row
+  const _unlPsa10GBP = _anchorPsa10USD > 0 ? Math.round(_anchorPsa10USD * fx) : 0;
+  const _unlPsa10Yr5 = _anchorPsa10USD > 0 ? Math.round(projectGradePrice(card, 10, _anchorPsa10USD, 5) * fx) : 0;
+  const _unlPsa10Roi = _anchorPsa10USD > 0 ? Math.round((projectGradePrice(card, 10, _anchorPsa10USD, 5) - _anchorPsa10USD) / _anchorPsa10USD * 100) : null;
+  if (_isVariantCard && (_ed1Psa10GBP > 0 || _slPsa10GBP > 0)) {
+    const vcands = [
+      { key: 'unlimited',  name: 'Unlimited',   gbp: _unlPsa10GBP, roi: _unlPsa10Roi, yr5: _unlPsa10Yr5,                    avail: _unlPsa10GBP > 0 },
+      { key: '1sted',      name: '1st Edition', gbp: _ed1Psa10GBP, roi: _ed1Psa10Roi, yr5: _ed1Psa10GBP > 0 ? Math.round(projectGradePrice(card, 10, _ed1Psa10GBP / fx, 5) * fx) : 0, avail: _ed1Psa10GBP > 0 },
+      { key: 'shadowless', name: 'Shadowless',  gbp: _slPsa10GBP,  roi: _slPsa10Roi,  yr5: _slPsa10GBP  > 0 ? Math.round(projectGradePrice(card, 10, _slPsa10GBP  / fx, 5) * fx) : 0, avail: _slPsa10GBP > 0 },
+    ].filter(v => v.avail);
+    const bestVariant = vcands.reduce((b, v) => (v.roi != null && (b.roi == null || v.roi > b.roi)) ? v : b, vcands[0]);
+    const _va = roi => roi >= 5 ? '↗' : roi >= -5 ? '→' : '↘';
+    const _vc = roi => roi >= 5 ? 'hold-pos' : roi >= -5 ? 'hold-flat' : 'hold-neg';
+    variantBlock = `<div class="hold-opps-label hold-variant-label">VARIANT · PSA 10 <span class="hold-variant-hint">tap to switch</span></div>
+<div class="hold-variant-cmp">${vcands.map(v => {
+  const isActive = v.key === _holdStratVariant;
+  const isBest   = v === bestVariant;
+  return `<button class="hold-variant-row${isActive ? ' hold-variant-active' : ''}${isBest ? ' hold-variant-best' : ''}" data-hold-variant="${v.key}">
+    <div class="hold-variant-left">
+      <span class="hold-variant-name">${v.name}</span>
+      ${isBest && !isActive ? '<span class="hold-variant-badge">★ Best ROI</span>' : ''}
+      ${isActive ? '<span class="hold-variant-badge hold-variant-badge-active">✓ Viewing</span>' : ''}
+    </div>
+    <div class="hold-variant-right">
+      <span class="hold-variant-price">${fmtGBPDirect(v.gbp)}</span>
+      <span class="hold-variant-roi ${_vc(v.roi)}">${_va(v.roi)} ${v.roi >= 0 ? '+' : ''}${v.roi}%</span>
+      <span class="hold-variant-5yr">5yr ${fmtGBPDirect(v.yr5)}</span>
+    </div>
+  </button>`;
+}).join('')}
+</div>`;
+  }
 
   // ---- Strategy rows ----
   const _roiArrow  = roi => roi >= 5 ? '↗' : roi >= -5 ? '→' : '↘';
@@ -15727,9 +15818,17 @@ function renderHoldStrategy(card) {
     </div>`;
   }).join('');
 
-  grid.innerHTML = statsBar + rows + (_hiddenGradeNums.size > 0
+  grid.innerHTML = statsBar + variantBlock + rows + (_hiddenGradeNums.size > 0
     ? `<button class="hold-grade-toggle-btn" id="holdGradeToggleBtn" data-ltp="${_ltpGradeNum}" data-expanded="0">Show PSA 1–${_ltpGradeNum - 1} ▾</button>`
     : '');
+
+  // Wire variant toggle buttons
+  grid.querySelectorAll('[data-hold-variant]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.holdVariant;
+      if (v !== _holdStratVariant) { _holdStratVariant = v; renderHoldStrategy(card); }
+    });
+  });
 
   const _toggleBtn = document.getElementById('holdGradeToggleBtn');
   if (_toggleBtn) {
@@ -15930,43 +16029,6 @@ function renderHoldStrategy(card) {
     _fc5yrExpGBP = Math.round(_fc.scenarios.expected[4].priceUSD    * fx);
     _fc5yrOptGBP = Math.round(_fc.scenarios.optimistic[4].priceUSD  * fx);
   } catch {}
-  // Variant prices for AI analysis (1st Edition / Shadowless)
-  let _ed1Psa10GBP = 0, _ed1Psa10Roi = null, _ed1Psa9GBP = 0, _ed1Psa9Roi = null, _ed1RawGBP = 0;
-  let _slPsa10GBP  = 0, _slPsa10Roi  = null, _slPsa9GBP  = 0, _slPsa9Roi  = null, _slRawGBP  = 0;
-  if (card.lang !== 'JP') {
-    if (_SO_FIRST_ED_SETS.has(card.sc)) {
-      const _1ed = _getCached1edPrice(card.i);
-      if (_1ed && _1ed.pcPsa10 > 0) {
-        const p10 = _1ed.pcPsa10;
-        const yr5_10 = projectGradePrice(card, 10, p10, 5);
-        _ed1Psa10GBP  = Math.round(p10 * fx);
-        _ed1Psa10Roi  = Math.round((yr5_10 - p10) / p10 * 100);
-        _ed1RawGBP    = Math.round((p10 * 0.12) * fx); // rough raw ratio
-        if (_1ed.pcPsa9 > 0) {
-          const p9 = _1ed.pcPsa9;
-          const yr5_9 = projectGradePrice(card, 9, p9, 5);
-          _ed1Psa9GBP = Math.round(p9 * fx);
-          _ed1Psa9Roi = Math.round((yr5_9 - p9) / p9 * 100);
-        }
-      }
-    }
-    if (_HVG_SHADOWLESS_SETS.has(card.sc)) {
-      const _sl = _getCachedShadowlessPrice(card.i);
-      if (_sl && _sl.pcPsa10 > 0) {
-        const p10 = _sl.pcPsa10;
-        const yr5_10 = projectGradePrice(card, 10, p10, 5);
-        _slPsa10GBP  = Math.round(p10 * fx);
-        _slPsa10Roi  = Math.round((yr5_10 - p10) / p10 * 100);
-        _slRawGBP    = Math.round((p10 * 0.12) * fx);
-        if (_sl.pcPsa9 > 0) {
-          const p9 = _sl.pcPsa9;
-          const yr5_9 = projectGradePrice(card, 9, p9, 5);
-          _slPsa9GBP = Math.round(p9 * fx);
-          _slPsa9Roi = Math.round((yr5_9 - p9) / p9 * 100);
-        }
-      }
-    }
-  }
   setTimeout(() => {
     try {
       _loadHoldStrategyFacts(card, {
@@ -16426,8 +16488,9 @@ async function seedAllFirstEdPrices() {
     if (_SO_FIRST_ED_SETS.has(c.sc))    work.push({ card: c, variant: '1sted' });
     if (_HVG_SHADOWLESS_SETS.has(c.sc)) work.push({ card: c, variant: 'shadowless' });
   }
-  const total    = work.length;
-  const DELAY_MS = 1200;
+  const total      = work.length;
+  const BATCH_SIZE = 3;   // concurrent fetches per batch
+  const DELAY_MS   = 350; // pause between batches (only when fetches happened)
 
   const saved  = _1edSeedLoad();
   let cursor   = (saved?.total === total && saved?.cursor > 0 && !saved?.complete) ? saved.cursor : 0;
@@ -16442,29 +16505,34 @@ async function seedAllFirstEdPrices() {
   psLog(`Vintage variant seeding started · ${total.toLocaleString()} entries (1st Ed + Shadowless)${resumeMsg}`, 'info');
 
   const startMs = Date.now();
+  const isFresh = v => v && _priceCacheIsValid(v._ts);
 
   while (cursor < total && !_1edSeedState.cancel) {
-    const { card, variant } = work[cursor];
-    const isFresh = v => v && _priceCacheIsValid(v._ts);
-    if (variant === '1sted') {
-      if (!isFresh(_getCached1edPrice(card.i))) {
-        try { await _hvg1edFetchOne(card); } catch {}
+    const batch = work.slice(cursor, cursor + BATCH_SIZE);
+    let anyFetched = false;
+    let lastLabel  = '';
+
+    await Promise.allSettled(batch.map(async ({ card, variant }) => {
+      if (variant === '1sted') {
+        if (!isFresh(_getCached1edPrice(card.i))) {
+          try { await _hvg1edFetchOne(card); anyFetched = true; } catch {}
+        }
+      } else if (variant === 'shadowless') {
+        if (!isFresh(_getCachedShadowlessPrice(card.i))) {
+          try { await _hvgShadowlessFetchOne(card); anyFetched = true; } catch {}
+        }
       }
-    } else if (variant === 'shadowless') {
-      if (!isFresh(_getCachedShadowlessPrice(card.i))) {
-        try { await _hvgShadowlessFetchOne(card); } catch {}
-      }
-    }
+      lastLabel = `${card.n || ''} (${variant === '1sted' ? '1st Ed' : 'Shadowless'})`;
+    }));
+
+    cursor += batch.length;
     const elapsed = (Date.now() - startMs) / 1000;
-    const done    = cursor + 1;
-    const rate    = elapsed > 0 ? done / elapsed : 1;
-    const etaSec  = rate > 0 ? Math.round((total - done) / rate) : 0;
-    const etaStr  = done >= total ? '' : etaSec > 60 ? `~${Math.ceil(etaSec / 60)}m left` : `~${etaSec}s left`;
-    const varLabel = variant === '1sted' ? '1st Ed' : 'Shadowless';
-    _1edSeedUi(done, total, `${card.n || ''} (${varLabel})`, etaStr);
-    cursor++;
+    const rate    = elapsed > 0 ? cursor / elapsed : 1;
+    const etaSec  = rate > 0 ? Math.round((total - cursor) / rate) : 0;
+    const etaStr  = cursor >= total ? '' : etaSec > 60 ? `~${Math.ceil(etaSec / 60)}m left` : `~${etaSec}s left`;
+    _1edSeedUi(cursor, total, lastLabel, etaStr);
     _1edSeedSave({ cursor, total, ts: Date.now() });
-    if (cursor < total && !_1edSeedState.cancel) await new Promise(r => setTimeout(r, DELAY_MS));
+    if (anyFetched && cursor < total && !_1edSeedState.cancel) await new Promise(r => setTimeout(r, DELAY_MS));
   }
 
   _1edSeedState.running = false;
