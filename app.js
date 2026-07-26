@@ -16488,9 +16488,8 @@ async function seedAllFirstEdPrices() {
     if (_SO_FIRST_ED_SETS.has(c.sc))    work.push({ card: c, variant: '1sted' });
     if (_HVG_SHADOWLESS_SETS.has(c.sc)) work.push({ card: c, variant: 'shadowless' });
   }
-  const total      = work.length;
-  const BATCH_SIZE = 3;   // concurrent fetches per batch
-  const DELAY_MS   = 350; // pause between batches (only when fetches happened)
+  const total    = work.length;
+  const DELAY_MS = 450; // pause after a live fetch — proxy timeouts (~6s) already throttle failures
 
   const saved  = _1edSeedLoad();
   let cursor   = (saved?.total === total && saved?.cursor > 0 && !saved?.complete) ? saved.cursor : 0;
@@ -16508,31 +16507,29 @@ async function seedAllFirstEdPrices() {
   const isFresh = v => v && _priceCacheIsValid(v._ts);
 
   while (cursor < total && !_1edSeedState.cancel) {
-    const batch = work.slice(cursor, cursor + BATCH_SIZE);
-    let anyFetched = false;
-    let lastLabel  = '';
+    const { card, variant } = work[cursor];
+    const varLabel = variant === '1sted' ? '1st Ed' : 'Shadowless';
+    let fetched = false;
 
-    await Promise.allSettled(batch.map(async ({ card, variant }) => {
-      if (variant === '1sted') {
-        if (!isFresh(_getCached1edPrice(card.i))) {
-          try { await _hvg1edFetchOne(card); anyFetched = true; } catch {}
-        }
-      } else if (variant === 'shadowless') {
-        if (!isFresh(_getCachedShadowlessPrice(card.i))) {
-          try { await _hvgShadowlessFetchOne(card); anyFetched = true; } catch {}
-        }
+    if (variant === '1sted') {
+      if (!isFresh(_getCached1edPrice(card.i))) {
+        try { await _hvg1edFetchOne(card); fetched = true; } catch {}
       }
-      lastLabel = `${card.n || ''} (${variant === '1sted' ? '1st Ed' : 'Shadowless'})`;
-    }));
+    } else if (variant === 'shadowless') {
+      if (!isFresh(_getCachedShadowlessPrice(card.i))) {
+        try { await _hvgShadowlessFetchOne(card); fetched = true; } catch {}
+      }
+    }
 
-    cursor += batch.length;
+    cursor++;
     const elapsed = (Date.now() - startMs) / 1000;
     const rate    = elapsed > 0 ? cursor / elapsed : 1;
     const etaSec  = rate > 0 ? Math.round((total - cursor) / rate) : 0;
     const etaStr  = cursor >= total ? '' : etaSec > 60 ? `~${Math.ceil(etaSec / 60)}m left` : `~${etaSec}s left`;
-    _1edSeedUi(cursor, total, lastLabel, etaStr);
+    _1edSeedUi(cursor, total, `${card.n || ''} (${varLabel})`, etaStr);
     _1edSeedSave({ cursor, total, ts: Date.now() });
-    if (anyFetched && cursor < total && !_1edSeedState.cancel) await new Promise(r => setTimeout(r, DELAY_MS));
+    // Only pause after a live fetch — cached skips run at full speed
+    if (fetched && cursor < total && !_1edSeedState.cancel) await new Promise(r => setTimeout(r, DELAY_MS));
   }
 
   _1edSeedState.running = false;
