@@ -235,6 +235,123 @@ grep -n "TODO\|FIXME\|XXX" app.js              # outstanding notes
 
 ---
 
+## Card valuation methodology
+
+Apply this framework any time the app evaluates whether a specific card/grade
+is a good deal. It governs Hold Strategy AI analysis, Vintage grade picks,
+and any "value" label surfaced in the UI.
+
+### 1. Liquidity gates everything else
+
+Before trusting any market-value figure, check two numbers at the target grade:
+- **Population** (PSA pop report)
+- **Sales count** in the trailing 90 days
+
+Thresholds:
+- **Thick data** (15+ sales/quarter, pop typically 700+): trust the aggregator average. Below-average pricing is a real signal.
+- **Thin data** (under ~5 sales/quarter, or pop under ~200–300 at that grade): the mark is a rough guide only. A "value" built on 2–3 sales can be an outlier either direction. Widen out to the full sold range before drawing conclusions.
+
+Never present a single "market value" number without stating which bucket it falls in.
+
+### 2. Use the range, not the point estimate
+
+Every aggregator value is roughly the midpoint of a spread. Pull low / average / high
+from recent sales.
+- Paying near the average = fair, not a deal.
+- Paying in the bottom third of the observed range = a genuine deal.
+- A price "below the mark" that's still above the low of the range isn't automatically cheap.
+
+### 3. Check direction before treating "below mark" as good
+
+A trailing average lags real-time price action.
+- Below mark + flat/rising trend = real discount.
+- Below mark + falling trend (negative % over 30–90 days) = the market catching down to where asks already are, not a bargain.
+- Always surface the 30/90-day % change alongside any "below market" claim.
+
+### 4. Grade-ladder check
+
+Compare the % price step from the target grade to the grade above it, for the SAME card.
+- Small step (e.g. under ~25%) → the lower grade is the value play, no reason to reach.
+- Large step (50%+) → that's a real wall. Don't pay to cross it unless the higher grade is specifically the goal.
+
+### 5. Mid-grade population dilution risk (grades 5–7 specifically)
+
+Low pop in mid-grade vintage is often an artifact of low submission volume when the card
+was cheap, not true scarcity — as prices rise, more raw copies get graded and land in
+that band, diluting it. This is the biggest risk to any mid-grade thesis and it moves
+*before* price does.
+- Track population quarterly on anything held.
+- Flag if pop at the target grade has grown meaningfully since purchase — that's an early warning, not a lagging indicator.
+
+### 6. Card selection: signature card + budget-tier fit
+
+- For any character, identify the **defining vintage appearance** — the card most associated with that Pokémon (e.g. Fossil 1st Ed Gengar 5/62). A low grade of a non-defining/filler card carries no character premium. A low grade of the defining card retains it.
+- Flag characters with **no true vintage holo in the main WOTC sets** (Pikachu, Mew are known examples) — their vintage chases are promos/trophy cards, a different market (thin comps, higher counterfeit risk). Don't apply the same framework without a caveat.
+- Flag when a character's entry price at the target grade band is an **order of magnitude off** the rest of a target list (e.g. 1st Ed Charizard vs. everything else at PSA 5–7). That's a signal to either substitute a cheaper print variant (Shadowless/Unlimited) or accept a different grade tier for that one card — not to silently force-fit it into the same budget.
+
+### 7. Cross-grade optimizer — pick the smartest grade, not just judge one
+
+Everything above evaluates a single grade. This step compares ALL grades of the same
+card against each other to find where the smart money actually sits.
+
+**Build the full curve.** For a candidate card, pull grades 1–10 (whatever has
+population/sales data) and record per grade: pop, sales count (90d), avg/low/high sold,
+30–90d trend, and a confidence label (thick/thin, from Section 1).
+
+**Compute the step to the next grade up**, using average sold price:
+- `step% = (avg[grade+1] - avg[grade]) / avg[grade]`
+- Classify each step: **compressed** (<25%), **moderate** (25–50%), **wall** (50%+).
+
+**Locate the walls.** Walk the curve from grade 10 down to grade 1. The first wall you
+hit going down is the natural ceiling of "value" pricing — everything above it is paying
+for the grade itself; everything at or just below it is paying mostly for the card.
+
+**Candidate grades = the grade sitting directly below each wall**, filtered by:
+- Confidence: thick data only. A cheap grade with 2 sales a year isn't a smart buy, it's an unverifiable one — flag but don't recommend it as the pick.
+- Trend: exclude candidates on a falling trend unless the fall looks like it's bottoming against the grade below (check that grade's price hasn't also dropped).
+- Budget: filter to the stated ceiling before ranking, not after.
+
+**Rank survivors** by how close a realistic buy sits to the bottom of that grade's sold
+range (Section 2), then by step size of the wall directly above them (bigger wall = more
+value left on the table by not reaching one grade higher).
+
+**Output format — always show the full curve, never just the winner:**
+
+| Grade | Pop | Sales/90d | Avg | Range | Trend | Step to next | Confidence |
+|---|---|---|---|---|---|---|---|
+
+Then state the recommended grade(s) with the specific reasoning (which wall, what
+confidence, what trend) — so the pick is auditable, not a black box. If two grades are
+close calls, present both and say why, rather than forcing a single answer.
+
+**Common outcome to expect:** the smart pick is very often NOT the cheapest grade
+available. A pop-5000 PSA 3 might be cheap but sits on a compressed part of the curve
+with no wall above it — no value being left behind by buying the 4 or 5 instead. The
+best pick is the highest grade before a real price cliff, not the lowest price on the
+sheet.
+
+### 8. Trade / dealer-offer math
+
+When evaluating a trade-in or dealer percentage (e.g. "80% of value"):
+1. **Establish the base first, before the rate.** A dealer's own conservative estimate vs. an inflated aggregator mark changes the real outcome far more than the % does.
+2. **Benchmark against a private sale net of fees** (~87% after ~13% marketplace fees) as the do-it-yourself baseline. The trade only wins if it beats that after accounting for any base-price haircut — otherwise it's convenience, not value.
+3. On illiquid, thin-data cards specifically, trading away at a mark you believe is optimistic can beat a private sale — you're converting an uncertain number into guaranteed value. This is the one case where taking the mark at face value is correctly cautious rather than naive.
+
+### Per-card checklist
+
+For any card the tool evaluates, output:
+1. Full grade curve (Section 7): pop, sales, avg/range, trend, confidence — per grade
+2. Walls identified and the recommended grade(s) below them
+3. Is this the character's defining vintage card? Does a true vintage holo exist at all?
+4. Does the recommended grade's price fit the stated budget band, or does this card need a different set/print/grade to fit?
+5. If evaluating a specific listing, its trade math (Section 8) if a trade is on the table
+
+Don't collapse this into a single "good deal / bad deal" verdict — surface the curve and
+let the confidence level (thick vs. thin data) at each grade determine how much weight
+the recommendation should carry.
+
+---
+
 ## Contact
 
 If something in this file is wrong or out of date, update it in the same
