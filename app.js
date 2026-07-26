@@ -16504,7 +16504,9 @@ async function seedAllFirstEdPrices() {
   psLog(`Vintage variant seeding started · ${total.toLocaleString()} entries (1st Ed + Shadowless)${resumeMsg}`, 'info');
 
   const startMs = Date.now();
-  const isFresh = v => v && _priceCacheIsValid(v._ts);
+  // Variant prices are stable vintage data — 7-day TTL avoids daily re-fetches
+  const _VARIANT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const isFresh = v => v && (Date.now() - (v._ts || 0)) < _VARIANT_TTL_MS;
 
   while (cursor < total && !_1edSeedState.cancel) {
     const { card, variant } = work[cursor];
