@@ -2266,9 +2266,14 @@ const PC_FULL_GRADE_PARSE_LABELS = {
   'Grade 7': 'pcPsa7',
   'Grade 6': 'pcPsa6',
   'Grade 5': 'pcPsa5',
+  'Grade 4': 'pcPsa4',
+  'Grade 3': 'pcPsa3',
+  'Grade 2': 'pcPsa2',
+  'Grade 1': 'pcPsa1',
 };
 function _emptyFullGrades() {
-  return { pcAce10: 0, pcAce9: 0, pcAce8: 0, pcAce7: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0, pcPsa10: 0, pcPsa9: 0, pcPsa8: 0, pcPsa7: 0, pcPsa6: 0, pcPsa5: 0 };
+  return { pcAce10: 0, pcAce9: 0, pcAce8: 0, pcAce7: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0,
+           pcPsa10: 0, pcPsa9: 0, pcPsa8: 0, pcPsa7: 0, pcPsa6: 0, pcPsa5: 0, pcPsa4: 0, pcPsa3: 0, pcPsa2: 0, pcPsa1: 0 };
 }
 function parsePCFullGrades(html) {
   const out = _emptyFullGrades();
@@ -2336,6 +2341,10 @@ function productToPC(p, fullGrades) {
     pcPsa7:  fg.pcPsa7  || 0,
     pcPsa6:  fg.pcPsa6  || 0,
     pcPsa5:  fg.pcPsa5  || 0,
+    pcPsa4:  fg.pcPsa4  || 0,
+    pcPsa3:  fg.pcPsa3  || 0,
+    pcPsa2:  fg.pcPsa2  || 0,
+    pcPsa1:  fg.pcPsa1  || 0,
     pcName: p.productName || '',
     pcConsole: p.consoleName || '',
     pcId: p.id || '',
@@ -2548,6 +2557,8 @@ async function fetchLivePrice(card) {
         pcAce10: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0,
         pcPsa9: d1Price.pcPsa9 || 0, pcPsa8: d1Price.pcPsa8 || 0,
         pcPsa7: d1Price.pcPsa7 || 0, pcPsa6: d1Price.pcPsa6 || 0, pcPsa5: d1Price.pcPsa5 || 0,
+        pcPsa4: d1Price.pcPsa4 || 0, pcPsa3: d1Price.pcPsa3 || 0,
+        pcPsa2: d1Price.pcPsa2 || 0, pcPsa1: d1Price.pcPsa1 || 0,
         crRaw: 0, crPsa10: 0, crGemRate: 0, crName: '', crUrl: '', crPsa10VsRaw: 0,
       };
       setCachedPrice(card.i, basePrice);
@@ -2633,6 +2644,7 @@ async function fetchFreshPriceData(card, { skipCollectrics = false } = {}) {
     pcUngraded: 0, pcPsa10: 0, pcGrade9: 0, pcName: '', pcConsole: '', pcId: '',
     pcAce10: 0, pcCgc10: 0, pcBgs10: 0, pcTag10: 0, pcSgc10: 0,
     pcPsa9: 0, pcPsa8: 0, pcPsa7: 0, pcPsa6: 0, pcPsa5: 0,
+    pcPsa4: 0, pcPsa3: 0, pcPsa2: 0, pcPsa1: 0,
     crRaw: 0, crPsa10: 0, crGemRate: 0, crName: '', crUrl: '', crPsa10VsRaw: 0,
   };
 
@@ -2908,7 +2920,8 @@ window.switchMarketPCVariant = async function(variant) {
   try {
     if (variant === '1sted') {
       pd = _getCached1edPrice(selectedCard.i);
-      if (!pd || !_priceCacheIsValid(pd._ts) || pd.pcPsa6 === undefined) pd = await _hvg1edFetchOne(selectedCard);
+      // pcPsa1 absent = cached before the PSA 1–4 grades were added; refetch.
+      if (!pd || !_priceCacheIsValid(pd._ts) || pd.pcPsa1 === undefined) pd = await _hvg1edFetchOne(selectedCard);
     } else if (variant === 'shadowless') {
       pd = _getCachedShadowlessPrice(selectedCard.i);
       if (!pd || !_priceCacheIsValid(pd._ts)) pd = await _hvgShadowlessFetchOne(selectedCard);
@@ -11666,6 +11679,17 @@ function _gemRateGradeRatio(card, grade) {
   return base; // normal range — no adjustment
 }
 
+// Live PriceCharting price (USD) for one PSA grade, 1–10, or 0 when the
+// grade has no published sales. PriceCharting labels sub-gem grades
+// "Grade 1"…"Grade 9"; pcGrade9 is the legacy field kept for old caches.
+function _liveGradeUSD(lp, g) {
+  if (!lp) return 0;
+  if (g === 10) return lp.pcPsa10 > 0 ? lp.pcPsa10 : 0;
+  if (g === 9)  return lp.pcPsa9 > 0 ? lp.pcPsa9 : (lp.pcGrade9 > 0 ? lp.pcGrade9 : 0);
+  const v = lp['pcPsa' + g];
+  return v > 0 ? v : 0;
+}
+
 // Compute estimated price for a single PSA grade.
 function estimateGradePrice(card, grade, psa10Price) {
   if (!psa10Price || psa10Price <= 0) return 0;
@@ -14634,12 +14658,7 @@ function computeHoldCore(card) {
     ? livePrice
     : ((typeof getCachedPrice === 'function') ? (getCachedPrice(card.i) || {}) : {});
   const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
-    const liveUSD = g === 9 ? (_hcLp.pcPsa9 > 0 ? _hcLp.pcPsa9 : _hcLp.pcGrade9 > 0 ? _hcLp.pcGrade9 : 0)
-                  : g === 8 ? (_hcLp.pcPsa8 > 0 ? _hcLp.pcPsa8 : 0)
-                  : g === 7 ? (_hcLp.pcPsa7 > 0 ? _hcLp.pcPsa7 : 0)
-                  : g === 6 ? (_hcLp.pcPsa6 > 0 ? _hcLp.pcPsa6 : 0)
-                  : g === 5 ? (_hcLp.pcPsa5 > 0 ? _hcLp.pcPsa5 : 0)
-                  : 0;
+    const liveUSD = _liveGradeUSD(_hcLp, g);
     const baseUSD = liveUSD > 0 ? liveUSD : estimateGradePrice(card, g, psa10Price);
     const slabShipUSD = estimateUkSlabShipping(baseUSD * fx) / fx;
     const today = baseUSD + slabShipUSD;
@@ -15498,12 +15517,7 @@ function renderHoldStrategy(card) {
 
   const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
     const isOwnedSlab = slabAcq && slabAcq.grade === g;
-    const liveUSD_r = g === 9 ? (_rhsLp.pcPsa9 > 0 ? _rhsLp.pcPsa9 : _rhsLp.pcGrade9 > 0 ? _rhsLp.pcGrade9 : 0)
-                    : g === 8 ? (_rhsLp.pcPsa8 > 0 ? _rhsLp.pcPsa8 : 0)
-                    : g === 7 ? (_rhsLp.pcPsa7 > 0 ? _rhsLp.pcPsa7 : 0)
-                    : g === 6 ? (_rhsLp.pcPsa6 > 0 ? _rhsLp.pcPsa6 : 0)
-                    : g === 5 ? (_rhsLp.pcPsa5 > 0 ? _rhsLp.pcPsa5 : 0)
-                    : 0;
+    const liveUSD_r = _liveGradeUSD(_rhsLp, g);
     const baseUSD = liveUSD_r > 0 ? liveUSD_r : estimateGradePrice(card, g, psa10Price);
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
     // For owned slabs: cost basis is what was paid; projections still anchor to current market.
@@ -23764,7 +23778,10 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
   const acqCostGBP = getAcqCostBasisGBP(card.i);
   const hasAcqCost = acqCostGBP != null && acqCostGBP > 0;
   // The "gamble" (Buy Raw + Grade) row buys raw upfront, so it shares the raw override.
-  const sourceKey = { raw: 'raw', gamble: 'raw', psa7: 'psa7', psa8: 'psa8', psa9: 'psa9', psa10: 'psa10' };
+  // Every graded tier can be overridden, not just 7–10 — low-grade vintage is
+  // exactly where the ratio estimate is least reliable.
+  const sourceKey = { raw: 'raw', gamble: 'raw' };
+  for (let g = 1; g <= 10; g++) sourceKey['psa' + g] = 'psa' + g;
   strategies.forEach(s => {
     const ok = sourceKey[s.key];
     if (!ok) return;
@@ -23822,11 +23839,8 @@ function renderHoldOverridePanel(card) {
     return null;
   }
   const rows = [
-    { key: 'raw',   label: 'Raw' },
-    { key: 'psa7',  label: 'PSA 7' },
-    { key: 'psa8',  label: 'PSA 8' },
-    { key: 'psa9',  label: 'PSA 9' },
-    { key: 'psa10', label: 'PSA 10' },
+    { key: 'raw', label: 'Raw' },
+    ...[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map(g => ({ key: 'psa' + g, label: 'PSA ' + g })),
   ];
   const naFlags = overrides._na || {};
   const activeCount = rows.filter(r => overrides[r.key] != null || naFlags[r.key]).length;
