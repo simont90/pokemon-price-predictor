@@ -755,6 +755,96 @@ async function handleOAuthToken(request, env) {
 }
 
 // ---- AI query parser (natural language → structured card search params) ----
+// ── Siri Shortcuts endpoint ────────────────────────────────────────────────
+// A speech-shaped wrapper over the same analysis the MCP tools serve, so an
+// iOS Shortcut needs only one "Get Contents of URL" step and no JSON parsing.
+//
+//   GET /siri?q=charizard base set&key=<pair-code>      → plain text to speak
+//   GET /siri?intent=collection&key=<pair-code>         → portfolio summary
+//   GET /siri?q=...&format=json                         → full analysis JSON
+//
+// key= is the same pair code used by /sync. It's optional for card lookups
+// (public card data) and required for anything touching the collection.
+function _siriMoney(gbp) {
+  if (gbp == null || !isFinite(gbp)) return null;
+  return gbp >= 100 ? `£${Math.round(gbp)}` : `£${gbp.toFixed(2)}`;
+}
+
+function _siriSpeakAnalysis(a) {
+  if (!a || a.found === false) return `I couldn't find that card. Try including the set name.`;
+  const bits = [];
+  bits.push(a.set ? `${a.name} from ${a.set}.` : `${a.name}.`);
+
+  const price = _siriMoney(a.price_gbp);
+  bits.push(price ? `It's worth about ${price} raw.` : `I don't have a current price for it.`);
+
+  if (a.investment_stars) {
+    bits.push(`${a.investment_stars} out of 5 as an investment${a.investment_stars_label ? ` — ${a.investment_stars_label.toLowerCase()}` : ''}.`);
+  }
+  const maxBuy = _siriMoney(a.ebay && a.ebay.max_buy_for_20pct_roi);
+  if (maxBuy) bits.push(`Don't pay more than ${maxBuy} on eBay.`);
+
+  if (a.entry_timing && a.entry_timing.label && a.entry_timing.label !== 'Unknown') {
+    bits.push(`Timing: ${a.entry_timing.label.toLowerCase()}.`);
+  }
+
+  if (a.grading && a.grading.worth_grading != null) {
+    bits.push(a.grading.worth_grading
+      ? `Worth grading${a.grading.psa10_estimate_gbp ? ` — a PSA 10 is worth around ${_siriMoney(a.grading.psa10_estimate_gbp)}` : ''}.`
+      : `Not worth grading at this price.`);
+  }
+
+  if (a.in_collection) bits.push(`You already own this one.`);
+  else if (a.in_wishlist) bits.push(`It's on your wishlist.`);
+
+  return bits.join(' ');
+}
+
+async function handleSiri(request, env, url) {
+  const ch = { ...corsHeaders(request), 'Content-Type': 'text/plain; charset=utf-8' };
+  const speak = (text, status) => new Response(text, { status: status || 200, headers: ch });
+
+  const intent = (url.searchParams.get('intent') || 'card').trim().toLowerCase();
+  const q      = (url.searchParams.get('q') || '').trim();
+  const key    = (url.searchParams.get('key') || '').trim();
+  const asJson = (url.searchParams.get('format') || '').toLowerCase() === 'json';
+  const kvKey  = key ? `sync:${key}` : null;
+
+  try {
+    if (intent === 'collection' || intent === 'portfolio') {
+      if (!kvKey) return speak('Add your pair code to the shortcut so I can read your collection.', 400);
+      const res = await dispatchTool('get_collection_stats', {}, env, kvKey);
+      const text = res && res.content && res.content[0] ? res.content[0].text : '';
+      if (res && res.isError) return speak(text || 'I could not read your collection.', 200);
+      if (asJson) return _jsonResp(200, JSON.parse(text), corsHeaders(request));
+      let s; try { s = JSON.parse(text); } catch { return speak(text); }
+      const parts = [];
+      if (s.unique_cards != null) {
+        parts.push(s.total_quantity && s.total_quantity !== s.unique_cards
+          ? `You have ${s.total_quantity} cards across ${s.unique_cards} unique.`
+          : `You have ${s.unique_cards} cards.`);
+      }
+      const spent = _siriMoney(s.total_spent_gbp);
+      if (spent && s.total_spent_gbp > 0) parts.push(`You've spent about ${spent}.`);
+      if (s.by_grade && (s.by_grade.graded || s.by_grade.raw)) {
+        parts.push(`${s.by_grade.graded || 0} graded, ${s.by_grade.raw || 0} raw.`);
+      }
+      return speak(parts.length ? parts.join(' ') : 'I could not read your collection.');
+    }
+
+    // Default: value/insight lookup for one card
+    if (!q) return speak('Tell me which card to look up.', 400);
+    const res = await dispatchTool('get_card_analysis', { query: q }, env, kvKey);
+    const text = res && res.content && res.content[0] ? res.content[0].text : '';
+    if (res && res.isError) return speak(text || `I couldn't look that card up.`, 200);
+    let a; try { a = JSON.parse(text); } catch { return speak(text); }
+    if (asJson) return _jsonResp(200, a, corsHeaders(request));
+    return speak(_siriSpeakAnalysis(a));
+  } catch (e) {
+    return speak(`Something went wrong looking that up. ${e.message}`, 200);
+  }
+}
+
 async function handleAiQuery(request, env, url) {
   const ch = corsHeaders(request);
   if (!env.ANTHROPIC_API_KEY) return _jsonResp(503, { error: 'ANTHROPIC_API_KEY not configured.' }, ch);
@@ -848,6 +938,7 @@ async function handle(request, env, ctx) {
   if (url.pathname === '/auth/account' && request.method === 'DELETE') return handleDeleteAccount(request, env);
   if (url.pathname === '/ai/chat' && request.method === 'POST') return handleAiChat(request, env);
   if (url.pathname === '/ai/query') return handleAiQuery(request, env, url);
+  if (url.pathname === '/siri') return handleSiri(request, env, url);
   if (url.pathname === '/tcg-price') return handleTcgPrice(request, url);
   if (url.pathname === '/price-warm') return handlePriceWarm(request, env, url);
   if (url.pathname === '/prices') return handlePricesBatch(request, env, url);
