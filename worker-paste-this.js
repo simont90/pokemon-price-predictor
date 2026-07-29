@@ -913,10 +913,32 @@ async function handleSiri(request, env, url) {
   const speak = (text, status) => new Response(text, { status: status || 200, headers: ch });
 
   const intent = (url.searchParams.get('intent') || 'card').trim().toLowerCase();
-  const q      = (url.searchParams.get('q') || '').trim();
   const key    = (url.searchParams.get('key') || '').trim();
   const asJson = (url.searchParams.get('format') || '').toLowerCase() === 'json';
   const kvKey  = key ? `sync:${key}` : null;
+
+  // Be generous about where the card name arrives. Shortcuts is fiddly about
+  // appending a variable to a URL, so accept several spellings, a POST body,
+  // a trailing path segment (/siri/umbreon vmax), or a bare query string
+  // (?umbreon vmax) — anything that clearly names a card.
+  let q = '';
+  for (const k of ['q', 'card', 'name', 'text', 'query', 'input']) {
+    const v = url.searchParams.get(k);
+    if (v && v.trim()) { q = v.trim(); break; }
+  }
+  if (!q) {
+    const seg = decodeURIComponent(url.pathname.replace(/^\/siri\/?/, '')).trim();
+    if (seg) q = seg;
+  }
+  if (!q) {
+    // "?umbreon vmax" parses as a key with an empty value — use the key.
+    for (const [k, v] of url.searchParams.entries()) {
+      if (!v && k && !['intent', 'key', 'format'].includes(k)) { q = k.trim(); break; }
+    }
+  }
+  if (!q && request.method === 'POST') {
+    try { q = (await request.text()).trim().slice(0, 120); } catch (e) {}
+  }
 
   try {
     if (intent === 'collection' || intent === 'portfolio') {
@@ -941,7 +963,7 @@ async function handleSiri(request, env, url) {
     }
 
     // Default: value/insight lookup for one card
-    if (!q) return speak('Tell me which card to look up.', 400);
+    if (!q) return speak("I didn't catch a card name. In the shortcut, check the microphone bubble sits at the very end of the web address, right after the equals sign.", 200);
     const res = await dispatchTool('get_card_analysis', { query: q }, env, kvKey);
     const text = res && res.content && res.content[0] ? res.content[0].text : '';
     if (res && res.isError) {
