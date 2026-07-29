@@ -875,18 +875,32 @@ function _siriSpeakAnalysis(a, live) {
 // pokemontcg.io is rate-limiting or down.
 async function _siriD1Lookup(env, query) {
   if (!env.PRICES_DB || !query) return null;
-  const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 1).slice(0, 4);
+  // Dictation adds punctuation ("Umbreon VMAX.") and filler ("the", "card"),
+  // either of which would sink a strict all-words match — strip both.
+  const STOP = new Set(['the', 'a', 'an', 'card', 'pokemon', 'value', 'price', 'worth', 'of', 'for', 'my']);
+  const words = query.toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !STOP.has(w))
+    .slice(0, 4);
   if (!words.length) return null;
-  const where = words.map(() => 'LOWER(pc_name) LIKE ?').join(' AND ');
-  try {
+
+  const runQuery = async ws => {
+    const where = ws.map(() => 'LOWER(pc_name) LIKE ?').join(' AND ');
     const { results } = await env.PRICES_DB.prepare(
       `SELECT card_id, pc_name, pc_console, pc_ungraded, pc_psa10, pc_psa9, updated_at
          FROM prices
         WHERE ${where} AND pc_ungraded > 0
         ORDER BY pc_ungraded DESC
         LIMIT 1`
-    ).bind(...words.map(w => `%${w}%`)).all();
-    const r = results && results[0];
+    ).bind(...ws.map(w => `%${w}%`)).all();
+    return results && results[0];
+  };
+
+  try {
+    // Try every word, then progressively relax to the most distinctive one.
+    let r = null;
+    for (let n = words.length; n >= 1 && !r; n--) r = await runQuery(words.slice(0, n));
     if (!r) return null;
     const FX = 0.79;
     return {
@@ -939,6 +953,14 @@ async function handleSiri(request, env, url) {
   if (!q && request.method === 'POST') {
     try { q = (await request.text()).trim().slice(0, 120); } catch (e) {}
   }
+  // Dictation hands back sentence punctuation and filler — "what's Umbreon
+  // VMAX worth?" — none of which helps a card-name search.
+  q = q
+    .replace(/^\s*(what(?:'s| is| are)?|how much (?:is|are)|check|look ?up|find|tell me about|value of|price of)\s+/i, '')
+    .replace(/\s+(worth|value|price|card)\s*$/i, '')
+    .replace(/[.,!?;:]+\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   try {
     if (intent === 'collection' || intent === 'portfolio') {
