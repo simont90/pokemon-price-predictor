@@ -755,6 +755,38 @@ async function handleOAuthToken(request, env) {
 }
 
 // ---- AI query parser (natural language → structured card search params) ----
+// pokemontcg.io fetch with a 24h KV cache, one retry on 429/5xx, and an
+// optional API key. The anonymous tier rate-limits hard, and Siri asks about
+// the same cards repeatedly — so a cache hit is both faster and kinder.
+// Returns the parsed body, or { _error: {status|error} } on failure.
+async function _pcgFetch(url, env, cacheTtlSec) {
+  const ttl = cacheTtlSec || 86400;
+  const ck = 'pcg:' + url.slice(0, 480);
+  if (env.SYNC_KV) {
+    try { const hit = await env.SYNC_KV.get(ck, 'json'); if (hit) return hit; } catch (e) {}
+  }
+  const headers = { 'User-Agent': 'PokemonPricePredictor/1.0' };
+  if (env.POKEMONTCG_API_KEY) headers['X-Api-Key'] = env.POKEMONTCG_API_KEY;
+
+  let last = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, 700));
+    let r;
+    try { r = await fetch(url, { headers }); }
+    catch (e) { last = { error: e.message }; continue; }
+    if (r.ok) {
+      let data; try { data = await r.json(); } catch (e) { last = { error: 'bad json' }; break; }
+      if (env.SYNC_KV) {
+        try { await env.SYNC_KV.put(ck, JSON.stringify(data), { expirationTtl: ttl }); } catch (e) {}
+      }
+      return data;
+    }
+    last = { status: r.status };
+    if (r.status !== 429 && r.status < 500) break; // 404 and friends won't improve
+  }
+  return { _error: last || { error: 'unknown' } };
+}
+
 // ── Siri Shortcuts endpoint ────────────────────────────────────────────────
 // A speech-shaped wrapper over the same analysis the MCP tools serve, so an
 // iOS Shortcut needs only one "Get Contents of URL" step and no JSON parsing.
@@ -1455,21 +1487,22 @@ async function dispatchTool(name, args, env, kvKey) {
       if (!cardId && !queryStr) return asError('Provide card_id or query.');
 
       let card;
-      try {
-        if (cardId) {
-          const r = await fetch(`https://api.pokemontcg.io/v2/cards/${encodeURIComponent(cardId)}`, { headers: { 'User-Agent': 'PokemonPricePredictor/1.0' } });
-          if (!r.ok) return asError(`Card ${cardId} not found (${r.status}).`);
-          card = (await r.json()).data;
-        } else {
-          const q = encodeURIComponent(`name:"${queryStr.replace(/"/g, '')}"`);
-          const r = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}&pageSize=1&orderBy=-set.releaseDate`, { headers: { 'User-Agent': 'PokemonPricePredictor/1.0' } });
-          if (!r.ok) return asError(`Card database returned ${r.status}.`);
-          const d = await r.json();
-          card = d.data?.[0] ?? null;
-          if (!card) return asTextContent({ found: false, query: queryStr, note: 'No card matched. Try a more specific name.' });
+      {
+        const url = cardId
+          ? `https://api.pokemontcg.io/v2/cards/${encodeURIComponent(cardId)}`
+          : `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(`name:"${queryStr.replace(/"/g, '')}"`)}&pageSize=1&orderBy=-set.releaseDate`;
+        const d = await _pcgFetch(url, env);
+        if (d._error) {
+          return asError(d._error.status === 429
+            ? 'The card database is busy right now. Try again in a few seconds.'
+            : `Card database unavailable (${d._error.status || d._error.error}).`);
         }
-      } catch (e) {
-        return asError(`Card database fetch failed: ${e.message}`);
+        card = cardId ? d.data : (d.data?.[0] ?? null);
+        if (!card) {
+          return cardId
+            ? asError(`Card ${cardId} not found.`)
+            : asTextContent({ found: false, query: queryStr, note: 'No card matched. Try a more specific name.' });
+        }
       }
 
       const FX = 0.79;
