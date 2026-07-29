@@ -770,13 +770,49 @@ function _siriMoney(gbp) {
   return gbp >= 100 ? `£${Math.round(gbp)}` : `£${gbp.toFixed(2)}`;
 }
 
-function _siriSpeakAnalysis(a) {
+// Live PriceCharting figures for a card the analysis already identified.
+// Reads the D1 price cache first, then fetches PriceCharting directly on a
+// miss — the same path /prices uses, so Siri quotes the same live numbers
+// the app shows rather than the static TCGPlayer figure.
+async function _siriLivePrice(env, card) {
+  if (!card || !card.id) return null;
+  const FX = 0.79;
+  const shape = p => (p && p.pcUngraded > 0) ? {
+    rawGBP:   p.pcUngraded * FX,
+    psa10GBP: p.pcPsa10 > 0 ? p.pcPsa10 * FX : null,
+    psa9GBP:  p.pcPsa9  > 0 ? p.pcPsa9  * FX : null,
+    src: p._src || 'pc',
+  } : null;
+
+  try {
+    if (env.PRICES_DB) {
+      const rows = await _d1FetchPrices(env.PRICES_DB, [card.id]);
+      const live = shape(_d1RowToPrice(rows[card.id]));
+      if (live) return live;
+    }
+  } catch (e) { /* fall through to a direct fetch */ }
+
+  try {
+    const p = await _warmFetchPCCard({
+      i: card.id, n: card.name, s: card.set && card.set.name,
+      cn: card.number, lang: 'EN',
+    });
+    return shape(p);
+  } catch (e) { return null; }
+}
+
+function _siriSpeakAnalysis(a, live) {
   if (!a || a.found === false) return `I couldn't find that card. Try including the set name.`;
   const bits = [];
   bits.push(a.set ? `${a.name} from ${a.set}.` : `${a.name}.`);
 
-  const price = _siriMoney(a.price_gbp);
+  // Prefer the live sold-price feed; fall back to the catalogue price.
+  const livePrice = live && _siriMoney(live.rawGBP);
+  const price = livePrice || _siriMoney(a.price_gbp);
   bits.push(price ? `It's worth about ${price} raw.` : `I don't have a current price for it.`);
+  if (live && live.psa10GBP) {
+    bits.push(`A PSA 10 goes for around ${_siriMoney(live.psa10GBP)}${live.psa9GBP ? `, a PSA 9 about ${_siriMoney(live.psa9GBP)}` : ''}.`);
+  }
 
   if (a.investment_stars) {
     bits.push(`${a.investment_stars} out of 5 as an investment${a.investment_stars_label ? ` — ${a.investment_stars_label.toLowerCase()}` : ''}.`);
@@ -789,9 +825,10 @@ function _siriSpeakAnalysis(a) {
   }
 
   if (a.grading && a.grading.worth_grading != null) {
-    bits.push(a.grading.worth_grading
-      ? `Worth grading${a.grading.psa10_estimate_gbp ? ` — a PSA 10 is worth around ${_siriMoney(a.grading.psa10_estimate_gbp)}` : ''}.`
-      : `Not worth grading at this price.`);
+    // Don't repeat a PSA 10 figure — the live line above already gave the real one.
+    const est = (!live || !live.psa10GBP) && a.grading.psa10_estimate_gbp
+      ? ` — a PSA 10 is worth around ${_siriMoney(a.grading.psa10_estimate_gbp)}` : '';
+    bits.push(a.grading.worth_grading ? `Worth grading${est}.` : `Not worth grading at this price.`);
   }
 
   if (a.in_collection) bits.push(`You already own this one.`);
@@ -838,8 +875,17 @@ async function handleSiri(request, env, url) {
     const text = res && res.content && res.content[0] ? res.content[0].text : '';
     if (res && res.isError) return speak(text || `I couldn't look that card up.`, 200);
     let a; try { a = JSON.parse(text); } catch { return speak(text); }
+    const live = await _siriLivePrice(env, { id: a.id, name: a.name, set: { name: a.set }, number: a.number });
+    if (live) {
+      a.live_prices_gbp = {
+        raw:    +live.rawGBP.toFixed(2),
+        psa10:  live.psa10GBP != null ? +live.psa10GBP.toFixed(2) : null,
+        psa9:   live.psa9GBP  != null ? +live.psa9GBP.toFixed(2)  : null,
+        source: live.src,
+      };
+    }
     if (asJson) return _jsonResp(200, a, corsHeaders(request));
-    return speak(_siriSpeakAnalysis(a));
+    return speak(_siriSpeakAnalysis(a, live));
   } catch (e) {
     return speak(`Something went wrong looking that up. ${e.message}`, 200);
   }
