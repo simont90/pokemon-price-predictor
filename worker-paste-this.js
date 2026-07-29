@@ -869,6 +869,45 @@ function _siriSpeakAnalysis(a, live) {
   return bits.join(' ');
 }
 
+// Fallback lookup straight from the D1 price table — no external API.
+// It holds every card the app has priced (collection, wishlist, anything
+// viewed), with live PriceCharting figures, so Siri still answers when
+// pokemontcg.io is rate-limiting or down.
+async function _siriD1Lookup(env, query) {
+  if (!env.PRICES_DB || !query) return null;
+  const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 1).slice(0, 4);
+  if (!words.length) return null;
+  const where = words.map(() => 'LOWER(pc_name) LIKE ?').join(' AND ');
+  try {
+    const { results } = await env.PRICES_DB.prepare(
+      `SELECT card_id, pc_name, pc_console, pc_ungraded, pc_psa10, pc_psa9, updated_at
+         FROM prices
+        WHERE ${where} AND pc_ungraded > 0
+        ORDER BY pc_ungraded DESC
+        LIMIT 1`
+    ).bind(...words.map(w => `%${w}%`)).all();
+    const r = results && results[0];
+    if (!r) return null;
+    const FX = 0.79;
+    return {
+      id: r.card_id,
+      name: r.pc_name,
+      set: r.pc_console || null,
+      rawGBP:   r.pc_ungraded * FX,
+      psa10GBP: r.pc_psa10 > 0 ? r.pc_psa10 * FX : null,
+      psa9GBP:  r.pc_psa9  > 0 ? r.pc_psa9  * FX : null,
+      updatedAt: r.updated_at || 0,
+    };
+  } catch (e) { return null; }
+}
+
+function _siriSpeakD1(d) {
+  const bits = [`${d.name}${d.set ? ` from ${d.set}` : ''}.`];
+  bits.push(`It's worth about ${_siriMoney(d.rawGBP)} raw.`);
+  if (d.psa10GBP) bits.push(`A PSA 10 goes for around ${_siriMoney(d.psa10GBP)}${d.psa9GBP ? `, a PSA 9 about ${_siriMoney(d.psa9GBP)}` : ''}.`);
+  return bits.join(' ');
+}
+
 async function handleSiri(request, env, url) {
   const ch = { ...corsHeaders(request), 'Content-Type': 'text/plain; charset=utf-8' };
   const speak = (text, status) => new Response(text, { status: status || 200, headers: ch });
@@ -905,7 +944,15 @@ async function handleSiri(request, env, url) {
     if (!q) return speak('Tell me which card to look up.', 400);
     const res = await dispatchTool('get_card_analysis', { query: q }, env, kvKey);
     const text = res && res.content && res.content[0] ? res.content[0].text : '';
-    if (res && res.isError) return speak(text || `I couldn't look that card up.`, 200);
+    if (res && res.isError) {
+      // Card catalogue unavailable — answer from our own priced-card table.
+      const d1 = await _siriD1Lookup(env, q);
+      if (d1) {
+        if (asJson) return _jsonResp(200, { ...d1, source: 'price-db' }, corsHeaders(request));
+        return speak(_siriSpeakD1(d1));
+      }
+      return speak(text || `I couldn't look that card up.`, 200);
+    }
     let a; try { a = JSON.parse(text); } catch { return speak(text); }
     const live = await _siriLivePrice(env, { id: a.id, name: a.name, set: { name: a.set }, number: a.number });
     if (live) {
