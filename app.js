@@ -16842,9 +16842,23 @@ function renderHoldStrategy(card) {
     const profitSign    = s.profit >= 0 ? '+' : '−';
     const riskLabel     = s.risk === 'low' ? 'Low risk' : s.risk === 'med' ? 'Med risk' : 'High risk';
 
-    const entryCtx = s.isOwnedSlab  ? `Paid ${fmtGBPDirect(todayGBP_tile)}`
-                   : s.marketNowGBP != null ? `${fmtGBPDirect(todayGBP_tile)} · now ${fmtGBPDirect(s.marketNowGBP)}`
-                   : `${fmtGBPDirect(todayGBP_tile)} all-in`;
+    // For a slab you hold, "Paid" alone hides the thing worth knowing: how the
+    // price paid compares with what the grade is worth now.
+    let entryCtx;
+    if (s.isOwnedSlab) {
+      entryCtx = `Paid ${fmtGBPDirect(todayGBP_tile)}`;
+      if (s.marketNowGBP != null) {
+        const delta = s.marketNowGBP - todayGBP_tile;
+        const sign  = delta >= 0 ? '+' : '−';
+        const cls   = delta >= 0 ? 'hold-pos' : 'hold-neg';
+        entryCtx += ` · now ${fmtGBPDirect(s.marketNowGBP)} <span class="${cls}">(${sign}${fmtGBPDirect(Math.abs(delta))}${
+          delta < 0 ? ' over the mark' : ''})</span>`;
+      }
+    } else if (s.marketNowGBP != null) {
+      entryCtx = `${fmtGBPDirect(todayGBP_tile)} · now ${fmtGBPDirect(s.marketNowGBP)}`;
+    } else {
+      entryCtx = `${fmtGBPDirect(todayGBP_tile)} all-in`;
+    }
     const waitStr  = s.waitMonths ? ` · ~${s.waitDisplay || Math.round(s.waitMonths) + ' mo'}` : '';
     const lossStr  = (s.lossProb > 0) ? `<span class="hold-row-loss">${(s.lossProb*100).toFixed(0)}% loss case</span>` : '';
 
@@ -24722,8 +24736,13 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
     const gbp = overrides[ok];
     if (gbp == null || !isFinite(gbp) || gbp <= 0) return;
     const usd = gbp / fxRateLocal;
+    // A slab already in the collection has a real, known cost — the price paid
+    // for it. An override entered against eBay is what that grade is worth
+    // now, not a revision of what was paid, so it must not replace the cost
+    // basis: doing so made a tile read "Paid £183" for a slab bought at £200
+    // and quietly hid the £17 the buy was above the mark.
     const isRawBased = (s.key === 'raw' || s.key === 'gamble');
-    if (isRawBased && hasAcqCost) {
+    if ((isRawBased || s.isOwnedSlab) && hasAcqCost) {
       // Override = current market. Preserve acquisition-cost denominator for profit/ROI.
       // profit/roi/today were already computed from acq cost — don't touch them.
       s.marketOverrideGBP = gbp; // kept for the "Override" badge
