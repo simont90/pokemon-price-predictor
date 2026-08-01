@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260720x">
+  <link rel="stylesheet" href="style.css?v=20260720z">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1615,6 +1615,7 @@
                 <button class="pc-override-btn" id="pcOverrideBtn" title="Pick the correct PriceCharting product if this match is wrong">Wrong card? Pick correct match</button>
               </div>
               <div class="pc-variant-row" id="pcVariantRow" style="display:none"></div>
+              </div>
               <div class="live-prices-grid">
                 <div class="lp-cell"><span class="lp-label">Ungraded</span><span class="lp-val lp-market" id="pcUngraded">—</span></div>
                 <div class="lp-cell"><span class="lp-label">PSA 10</span><span class="lp-val" id="pcPsa10">—</span></div>
@@ -1624,6 +1625,23 @@
                 <div class="lp-cell"><span class="lp-label">Grading ROI</span><span class="lp-val pc-grading-roi" id="pcGradingRoi">—</span></div>
               </div>
             </div>
+              <!-- PSA reference link: pin the authoritative PSA page for this card -->
+              <div class="psa-link-row" id="psaLinkRow">
+                <span class="psa-link-icon">🏆</span>
+                <span class="psa-link-label">PSA</span>
+                <a id="psaLinkOpen" class="psa-link-open" href="#" target="_blank" rel="noopener noreferrer">Open ↗</a>
+                <span class="psa-link-kind" id="psaLinkKind"></span>
+                <button type="button" class="psa-link-btn" id="psaLinkBtn">Add PSA link</button>
+              </div>
+              <div class="psa-link-edit" id="psaLinkEdit" style="display:none">
+                <input id="psaLinkInput" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                       placeholder="Paste a psacard.com link (price guide, pop report, cert…)">
+                <div class="psa-link-actions">
+                  <button type="button" class="psa-link-save" id="psaLinkSave">Save</button>
+                  <button type="button" class="psa-link-cancel" id="psaLinkCancel">Cancel</button>
+                  <button type="button" class="psa-link-remove" id="psaLinkRemove">Remove</button>
+                </div>
+                <div class="psa-link-hint" id="psaLinkHint">Tip: open PSA, find this exact card, then paste the address here.</div>
             <!-- Collectrics -->
             <div class="live-source-row collectrics-source-row" id="collectricsRow" style="display:none">
               <div class="live-source-label">
@@ -3177,7 +3195,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260720x"></script>
+  <script src="app.js?v=20260720z"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

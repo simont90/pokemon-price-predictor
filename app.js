@@ -648,6 +648,7 @@ async function init() {
   initPriceHistoryControls();
   setupQuickLookup();
   setupPCOverride();
+  setupPsaLink();
   setupCPOverride();
   setupMLinkPicker();
   setupManualAdd();
@@ -2055,6 +2056,63 @@ const parsePCPrice = (s) => {
 };
 
 // localStorage key for per-card PriceCharting overrides
+// ── PSA reference links ────────────────────────────────────────────────────
+// Vintage grade estimates are weak — there's no live feed below PSA 5 and the
+// ratio model is a poor fit for WOTC-era cards. Pinning the authoritative PSA
+// page per card gives a one-tap route to the real pop report and auction
+// prices. Synced (pkm- prefix) so the link follows you across devices.
+const PSA_LINK_KEY = 'pkm-psa-links-v1';
+
+function getPsaLinks() {
+  try { return JSON.parse(localStorage.getItem(PSA_LINK_KEY) || '{}') || {}; }
+  catch { return {}; }
+}
+function getPsaLink(cardId) {
+  const all = getPsaLinks();
+  return (cardId && all[cardId]) ? all[cardId] : null;
+}
+function setPsaLink(cardId, url) {
+  if (!cardId) return;
+  const all = getPsaLinks();
+  if (url) all[cardId] = { url, ts: Date.now() };
+  else delete all[cardId];
+  try { localStorage.setItem(PSA_LINK_KEY, JSON.stringify(all)); } catch (e) {}
+}
+
+// Accept a pasted psacard.com URL of any shape (price guide, pop report, cert,
+// auction prices). Returns a cleaned URL, or null if it isn't a PSA link.
+function normalisePsaUrl(raw) {
+  const s = (raw || '').trim();
+  if (!s) return null;
+  let u;
+  try { u = new URL(s.startsWith('http') ? s : 'https://' + s); }
+  catch { return null; }
+  if (!/(^|\.)psacard\.com$/i.test(u.hostname)) return null;
+  u.hash = '';
+  return u.toString();
+}
+
+// Fallback when no link is pinned: a PSA site search for this card.
+function buildPsaSearchUrl(card) {
+  if (!card) return 'https://www.psacard.com/priceguide/';
+  const bits = [
+    (card.s || '').replace(/[^\w\s&-]/g, ''),
+    (card.n || '').replace(/\s*\(JP\)\s*/i, '').replace(/[^\w\s'.-]/g, ''),
+    card.cn ? String(card.cn) : '',
+  ].filter(Boolean);
+  return 'https://www.psacard.com/search?q=' + encodeURIComponent(bits.join(' ').trim());
+}
+
+// One label for the pinned link, so the UI can say what kind of page it is.
+function psaLinkKind(url) {
+  const u = (url || '').toLowerCase();
+  if (u.includes('/cert')) return 'Cert';
+  if (u.includes('/pop'))  return 'Pop report';
+  if (u.includes('/auctionprices') || u.includes('/apr')) return 'Auction prices';
+  if (u.includes('/priceguide')) return 'Price guide';
+  return 'PSA page';
+}
+
 const PC_OVERRIDE_KEY = 'pkm-pc-overrides-v1';
 function getPCOverrides() {
   try { return JSON.parse(localStorage.getItem(PC_OVERRIDE_KEY) || '{}'); }
@@ -3361,6 +3419,7 @@ function selectCard(id) {
   // Refresh Acquisition + Grader section for the new card
   if (typeof renderAcquisition === 'function') renderAcquisition();
   if (typeof renderCardGrader === 'function') renderCardGrader();
+  if (typeof renderPsaLinkRow === 'function') renderPsaLinkRow();
 
   // Reset stale data immediately
   marketData = null;
@@ -9959,6 +10018,94 @@ function clearPCOverride() {
   if (selectedCard && selectedCard.i === cardId) fetchLivePrice(selectedCard);
 }
 
+// Paint the PSA row for whichever card is open. With a link pinned it opens
+// straight to that page; without one it falls back to a PSA search so the
+// card is still one tap away.
+function renderPsaLinkRow() {
+  const row = document.getElementById('psaLinkRow');
+  if (!row) return;
+  const card = (typeof selectedCard !== 'undefined') ? selectedCard : null;
+  if (!card) { row.style.display = 'none'; return; }
+  row.style.display = '';
+
+  const saved  = getPsaLink(card.i);
+  const open   = document.getElementById('psaLinkOpen');
+  const kindEl = document.getElementById('psaLinkKind');
+  const btn    = document.getElementById('psaLinkBtn');
+
+  if (saved && saved.url) {
+    open.href = saved.url;
+    open.textContent = 'Open ↗';
+    open.classList.add('psa-link-pinned');
+    if (kindEl) kindEl.textContent = psaLinkKind(saved.url);
+    if (btn) btn.textContent = 'Edit link';
+  } else {
+    open.href = buildPsaSearchUrl(card);
+    open.textContent = 'Search PSA ↗';
+    open.classList.remove('psa-link-pinned');
+    if (kindEl) kindEl.textContent = 'no link pinned';
+    if (btn) btn.textContent = 'Add PSA link';
+  }
+  // Editing panel always starts closed when the card changes
+  const edit = document.getElementById('psaLinkEdit');
+  if (edit) edit.style.display = 'none';
+}
+
+function setupPsaLink() {
+  const btn    = document.getElementById('psaLinkBtn');
+  const edit   = document.getElementById('psaLinkEdit');
+  const input  = document.getElementById('psaLinkInput');
+  const hint   = document.getElementById('psaLinkHint');
+  const save   = document.getElementById('psaLinkSave');
+  const cancel = document.getElementById('psaLinkCancel');
+  const remove = document.getElementById('psaLinkRemove');
+  if (!btn || !edit || !input) return;
+
+  const showHint = (msg, bad) => {
+    if (!hint) return;
+    hint.textContent = msg;
+    hint.classList.toggle('psa-link-hint-bad', !!bad);
+  };
+
+  btn.addEventListener('click', () => {
+    if (!selectedCard) return;
+    const openNow = edit.style.display === 'none';
+    edit.style.display = openNow ? '' : 'none';
+    if (openNow) {
+      const saved = getPsaLink(selectedCard.i);
+      input.value = saved ? saved.url : '';
+      if (remove) remove.style.display = saved ? '' : 'none';
+      showHint('Tip: open PSA, find this exact card, then paste the address here.', false);
+      setTimeout(() => input.focus(), 30);
+    }
+  });
+
+  const commit = () => {
+    if (!selectedCard) return;
+    const url = normalisePsaUrl(input.value);
+    if (!url) {
+      showHint("That doesn't look like a psacard.com address — check you copied the whole link.", true);
+      return;
+    }
+    setPsaLink(selectedCard.i, url);
+    edit.style.display = 'none';
+    renderPsaLinkRow();
+  };
+
+  save.addEventListener('click', commit);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') edit.style.display = 'none';
+  });
+  if (cancel) cancel.addEventListener('click', () => { edit.style.display = 'none'; });
+  if (remove) remove.addEventListener('click', () => {
+    if (!selectedCard) return;
+    setPsaLink(selectedCard.i, null);
+    edit.style.display = 'none';
+    renderPsaLinkRow();
+  });
+}
+
 function setupPCOverride() {
   const btn = $('pcOverrideBtn');
   if (btn) btn.addEventListener('click', openPCOverride);
@@ -11570,6 +11717,30 @@ function _detectWalls(gradePrices) {
     if ((hi - lo) / lo > 0.50) walls.add(g + 1);
   }
   return walls;
+}
+
+// PSA population badge for a Hold Strategy tile. Pop is the single most
+// useful number for judging a grade: a PSA 9 with a pop of 40 is a different
+// proposition from one with a pop of 4,000, and the share of the graded
+// population sitting at this grade says how hard the grade actually is.
+// Returns '' for the raw/gamble tiles and whenever pop hasn't loaded.
+function _holdPopBadge(popData, grade) {
+  if (!popData || !popData.pop || !grade) return '';
+  const n = popData.pop[grade];
+  if (!(n > 0)) return '';
+  let total = 0;
+  for (let g = 1; g <= 10; g++) total += (popData.pop[g] || 0);
+  const share = total > 0 ? (n / total) * 100 : 0;
+  // Scarcity read at this grade, relative to everything graded for the card.
+  const cls = n <= 100 ? 'hold-pop-rare' : n <= 1000 ? 'hold-pop-mid' : 'hold-pop-common';
+  const title = `PSA population at this grade: ${n.toLocaleString('en-GB')}`
+    + (total > 0 ? ` of ${total.toLocaleString('en-GB')} graded (${share.toFixed(1)}%)` : '');
+  // Only show the share when it's meaningful — a rounded "0%" next to the
+  // count reads as part of the number.
+  const shareStr = share >= 1 ? `${share.toFixed(0)}%` : (share > 0 ? '<1%' : '');
+  return `<span class="hold-pop ${cls}" title="${esc(title)}">Pop ${n.toLocaleString('en-GB')}`
+    + (shareStr ? `<span class="hold-pop-share">· ${shareStr}</span>` : '')
+    + `</span>`;
 }
 
 // In-flight guard so we don't fire duplicate pop/sales fetches for the same card
@@ -15885,7 +16056,7 @@ function renderHoldStrategy(card) {
           <span class="hold-row-label">${s.label}</span>
           <span class="hold-row-cost">${entryCtx}${waitStr}</span>
           <span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>
-          ${annualRateStr}${liqBadge}${gradeProbStr}${lossStr}
+          ${annualRateStr}${liqBadge}${gradeProbStr}${lossStr}${_holdPopBadge(_holdCachedPop, s.grade)}
         </div>
         <div class="hold-row-right">
           <div class="hold-row-roi ${_roiArrCls(s.roi)}">${_roiArrow(s.roi)} ${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</div>
@@ -26055,7 +26226,17 @@ function _vgLadderHTML(card) {
       ? 'Gold Star — scarcity drives value more than condition. PSA 6+ trades actively; lower grades still attract serious collectors.'
       : 'Unlike modern, PSA 7–8 retain genuine collector demand for vintage. PSA 10 is genuinely rare — most serious collections hold PSA 7–9.'
   }</div>`;
-  return vintageCtx + rawRow + rows + liveNote;
+  // Vintage grade estimates are the least reliable in the app, so offer the
+  // authoritative PSA page right here — pinned if the card has one saved.
+  const psaSaved = getPsaLink(card.i);
+  const psaHref  = psaSaved ? psaSaved.url : buildPsaSearchUrl(card);
+  const psaRow = `<div class="vg-ladder-note">
+    <a class="vg-psa-link${psaSaved ? ' vg-psa-pinned' : ''}" href="${esc(psaHref)}" target="_blank" rel="noopener noreferrer">
+      🏆 ${psaSaved ? psaLinkKind(psaSaved.url) + ' ↗' : 'Check PSA ↗'}
+    </a>
+  </div>`;
+
+  return vintageCtx + rawRow + rows + liveNote + psaRow;
 }
 
 function _vgCardRowHTML(card, data) {
