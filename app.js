@@ -649,6 +649,7 @@ async function init() {
   setupQuickLookup();
   setupPCOverride();
   setupPsaLink();
+  setupPsaPop();
   setupCPOverride();
   setupMLinkPicker();
   setupManualAdd();
@@ -10106,6 +10107,89 @@ function setupPsaLink() {
   });
 }
 
+// Store a pasted PSA population locally and push it to the worker so it
+// follows you to other devices (the /pop endpoint already accepts a PUT).
+async function savePsaPop(cardId, pop) {
+  if (!cardId || !pop) return;
+  const entry = { pop, ts: Date.now(), src: 'psa-paste' };
+  _popDataCache.set(cardId, entry);
+  const base = typeof getMktWorkerUrl === 'function'
+    ? getMktWorkerUrl() : 'https://pokemon-marketplace.simontariq.workers.dev';
+  try {
+    await fetch(`${base}/pop?cardId=${encodeURIComponent(cardId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pop }),
+    });
+  } catch (e) { /* local cache still holds it */ }
+}
+
+function setupPsaPop() {
+  const btn     = document.getElementById('psaPopBtn');
+  const edit    = document.getElementById('psaPopEdit');
+  const input   = document.getElementById('psaPopInput');
+  const preview = document.getElementById('psaPopPreview');
+  const save    = document.getElementById('psaPopSave');
+  const cancel  = document.getElementById('psaPopCancel');
+  const clear   = document.getElementById('psaPopClear');
+  if (!btn || !edit || !input) return;
+
+  let parsed = null;
+
+  const refreshPreview = () => {
+    parsed = parsePsaPopPaste(input.value);
+    if (!input.value.trim()) {
+      preview.textContent = '';
+      preview.className = 'psa-pop-preview';
+      save.disabled = true;
+      return;
+    }
+    if (!parsed) {
+      preview.textContent = "Couldn't read a grade table there. Copy the row of grades and the row of counts together.";
+      preview.className = 'psa-pop-preview psa-pop-bad';
+      save.disabled = true;
+      return;
+    }
+    const parts = [];
+    for (let g = 10; g >= 1; g--) if (parsed.pop[g] != null) parts.push(`PSA ${g}: ${parsed.pop[g].toLocaleString('en-GB')}`);
+    preview.textContent = `${parts.join(' · ')}  —  ${parsed.total.toLocaleString('en-GB')} graded in total. Check this matches the page, then save.`;
+    preview.className = 'psa-pop-preview psa-pop-ok';
+    save.disabled = false;
+  };
+
+  btn.addEventListener('click', () => {
+    if (!selectedCard) return;
+    const opening = edit.style.display === 'none';
+    edit.style.display = opening ? '' : 'none';
+    if (opening) {
+      input.value = '';
+      refreshPreview();
+      const existing = _popDataCache.get(selectedCard.i);
+      if (clear) clear.style.display = existing ? '' : 'none';
+      setTimeout(() => input.focus(), 30);
+    }
+  });
+
+  input.addEventListener('input', refreshPreview);
+  input.addEventListener('paste', () => setTimeout(refreshPreview, 0));
+
+  save.addEventListener('click', async () => {
+    if (!selectedCard || !parsed) return;
+    await savePsaPop(selectedCard.i, parsed.pop);
+    edit.style.display = 'none';
+    try { renderHoldStrategy(selectedCard); } catch (e) {}
+    try { renderPsaLinkRow(); } catch (e) {}
+  });
+
+  if (cancel) cancel.addEventListener('click', () => { edit.style.display = 'none'; });
+  if (clear) clear.addEventListener('click', () => {
+    if (!selectedCard) return;
+    _popDataCache.delete(selectedCard.i);
+    edit.style.display = 'none';
+    try { renderHoldStrategy(selectedCard); } catch (e) {}
+  });
+}
+
 function setupPCOverride() {
   const btn = $('pcOverrideBtn');
   if (btn) btn.addEventListener('click', openPCOverride);
@@ -11717,6 +11801,60 @@ function _detectWalls(gradePrices) {
     if ((hi - lo) / lo > 0.50) walls.add(g + 1);
   }
   return walls;
+}
+
+// ── Parse a PSA population table pasted from psacard.com ───────────────────
+// PSA publish pop reports on pages you can open yourself, but there's no API
+// for them. So: you copy the table, this reads the grade→count pairs out of
+// whatever shape the clipboard gives us. Handles a two-row table (grade
+// headers then counts), one-pair-per-line, and a single run-on blob.
+// Returns { pop: {1..10: n}, total } or null when nothing sensible parsed.
+function parsePsaPopPaste(text) {
+  if (!text || typeof text !== 'string') return null;
+  const clean = text.replace(/ /g, ' ').replace(/[│|]/g, ' ').trim();
+  if (!clean) return null;
+
+  const num = s => parseInt(String(s).replace(/[,\s]/g, ''), 10);
+  const pop = {};
+  // Half grades (8.5, 9.5) fold down into the whole grade they sit above.
+  const put = (gradeStr, n) => {
+    const gi = Math.floor(parseFloat(gradeStr));
+    if (gi >= 1 && gi <= 10 && Number.isFinite(n) && n >= 0) pop[gi] = (pop[gi] || 0) + n;
+  };
+
+  const GRADE_TOKEN = /(?:PSA\s*)?\b(10|[1-9](?:\.5)?)\b/gi;
+  const lines = clean.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  // Shape 1: a row of grade headers followed by a row of counts. A header row
+  // is one whose numbers are all valid grades; a counts row is all numbers.
+  for (let i = 0; i < lines.length - 1 && Object.keys(pop).length < 3; i++) {
+    const nums = lines[i].match(/[\d.,]+/g) || [];
+    if (nums.length < 4) continue;
+    if (!nums.every(t => /^(10|[1-9](\.5)?)$/.test(t))) continue; // any count => not a header
+    const grades = (lines[i].match(GRADE_TOKEN) || []).map(t => t.replace(/psa\s*/i, '').trim());
+    const vals = (lines[i + 1].match(/\b[\d,]+\b/g) || []);
+    if (grades.length !== vals.length) continue;
+    grades.forEach((g, k) => put(g, num(vals[k])));
+  }
+
+  // Shape 2: one "PSA <grade> … <count>" pair per line. Requires the line to
+  // be exactly that — a grade, then a single number, nothing else.
+  if (Object.keys(pop).length < 3) {
+    for (const key of Object.keys(pop)) delete pop[key];
+    for (const line of lines) {
+      const m = line.match(/^(?:psa\s*)?(10|[1-9](?:\.5)?)\s*[^\d]{0,20}?([\d,]+)$/i);
+      if (m) put(m[1], num(m[2]));
+    }
+  }
+
+  // Anything else is too ambiguous to trust — a wrong population number is
+  // worse than none, so refuse rather than guess.
+  const grades = Object.keys(pop);
+  if (grades.length < 3) return null;
+  let total = 0;
+  for (const g of grades) total += pop[g];
+  if (!(total > 0)) return null;
+  return { pop, total };
 }
 
 // PSA population badge for a Hold Strategy tile. Pop is the single most

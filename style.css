@@ -17793,3 +17793,23 @@ h1, h2, h3 {
 .hold-pop-rare   { color: #7ee2ae; background: rgba(52,168,110,0.16); }
 .hold-pop-mid    { color: var(--accent, #e8b634); background: rgba(232,182,52,0.14); }
 .hold-pop-common { color: var(--text-muted); background: rgba(128,128,128,0.16); }
+
+/* ── Paste PSA population ─────────────────────────────────────────────────── */
+.psa-pop-edit { display: flex; flex-direction: column; gap: 7px; padding: 8px 0 4px; }
+.psa-pop-edit textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(128,128,128,0.32);
+  background: rgba(128,128,128,0.07);
+  color: inherit;
+  resize: vertical;
+}
+.psa-pop-preview { font-size: 11px; line-height: 1.45; color: var(--text-muted); }
+.psa-pop-preview.psa-pop-ok  { color: var(--green, #4caf7d); }
+.psa-pop-preview.psa-pop-bad { color: #e57373; }
+.psa-link-save[disabled] { opacity: 0.45; cursor: not-allowed; }
