@@ -2392,17 +2392,41 @@ async function handleCertLookup(request, env, url) {
   } catch (e) {
     return new Response(JSON.stringify({ error: 'Could not reach PSA.' }), { status: 502, headers: ch });
   }
-  if (r.status === 401 || r.status === 403) {
-    return new Response(JSON.stringify({ error: 'PSA rejected the API token.' }), { status: 502, headers: ch });
+  // PSA use their own status conventions rather than the usual ones: their
+  // docs state a 500 "usually indicates invalid credentials", a 204 means the
+  // request arrived empty, and a 200 can still carry a failure inside
+  // `ServerMessage`. Read the body once up front and let PSA explain itself —
+  // a generic "rejected" message here costs a lookup to re-diagnose.
+  const bodyText = await r.text().catch(() => '');
+  let data = null; try { data = JSON.parse(bodyText); } catch (e) {}
+  const psaMsg = (data && (data.ServerMessage || data.serverMessage)) || '';
+
+  if (r.status === 401 || r.status === 403 || r.status === 500) {
+    return new Response(JSON.stringify({
+      error: 'PSA rejected the API token. Generate a fresh one at psacard.com/publicapi and re-set the PSA_API_TOKEN secret.',
+      psa_status: r.status,
+      psa_message: psaMsg || bodyText.slice(0, 200) || null,
+    }), { status: 502, headers: ch });
   }
   if (r.status === 429) {
     return new Response(JSON.stringify({ error: "PSA's daily lookup limit has been reached. Try again tomorrow." }), { status: 429, headers: ch });
   }
+  if (r.status === 204) {
+    return new Response(JSON.stringify({ found: false, cert }), { headers: ch });
+  }
   if (!r.ok) {
-    return new Response(JSON.stringify({ error: `PSA returned ${r.status}.` }), { status: 502, headers: ch });
+    return new Response(JSON.stringify({
+      error: `PSA returned ${r.status}.`,
+      psa_message: psaMsg || null,
+    }), { status: 502, headers: ch });
   }
 
-  let data; try { data = await r.json(); } catch (e) { data = null; }
+  // A 200 with IsValidRequest:false means the cert number itself was rejected.
+  if (data && data.IsValidRequest === false) {
+    return new Response(JSON.stringify({
+      found: false, cert, psa_message: psaMsg || 'PSA rejected the certificate number.',
+    }), { headers: ch });
+  }
   const c = data && (data.PSACert || data.psaCert || data);
   if (!c || !c.CertNumber) {
     return new Response(JSON.stringify({ found: false, cert }), { headers: ch });
