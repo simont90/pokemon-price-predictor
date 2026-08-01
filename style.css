@@ -17813,3 +17813,37 @@ h1, h2, h3 {
 .psa-pop-preview.psa-pop-ok  { color: var(--green, #4caf7d); }
 .psa-pop-preview.psa-pop-bad { color: #e57373; }
 .psa-link-save[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Population growth + cert lookup ──────────────────────────────────────── */
+.popg { display: flex; flex-direction: column; gap: 2px; padding: 7px 10px; border-radius: 9px; font-size: 11.5px; }
+.popg-head { font-weight: 700; }
+.popg-movers, .popg-note { font-size: 10.5px; opacity: 0.85; }
+.popg-fast { color: #e57373; background: rgba(229,115,115,0.10); border: 1px solid rgba(229,115,115,0.3); }
+.popg-warn { color: var(--accent, #e8b634); background: rgba(232,182,52,0.10); border: 1px solid rgba(232,182,52,0.3); }
+.popg-flat { color: var(--text-muted); background: rgba(128,128,128,0.10); border: 1px solid rgba(128,128,128,0.22); }
+
+.psa-cert-row { display: flex; gap: 6px; align-items: center; padding: 8px 0 2px; }
+.psa-cert-row input {
+  flex: 1; min-width: 0; box-sizing: border-box;
+  font-family: var(--mono); font-size: 12px; padding: 7px 10px;
+  border-radius: 9px; border: 1px solid rgba(128,128,128,0.32);
+  background: rgba(128,128,128,0.07); color: inherit;
+}
+.psa-cert-btn {
+  font-size: 11.5px; font-weight: 600; padding: 7px 13px; border-radius: 9px;
+  border: 1px solid rgba(128,128,128,0.32); background: none; color: var(--text-muted);
+  cursor: pointer; white-space: nowrap;
+}
+.psa-cert-btn:hover { color: var(--text-primary); border-color: rgba(128,128,128,0.6); }
+
+.psa-cert-result { font-size: 11.5px; line-height: 1.5; padding: 8px 0 2px; }
+.psa-cert-result.cert-bad  { color: #e57373; }
+.psa-cert-result.cert-warn { color: var(--accent, #e8b634); }
+.cert-line { display: flex; gap: 8px; padding: 1px 0; }
+.cert-k { min-width: 62px; color: var(--text-muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.cert-v { font-weight: 600; }
+.cert-grade { color: var(--accent, #e8b634); font-family: var(--mono); }
+.cert-verdict { font-weight: 700; padding: 5px 0 6px; }
+.cert-ok { color: var(--green, #4caf7d); }
+.cert-mismatch { color: #e57373; }
+.cert-link { display: inline-block; margin-top: 6px; font-size: 11px; color: var(--accent, #e8b634); text-decoration: none; }

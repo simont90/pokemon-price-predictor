@@ -884,6 +884,8 @@ async function handle(request, env, ctx) {
   if (url.pathname === '/price-warm') return handlePriceWarm(request, env, url);
   if (url.pathname === '/prices') return handlePricesBatch(request, env, url);
   if (url.pathname === '/pop')   return handlePopQuery(request, env, url);
+  if (url.pathname === '/pop-history') return handlePopHistory(request, env, url);
+  if (url.pathname === '/cert')  return handleCertLookup(request, env, url);
   if (url.pathname === '/sales') return handleSalesQuery(request, env, url);
   if (url.pathname !== '/search') return new Response('Not found', { status: 404, headers: corsHeaders(request) });
 
@@ -2221,6 +2223,67 @@ async function refreshMarketIntel(env) {
 const POP_KV_TTL   = 7 * 24 * 3600;  // 7 days — PSA pop changes slowly
 const SALES_KV_TTL = 24 * 3600;      // 24 hours — sales comps refresh daily
 
+// ── Population history (D1) ────────────────────────────────────────────────
+// KV is a 7-day cache, which is wrong for hand-entered PSA figures — they'd
+// silently vanish. D1 is the durable store, and keeping every reading gives
+// us population *growth*, which the valuation methodology calls the earliest
+// warning on a mid-grade thesis: pop moves before price does.
+let _popTableReady = false;
+async function _d1EnsurePopTable(db) {
+  if (!db || _popTableReady) return;
+  try {
+    await db.prepare(
+      `CREATE TABLE IF NOT EXISTS pop_history (
+         card_id TEXT NOT NULL,
+         ts      INTEGER NOT NULL,
+         pop     TEXT NOT NULL,
+         total   INTEGER NOT NULL,
+         src     TEXT,
+         PRIMARY KEY (card_id, ts)
+       )`
+    ).run();
+    _popTableReady = true;
+  } catch (e) { /* reads/writes will no-op if this fails */ }
+}
+
+function _popTotal(pop) {
+  let t = 0;
+  for (let g = 1; g <= 10; g++) t += (pop && pop[g]) || 0;
+  return t;
+}
+
+// Records a reading, but only one per card per day — repeated saves or cron
+// runs shouldn't fill the table with identical rows.
+async function _d1PutPopReading(db, cardId, pop, src) {
+  if (!db || !cardId || !pop) return;
+  await _d1EnsurePopTable(db);
+  const total = _popTotal(pop);
+  if (!total) return;
+  const dayStart = Math.floor(Date.now() / 86400000) * 86400000;
+  try {
+    await db.prepare(
+      `INSERT INTO pop_history (card_id, ts, pop, total, src) VALUES (?,?,?,?,?)
+       ON CONFLICT(card_id, ts) DO UPDATE SET
+         pop=excluded.pop, total=excluded.total, src=excluded.src`
+    ).bind(cardId, dayStart, JSON.stringify(pop), total, src || 'manual').run();
+  } catch (e) {}
+}
+
+async function _d1GetPopHistory(db, cardId, limit) {
+  if (!db || !cardId) return [];
+  await _d1EnsurePopTable(db);
+  try {
+    const { results } = await db.prepare(
+      `SELECT ts, pop, total, src FROM pop_history
+        WHERE card_id = ? ORDER BY ts DESC LIMIT ?`
+    ).bind(cardId, limit || 52).all();
+    return (results || []).map(r => ({
+      ts: r.ts, total: r.total, src: r.src,
+      pop: (() => { try { return JSON.parse(r.pop); } catch { return null; } })(),
+    }));
+  } catch (e) { return []; }
+}
+
 async function _kvGetPop(env, cardId) {
   if (!env.SYNC_KV) return null;
   try {
@@ -2264,6 +2327,109 @@ async function _fetchCardLadderSales(cardId) {
   return null;
 }
 
+// GET /pop-history?cardId=  — every stored reading plus the growth between the
+// first and latest. Rising population at a grade is the early warning the
+// valuation methodology flags: supply arrives before the price reacts.
+async function handlePopHistory(request, env, url) {
+  const ch = { ...corsHeaders(request), 'Content-Type': 'application/json' };
+  const cardId = url.searchParams.get('cardId');
+  if (!cardId) return new Response(JSON.stringify({ error: 'cardId required' }), { status: 400, headers: ch });
+  if (!env.PRICES_DB) return new Response(JSON.stringify({ readings: [], growth: null }), { headers: ch });
+
+  const readings = await _d1GetPopHistory(env.PRICES_DB, cardId, 52); // newest first
+  if (readings.length < 2) {
+    return new Response(JSON.stringify({ readings, growth: null }), { headers: ch });
+  }
+  const latest = readings[0], first = readings[readings.length - 1];
+  const days = Math.max(1, Math.round((latest.ts - first.ts) / 86400000));
+  const byGrade = {};
+  for (let g = 1; g <= 10; g++) {
+    const a = (first.pop && first.pop[g]) || 0;
+    const b = (latest.pop && latest.pop[g]) || 0;
+    if (a || b) byGrade[g] = { from: a, to: b, added: b - a, pct: a > 0 ? +(((b - a) / a) * 100).toFixed(1) : null };
+  }
+  const growth = {
+    days,
+    total_from: first.total,
+    total_to: latest.total,
+    total_added: latest.total - first.total,
+    total_pct: first.total > 0 ? +(((latest.total - first.total) / first.total) * 100).toFixed(1) : null,
+    per_grade: byGrade,
+  };
+  return new Response(JSON.stringify({ readings, growth }), { headers: ch });
+}
+
+// GET /cert?n=<certNumber> — PSA's own record for a slab: what they graded,
+// what grade, and whether the cert is genuine. The public API is cert-only
+// (no pop, no pricing) and allows ~100 calls a day, so every result is cached
+// permanently in KV — a cert's contents never change.
+async function handleCertLookup(request, env, url) {
+  const ch = { ...corsHeaders(request), 'Content-Type': 'application/json' };
+  const raw = (url.searchParams.get('n') || url.searchParams.get('cert') || '').trim();
+  const cert = raw.replace(/\D/g, '');
+  if (!cert) return new Response(JSON.stringify({ error: 'Pass a certificate number as ?n=' }), { status: 400, headers: ch });
+  if (cert.length < 7 || cert.length > 12) {
+    return new Response(JSON.stringify({ error: 'That does not look like a PSA certificate number.' }), { status: 400, headers: ch });
+  }
+
+  const ck = `cert:${cert}`;
+  if (env.SYNC_KV) {
+    try {
+      const hit = await env.SYNC_KV.get(ck);
+      if (hit) return new Response(hit, { headers: { ...ch, 'X-Cache': 'hit' } });
+    } catch (e) {}
+  }
+
+  if (!env.PSA_API_TOKEN) {
+    return new Response(JSON.stringify({ error: 'PSA lookup is not configured yet — add the PSA_API_TOKEN secret.' }), { status: 503, headers: ch });
+  }
+
+  let r;
+  try {
+    r = await fetch(`https://api.psacard.com/publicapi/cert/GetByCertNumber/${encodeURIComponent(cert)}`, {
+      headers: { 'Authorization': `bearer ${env.PSA_API_TOKEN}`, 'Accept': 'application/json' },
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'Could not reach PSA.' }), { status: 502, headers: ch });
+  }
+  if (r.status === 401 || r.status === 403) {
+    return new Response(JSON.stringify({ error: 'PSA rejected the API token.' }), { status: 502, headers: ch });
+  }
+  if (r.status === 429) {
+    return new Response(JSON.stringify({ error: "PSA's daily lookup limit has been reached. Try again tomorrow." }), { status: 429, headers: ch });
+  }
+  if (!r.ok) {
+    return new Response(JSON.stringify({ error: `PSA returned ${r.status}.` }), { status: 502, headers: ch });
+  }
+
+  let data; try { data = await r.json(); } catch (e) { data = null; }
+  const c = data && (data.PSACert || data.psaCert || data);
+  if (!c || !c.CertNumber) {
+    return new Response(JSON.stringify({ found: false, cert }), { headers: ch });
+  }
+  const out = {
+    found: true,
+    cert: String(c.CertNumber),
+    grade: c.CardGrade != null ? String(c.CardGrade) : null,
+    subject: c.Subject || null,
+    year: c.YearIssued || null,
+    brand: c.Brand || null,
+    variety: c.Variety || null,
+    card_number: c.CardNumber != null ? String(c.CardNumber) : null,
+    category: c.Category || null,
+    label_type: c.LabelType || null,
+    attributes: c.CardAttributes || null,
+    image: c.ImageURL || null,
+    // PSA return these as null on the public tier — surfaced so the client
+    // can tell "not provided" from "zero".
+    total_population: c.TotalPopulation ?? null,
+    population_higher: c.PopulationHigher ?? null,
+  };
+  const body = JSON.stringify(out);
+  if (env.SYNC_KV) { try { await env.SYNC_KV.put(ck, body); } catch (e) {} }
+  return new Response(body, { headers: { ...ch, 'X-Cache': 'miss' } });
+}
+
 // GET  /pop?cardId=   — returns cached pop data or fetches fresh and caches it
 // PUT  /pop?cardId=   — stores caller-supplied pop data (body: JSON {pop:{...}})
 async function handlePopQuery(request, env, url) {
@@ -2275,18 +2441,30 @@ async function handlePopQuery(request, env, url) {
     try {
       const body = await request.json();
       if (!body || !body.pop) return new Response(JSON.stringify({ error: 'body must contain pop' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } });
-      await _kvPutPop(env, cardId, { pop: body.pop, ts: Date.now() });
+      const entry = { pop: body.pop, ts: Date.now(), src: body.src || 'manual' };
+      await _kvPutPop(env, cardId, entry);
+      // Durable copy + a dated reading for the growth history. KV alone would
+      // drop hand-entered PSA figures after its 7-day TTL.
+      if (env.PRICES_DB) await _d1PutPopReading(env.PRICES_DB, cardId, body.pop, entry.src);
       return new Response(JSON.stringify({ ok: true }), { headers: { ...ch, 'Content-Type': 'application/json' } });
     } catch { return new Response(JSON.stringify({ error: 'invalid JSON' }), { status: 400, headers: { ...ch, 'Content-Type': 'application/json' } }); }
   }
 
-  // GET — serve from KV cache, refresh in background if stale
+  // GET — KV cache first, then the durable D1 reading, then any live source.
   let cached = await _kvGetPop(env, cardId);
+  if (!cached && env.PRICES_DB) {
+    const hist = await _d1GetPopHistory(env.PRICES_DB, cardId, 1);
+    if (hist.length && hist[0].pop) {
+      cached = { pop: hist[0].pop, ts: hist[0].ts, src: hist[0].src };
+      await _kvPutPop(env, cardId, cached); // repopulate the cache
+    }
+  }
   if (!cached) {
     const live = await _fetchPikawizPop(cardId);
     if (live) {
       cached = { pop: live, ts: Date.now() };
       await _kvPutPop(env, cardId, cached);
+      if (env.PRICES_DB) await _d1PutPopReading(env.PRICES_DB, cardId, live, 'auto');
     }
   }
   if (!cached) return new Response(JSON.stringify({ pop: null, ts: 0 }), { headers: { ...ch, 'Content-Type': 'application/json' } });
@@ -2365,6 +2543,20 @@ async function handleCronRefresh(env) {
       );
       // Also persist to D1 so /prices can serve them instantly to all users
       if (env.PRICES_DB) await _d1UpsertPrices(env.PRICES_DB, priceMap);
+    }
+
+    // Take a dated population reading for each of this user's cards that has
+    // pop data. _d1PutPopReading keeps one row per card per day, so a daily
+    // cron builds a weekly-resolution growth curve without duplicate rows.
+    // Nothing is fetched here — it records what's already known, which is why
+    // it stays well inside limits.
+    if (env.PRICES_DB) {
+      for (const [cardId] of cards) {
+        try {
+          const p = await _kvGetPop(env, cardId);
+          if (p && p.pop) await _d1PutPopReading(env.PRICES_DB, cardId, p.pop, p.src || 'snapshot');
+        } catch (e) {}
+      }
     }
   }
   // Also refresh market intelligence from YouTube channels (all card eras)

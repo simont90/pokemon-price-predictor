@@ -650,6 +650,7 @@ async function init() {
   setupPCOverride();
   setupPsaLink();
   setupPsaPop();
+  setupCertLookup();
   setupCPOverride();
   setupMLinkPicker();
   setupManualAdd();
@@ -10050,6 +10051,9 @@ function renderPsaLinkRow() {
   // Editing panel always starts closed when the card changes
   const edit = document.getElementById('psaLinkEdit');
   if (edit) edit.style.display = 'none';
+  const cert = document.getElementById('psaCertResult');
+  if (cert) cert.style.display = 'none';
+  try { renderPopGrowth(card.i); } catch (e) {}
 }
 
 function setupPsaLink() {
@@ -10188,6 +10192,64 @@ function setupPsaPop() {
     edit.style.display = 'none';
     try { renderHoldStrategy(selectedCard); } catch (e) {}
   });
+}
+
+// ── Cert lookup ────────────────────────────────────────────────────────────
+// PSA's public API is cert-verification only. That makes it exactly the right
+// tool for buying: confirm a slab is genuine and is the card and grade the
+// seller claims, before paying. Results are cached server-side, so the ~100
+// calls/day limit only bites on genuinely new certs.
+function setupCertLookup() {
+  const input  = document.getElementById('psaCertInput');
+  const btn    = document.getElementById('psaCertBtn');
+  const result = document.getElementById('psaCertResult');
+  if (!input || !btn || !result) return;
+
+  const show = (html, cls) => {
+    result.style.display = '';
+    result.className = 'psa-cert-result ' + (cls || '');
+    result.innerHTML = html;
+  };
+
+  const lookup = async () => {
+    const cert = (input.value || '').replace(/\D/g, '');
+    if (!cert) { show('Enter the certificate number printed on the slab.', 'cert-warn'); return; }
+    show('Checking with PSA…', '');
+    const base = typeof getMktWorkerUrl === 'function'
+      ? getMktWorkerUrl() : 'https://pokemon-marketplace.simontariq.workers.dev';
+    let d;
+    try {
+      const r = await fetch(`${base}/cert?n=${encodeURIComponent(cert)}`);
+      d = await r.json();
+    } catch (e) { show('Could not reach the lookup service.', 'cert-bad'); return; }
+
+    if (d && d.error)   { show(esc(d.error), 'cert-warn'); return; }
+    if (!d || !d.found) { show(`No PSA record for cert ${esc(cert)}. Treat that as a red flag.`, 'cert-bad'); return; }
+
+    const desc = [d.year, d.brand, d.subject].filter(Boolean).join(' ');
+    const bits = [
+      `<div class="cert-line"><span class="cert-k">Cert</span><span class="cert-v">${esc(d.cert)}</span></div>`,
+      `<div class="cert-line"><span class="cert-k">Card</span><span class="cert-v">${esc(desc || 'Unknown')}${d.card_number ? ' · #' + esc(d.card_number) : ''}</span></div>`,
+      d.variety ? `<div class="cert-line"><span class="cert-k">Variety</span><span class="cert-v">${esc(d.variety)}</span></div>` : '',
+      `<div class="cert-line"><span class="cert-k">Grade</span><span class="cert-v cert-grade">PSA ${esc(d.grade || '?')}</span></div>`,
+    ];
+
+    // Compare against the card on screen so a mismatch is obvious.
+    let verdict = '<div class="cert-verdict cert-ok">✓ Genuine PSA certificate</div>';
+    if (selectedCard) {
+      const certText = (desc + ' ' + (d.variety || '')).toLowerCase();
+      const nameWord = (selectedCard.n || '').toLowerCase().split(/\s+/)[0];
+      if (nameWord && nameWord.length > 2 && !certText.includes(nameWord)) {
+        verdict = `<div class="cert-verdict cert-mismatch">⚠ This cert is for a different card than the one open (${esc(selectedCard.n)}). Check before buying.</div>`;
+      }
+    }
+    show(verdict + bits.join('') +
+      `<a class="cert-link" href="https://www.psacard.com/cert/${encodeURIComponent(d.cert)}" target="_blank" rel="noopener noreferrer">View on PSA ↗</a>`,
+      'cert-found');
+  };
+
+  btn.addEventListener('click', lookup);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookup(); } });
 }
 
 function setupPCOverride() {
@@ -11855,6 +11917,61 @@ function parsePsaPopPaste(text) {
   for (const g of grades) total += pop[g];
   if (!(total > 0)) return null;
   return { pop, total };
+}
+
+// ── Population growth ──────────────────────────────────────────────────────
+// Pop rising at a grade is the earliest warning that a mid-grade thesis is
+// weakening: as prices climb, more raw copies get submitted and land in that
+// band, diluting the scarcity the thesis rests on. It moves before price.
+const _popHistCache = new Map();
+
+async function fetchPopHistory(cardId) {
+  if (!cardId) return null;
+  if (_popHistCache.has(cardId)) return _popHistCache.get(cardId);
+  const base = typeof getMktWorkerUrl === 'function'
+    ? getMktWorkerUrl() : 'https://pokemon-marketplace.simontariq.workers.dev';
+  try {
+    const r = await fetch(`${base}/pop-history?cardId=${encodeURIComponent(cardId)}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    _popHistCache.set(cardId, d);
+    return d;
+  } catch (e) { return null; }
+}
+
+// Renders the growth line under the PSA row once two or more readings exist.
+async function renderPopGrowth(cardId) {
+  const host = document.getElementById('psaPopGrowth');
+  if (!host) return;
+  host.style.display = 'none';
+  host.innerHTML = '';
+  if (!cardId) return;
+  const d = await fetchPopHistory(cardId);
+  if (!d || !d.growth || !d.readings || d.readings.length < 2) return;
+
+  const g = d.growth;
+  const months = g.days / 30.44;
+  const period = months >= 1.5 ? `${months.toFixed(0)} months` : `${g.days} days`;
+  // Grades that actually moved, biggest riser first
+  const movers = Object.entries(g.per_grade || {})
+    .filter(([, v]) => v.added > 0)
+    .sort((a, b) => b[1].added - a[1].added)
+    .slice(0, 3)
+    .map(([grade, v]) => `PSA ${grade} +${v.added.toLocaleString('en-GB')}${v.pct != null ? ` (${v.pct}%)` : ''}`);
+
+  const cls = g.total_pct == null ? 'popg-flat'
+    : g.total_pct >= 10 ? 'popg-fast'
+    : g.total_pct >= 3  ? 'popg-warn' : 'popg-flat';
+  const headline = g.total_added > 0
+    ? `Population up ${g.total_added.toLocaleString('en-GB')} (${g.total_pct}%) over ${period}`
+    : `Population flat over ${period}`;
+
+  host.style.display = '';
+  host.innerHTML = `<div class="popg ${cls}">
+      <span class="popg-head">${esc(headline)}</span>
+      ${movers.length ? `<span class="popg-movers">${esc(movers.join(' · '))}</span>` : ''}
+      <span class="popg-note">${d.readings.length} readings · ${g.total_from.toLocaleString('en-GB')} → ${g.total_to.toLocaleString('en-GB')} graded</span>
+    </div>`;
 }
 
 // PSA population badge for a Hold Strategy tile. Pop is the single most

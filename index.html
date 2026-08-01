@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260720za">
+  <link rel="stylesheet" href="style.css?v=20260720zb">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1634,6 +1634,13 @@
                 <button type="button" class="psa-link-btn" id="psaPopBtn">Paste pop</button>
                 <button type="button" class="psa-link-btn" id="psaLinkBtn">Add PSA link</button>
               </div>
+              <div class="psa-pop-growth" id="psaPopGrowth" style="display:none"></div>
+              <div class="psa-cert-row" id="psaCertRow">
+                <input id="psaCertInput" type="text" inputmode="numeric" autocomplete="off"
+                       placeholder="PSA cert number (from the slab or listing)">
+                <button type="button" class="psa-cert-btn" id="psaCertBtn">Check cert</button>
+              </div>
+              <div class="psa-cert-result" id="psaCertResult" style="display:none"></div>
               <div class="psa-pop-edit" id="psaPopEdit" style="display:none">
                 <textarea id="psaPopInput" rows="4" spellcheck="false"
                   placeholder="Open the PSA pop report for this card, select the grade table, copy it, and paste here."></textarea>
@@ -3206,7 +3213,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260720za"></script>
+  <script src="app.js?v=20260720zb"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
