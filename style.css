@@ -10097,6 +10097,17 @@ section.card .card-collapse-btn { padding: 10px; }
     border-radius: 14px;
     flex-shrink: 1;
   }
+  /* These are full-size labelled buttons here, not the 28px icon buttons the
+     negative margin was added to enlarge. Left in place it widens each button
+     by 8px beyond its flex share, which pushes the row past both edges of the
+     card and overlaps the buttons into each other — worse with every button
+     added to the row. min-width lets them share the width that is actually
+     available rather than insisting on their content width. */
+  .card-name-row .add-portfolio-btn:not(.card-nav-qbtn) {
+    margin: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
   .add-portfolio-btn:not(.card-nav-qbtn) svg {
     width: 19px;
     height: 19px;
