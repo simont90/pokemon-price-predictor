@@ -3406,7 +3406,13 @@ function selectCard(id) {
   if (!card) return;
   selectedCard = card;
   _holdWinnerKey = null;  // reset until renderHoldStrategy runs for this card
-  _holdStratVariant = 'unlimited'; // reset variant on card change
+  // Open on the print you actually hold, so a card in the collection lands on
+  // its own "Keep" verdict rather than on a buy recommendation for a print you
+  // don't own. Falls back to Unlimited if that print has no price data yet.
+  {
+    const _acqSlab = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(card.i) : null;
+    _holdStratVariant = (_acqSlab && _acqSlab.variant) ? _acqSlab.variant : 'unlimited';
+  }
   _holdWinnerDesc = '';
   _livePriceVariant = null; // clear any active variant override on card change
   _mktGradeRows  = null;
@@ -15580,7 +15586,12 @@ function computeHoldCore(card) {
   // BEST LONG-TERM PICK: never high-risk (gamble), ROI must beat a basic
   // opportunity cost (≥35% over 5 yrs ≈ 6.2% annual — roughly savings/bond rate).
   // Threshold lowered from 80% to match recalibrated post-bubble growth rates.
-  const ltpCandidates = strategies.filter(s => !s.na && s.key !== 'gamble' && s.roi >= 35);
+  // A slab you already own is not competing for new capital, so the 35% hurdle
+  // — which exists to beat leaving the money in the bank — does not apply to
+  // it. The question for a held position is keep or sell, and the bar for
+  // keeping is simply that holding beats netting out today.
+  const ltpCandidates = strategies.filter(s =>
+    !s.na && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
   const bestLongTermPick = _pickBestLTP(ltpCandidates);
 
   // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
@@ -15658,8 +15669,11 @@ const _LTP_RISK_ORD = { low: 0, med: 1, high: 2 };
 function _pickBestLTP(candidates) {
   if (!candidates.length) return null;
   return candidates.reduce((a, b) => {
-    const pa = ltpCapitalPenalty(gbpFromUSD(a.today));
-    const pb = ltpCapitalPenalty(gbpFromUSD(b.today));
+    // An owned slab's "today" is what was already paid, not money about to
+    // leave the account, so it carries no outlay penalty and cannot be ruled
+    // out by the budget — you are not buying it again.
+    const pa = a.isOwnedSlab ? 0 : ltpCapitalPenalty(gbpFromUSD(a.today));
+    const pb = b.isOwnedSlab ? 0 : ltpCapitalPenalty(gbpFromUSD(b.today));
     const aOut = pa >= 99999, bOut = pb >= 99999;
     if (aOut !== bOut) return bOut ? a : b; // in-budget always beats over-budget
     const rA = _LTP_RISK_ORD[a.risk ?? 'med'] ?? 1;
@@ -16378,7 +16392,10 @@ function renderHoldStrategy(card) {
     : null;
 
   const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
-    const isOwnedSlab = slabAcq && slabAcq.grade === g;
+    // Owning a 1st Edition PSA 8 says nothing about the Unlimited PSA 8, so the
+    // slab only counts as held while the tiles are showing its own print.
+    const _shownPrint  = _holdVariantEligible ? _holdStratVariant : 'unlimited';
+    const isOwnedSlab = slabAcq && slabAcq.grade === g && (slabAcq.variant || 'unlimited') === _shownPrint;
     const liveUSD_r = _liveGradeUSD(_rhsLp, g);
     const baseUSD = liveUSD_r > 0 ? liveUSD_r : estimateGradePrice(card, g, psa10Price);
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
@@ -16519,7 +16536,12 @@ function renderHoldStrategy(card) {
 
   // BEST LONG-TERM PICK badge: never high-risk (gamble), ROI must beat opportunity
   // cost (≥35% over 5 yrs ≈ 6.2% annual). Threshold recalibrated for post-bubble rates.
-  const ltpCandidates = strategies.filter(s => !s.na && s.key !== 'gamble' && s.roi >= 35);
+  // A slab you already own is not competing for new capital, so the 35% hurdle
+  // — which exists to beat leaving the money in the bank — does not apply to
+  // it. The question for a held position is keep or sell, and the bar for
+  // keeping is simply that holding beats netting out today.
+  const ltpCandidates = strategies.filter(s =>
+    !s.na && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
   const bestLongTermPick = _pickBestLTP(ltpCandidates);
 
   const winner = overallWinner; // used for recommendation copy below
@@ -16791,7 +16813,10 @@ function renderHoldStrategy(card) {
 
   const rows = strategies.filter(s => !s.na).map(s => {
     const todayGBP_tile = s.today * fx;
-    const isOverBudget  = _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
+    // The budget caps what you'd spend, so it says nothing about a slab already
+    // in the collection — flagging a card you own as "Above budget" would be
+    // telling you that you can't afford something you already paid for.
+    const isOverBudget  = !s.isOwnedSlab && _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
     const isWinner      = bestLongTermPick && s.key === bestLongTermPick.key && !isOverBudget;
     const gradeNum      = s.key.startsWith('psa') ? parseInt(s.key.replace('psa', '')) : null;
     const isCollapsed   = gradeNum !== null && _hiddenGradeNums.has(gradeNum);
@@ -17973,7 +17998,54 @@ function getAcqSlabInfo(cardId) {
   const grade = parseInt(a.slabGrade, 10);
   const costGBP = parseFloat(a.slabPriceGBP);
   if (!grade || grade < 1 || grade > 10 || !Number.isFinite(costGBP) || costGBP <= 0) return null;
-  return { grade, costGBP, date: a.slabDate || null, where: a.slabWhere || null };
+  return {
+    grade, costGBP,
+    date: a.slabDate || null,
+    where: a.slabWhere || null,
+    variant: a.slabVariant || 'unlimited',
+  };
+}
+
+// What an owned slab is worth today — at its grade and its print, not the raw
+// ungraded price of the card. A PSA 8 1st Edition and a raw Unlimited copy are
+// the same card id and nothing else.
+function ownedSlabValueGBP(card, slab) {
+  if (!card || !slab || !slab.grade) return null;
+  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+
+  // Prefer the print's own PriceCharting ladder when it has been fetched.
+  if (slab.variant === '1sted' && typeof _hvg1edLadder === 'function') {
+    const row = (_hvg1edLadder(card).ladder || []).find(l => l.g === slab.grade);
+    if (row && row.gbp > 0) return { gbp: row.gbp, basis: '1st Edition' };
+  }
+  if (slab.variant === 'shadowless' && typeof _hvgShadowlessLadder === 'function') {
+    const row = (_hvgShadowlessLadder(card).ladder || []).find(l => l.g === slab.grade);
+    if (row && row.gbp > 0) return { gbp: row.gbp, basis: 'Shadowless' };
+  }
+
+  // Otherwise price the grade off the Unlimited anchor. For a 1st Edition or
+  // Shadowless slab that is an understatement, not a valuation — say so rather
+  // than passing it off as the print's price.
+  const anchor = (typeof getPsa10Anchor === 'function') ? getPsa10Anchor(card, { ignoreVariant: true }) : null;
+  if (!anchor || !(anchor.usd > 0)) return null;
+  const usd = slab.grade === 10 ? anchor.usd
+    : (typeof estimateGradePrice === 'function') ? estimateGradePrice(card, slab.grade, anchor.usd) : null;
+  if (!(usd > 0)) return null;
+  return { gbp: usd * fx, basis: slab.variant === 'unlimited' ? 'Unlimited' : 'Unlimited basis' };
+}
+
+// What a collection entry is worth: the slab's value when one is recorded,
+// otherwise the raw market price. Shared so the list and the home tiles (and
+// the collection total they feed) can never disagree.
+function collectionEntryValue(p, card, cached) {
+  const rawUSD = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
+  const out = { gbp: usdToGbp(rawUSD), note: null };
+  const slab = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(p.id) : null;
+  if (!card || !slab) return out;
+  const v = ownedSlabValueGBP(card, slab);
+  if (!v || !(v.gbp > 0)) return out;
+  const print = slab.variant === '1sted' ? ' 1st Ed' : slab.variant === 'shadowless' ? ' Shadowless' : '';
+  return { gbp: v.gbp, note: `PSA ${slab.grade}${print}`, approx: v.basis === 'Unlimited basis' };
 }
 
 function fmtPct(v, signed) {
@@ -21307,8 +21379,8 @@ function _buildCollectionItems() {
   return portfolio.map(p => {
     const card = getCardById(p.id);
     const cached = getCachedPrice(p.id);
-    const priceUSD = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
-    const priceGBP = usdToGbp(priceUSD);
+    const val = collectionEntryValue(p, card, cached);
+    const priceGBP = val.gbp;
     let signal = null, sigClass = null, score = 0;
     if (card) {
       let pull = 7.65;
@@ -21319,7 +21391,9 @@ function _buildCollectionItems() {
       const sig = computeSignal(card, pull, autoFillDesirability(card, pull).total);
       if (sig) { signal = sig.signal; sigClass = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold'; score = sig.score; }
     }
-    return { id: p.id, name: p.name, img: p.img, price: fmtGBPDirect(priceGBP), priceRaw: priceGBP, sub: p.set, signal, sigClass, score };
+    // Name the grade and print being priced, so the number is never ambiguous.
+    const sub = val.note ? `${p.set} · ${val.note}${val.approx ? ' (est.)' : ''}` : p.set;
+    return { id: p.id, name: p.name, img: p.img, price: fmtGBPDirect(priceGBP), priceRaw: priceGBP, sub, signal, sigClass, score };
   });
 }
 function _buildWishlistItems() {
@@ -22508,8 +22582,7 @@ function _renderHomeCollection() {
   const tiles = portfolio.map(p => {
     const card = getCardById(p.id);
     const cached = getCachedPrice(p.id);
-    const priceUSD = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
-    const priceGBP = usdToGbp(priceUSD);
+    const priceGBP = collectionEntryValue(p, card, cached).gbp;
     const copies = Math.max(1, p.copies || 1);
     totalGBP += priceGBP * copies;
     let signal = null;
