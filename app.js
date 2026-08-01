@@ -3412,7 +3412,7 @@ function selectCard(id) {
   {
     const _acqSlab = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(card.i) : null;
     _holdStratVariant = (_acqSlab && _acqSlab.variant) ? _acqSlab.variant : 'unlimited';
-    _hoPopVariant = _holdStratVariant;   // the override panel opens on the same print
+    _hoPrint = _holdStratVariant;   // the override panel opens on the same print
     _hoKeepOpen = false;                 // a new card starts with the panel closed
   }
   _holdWinnerDesc = '';
@@ -24701,7 +24701,8 @@ function setHoldOverrideNA(cardId, gradeKey, isNA) {
 //     Surfaces gain-so-far (£10→£15) as a sub-row without changing the ROI denominator.
 function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
   if (!card || !card.i || !Array.isArray(strategies)) return;
-  const overrides = getHoldOverridesForCard(card.i);
+  // Read the print the tiles are actually showing.
+  const overrides = getHoldOverridesForCard(overrideIdFor(card, _holdStratVariant));
   if (!overrides || !Object.keys(overrides).length) return;
   const naFlags = overrides._na || {};
   const fxRateLocal = (typeof fx === 'number' && fx > 0) ? fx : 0.79;
@@ -24751,7 +24752,18 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
 
 // Which print's population the override panel is editing. Separate from
 // _holdStratVariant so looking up a 1st Edition pop doesn't reprice the tiles.
-let _hoPopVariant = 'unlimited';
+let _hoPrint = 'unlimited';
+
+// Overrides are per print for the same reason populations are: a 1st Edition
+// PSA 8 clears at a different price from the Unlimited one, so a correction
+// entered against eBay for one print must not silently reprice the other.
+// Reuses the id-suffix scheme, so the synced pkm-hold-overrides blob keeps its
+// shape and everything already stored under the plain id reads as Unlimited.
+function overrideIdFor(card, variant) {
+  if (!card || !card.i) return '';
+  const ok = popVariantsFor(card).some(v => v.key === variant);
+  return popIdFor(card.i, ok ? variant : 'unlimited');
+}
 // Saving redraws the panel; without this the disclosure would snap shut under
 // the user the moment they pressed Save.
 let _hoKeepOpen = false;
@@ -24761,7 +24773,7 @@ let _hoKeepOpen = false;
 // the population says how much that price can be trusted.
 function _hoPopBlock(card) {
   const variants = popVariantsFor(card);
-  const active   = variants.some(v => v.key === _hoPopVariant) ? _hoPopVariant : 'unlimited';
+  const active   = variants.some(v => v.key === _hoPrint) ? _hoPrint : 'unlimited';
   const pop      = (_popDataCache.get(popIdFor(card.i, active)) || {}).pop || {};
   const filled   = Object.keys(pop).filter(g => pop[g] != null).length;
   let total = 0;
@@ -24773,11 +24785,8 @@ function _hoPopBlock(card) {
         <span class="ho-pop-title">PSA population</span>
         ${filled ? `<span class="ho-pop-total">${filled} grade${filled === 1 ? '' : 's'} · ${total.toLocaleString('en-GB')} graded</span>` : ''}
       </div>
-      ${variants.length ? `<div class="ho-pop-tabs">${variants.map(v =>
-        `<button type="button" class="ho-pop-tab${v.key === active ? ' ho-pop-tab-on' : ''}" data-ho-pv="${v.key}">${v.label}</button>`
-      ).join('')}</div>` : ''}
       <p class="ho-blurb">${variants.length
-        ? 'Each print is graded separately and its population is its own — a 1st Edition pop says nothing about the Unlimited copy. Enter the counts for the print selected above.'
+        ? 'Each print is graded separately and its population is its own — a 1st Edition pop says nothing about the Unlimited copy. These counts are for the print selected above.'
         : "Enter the counts from this card's PSA population report. They set the thick/thin confidence on every grade tile."}</p>
       <div class="ho-pop-grid">
         ${[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map(g => `
@@ -24798,7 +24807,7 @@ function _hoPopBlock(card) {
 
 function _hoWirePop(host, card) {
   const note = host.querySelector('#hoPopNote');
-  const variantOf = () => popVariantsFor(card).some(v => v.key === _hoPopVariant) ? _hoPopVariant : 'unlimited';
+  const variantOf = () => popVariantsFor(card).some(v => v.key === _hoPrint) ? _hoPrint : 'unlimited';
 
   // A print's population lives under its own key, so switching prints may need
   // a fetch before the inputs can be filled in.
@@ -24817,7 +24826,7 @@ function _hoWirePop(host, card) {
   }
 
   host.querySelectorAll('[data-ho-pv]').forEach(btn => btn.addEventListener('click', () => {
-    _hoPopVariant = btn.dataset.hoPv;
+    _hoPrint = btn.dataset.hoPv;
     renderHoldOverridePanel(card);
     const d = host.querySelector('.ho-details');
     if (d) d.open = true;
@@ -24890,20 +24899,43 @@ function renderHoldOverridePanel(card) {
   if (!host) return;
   if (!card || !card.i) { host.style.display = 'none'; host.innerHTML = ''; return; }
   host.style.display = 'block';
-  const overrides = getHoldOverridesForCard(card.i);
+  // One print selector for the whole panel: the prices and the population below
+  // them describe the same print, and two separate pickers would invite
+  // entering a 1st Edition price against an Unlimited population.
+  const prints    = popVariantsFor(card);
+  const print     = prints.some(v => v.key === _hoPrint) ? _hoPrint : 'unlimited';
+  const overrides = getHoldOverridesForCard(overrideIdFor(card, print));
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
-  // Build fair-value reference for each grade for the placeholder hint.
-  const anchor = (typeof getPsa10Anchor === 'function') ? getPsa10Anchor(card) : null;
+
+  // Build fair-value reference for each grade for the placeholder hint. For a
+  // non-Unlimited print use that print's own PriceCharting ladder when it has
+  // been fetched — quoting Unlimited fair value beside a 1st Edition box would
+  // make every real price look like an overpay.
+  const printLadder = print === '1sted' && typeof _hvg1edLadder === 'function' ? _hvg1edLadder(card)
+                    : print === 'shadowless' && typeof _hvgShadowlessLadder === 'function' ? _hvgShadowlessLadder(card)
+                    : null;
+  const ladderHas = printLadder && printLadder.ladder && printLadder.ladder.length;
+  const anchor = (typeof getPsa10Anchor === 'function') ? getPsa10Anchor(card, { ignoreVariant: true }) : null;
   const psa10USD = anchor && anchor.usd;
   const rawUSD = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : null;
   function fvGBP(grade) {
-    if (grade === 'raw') return rawUSD ? rawUSD * fx : null;
-    if (!psa10USD) return null;
+    if (grade === 'raw') {
+      if (ladderHas && printLadder.rawGBP > 0) return printLadder.rawGBP;
+      return rawUSD ? rawUSD * fx : null;
+    }
     const g = parseInt(grade.replace('psa', ''), 10);
+    if (ladderHas) {
+      const row = printLadder.ladder.find(l => l.g === g);
+      if (row && row.gbp > 0) return row.gbp;
+    }
+    if (!psa10USD) return null;
     if (g === 10) return psa10USD * fx;
     if (typeof estimateGradePrice === 'function') return estimateGradePrice(card, g, psa10USD) * fx;
     return null;
   }
+  // Says whether the reference beside each box is this print's own price or an
+  // Unlimited stand-in.
+  const fvIsPrint = print === 'unlimited' || !!ladderHas;
   const rows = [
     { key: 'raw', label: 'Raw' },
     ...[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map(g => ({ key: 'psa' + g, label: 'PSA ' + g })),
@@ -24924,7 +24956,15 @@ function renderHoldOverridePanel(card) {
         <svg class="ho-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
       </summary>
       <div class="ho-body">
-        <p class="ho-blurb">If eBay listings are clearing well above (or below) the model's fair value, drop the actual GBP price into the matching grade. The strategy ROI & winner will recompute using your number as the buy-in.</p>
+        ${prints.length ? `<div class="ho-print">
+          <span class="ho-print-lbl">Print</span>
+          <div class="ho-print-tabs">${prints.map(v =>
+            `<button type="button" class="ho-print-tab${v.key === print ? ' ho-print-tab-on' : ''}" data-ho-pv="${v.key}">${v.label}</button>`
+          ).join('')}</div>
+        </div>` : ''}
+        <p class="ho-blurb">If eBay listings are clearing well above (or below) the model's fair value, drop the actual GBP price into the matching grade. The strategy ROI &amp; winner will recompute using your number as the buy-in.${
+          prints.length ? ` Prices and population below both apply to the <strong>${esc((prints.find(v => v.key === print) || {}).label || 'Unlimited')}</strong> print.` : ''
+        }${prints.length && !fvIsPrint ? ' No tracked prices for this print yet — the reference figures shown are the Unlimited ones.' : ''}</p>
         <div class="ho-grid">
           ${rows.map(r => {
             const isPSA = r.key !== 'raw';
@@ -24957,7 +24997,7 @@ function renderHoldOverridePanel(card) {
         </div>
         ${_hoPopBlock(card)}
         <div class="ho-actions">
-          <button type="button" class="ho-clear" id="holdOverrideClear">Clear all overrides for this card</button>
+          <button type="button" class="ho-clear" id="holdOverrideClear">Clear all price overrides for ${prints.length ? 'this print' : 'this card'}</button>
         </div>
       </div>
     </details>
@@ -24976,22 +25016,26 @@ function renderHoldOverridePanel(card) {
       if (e.key === 'Enter') { e.preventDefault(); if (saveBtn) saveBtn.click(); }
     });
   });
+  // Everything here is scoped to the print selected at the top of the panel.
+  const ovrId = overrideIdFor(card, _hoPrint);
   if (saveBtn) saveBtn.addEventListener('click', () => {
-    host.querySelectorAll('.ho-input').forEach(inp => setHoldOverride(card.i, inp.getAttribute('data-grade'), inp.value));
+    host.querySelectorAll('.ho-input').forEach(inp => setHoldOverride(ovrId, inp.getAttribute('data-grade'), inp.value));
     _hoKeepOpen = true;
     try { renderHoldStrategy(card); } catch {}
   });
   host.querySelectorAll('.ho-na-check').forEach(chk => {
     chk.addEventListener('change', () => {
       const grade = chk.getAttribute('data-grade');
-      setHoldOverrideNA(card.i, grade, chk.checked);
+      setHoldOverrideNA(ovrId, grade, chk.checked);
+      _hoKeepOpen = true;
       try { renderHoldStrategy(card); } catch {}
     });
   });
   const clearBtn = host.querySelector('#holdOverrideClear');
   if (clearBtn) {
     clearBtn.addEventListener('click', () => {
-      clearHoldOverridesForCard(card.i);
+      clearHoldOverridesForCard(ovrId);
+      _hoKeepOpen = true;
       try { renderHoldStrategy(card); } catch {}
     });
   }

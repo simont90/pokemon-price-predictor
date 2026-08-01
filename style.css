@@ -7396,6 +7396,19 @@ section.card.is-collapsed { padding-bottom: 18px; }
   gap: 10px;
 }
 
+/* Print selector — governs the prices and the population beneath them */
+.ho-print { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 2px; }
+.ho-print-lbl { font-size: 10.5px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.07em; }
+.ho-print-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.ho-print-tab { padding: 5px 12px; border-radius: 8px; font-size: 11.5px; font-weight: 700;
+  font-family: var(--sans); cursor: pointer; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-muted); transition: all 0.12s; }
+.ho-print-tab:hover:not(.ho-print-tab-on) { border-color: var(--accent); color: var(--accent); }
+.ho-print-tab-on { background: var(--accent); border-color: var(--accent); color: #111; }
+[data-theme="light"] .ho-print-tab { background: #f9fafb; border-color: #d1d5db; color: #6b7280; }
+[data-theme="light"] .ho-print-tab-on { background: var(--accent); border-color: var(--accent); color: #111; }
+
 /* Save buttons — entry is committed on demand, never while typing */
 .ho-row-save { display: flex; align-items: flex-end; }
 .ho-save, .ho-pop-save {
