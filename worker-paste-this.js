@@ -2399,17 +2399,37 @@ async function handleCertLookup(request, env, url) {
   // a generic "rejected" message here costs a lookup to re-diagnose.
   const bodyText = await r.text().catch(() => '');
   let data = null; try { data = JSON.parse(bodyText); } catch (e) {}
-  const psaMsg = (data && (data.ServerMessage || data.serverMessage)) || '';
+  // PSA use `ServerMessage` on the documented endpoints but a bare `Message`
+  // on the gateway-level rejections, and sometimes double-encode the latter.
+  let psaMsg = (data && (data.ServerMessage || data.serverMessage || data.Message)) || '';
+  if (!psaMsg && bodyText) {
+    try { psaMsg = JSON.parse(JSON.parse(bodyText)).Message || ''; } catch (e) {}
+  }
 
   if (r.status === 401 || r.status === 403 || r.status === 500) {
+    // A token can be perfectly valid and still be refused: the public API is
+    // gated to accounts PSA have separately approved. Say which it is, because
+    // the fixes are entirely different — one is a re-paste, the other an email.
+    const notApproved = /approved customer/i.test(psaMsg) || /approved customer/i.test(bodyText);
     return new Response(JSON.stringify({
-      error: 'PSA rejected the API token. Generate a fresh one at psacard.com/publicapi and re-set the PSA_API_TOKEN secret.',
+      error: notApproved
+        ? 'PSA have not approved this account for API access. Generating a token is not enough — request access from collectors-apis@collectors.com.'
+        : 'PSA rejected the API token. Generate a fresh one at psacard.com/publicapi and re-set the PSA_API_TOKEN secret.',
+      reason: notApproved ? 'not_approved' : 'bad_token',
       psa_status: r.status,
       psa_message: psaMsg || bodyText.slice(0, 200) || null,
     }), { status: 502, headers: ch });
   }
   if (r.status === 429) {
-    return new Response(JSON.stringify({ error: "PSA's daily lookup limit has been reached. Try again tomorrow." }), { status: 429, headers: ch });
+    // PSA count rejected calls against the same 100/day allowance, so a spell
+    // of failed testing can exhaust it. Pass their retry window through.
+    const retry = r.headers.get('retry-after');
+    return new Response(JSON.stringify({
+      error: "PSA's daily lookup limit (100/day) has been reached. It resets on a rolling window, not at midnight.",
+      reason: 'quota',
+      retry_after_seconds: retry ? Number(retry) : null,
+      psa_message: psaMsg || bodyText.slice(0, 200) || null,
+    }), { status: 429, headers: ch });
   }
   if (r.status === 204) {
     return new Response(JSON.stringify({ found: false, cert }), { headers: ch });
