@@ -16935,8 +16935,9 @@ function renderHoldStrategy(card) {
         </div>
         <div class="hold-row-right">
           <div class="hold-row-roi ${_roiArrCls(s.roi)}">${_roiArrow(s.roi)} ${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</div>
-          <div class="hold-row-profit ${s.profit >= 0 ? 'hold-pos' : 'hold-neg'}">Profit ${profitSign}${fmtGBP(Math.abs(s.profit))}</div>
-          <div class="hold-row-target">5yr ${fmtGBP(s.yr5)}</div>
+          <div class="hold-row-profit ${s.profit >= 0 ? 'hold-pos' : 'hold-neg'}"
+               title="Profit and ROI are what is left after ${(BUY_SELL_FRICTION * 100).toFixed(1)}% selling fees, measured against ${s.isOwnedSlab ? 'the price paid' : 'the all-in cost'}.">Profit ${profitSign}${fmtGBP(Math.abs(s.profit))} <span class="hold-row-fee">after fees</span></div>
+          <div class="hold-row-target">5yr ${fmtGBP(s.yr5)} <span class="hold-row-fee">· nets ${fmtGBP(s.yr5 * (1 - BUY_SELL_FRICTION))}</span></div>
         </div>
       </div>
     </div>`;
