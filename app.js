@@ -3412,6 +3412,8 @@ function selectCard(id) {
   {
     const _acqSlab = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(card.i) : null;
     _holdStratVariant = (_acqSlab && _acqSlab.variant) ? _acqSlab.variant : 'unlimited';
+    _hoPopVariant = _holdStratVariant;   // the override panel opens on the same print
+    _hoKeepOpen = false;                 // a new card starts with the panel closed
   }
   _holdWinnerDesc = '';
   _livePriceVariant = null; // clear any active variant override on card change
@@ -24733,6 +24735,9 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
 // Which print's population the override panel is editing. Separate from
 // _holdStratVariant so looking up a 1st Edition pop doesn't reprice the tiles.
 let _hoPopVariant = 'unlimited';
+// Saving redraws the panel; without this the disclosure would snap shut under
+// the user the moment they pressed Save.
+let _hoKeepOpen = false;
 
 // PSA population entry, sitting under the price overrides because it answers
 // the same question from the other side: the prices say what a grade is worth,
@@ -24767,6 +24772,7 @@ function _hoPopBlock(card) {
           </div>`).join('')}
       </div>
       <div class="ho-pop-actions">
+        <button type="button" class="ho-pop-save" id="hoPopSave" disabled>Saved</button>
         <span class="ho-pop-note" id="hoPopNote"></span>
         ${filled ? `<button type="button" class="ho-pop-clear" id="hoPopClear">Clear this print's population</button>` : ''}
       </div>
@@ -24800,31 +24806,51 @@ function _hoWirePop(host, card) {
     if (d) d.open = true;
   }));
 
-  let t = null;
-  host.querySelectorAll('.ho-pop-input').forEach(inp => {
-    const commit = async () => {
+  // Committing a grade rebuilds this panel, so it cannot happen while the grid
+  // is being filled in — typing a second number would land in an input that had
+  // just been replaced. All ten boxes are saved together, on demand.
+  const popSave = host.querySelector('#hoPopSave');
+  const inputs  = [...host.querySelectorAll('.ho-pop-input')];
+  const markPopDirty = () => {
+    if (!popSave) return;
+    popSave.disabled = false;
+    popSave.textContent = 'Save population';
+    if (note) note.textContent = '';
+  };
+  inputs.forEach(inp => {
+    inp.addEventListener('input', markPopDirty);
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); if (popSave) popSave.click(); }
+    });
+  });
+
+  if (popSave) popSave.addEventListener('click', async () => {
+    const variant = variantOf();
+    const id = popIdFor(card.i, variant);
+    const pop = {};
+    let bad = null;
+    for (const inp of inputs) {
       const g = parseInt(inp.dataset.hoPop, 10);
       const raw = (inp.value || '').trim();
-      const variant = variantOf();
-      const id = popIdFor(card.i, variant);
-      if (raw === '') {
-        // Blank means "unknown", which is not the same as a population of zero.
-        const have = _popDataCache.get(id);
-        if (have && have.pop && have.pop[g] != null) {
-          const pop = { ...have.pop }; delete pop[g];
-          await savePsaPop(id, pop);
-        }
-      } else {
-        const n = parseInt(raw.replace(/[,\s]/g, ''), 10);
-        if (!(n >= 0)) { if (note) note.textContent = 'Whole numbers only.'; return; }
-        await savePsaPopGrade(id, g, n);
-      }
-      if (note) note.textContent = `Saved · ${popVariantsFor(card).length ? (popVariantsFor(card).find(v => v.key === variant) || {}).label + ' · ' : ''}PSA ${g}`;
-      try { renderHoldStrategy(card); } catch {}
-      try { renderPsaPopMissing(); } catch {}
-    };
-    inp.addEventListener('input', () => { if (t) clearTimeout(t); t = setTimeout(commit, 400); });
-    inp.addEventListener('blur', commit);
+      if (raw === '') continue;                    // blank is "unknown", not zero
+      const n = parseInt(raw.replace(/[,\s]/g, ''), 10);
+      if (!(n >= 0)) { bad = g; break; }
+      pop[g] = n;
+    }
+    if (bad != null) {
+      if (note) { note.textContent = `PSA ${bad} needs a whole number.`; note.className = 'ho-pop-note ho-pop-note-bad'; }
+      return;
+    }
+    popSave.disabled = true;
+    popSave.textContent = 'Saving…';
+    await savePsaPop(id, pop);
+    const label = popVariantsFor(card).length
+      ? ((popVariantsFor(card).find(v => v.key === variant) || {}).label + ' · ') : '';
+    _hoKeepOpen = true;
+    try { renderHoldStrategy(card); } catch {}
+    try { renderPsaPopMissing(); } catch {}
+    const n2 = document.getElementById('hoPopNote');
+    if (n2) { n2.textContent = `Saved ${label}${Object.keys(pop).length} grade${Object.keys(pop).length === 1 ? '' : 's'}`; n2.className = 'ho-pop-note'; }
   });
 
   const clr = host.querySelector('#hoPopClear');
@@ -24874,7 +24900,7 @@ function renderHoldOverridePanel(card) {
     ? `<span class="ho-active">${activeCount} active override${activeCount === 1 ? '' : 's'}</span>`
     : `<span class="ho-hint">${_hasLiveRaw ? 'Using live price · override to correct eBay' : 'Override fair value with actual eBay prices'}</span>`;
   host.innerHTML = `
-    <details class="ho-details"${activeCount > 0 ? ' open' : ''}>
+    <details class="ho-details"${(activeCount > 0 || _hoKeepOpen) ? ' open' : ''}>
       <summary class="ho-summary">
         <span class="ho-label"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg> Market price override</span>
         ${summaryNote}
@@ -24908,6 +24934,9 @@ function renderHoldOverridePanel(card) {
               </div>
             `;
           }).join('')}
+          <div class="ho-row ho-row-save">
+            <button type="button" class="ho-save" id="holdOverrideSave" disabled>Saved</button>
+          </div>
         </div>
         ${_hoPopBlock(card)}
         <div class="ho-actions">
@@ -24919,23 +24948,21 @@ function renderHoldOverridePanel(card) {
   _hoWirePop(host, card);
   // Wire input changes — debounce a touch so typing isn't laggy.
   let debounceT = null;
+  // Saving redraws the whole Hold Strategy, and this panel with it, so doing it
+  // while typing destroys the input under the cursor — the page appeared to
+  // refresh itself on every keystroke. Entry is now committed only on Save.
+  const saveBtn = host.querySelector('#holdOverrideSave');
+  const markDirty = () => { if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save prices'; } };
   host.querySelectorAll('.ho-input').forEach(inp => {
-    inp.addEventListener('input', (e) => {
-      const grade = inp.getAttribute('data-grade');
-      const v = inp.value;
-      if (debounceT) clearTimeout(debounceT);
-      debounceT = setTimeout(() => {
-        setHoldOverride(card.i, grade, v);
-        // Re-render the entire Hold Strategy with the new override applied.
-        try { renderHoldStrategy(card); } catch {}
-      }, 220);
+    inp.addEventListener('input', markDirty);
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); if (saveBtn) saveBtn.click(); }
     });
-    // Re-render on blur immediately too, in case user tabs away.
-    inp.addEventListener('blur', (e) => {
-      const grade = inp.getAttribute('data-grade');
-      setHoldOverride(card.i, grade, inp.value);
-      try { renderHoldStrategy(card); } catch {}
-    });
+  });
+  if (saveBtn) saveBtn.addEventListener('click', () => {
+    host.querySelectorAll('.ho-input').forEach(inp => setHoldOverride(card.i, inp.getAttribute('data-grade'), inp.value));
+    _hoKeepOpen = true;
+    try { renderHoldStrategy(card); } catch {}
   });
   host.querySelectorAll('.ho-na-check').forEach(chk => {
     chk.addEventListener('change', () => {

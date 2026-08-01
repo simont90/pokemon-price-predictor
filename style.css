@@ -7388,6 +7388,20 @@ section.card.is-collapsed { padding-bottom: 18px; }
   gap: 10px;
 }
 
+/* Save buttons — entry is committed on demand, never while typing */
+.ho-row-save { display: flex; align-items: flex-end; }
+.ho-save, .ho-pop-save {
+  width: 100%; padding: 9px 14px; border-radius: 9px; font-size: 12px; font-weight: 700;
+  font-family: var(--sans); cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: #111;
+  transition: opacity 0.12s;
+}
+.ho-pop-save { width: auto; }
+.ho-save:disabled, .ho-pop-save:disabled {
+  background: none; color: var(--text-muted); border-color: var(--border); cursor: default;
+}
+.ho-pop-note-bad { color: #e57373 !important; }
+
 /* PSA population entry, per print */
 .ho-pop { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .ho-pop-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
