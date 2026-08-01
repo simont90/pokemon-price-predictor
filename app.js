@@ -188,6 +188,56 @@ const DISP_CURRENCY_KEY = 'display-currency';
 let _displayCurrency = localStorage.getItem(DISP_CURRENCY_KEY) || 'GBP';
 let _currencyRates   = { GBP: 1, USD: 1.27, EUR: 1.17, JPY: 190, AUD: 2.01, CAD: 1.74 };
 const _CURRENCY_SYMS = { GBP: '£', USD: '$', EUR: '€', JPY: '¥', AUD: 'A$', CAD: 'C$' };
+
+// ── FX rates: cached-first, refreshed in the background ────────────────────
+// Device-local (no pkm- prefix): rates are global, not user data.
+const FX_CACHE_KEY = 'fx-rates-cache-v1';
+const FX_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+function _fxSetRates(rates) {
+  if (!rates || !(rates.USD > 0)) return false;
+  _currencyRates = {
+    GBP: 1,
+    USD: rates.USD || 1.27,
+    EUR: rates.EUR || 1.17,
+    JPY: rates.JPY || 190,
+    AUD: rates.AUD || 2.01,
+    CAD: rates.CAD || 1.74,
+  };
+  fxRate = 1 / _currencyRates.USD; // USD→GBP for internal calcs
+  return true;
+}
+
+function _fxApplyCached() {
+  try {
+    const c = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || 'null');
+    if (c && c.rates) _fxSetRates(c.rates);
+    return c ? (c.ts || 0) : 0;
+  } catch (e) { return 0; }
+}
+
+// Refresh without blocking startup. Only re-renders when the rate actually
+// moved enough to change a displayed price.
+function _fxRefreshInBackground() {
+  let cachedTs = 0;
+  try { cachedTs = (JSON.parse(localStorage.getItem(FX_CACHE_KEY) || 'null') || {}).ts || 0; } catch (e) {}
+  if (Date.now() - cachedTs < FX_MAX_AGE_MS) return; // yesterday's rate is fine
+
+  fetch('https://open.er-api.com/v6/latest/GBP')
+    .then(r => r.json())
+    .then(d => {
+      if (!d || !d.rates || !(d.rates.USD > 0)) return;
+      const before = fxRate;
+      if (!_fxSetRates(d.rates)) return;
+      try { localStorage.setItem(FX_CACHE_KEY, JSON.stringify({ ts: Date.now(), rates: d.rates })); } catch (e) {}
+      const el = $('fxValue'); if (el) el.textContent = `£${fxRate.toFixed(4)}`;
+      if (Math.abs(fxRate - before) / (before || 1) > 0.002) {
+        try { if (typeof renderHomeDashboard === 'function') renderHomeDashboard(); } catch (e) {}
+        try { if (selectedCard && typeof recalcWithLivePrice === 'function') recalcWithLivePrice(selectedCard); } catch (e) {}
+      }
+    })
+    .catch(() => { /* keep cached/default rates */ });
+}
 let _lastLiveData    = null;
 const _popDataCache   = new Map(); // cardId → {pop:{1..10:count}, sales:{1..10:{avg,low,high,count,change90}}, ts}
 const _salesDataCache = new Map(); // cardId → same shape; separate so pop/sales can refresh independently
@@ -494,16 +544,6 @@ async function fetchGzipJson(url) {
   return r.json();
 }
 
-async function fetchWithRetry(url, retries = 2) {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      return await fetchGzipJson(url);
-    } catch (e) {
-      if (i === retries) throw e;
-      await new Promise(res => setTimeout(res, 1000 * (i + 1)));
-    }
-  }
-}
 
 // Decode compact v2 card format back to objects
 function decodeCardDB(raw) {
@@ -554,29 +594,34 @@ async function init() {
       setsData = {};
     }
 
-    // Fetch exchange rate (small, non-blocking)
-    try {
-      const fxR = await fetch('https://open.er-api.com/v6/latest/GBP').then(r => r.json());
-      if (fxR.rates?.USD) {
-        _currencyRates = {
-          GBP: 1,
-          USD: fxR.rates.USD || 1.27,
-          EUR: fxR.rates.EUR || 1.17,
-          JPY: fxR.rates.JPY || 190,
-          AUD: fxR.rates.AUD || 2.01,
-          CAD: fxR.rates.CAD || 1.74,
-        };
-        fxRate = 1 / fxR.rates.USD; // USD→GBP for internal calcs
-      }
-    } catch (e) { /* use default */ }
+    // Exchange rates: use yesterday's cached rates instantly and refresh in
+    // the background. Awaiting a third-party API here used to block the
+    // loading screen, the search index and the whole UI behind one network
+    // round-trip — and hang the app outright when that API was slow.
+    _fxApplyCached();
+    _fxRefreshInBackground();
+
+    // Yield once before the setup* calls below. init() is invoked partway
+    // through this file (~line 11440) while later top-level `let`s — watchlist,
+    // portfolio and friends — are still in their temporal dead zone. Awaiting
+    // here defers the rest of init to a microtask, which runs only after the
+    // whole script has finished evaluating, so those bindings exist by then.
+    // This used to happen by accident, as a side effect of awaiting the FX
+    // API; it is deliberate now. Removing it breaks startup.
+    await Promise.resolve();
 
     if (loadingText) loadingText.textContent = 'Initialising…';
 
     $('fxValue').textContent = `£${fxRate.toFixed(4)}`;
     if (cardData) {
-      const jpCount = cardData.cards.filter(c => c.lang === 'JP').length;
-      const cnCount = cardData.cards.filter(c => c.lang === 'CN').length;
-      const krCount = cardData.cards.filter(c => c.lang === 'KR').length;
+      // One pass for the language split — this used to be three full scans
+      // of 26k cards.
+      let jpCount = 0, cnCount = 0, krCount = 0;
+      for (const c of cardData.cards) {
+        if      (c.lang === 'JP') jpCount++;
+        else if (c.lang === 'CN') cnCount++;
+        else if (c.lang === 'KR') krCount++;
+      }
       const enCount = cardData.count - jpCount - cnCount - krCount;
       const cnPart = cnCount > 0 ? ` + ${cnCount.toLocaleString()} CN` : '';
       const krPart = krCount > 0 ? ` + ${krCount.toLocaleString()} KR` : '';
@@ -1493,8 +1538,6 @@ function buildCounterpartRecommendation(card) {
     jpPsa10Manual,
   };
 }
-function cheaperGBP(a, b, cheaper) { return usdToGbp(cheaper === a ? getCurrentPrice(a) : getCurrentPrice(b)); }
-function pricierGBP(a, b, pricier) { return usdToGbp(pricier === a ? getCurrentPrice(a) : getCurrentPrice(b)); }
 
 // Render the EN ↔ JP recommendation panel for the selected card.
 function renderCounterpartFlag(card) {
@@ -2425,46 +2468,6 @@ async function fetchPriceChartingData(card) {
   return productToPC(best, fg);
 }
 
-// Fetch live pricing for JP cards — PriceCharting is primary source
-async function fetchLivePriceJP(card) {
-  // Try PriceCharting first (accurate JP pricing with eBay sales data)
-  const pc = await fetchPriceChartingData(card);
-  
-  const result = {
-    source: 'pricecharting',
-    market: pc ? pc.pcUngraded : 0,
-    low: 0,
-    mid: pc ? pc.pcUngraded : 0,
-    high: 0,
-    directLow: 0,
-    tcgUpdated: '',
-    tcgUrl: '',
-    cmTrend: 0,
-    cmAvg1: 0,
-    cmAvg7: 0,
-    cmAvg30: 0,
-    cmLow: 0,
-    cmSuggested: 0,
-    cmUpdated: '',
-    cmUrl: '',
-    // PriceCharting specific
-    pcUngraded: pc ? pc.pcUngraded : 0,
-    pcPsa10: pc ? pc.pcPsa10 : 0,
-    pcGrade9: pc ? pc.pcGrade9 : 0,
-    pcAce10: pc ? pc.pcAce10 : 0,
-    pcAce9:  pc ? pc.pcAce9  : 0,
-    pcAce8:  pc ? pc.pcAce8  : 0,
-    pcAce7:  pc ? pc.pcAce7  : 0,
-    pcPsa7:  pc ? pc.pcPsa7  : 0,
-    pcPsa8:  pc ? pc.pcPsa8  : 0,
-    pcPsa9:  pc ? pc.pcPsa9  : 0,
-    pcName: pc ? pc.pcName : '',
-    pcConsole: pc ? pc.pcConsole : '',
-    pcId: pc ? pc.pcId : '',
-  };
-
-  return result;
-}
 
 // Master live price fetcher — PriceCharting is PRIMARY for all cards, TCGPlayer is secondary for EN
 // Resolve a Collectrics ID via the live-price flow and trigger market data + price history
@@ -2814,34 +2817,6 @@ async function fetchCollectricsSearchData(card) {
   };
 }
 
-// Background refresh even when cache hit
-async function fetchAndCacheFresh(card, originalId) {
-  try {
-    const priceData = await fetchFreshPriceData(card);
-    // If the fresh fetch lost the TCGPlayer price (worker temporarily unreachable)
-    // but the existing cache entry still has one, preserve it so the row doesn't vanish.
-    if (priceData.tcgMarket <= 0) {
-      const existing = getLastKnownPrice(card.i);
-      if (existing && existing.tcgMarket > 0) {
-        priceData.tcgMarket = existing.tcgMarket;
-        priceData.tcgLow    = existing.tcgLow    || 0;
-        priceData.tcgMid    = existing.tcgMid    || 0;
-        priceData.tcgHigh   = existing.tcgHigh   || 0;
-        priceData.tcgUrl    = priceData.tcgUrl   || existing.tcgUrl;
-        priceData.tcgUpdated = priceData.tcgUpdated || existing.tcgUpdated;
-      }
-    }
-    setCachedPrice(card.i, priceData);
-    // If still on same card, update
-    if (originalId === livePriceFetchId && selectedCard && selectedCard.i === card.i) {
-      livePrice = priceData;
-      renderLivePrice(priceData);
-      recalcWithLivePrice(card);
-    }
-  } catch (e) {
-    // Silent — cached data is still shown
-  }
-}
 
 // Extract a short variant label from a PriceCharting product name
 function _pcVariantLabel(pcName) {
@@ -3679,17 +3654,6 @@ function selectCard(id) {
   }
 }
 
-// ---- Japanese Card Image ----
-// Used when the selected card is EN — we surface the JP counterpart image too
-// in the side-by-side view. Click opens the full-resolution lightbox.
-function loadJapaneseImage(card) {
-  const jpImg = $('cardImageJp');
-  jpImg.src = getCardImg(card);
-  jpImg.style.display = 'block';
-  jpImg.title = 'Click to view full resolution';
-  jpImg.style.cursor = 'zoom-in';
-  jpImg.onclick = () => openImageLightbox(getCardImg(card), card.n + ' (Japanese)');
-}
 
 // ---- Image Lightbox (full-resolution viewer) ----
 function openImageLightbox(src, caption) {
@@ -5114,10 +5078,6 @@ function renderMarketDynamics(mp, ebayHist) {
 let priceHistoryData = null;     // full history array (most recent last)
 let priceHistoryRange = 30;       // current selected range in days, or 'all'
 
-function hidePriceHistory() {
-  $('priceHistSection').style.display = 'none';
-  priceHistoryData = null;
-}
 
 function renderPriceHistory(history) {
   const section = $('priceHistSection');
@@ -7008,16 +6968,6 @@ function _binderReorgGroups() {
   return Object.keys(groups).sort((a, b) => a.localeCompare(b));
 }
 
-function _moveSelectedToGroup(targetGroup) {
-  if (!targetGroup || !_binderReorgSelected.size) return;
-  for (const id of _binderReorgSelected) {
-    binderSpeciesOverrides[id] = targetGroup;
-  }
-  saveBinderSpeciesOverrides();
-  _binderReorgSelected.clear();
-  _binderReorgMode = false;
-  renderBinderPage();
-}
 
 function _renderReorgBar() { /* no-op — actions now inline in group headers */ }
 
@@ -8617,20 +8567,6 @@ async function _hydrateFromPriceWarm() {
   }
 }
 
-// ── Binder background pre-fetch ────────────────────────────────────────────
-// Runs at app startup and when the binder page opens. Fetches all binder
-// card prices silently if they haven't been refreshed since today's 6AM GMT.
-// Silent runs continue in the background even when the binder page is hidden.
-function _binderAutoRefresh() {
-  const btn = $('binderRefreshPricesBtn');
-  if (!btn || btn.dataset.running === 'true') return;
-  if (!fullArtBinder.length) return;
-  const lastRefresh = parseInt(localStorage.getItem(BINDER_REFRESH_KEY) || '0', 10);
-  const stale = lastRefresh < _last6AMGMT();
-  const hasUncached = fullArtBinder.some(b => !getLastKnownPrice(b.id));
-  if (!stale && !hasUncached) return;
-  binderFetchAllPrices(btn, { silent: true });
-}
 
 function toggleCardInWishlist(id) {
   const card = id ? (getCardById(id)) : selectedCard;
@@ -13524,10 +13460,6 @@ function addReassignment(rec) {
   arr.unshift({ ...rec, ts: Date.now() });
   saveReassignments(arr);
 }
-function removeReassignment(url) {
-  if (!url) return;
-  saveReassignments(getReassignments().filter(r => r.url !== url));
-}
 // URLs to HIDE from the origin card's grade panel.
 function reassignmentsFromCard(cardId, gradeKey) {
   const out = new Set();
@@ -13581,14 +13513,6 @@ function addDismissal(rec) {
     ts: Date.now(),
   });
   saveDismissals(arr);
-}
-function removeDismissal(url, cardId, gradeKey) {
-  if (!url) return;
-  saveDismissals(getDismissals().filter(r => !(
-    r.url === url &&
-    (cardId == null || r.fromCardId === cardId) &&
-    (gradeKey == null || r.fromGrade === gradeKey)
-  )));
 }
 // URLs to hide for this card + grade because the user dismissed them.
 function dismissalsForCard(cardId, gradeKey) {
@@ -14425,14 +14349,6 @@ function getAceWaitMonths(tier) {
 // protection). Selection drives which cost/wait/EV model the Hold Strategy uses.
 const GRADING_SERVICE_KEY = 'pkm-grading-service-v1';
 const ACE_TIER_PREF_KEY   = 'pkm-ace-tier-v1';
-function getGradingService() {
-  const v = localStorage.getItem(GRADING_SERVICE_KEY);
-  return v === 'ACE' ? 'ACE' : 'PSA';
-}
-function setGradingService(v) {
-  const norm = v === 'ACE' ? 'ACE' : 'PSA';
-  try { localStorage.setItem(GRADING_SERVICE_KEY, norm); } catch {}
-}
 function getAceTier() {
   const v = localStorage.getItem(ACE_TIER_PREF_KEY);
   return ACE_TIERS[v] ? v : 'standard';
@@ -14440,18 +14356,6 @@ function getAceTier() {
 function setAceTier(v) {
   const norm = ACE_TIERS[v] ? v : 'standard';
   try { localStorage.setItem(ACE_TIER_PREF_KEY, norm); } catch {}
-}
-// Service-aware grading fee/wait — used by Hold Strategy only. Other places
-// (eBay Deal Check, PSA ROI, etc.) still call getUkGradingFeeGBP directly
-// because they're inherently about PSA resale.
-function getGradingFeeGBP(psa10USD, service, tier) {
-  return service === 'ACE' ? getAceFeeGBP(tier) : getUkGradingFeeGBP(psa10USD);
-}
-function getGradingWaitMonths(psa10USD, service, tier) {
-  return service === 'ACE' ? getAceWaitMonths(tier) : getUkGradingWaitMonths(psa10USD);
-}
-function getGradingWaitDisplay(psa10USD, service, tier) {
-  return service === 'ACE' ? getAceWaitDisplay(tier) : getUkGradingWaitDisplay(psa10USD);
 }
 
 // ---- Grading service + ACE tier picker (Hold Strategy UI) ----
@@ -18507,14 +18411,6 @@ const AI_FOCUS_PRESETS = {
 function getFocus() {
   try { return JSON.parse(localStorage.getItem(AI_FOCUS_KEY) || 'null'); } catch { return null; }
 }
-function setFocus(id, label) {
-  localStorage.setItem(AI_FOCUS_KEY, JSON.stringify({ id, label }));
-  _renderFocusBar();
-}
-function clearFocus() {
-  localStorage.removeItem(AI_FOCUS_KEY);
-  _renderFocusBar();
-}
 function _renderFocusBar() {
   const focus = getFocus();
   document.querySelectorAll('#aiFocusChips .ai-focus-chip').forEach(c => {
@@ -19860,11 +19756,6 @@ function tasteAutoAdd(card) {
   return s;
 }
 
-function tasteBadgeHTML(s, extraCls) {
-  if (!s) return '';
-  const cls = s.score >= TASTE_AUTO_ADD ? 'taste-hi' : s.score >= 45 ? 'taste-mid' : 'taste-lo';
-  return `<span class="taste-badge ${cls} ${extraCls || ''}" title="Likelihood you'd want this: ${s.taste}% taste match + model view${s.reasons.length ? ' — ' + s.reasons.join(', ') : ''}">◆ ${s.score}%</span>`;
-}
 
 function buildAllHomeRecos() {
   if (!cardData || !cardData.cards) return { general: [], raw: [], psa8: [], psa9: [], psa10: [] };
@@ -21100,35 +20991,6 @@ function _renderHomeDailyBrief() {
   }
 }
 
-// Silently refresh stale tracked card prices in the background when the user
-// navigates home. Re-renders collection/wishlist/watchlist progressively as
-// each price arrives, then force-rebuilds recommendations at the end.
-async function _homeAutoRefresh() {
-  if (_psState.running || !cardData) return;
-  const cache = getPriceCache();
-  const staleIds = _allRefreshIds().filter(id => {
-    const e = cache[id];
-    return !e || !_priceCacheIsValid(e._ts);
-  });
-  if (!staleIds.length) return;
-  _psState = { running: true, cancel: false, done: 0, total: staleIds.length };
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < staleIds.length && !_psState.cancel) {
-      const id = staleIds[cursor++];
-      await psRefreshOne(id);
-      _psState.done++;
-      _scheduleHomeRender();
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(PRICE_SYNC_CONCURRENCY, staleIds.length) }, worker));
-  psSetLastSync(Date.now());
-  _psState.running = false;
-  try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
-  try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); _renderHomeAcePicks(); } catch {}
-  try { _renderHomeReco(true); } catch {}
-  try { if (typeof psUpdateStats === 'function') psUpdateStats(); } catch {}
-}
 
 function _homeItemClick(id) {
   document.querySelector('.page-nav-btn[data-page="predict"]')?.click();
@@ -27796,29 +27658,7 @@ function renderStandouts() {
   }
 }
 
-function _soPrice(item) {
-  if (_soGrade === 'psa10') return item.psa10GBP || item.rawGBP;
-  if (_soGrade === 'psa9')  return item.psa9GBP  || item.rawGBP;
-  return item.rawGBP;
-}
 
-function _standoutInsight(card, item) {
-  const { rawGBP, psa9GBP, psa10GBP, inPortfolio, inWishlist } = item;
-  const mult10 = rawGBP > 0 && psa10GBP > 0 ? (psa10GBP / rawGBP) : 0;
-  const mult9  = rawGBP > 0 && psa9GBP  > 0 ? (psa9GBP  / rawGBP) : 0;
-  const ownedTag = inPortfolio ? ' · Already owned.' : inWishlist ? ' · On your wishlist.' : '';
-  if (mult10 >= 8)
-    return `Exceptional grading premium — PSA 10 at ${fmtGBPDirect(psa10GBP)} is ${mult10.toFixed(1)}× raw entry (${fmtGBPDirect(rawGBP)}).${ownedTag}`;
-  if (mult10 >= 4)
-    return `Strong grading upside: PSA 10 at ${fmtGBPDirect(psa10GBP)} is ${mult10.toFixed(1)}× raw. Worth grading a sharp copy.${ownedTag}`;
-  if (mult10 >= 2)
-    return `${mult10.toFixed(1)}× grading premium. At ${fmtGBPDirect(rawGBP)} raw, a near-mint copy grades profitably.${ownedTag}`;
-  if (mult9 >= 2)
-    return `PSA 9 at ${fmtGBPDirect(psa9GBP)} is ${mult9.toFixed(1)}× raw — a solid graded entry without chasing PSA 10 prices.${ownedTag}`;
-  if (rawGBP > 0)
-    return `${fmtGBPDirect(rawGBP)} raw. ${rawGBP < 30 ? 'Low entry point — accessible for bulk or NM singles.' : rawGBP < 100 ? 'Mid-range entry. Check condition before committing.' : 'Premium raw. Condition and pop report matter here.'}${ownedTag}`;
-  return 'Sync live prices to unlock grade analysis for this card.';
-}
 
 // ── AI Analysis page ───────────────────────────────────────────────────────────
 
@@ -28580,9 +28420,6 @@ function _wtbSearchWithSig(sig) {
   return results.sort((a, b) => b.total - a.total).slice(0, 20);
 }
 
-function _wtbSearch(q) {
-  return _wtbSearchWithSig(_wtbParseQuery(q));
-}
 
 function _wtbExplainCard(card, dealScore, bestGrade, bestGbp, rawGBP, pd, isVintage, ladder, cardSig) {
   const si = (typeof setsData !== 'undefined' && setsData) ? setsData[card.sc] : null;
@@ -28766,7 +28603,6 @@ function _pknWireSearch() {
   });
 }
 
-function renderWhatToBuyPage() { _pknWireSearch(); }
 
 // ---- Card AI Overlay ----
 
