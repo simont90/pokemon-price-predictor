@@ -16808,13 +16808,22 @@ function renderHoldStrategy(card) {
       // between prints, so ignoring it left the tiles below saying one number
       // and the comparison above saying another for the same card and grade.
       .map(v => {
-        const ovr = getHoldOverridesForCard(overrideIdFor(card, v.key));
+        // Only prints this card actually has. Shadowless exists for Base Set
+        // and nowhere else, so asking for its overrides on a Neo card resolved
+        // back to the Unlimited id and returned Unlimited's numbers — which is
+        // how a Shadowless row appeared on a card that has no such print, at a
+        // price identical to Unlimited. An override also must not make a print
+        // available: it corrects a price, it does not bring a print into
+        // existence.
+        if (!v.avail) return v;
+        if (!popVariantsFor(card).some(p => p.key === v.key)) return v;
+        const ovr = getHoldOverridesForCard(popIdFor(card.i, v.key));
         const g = ovr && ovr.psa10;
         if (!(g > 0)) return v;
         const usd = g / fx;
         const yr5 = projectGradePrice(card, 10, usd, 5);
         return { ...v, gbp: Math.round(g), yr5: Math.round(yr5 * fx),
-                 roi: Math.round((yr5 - usd) / usd * 100), overridden: true, avail: true };
+                 roi: Math.round((yr5 - usd) / usd * 100), overridden: true };
       })
       .filter(v => v.avail);
     const bestVariant = vcands.reduce((b, v) => (v.roi != null && (b.roi == null || v.roi > b.roi)) ? v : b, vcands[0]);
