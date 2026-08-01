@@ -2532,6 +2532,14 @@ textarea, select {
    iPhone size tiers
    ================================================================ */
 
+/* Large phones — Pro Max / Plus (401–600px width).
+   The 820px rule drops the price grid to two columns, which is right for a
+   375px phone but wastes a Pro Max: three tiles then wrap 2 + 1 and leave an
+   empty cell. At this width all three fit on one row. */
+@media (min-width: 401px) and (max-width: 600px) {
+  .price-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+}
+
 /* iPhone SE / small phones (<= 400px width) */
 @media (max-width: 400px) {
   .app { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
