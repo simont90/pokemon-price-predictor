@@ -5315,9 +5315,6 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
-/* The 5yr figure is a market target; profit and ROI come off it net of selling
-   fees. Without saying so the two cannot be reconciled by eye. */
-.hold-row-fee { font-size: 9px; font-weight: 500; color: var(--text-faint, var(--text-muted)); opacity: 0.85; }
 .hold-grade-toggle-btn {
   display: block; width: 100%; margin-top: 8px;
   padding: 10px; border-radius: 10px;

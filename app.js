@@ -15434,6 +15434,14 @@ const EBAY_FEE_UK = 0.129;
 // primary exit venue. Previously 10%; updated to match actual eBay rate so
 // 5yr exit values and ROI projections are realistic for eBay sellers.
 const BUY_SELL_FRICTION = EBAY_FEE_UK;
+
+// Friction applied to the five-year hold projections on the strategy tiles.
+// Deliberately zero: those figures are "what is this worth in five years",
+// and the exit route is not decided yet — a private sale carries no
+// marketplace fee at all. Selling costs are a question for the point of sale,
+// not a haircut baked into every projection. BUY_SELL_FRICTION still applies
+// where fees genuinely decide something, such as flip-versus-crack EV.
+const HOLD_PROJECTION_FRICTION = 0;
 const EBAY_FIXED_FEE = 0.30;        // £0.30 per-transaction eBay UK charge
 // Expected premium of eBay listing prices over raw market (PriceCharting / CM).
 // Sellers price up to recover the ~13% fee and earn a small margin — 15% is a
@@ -15513,7 +15521,7 @@ function computeHoldCore(card) {
 
   // Strategy 1 — Buy Raw, hold ungraded
   const rawYr5USD = projectGradePrice(card, 9, rawUSD, 5) / GRADE_GROWTH_PREMIUM[9] * 1.0;
-  const rawSell5USD = rawYr5USD * (1 - BUY_SELL_FRICTION);
+  const rawSell5USD = rawYr5USD * (1 - HOLD_PROJECTION_FRICTION);
   const rawShipUSD_hc = UK_RAW_SHIPPING_GBP / fx;
   const rawEntryUSD_hc = rawUSD + rawShipUSD_hc;
   const rawProfitUSD = rawSell5USD - rawEntryUSD_hc;
@@ -15530,7 +15538,7 @@ function computeHoldCore(card) {
     + SUBGEM_DISTRIBUTION[7]      * psa7Yr5
     + SUBGEM_DISTRIBUTION.rawLike * rawYr5USD;
   const gradeYr5EV = (gemRate * psa10Yr5 + (1 - gemRate) * subgemEV) * waitDiscount;
-  const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
+  const gradeSell5EV = gradeYr5EV * (1 - HOLD_PROJECTION_FRICTION);
   const gradeCost = rawEntryUSD_hc + gradingFeeUSD + gradingMaterialsUSD;
   const gradeProfit = gradeSell5EV - gradeCost;
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
@@ -15546,7 +15554,7 @@ function computeHoldCore(card) {
     const slabShipUSD = estimateUkSlabShipping(baseUSD * fx) / fx;
     const today = baseUSD + slabShipUSD;
     const yr5 = projectGradePrice(card, g, baseUSD, 5);
-    const sell = yr5 * (1 - BUY_SELL_FRICTION);
+    const sell = yr5 * (1 - HOLD_PROJECTION_FRICTION);
     const profit = sell - today;
     const roi = today > 0 ? (profit / today) * 100 : 0;
     return { label: `Buy PSA ${g}`, key: `psa${g}`, grade: g, today, yr5: sell, profit, roi };
@@ -16290,7 +16298,7 @@ function renderHoldStrategy(card) {
   // ----- Strategy 1: Buy Raw, hold ungraded -----
   const rawYr5USD = projectGradePrice(card, 9, rawUSD, 5) / GRADE_GROWTH_PREMIUM[9] * 1.0;
   // ^ Projections anchor to current market price, not acq cost. ROI uses acq cost.
-  const rawSell5USD = rawYr5USD * (1 - BUY_SELL_FRICTION);
+  const rawSell5USD = rawYr5USD * (1 - HOLD_PROJECTION_FRICTION);
   const rawProfitUSD = rawSell5USD - rawEntryUSD;
   const rawRoi = rawEntryUSD > 0 ? (rawProfitUSD / rawEntryUSD) * 100 : 0;
 
@@ -16318,14 +16326,14 @@ function renderHoldStrategy(card) {
   // PSA EV: gem-rate-weighted mix of PSA 10 and subgem outcomes.
   const gradeYr5EVRaw = gemRate * psa10Yr5 + (1 - gemRate) * subgemEV;
   const gradeYr5EV = gradeYr5EVRaw * waitDiscount;
-  const gradeSell5EV = gradeYr5EV * (1 - BUY_SELL_FRICTION);
+  const gradeSell5EV = gradeYr5EV * (1 - HOLD_PROJECTION_FRICTION);
   // PSA cost/profit/roi
   const gradeCost = rawEntryUSD + gradingFeeUSD + gradingMaterialsUSD;
   const gradeProfit = gradeSell5EV - gradeCost;
   const gradeRoi = gradeCost > 0 ? (gradeProfit / gradeCost) * 100 : 0;
   // ACE cost/profit/roi (always computed for selected tier)
   const aceGradeYr5EV_final = aceGradeYr5EV * aceWaitDiscount_r;
-  const aceSell5EV_r = aceGradeYr5EV_final * (1 - BUY_SELL_FRICTION);
+  const aceSell5EV_r = aceGradeYr5EV_final * (1 - HOLD_PROJECTION_FRICTION);
   const aceCost_r   = rawEntryUSD + aceFeeUSD_r + gradingMaterialsUSD;
   const aceProfit_r = aceSell5EV_r - aceCost_r;
   const aceRoi_r    = aceCost_r > 0 ? (aceProfit_r / aceCost_r) * 100 : 0;
@@ -16421,7 +16429,7 @@ function renderHoldStrategy(card) {
     // For owned slabs: cost basis is what was paid; projections still anchor to current market.
     const today = isOwnedSlab ? slabAcq.costGBP / fx : baseUSD + slabShipGBP / fx;
     const yr5 = projectGradePrice(card, g, baseUSD, 5, _holdCachedPop);
-    const sell = yr5 * (1 - BUY_SELL_FRICTION);
+    const sell = yr5 * (1 - HOLD_PROJECTION_FRICTION);
     const profit = sell - today;
     const roi = today > 0 ? (profit / today) * 100 : 0;
     const annualRate = baseUSD > 0 ? (Math.pow(yr5 / baseUSD, 0.2) - 1) * 100 : 0;
@@ -16936,8 +16944,8 @@ function renderHoldStrategy(card) {
         <div class="hold-row-right">
           <div class="hold-row-roi ${_roiArrCls(s.roi)}">${_roiArrow(s.roi)} ${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</div>
           <div class="hold-row-profit ${s.profit >= 0 ? 'hold-pos' : 'hold-neg'}"
-               title="Profit and ROI are what is left after ${(BUY_SELL_FRICTION * 100).toFixed(1)}% selling fees, measured against ${s.isOwnedSlab ? 'the price paid' : 'the all-in cost'}.">Profit ${profitSign}${fmtGBP(Math.abs(s.profit))} <span class="hold-row-fee">after fees</span></div>
-          <div class="hold-row-target">5yr ${fmtGBP(s.yr5)} <span class="hold-row-fee">· nets ${fmtGBP(s.yr5 * (1 - BUY_SELL_FRICTION))}</span></div>
+               title="Gross of any selling costs, measured against ${s.isOwnedSlab ? 'the price paid' : 'the all-in cost'}.">Profit ${profitSign}${fmtGBP(Math.abs(s.profit))}</div>
+          <div class="hold-row-target">5yr ${fmtGBP(s.yr5)}</div>
         </div>
       </div>
     </div>`;
