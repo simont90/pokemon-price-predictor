@@ -7300,6 +7300,14 @@ section.card .card-collapse-btn {
   transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
 }
 section.card:hover .card-collapse-btn { opacity: 0.35; }
+/* Nothing hovers on a touch screen, so the chevron would stay at opacity 0 —
+   invisible, and the only control that reopens a collapsed section. Several
+   sections collapse themselves on phones (data-collapse-mobile), which left no
+   way to get their content back. */
+@media (hover: none), (pointer: coarse) {
+  section.card .card-collapse-btn { opacity: 0.5; }
+  .tile-resizer { display: none !important; }
+}
 section.card .card-collapse-btn:hover {
   background: rgba(232, 182, 52, 0.08);
   color: var(--accent);

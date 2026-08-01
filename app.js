@@ -6065,6 +6065,13 @@ function savePortfolio() {
 }
 
 // ---- Layout drag-resize ----
+// Touch screens have no hover and no precise drag, so affordances built on
+// either are worse than useless there — they fire by accident and give no way
+// back. Checked rather than assumed from width: an iPad is wide and still touch.
+function _isCoarsePointer() {
+  return window.matchMedia('(pointer: coarse)').matches || !window.matchMedia('(hover: hover)').matches;
+}
+
 const LAYOUT_KEY      = 'pkm-layout-v1';       // device-local, NOT in SYNC_KEYS
 const DUPE_DISMISS_KEY = 'pkm-dupe-dismissed-v1'; // dismissed duplicate/counterpart pairs
 
@@ -6086,6 +6093,12 @@ function initLayoutResizer() {
         const el = document.getElementById(key) || document.querySelector(`[data-layout-id="${key}"]`);
         if (!el) return;
         if (h.startsWith('clamp:')) {
+          // A clamp hides everything past the chosen height. On a touch screen
+          // it is set by accident far more often than on purpose — the drag
+          // handle is a strip along the bottom edge of every card, right where
+          // a scroll starts — and the result looks like the card simply has no
+          // content below the fold. Never restore one there.
+          if (_isCoarsePointer()) return;
           el.style.maxHeight = h.slice(6);
           el.style.overflow = 'hidden';
           el.classList.add('is-clamped');
@@ -6209,6 +6222,10 @@ function initLayoutResizer() {
   }
 
   function addTileHandles() {
+    // Drag-to-resize is a mouse affordance. On touch the handle is a 20px strip
+    // across the bottom of every card and a scroll that begins there resizes
+    // the card instead, silently hiding the rest of its content.
+    if (_isCoarsePointer()) return;
     document.querySelectorAll('.inputs-column > .card, .output-column > .card').forEach(card => {
       if (card.querySelector('.tile-resizer')) return; // already added
 
