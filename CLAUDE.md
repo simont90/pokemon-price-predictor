@@ -1,9 +1,17 @@
 # Pokémon Price Predictor — AI Pair-Programming Guide
 
 Read this file in full before making any change. It is the shared contract
-between two AI coding partners (Claude Code on the owner's Mac, Perplexity
-Computer in the cloud sandbox) so the project stays coherent regardless of
-who edited last.
+between every environment this project is edited from, so the project stays
+coherent regardless of who edited last.
+
+**Primary environment: Claude Code on the owner's Mac**, working in a local
+clone. Cloud sessions (Claude Code on the web / Codespaces) are secondary —
+useful away from the Mac, but they cannot drive a browser, reach the local
+network, or deploy the worker without re-authenticating.
+
+`origin/main` on GitHub is the single source of truth. Nothing exists until
+it is pushed there — a local checkout has been lost before, and everything
+survived precisely because it had been pushed.
 
 If a rule here conflicts with a one-off user instruction in chat, the chat
 wins for that turn — but propose updating this file so the convention sticks.
@@ -53,20 +61,23 @@ CLAUDE.md               # This file.
 
 ## Branching & push convention
 
-- **Default branch:** `main` (GitHub Pages publishes from here).
-- Perplexity Computer's sandbox checkout uses local branch `main_tmp` and
-  pushes with `git push origin main_tmp:main`. Claude Code on the Mac
-  should work directly on `main` (clean local checkout).
-- **Always `git pull origin main` before starting a session.** The other AI
-  may have committed since you last saw the tree.
-- **Always commit + push after a successful edit.** Don't leave uncommitted
-  work in either sandbox. The next session's first move is always `git
-  pull`, so anything not on `origin/main` is invisible.
+- **Default branch:** `main` (GitHub Pages publishes from here). Work directly
+  on `main` from any environment.
+- **Always `git pull origin main` before starting a session.** Another
+  environment may have committed since you last saw the tree. Two sessions
+  have collided on this repo before; pulling first is what prevents it.
+- **Always commit + push after a successful edit.** Never leave work
+  uncommitted in a cloud container — those are reclaimed without warning.
+  The next session's first move is always `git pull`, so anything not on
+  `origin/main` is invisible.
+- If a push is rejected because the remote moved, `git pull --rebase origin
+  main`, resolve, re-verify, then push. Cache busters collide often here —
+  take the higher value and bump past it, never backwards.
 - Commit messages: imperative mood, scope-prefixed (`Marketplace Scan:
   fix...`, `Hold Strategy: add...`, `Sync: ...`).
 - Push auth:
-  - Claude Code → owner's GitHub credentials (set up once with `gh auth login`).
-  - Perplexity Computer → `gh auth setup-git` + `api_credentials=["github"]`.
+  - Mac → owner's GitHub credentials (set up once with `gh auth login`).
+  - Codespaces / cloud → already authenticated via the environment's token.
 
 ---
 
@@ -94,6 +105,11 @@ CLAUDE.md               # This file.
    when served as static files.
 7. **Static server for local dev:** `python3 -m http.server 3000` from the
    project directory. Visit `http://127.0.0.1:3000/?v=<current-buster>`.
+   On the Mac this drives the live preview and real browser testing; in a
+   cloud container it only serves headless checks — card images
+   (pokemontcg.io) and live price APIs are blocked there, so art renders
+   blank and prices fall back to the static database. Layout, behaviour and
+   console errors are still accurate.
 8. **All money is GBP-first.** USD is shown as a secondary tag. Prefer
    `fmtGBP()` / `usdToGbp()` helpers already in `app.js`.
 
@@ -106,8 +122,14 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
 1. Edit `worker-paste-this.js`.
 2. Commit + push to GitHub (so the next session sees the latest).
 3. Deploy: `npx wrangler deploy` from the repo root (wrangler.toml is checked in).
-   - Wrangler is authenticated via OAuth; credentials in `~/.wrangler/config/default.toml`.
+   - Mac: authenticated via OAuth (`npx wrangler login`), credentials in
+     `~/.wrangler/config/default.toml`. Re-run the login after a fresh clone.
+   - Codespaces: a `CLOUDFLARE_API_TOKEN` env var is already set, so
+     `wrangler login` errors and is unnecessary — just deploy.
    - The Cloudflare dashboard no longer has an inline editor — wrangler is the only deploy path.
+   - **Only the Mac and Codespaces can deploy.** Claude Code on the web has no
+     Cloudflare credentials and cannot reach `*.workers.dev`; it can write and
+     push worker code but never verify it live.
 4. Verify after deploy: `curl https://pokemon-marketplace.simontariq.workers.dev/health` returns `ok`.
 
 **Worker routes (do not break these):**
@@ -121,7 +143,17 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
 - `POST /mcp` → JSON-RPC 2.0 MCP server. Requires `Authorization: Bearer <pair-code>`.
 - `GET /mcp` → returns server info JSON (not an SSE stream).
 
-**Worker secrets (set in Cloudflare dashboard, not in this repo):**
+**Worker secrets — set with `npx wrangler secret put <NAME>`, never in this repo:**
+
+- `ANTHROPIC_API_KEY` — server-side Claude calls (`/ai/chat`, `/ai/query`).
+- `PSA_API_TOKEN` — PSA public API for `/cert`. Cert verification only: the
+  public tier returns no population or pricing, and allows ~100 calls a day,
+  so `/cert` caches every result permanently.
+- `POKEMONTCG_API_KEY` — optional. pokemontcg.io rate-limits Cloudflare's
+  shared egress IPs hard on the anonymous tier; a free key from
+  `dev.pokemontcg.io` removes that. `_pcgFetch` uses it when present.
+
+**Other worker secrets (set in Cloudflare dashboard, not in this repo):**
 
 - `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` — eBay Browse API.
 - `SYNC_KV` — binding to the `pokemon-sync` KV namespace.
@@ -169,11 +201,23 @@ Known synced keys:
 - `pkm-binder-sort-v1` — binder page sort order (`dex` = National Pokédex, `prio` = priority, `az` = alphabetical).
 - `pkm-vintage-v1` — Vintage page targets: `{ targets: { cardId: { grade, owned } } }` (WOTC-era PSA hunt list).
 - `pkm-taste-recos-v1` — taste engine auto-adds: `{ cardId: { score, ts } }` — searched cards scoring ≥70 that joined the home recommendations.
+- `pkm-psa-links-v1` — pinned PSA reference page per card: `{ cardId: { url, ts } }`.
 
 Excluded from sync (device-local):
 - `pkm-sync-prefs-v1`, `pkm-sync-pair-code`, `pkm-sync-endpoint`, `pkm-sync-meta`,
   `pkm-sync-last-hash` — the sync system's own state.
 - `pkm-price-sync-last-v1` — refresh timestamp.
+- `fx-rates-cache-v1` — 12h currency-rate cache. Deliberately unprefixed:
+  rates are global, not user data. `init()` applies it synchronously and
+  refreshes in the background — do **not** make startup await the FX API,
+  it used to block the whole UI behind that request.
+
+**Population data lives server-side, not here.** D1 `pop_history` is the
+durable store (one dated reading per card per day, written by `PUT /pop` and
+the daily cron); KV `pop:<cardId>` is only a 7-day cache. Read growth via
+`GET /pop-history?cardId=`. There is no automated pop source —
+`_fetchPikawizPop` is a stub returning `null`; pop arrives via the paste flow
+on the card view.
 
 The `localStorage.setItem` override in `app.js` auto-pushes any `pkm-*` write
 on a 4 s debounce. New synced keys "just work" as long as they follow the prefix.
