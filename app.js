@@ -26152,6 +26152,7 @@ let _vgSelectedSetJP = 'neo1';
 let _vgLang = 'en';
 let _vgSort = 'num';
 let _vgVariant = 'unlimited'; // 'unlimited' | '1sted'
+let _vgPre2003 = false; // true = only sets released before 2003 (pre e-Reader/EX era)
 
 function _vintageSets() {
   if (typeof setsData === 'undefined' || !setsData) return [];
@@ -26566,12 +26567,19 @@ function renderVintagePage() {
   const el = document.getElementById('pageVintage');
   if (!el) return;
   const isJP = _vgLang === 'jp';
-  const sets = isJP ? _vintageJPSets() : _vintageSets();
+  const allSets = isJP ? _vintageJPSets() : _vintageSets();
   // Deep links can land here before the async card DB decode finishes —
   // show a loading state and retry while the page is still visible.
-  if (!sets.length || !searchIndex || !searchIndex.length) {
+  if (!allSets.length || !searchIndex || !searchIndex.length) {
     el.innerHTML = '<div class="app"><p style="padding:40px;text-align:center;color:var(--text-muted)">Loading card database…</p></div>';
     setTimeout(() => { if (el.style.display !== 'none') renderVintagePage(); }, 400);
+    return;
+  }
+  // "Before 2003" narrows to the pre-e-Reader/EX era (Base–Neo, up to Expedition);
+  // everything in the Vintage page already predates VINTAGE_CUTOFF (2003/07).
+  const sets = _vgPre2003 ? allSets.filter(s => s.releaseDate.slice(0, 4) < '2003') : allSets;
+  if (!sets.length) {
+    el.innerHTML = '<div class="app"><p style="padding:40px;text-align:center;color:var(--text-muted)">No sets before 2003 for this language.</p></div>';
     return;
   }
   const selectedSet = isJP ? _vgSelectedSetJP : _vgSelectedSet;
@@ -26639,6 +26647,10 @@ function renderVintagePage() {
           </div>
         </div>
         <div class="vg-page-sub">${subLine}</div>
+        <div class="vg-era-toggle">
+          <button class="vg-era-btn ${!_vgPre2003 ? 'vg-era-active' : ''}" data-vg-era="all">All sets</button>
+          <button class="vg-era-btn ${_vgPre2003 ? 'vg-era-active' : ''}" data-vg-era="pre2003">Before 2003</button>
+        </div>
       </div>
       ${setHasVariants ? `<div class="vg-variant-toggle">
         <button class="vg-variant-btn${_vgVariant === 'unlimited' ? ' vg-variant-active' : ''}" data-vg-variant="unlimited">Unlimited</button>
@@ -26930,6 +26942,10 @@ function _vgWire(el) {
     // Unlimited / 1st Edition variant toggle
     const variantBtn = e.target.closest('[data-vg-variant]');
     if (variantBtn) { _vgVariant = variantBtn.dataset.vgVariant; renderVintagePage(); return; }
+
+    // Before-2003 era filter
+    const eraBtn = e.target.closest('[data-vg-era]');
+    if (eraBtn) { _vgPre2003 = eraBtn.dataset.vgEra === 'pre2003'; renderVintagePage(); return; }
 
     // Set chip
     const chip = e.target.closest('[data-vg-set]');

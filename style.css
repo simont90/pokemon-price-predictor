@@ -12745,6 +12745,33 @@ html[data-glass="default"] .glass-tint-btn svg { opacity: 0.7; }
 [data-theme="light"] .vg-variant-btn { background: rgba(0,0,0,0.06); color: #666; border: none; }
 [data-theme="light"] .vg-variant-btn.vg-variant-active { background: var(--accent); color: #fff; }
 
+/* Before-2003 era filter */
+.vg-era-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  border: 1px solid rgba(128,128,128,.2);
+  background: rgba(128,128,128,.06);
+  align-self: flex-start;
+  margin: 8px 0 0;
+}
+.vg-era-btn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: 700 12px/1 var(--font-ui, 'Space Grotesk', sans-serif);
+  letter-spacing: .04em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.vg-era-btn.vg-era-active { background: var(--accent, #e8b634); color: #000; }
+[data-theme="light"] .vg-era-btn { background: rgba(0,0,0,0.06); color: #666; border: none; }
+[data-theme="light"] .vg-era-btn.vg-era-active { background: var(--accent); color: #fff; }
+
 /* JP no-price notice */
 .vg-jp-note {
   font-size: 12px;
