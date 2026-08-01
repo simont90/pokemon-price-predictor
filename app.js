@@ -10054,6 +10054,8 @@ function renderPsaLinkRow() {
   const cert = document.getElementById('psaCertResult');
   if (cert) cert.style.display = 'none';
   try { renderPopGrowth(card.i); } catch (e) {}
+  try { renderPsaPopMissing(); } catch (e) {}
+  try { renderPsaPopOneHave(); } catch (e) {}
 }
 
 function setupPsaLink() {
@@ -10128,6 +10130,63 @@ async function savePsaPop(cardId, pop) {
   } catch (e) { /* local cache still holds it */ }
 }
 
+// Set one grade's population without disturbing the others. A bulk import
+// skips whatever it couldn't match, and a report read off a phone is often
+// one grade at a time, so partial data has to be able to accumulate.
+async function savePsaPopGrade(cardId, grade, count) {
+  const g = Math.floor(Number(grade));
+  const n = Math.round(Number(count));
+  if (!cardId || !(g >= 1 && g <= 10) || !(n >= 0)) return null;
+  const existing = _popDataCache.get(cardId);
+  const pop = { ...((existing && existing.pop) || {}) };
+  pop[g] = n;
+  await savePsaPop(cardId, pop);
+  return pop;
+}
+
+// Say plainly when a card has no population on file — every liquidity call in
+// the valuation framework rests on it, so an absent pop is a gap the owner
+// should be able to see and close, not a silent zero.
+function renderPsaPopMissing() {
+  const el = document.getElementById('psaPopMissing');
+  if (!el) return;
+  const card = (typeof selectedCard !== 'undefined') ? selectedCard : null;
+  if (!card) { el.style.display = 'none'; return; }
+  const have = _popDataCache.get(card.i);
+  const grades = have && have.pop ? Object.keys(have.pop).filter(g => have.pop[g] != null) : [];
+  if (grades.length >= 8) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.className = 'psa-pop-missing' + (grades.length ? ' psa-pop-partial' : '');
+  const missing = [];
+  for (let g = 10; g >= 1; g--) if (!have || !have.pop || have.pop[g] == null) missing.push(g);
+  el.innerHTML = grades.length
+    ? `Population on file for PSA ${grades.map(Number).sort((a, b) => b - a).join(', ')} — nothing for ${missing.join(', ')}. `
+      + `<button type="button" class="psa-pop-missing-btn" data-pop-add>Add a grade</button>`
+    : `No PSA population on file for this card. `
+      + `<button type="button" class="psa-pop-missing-btn" data-pop-add>Add it</button>`;
+  el.querySelectorAll('[data-pop-add]').forEach(b => b.addEventListener('click', () => {
+    const edit = document.getElementById('psaPopEdit');
+    if (edit) {
+      edit.style.display = '';
+      try { renderPsaPopOneHave(); } catch (e) {}
+      const inp = document.getElementById('psaPopOneCount');
+      if (inp) setTimeout(() => inp.focus(), 30);
+    }
+  }));
+}
+
+// Echo back what is already stored, so adding one grade at a time is auditable.
+function renderPsaPopOneHave() {
+  const el = document.getElementById('psaPopOneHave');
+  if (!el) return;
+  const card = (typeof selectedCard !== 'undefined') ? selectedCard : null;
+  const have = card ? _popDataCache.get(card.i) : null;
+  if (!have || !have.pop) { el.textContent = ''; return; }
+  const parts = [];
+  for (let g = 10; g >= 1; g--) if (have.pop[g] != null) parts.push(`PSA ${g}: ${Number(have.pop[g]).toLocaleString('en-GB')}`);
+  el.textContent = parts.length ? 'On file — ' + parts.join(' · ') : '';
+}
+
 function setupPsaPop() {
   const btn     = document.getElementById('psaPopBtn');
   const edit    = document.getElementById('psaPopEdit');
@@ -10191,7 +10250,33 @@ function setupPsaPop() {
     _popDataCache.delete(selectedCard.i);
     edit.style.display = 'none';
     try { renderHoldStrategy(selectedCard); } catch (e) {}
+    try { renderPsaPopMissing(); } catch (e) {}
   });
+
+  // Single-grade entry, for the cards a bulk import skipped.
+  const oneGrade = document.getElementById('psaPopOneGrade');
+  const oneCount = document.getElementById('psaPopOneCount');
+  const oneAdd   = document.getElementById('psaPopOneAdd');
+  if (oneAdd && oneGrade && oneCount) {
+    const commitOne = async () => {
+      if (!selectedCard) return;
+      const n = parseInt((oneCount.value || '').replace(/[,\s]/g, ''), 10);
+      if (!(n >= 0)) {
+        preview.textContent = 'Enter the population as a whole number.';
+        preview.className = 'psa-pop-preview psa-pop-bad';
+        return;
+      }
+      await savePsaPopGrade(selectedCard.i, oneGrade.value, n);
+      oneCount.value = '';
+      preview.textContent = `Saved PSA ${oneGrade.value}: ${n.toLocaleString('en-GB')}.`;
+      preview.className = 'psa-pop-preview psa-pop-ok';
+      try { renderPsaPopOneHave(); } catch (e) {}
+      try { renderPsaPopMissing(); } catch (e) {}
+      try { renderHoldStrategy(selectedCard); } catch (e) {}
+    };
+    oneAdd.addEventListener('click', commitOne);
+    oneCount.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commitOne(); } });
+  }
 }
 
 // ── Cert lookup ────────────────────────────────────────────────────────────
@@ -16701,7 +16786,13 @@ function renderHoldStrategy(card) {
       const gradePop   = _holdCachedPop.pop?.[gradeNum]          ?? null;
       const gradeSales = _holdCachedPop.sales?.[gradeNum]?.count ?? null;
       const liq = _liquidityLabel(gradePop, gradeSales);
-      liqBadge = `<span class="liq-badge liq-${liq}" title="${liq} data confidence (pop: ${gradePop ?? '–'}, sales/90d: ${gradeSales ?? '–'})">${liq === 'thick' ? 'T' : liq === 'medium' ? 'M' : 'Tn'}</span>`;
+      // The Grade tab abbreviates this to T / M / Tn next to a legend. There is
+      // no legend on these tiles, so say it in full — and say what it means for
+      // the number above it, since that is the whole point of the label.
+      const liqText = liq === 'thick'  ? 'Thick data · trust the average'
+                    : liq === 'medium' ? 'Medium data · treat the average with caution'
+                    :                    'Thin data · rough guide only';
+      liqBadge = `<span class="liq-badge liq-${liq}" title="Pop ${gradePop ?? '–'} at this grade, ${gradeSales ?? 'no'} sales in 90 days">${liqText}</span>`;
     }
 
     // Per-grade annual growth rate label (always shown for PSA grade tiles)
@@ -27147,6 +27238,61 @@ async function savePsaPopBulk(matches, onProgress) {
   return done;
 }
 
+// Whatever the report didn't cover has to be enterable by hand, or the gap
+// just sits there invisibly. List the cards still without a population and
+// give each one a grade and a number to type into.
+function _renderSetsPopMissing(setId, coveredIds) {
+  const el = document.getElementById('setsPopMissing');
+  if (!el) return;
+  const missing = searchIndex
+    .filter(c => c.sc === setId && !coveredIds.has(c.i))
+    .filter(c => {
+      const have = _popDataCache.get(c.i);
+      return !have || !have.pop || !Object.keys(have.pop).length;
+    })
+    .sort((a, b) => (parseInt(a.cn, 10) || 0) - (parseInt(b.cn, 10) || 0));
+
+  if (!missing.length) {
+    el.innerHTML = coveredIds.size
+      ? `<div class="sets-pop-missing-hd">Every card in this set now has a population.</div>` : '';
+    return;
+  }
+  const opts = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map(g => `<option value="${g}">PSA ${g}</option>`).join('');
+  el.innerHTML =
+    `<div class="sets-pop-missing-hd">${missing.length} card${missing.length === 1 ? '' : 's'} still without a population — add any grade by hand:</div>` +
+    `<div class="sets-pop-missing-list">` +
+    missing.map(c => `<div class="sets-pop-miss-row" data-miss="${esc(c.i)}">
+        <span class="sets-pop-miss-name">${esc(c.n)}${c.cn ? ' #' + esc(String(c.cn)) : ''}</span>
+        <select class="sets-pop-miss-grade" aria-label="PSA grade for ${esc(c.n)}">${opts}</select>
+        <input class="sets-pop-miss-count" type="text" inputmode="numeric" autocomplete="off"
+               placeholder="Pop" aria-label="Population for ${esc(c.n)}">
+        <button class="sets-pop-miss-add" type="button">Add</button>
+        <span class="sets-pop-miss-done"></span>
+      </div>`).join('') +
+    `</div>`;
+
+  el.querySelectorAll('[data-miss]').forEach(row => {
+    const id    = row.dataset.miss;
+    const grade = row.querySelector('.sets-pop-miss-grade');
+    const count = row.querySelector('.sets-pop-miss-count');
+    const add   = row.querySelector('.sets-pop-miss-add');
+    const done  = row.querySelector('.sets-pop-miss-done');
+    const commit = async () => {
+      const n = parseInt((count.value || '').replace(/[,\s]/g, ''), 10);
+      if (!(n >= 0)) { done.textContent = 'Whole number please'; done.className = 'sets-pop-miss-done sets-pop-miss-bad'; return; }
+      add.disabled = true;
+      const pop = await savePsaPopGrade(id, grade.value, n);
+      add.disabled = false;
+      count.value = '';
+      const saved = Object.keys(pop || {}).sort((a, b) => b - a).map(g => `${g}:${pop[g].toLocaleString('en-GB')}`).join(' ');
+      done.textContent = 'saved ' + saved;
+      done.className = 'sets-pop-miss-done sets-pop-miss-ok';
+    };
+    add.addEventListener('click', commit);
+    count.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+  });
+}
+
 function _wireSetsPopPanel(setId) {
   const ta      = document.getElementById('setsPopTa');
   const preview = document.getElementById('setsPopPreview');
@@ -27211,7 +27357,12 @@ function _wireSetsPopPanel(setId) {
       `<div class="sets-pop-check">Check those counts against the report before importing.</div>`;
     preview.className = 'sets-pop-preview sets-pop-ok';
     importB.disabled = false;
+    _renderSetsPopMissing(setId, new Set(matched.map(m => m.card.i)));
   };
+
+  // Before anything is pasted, the list is still worth showing: it is the
+  // set's current coverage.
+  _renderSetsPopMissing(setId, new Set());
 
   ta.addEventListener('input', refresh);
   ta.addEventListener('paste', () => setTimeout(refresh, 0));
@@ -27265,10 +27416,11 @@ function _wireSetsPopPanel(setId) {
     const n = result.matched.length;
     importB.textContent = `Importing 0/${n}…`;
     await savePsaPopBulk(result.matched, (done, tot) => { importB.textContent = `Importing ${done}/${tot}…`; });
-    preview.innerHTML = `<strong>Imported populations for ${n} cards.</strong>`;
+    preview.innerHTML = `<strong>Imported populations for ${n} cards.</strong> Anything the report missed is listed below — add those by hand.`;
     preview.className = 'sets-pop-preview sets-pop-ok';
     importB.textContent = 'Imported ✓';
-    setTimeout(() => { _setsPopOpenId = null; renderSetsPage(); }, 1200);
+    // Stay open: the point of the missing list is to work through it now.
+    _renderSetsPopMissing(setId, new Set(result.matched.map(m => m.card.i)));
   });
 
   if (cancelB) cancelB.addEventListener('click', () => { _setsPopOpenId = null; renderSetsPage(); });
@@ -27393,6 +27545,7 @@ function renderSetsPage() {
           <button class="sets-pop-import" id="setsPopImport" disabled>Import</button>
           <button class="sets-pop-cancel" id="setsPopCancel">Cancel</button>
         </div>
+        <div class="sets-pop-missing" id="setsPopMissing"></div>
       </div>`;
     }
 

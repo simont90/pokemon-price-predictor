@@ -17684,6 +17684,47 @@ h1, h2, h3 {
 .sets-pop-cancel { background: none; color: var(--text-muted); }
 .sets-pop-cancel:hover { color: var(--text-primary); border-color: var(--text-muted); }
 
+/* Cards a report didn't cover — typed in by hand, one grade at a time */
+.sets-pop-missing:not(:empty) { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.sets-pop-missing-hd { font-size: 11.5px; font-weight: 700; color: var(--text-muted); margin-bottom: 7px; }
+.sets-pop-missing-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+.sets-pop-miss-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sets-pop-miss-name { flex: 1 1 130px; min-width: 0; font-size: 11.5px; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sets-pop-miss-grade, .sets-pop-miss-count {
+  padding: 4px 7px; border-radius: 7px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text-primary); font-family: var(--sans); font-size: 11px; }
+.sets-pop-miss-grade { flex: 0 0 auto; }
+.sets-pop-miss-count { flex: 0 1 90px; min-width: 60px; }
+.sets-pop-miss-grade:focus, .sets-pop-miss-count:focus { outline: none; border-color: var(--accent); }
+.sets-pop-miss-add { flex: 0 0 auto; padding: 4px 10px; border-radius: 7px; font-size: 11px; font-weight: 700;
+  font-family: var(--sans); cursor: pointer; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-muted); }
+.sets-pop-miss-add:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.sets-pop-miss-add:disabled { opacity: 0.45; cursor: default; }
+.sets-pop-miss-done { flex: 1 1 100%; font-family: var(--mono); font-size: 10px; }
+.sets-pop-miss-ok  { color: var(--green, #4caf7d); }
+.sets-pop-miss-bad { color: #e57373; }
+
+/* Card view: population gap flag + single-grade entry */
+.psa-pop-missing { font-size: 11.5px; line-height: 1.5; padding: 6px 0 2px; color: #e57373; }
+.psa-pop-missing.psa-pop-partial { color: var(--text-muted); }
+.psa-pop-missing-btn { margin-left: 4px; padding: 3px 9px; border-radius: 7px; font-size: 10.5px;
+  font-weight: 700; font-family: var(--sans); cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); }
+.psa-pop-missing-btn:hover { border-color: var(--accent); color: var(--accent); }
+.psa-pop-one { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.psa-pop-one-lbl { flex: 1 1 100%; font-size: 10.5px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em; }
+#psaPopOneGrade, #psaPopOneCount { padding: 5px 8px; border-radius: 7px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text-primary); font-family: var(--sans); font-size: 11.5px; }
+#psaPopOneCount { flex: 1 1 120px; min-width: 90px; }
+#psaPopOneGrade:focus, #psaPopOneCount:focus { outline: none; border-color: var(--accent); }
+.psa-pop-one-add { padding: 5px 12px; border-radius: 7px; font-size: 11.5px; font-weight: 700;
+  font-family: var(--sans); cursor: pointer; border: 1px solid var(--accent);
+  background: var(--accent); color: #111; }
+.psa-pop-one-have { font-family: var(--mono); font-size: 10.5px; color: var(--text-muted); margin-top: 6px; }
+
 .sets-hit-list { border-top: 1px solid var(--border); }
 .sets-hit-empty { padding: 12px 16px; font-size: 12px; color: var(--text-muted); }
 .sets-hit-hdr { padding: 8px 14px; font-size: 11px; color: var(--text-muted); background: rgba(0,0,0,0.1); font-weight: 500; }
@@ -17733,6 +17774,12 @@ h1, h2, h3 {
 [data-theme="light"] .sets-pop-btn { background: #f9fafb; border-color: #d1d5db; color: #6b7280; }
 [data-theme="light"] .sets-pop-btn--on { background: var(--accent); border-color: var(--accent); color: #111; }
 [data-theme="light"] .sets-pop-ta { background: #fff; border-color: #d1d5db; }
+[data-theme="light"] .sets-pop-miss-grade,
+[data-theme="light"] .sets-pop-miss-count { background: #fff; border-color: #d1d5db; }
+[data-theme="light"] .sets-pop-miss-add { background: #f9fafb; border-color: #d1d5db; color: #6b7280; }
+[data-theme="light"] #psaPopOneGrade,
+[data-theme="light"] #psaPopOneCount { background: #fff; border-color: #d1d5db; }
+[data-theme="light"] .psa-pop-missing-btn { background: #f9fafb; border-color: #d1d5db; color: #6b7280; }
 [data-theme="light"] .sets-hit-hdr { background: rgba(0,0,0,0.03); }
 [data-theme="light"] .sets-hit-row { border-top-color: rgba(0,0,0,0.04); }
 [data-theme="light"] .sets-rc { background: rgba(0,0,0,0.06); color: #6b7280; }

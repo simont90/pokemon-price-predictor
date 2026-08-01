@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260720zj">
+  <link rel="stylesheet" href="style.css?v=20260720zl">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1634,6 +1634,7 @@
                 <button type="button" class="psa-link-btn" id="psaPopBtn">Paste pop</button>
                 <button type="button" class="psa-link-btn" id="psaLinkBtn">Add PSA link</button>
               </div>
+              <div class="psa-pop-missing" id="psaPopMissing" style="display:none"></div>
               <div class="psa-pop-growth" id="psaPopGrowth" style="display:none"></div>
               <div class="psa-cert-row" id="psaCertRow">
                 <input id="psaCertInput" type="text" inputmode="numeric" autocomplete="off"
@@ -1645,6 +1646,20 @@
                 <textarea id="psaPopInput" rows="4" spellcheck="false"
                   placeholder="Open the PSA pop report for this card, select the grade table, copy it, and paste here."></textarea>
                 <div class="psa-pop-preview" id="psaPopPreview"></div>
+                <div class="psa-pop-one">
+                  <span class="psa-pop-one-lbl">Or enter one grade at a time</span>
+                  <select id="psaPopOneGrade" aria-label="PSA grade">
+                    <option value="10">PSA 10</option><option value="9">PSA 9</option>
+                    <option value="8">PSA 8</option><option value="7">PSA 7</option>
+                    <option value="6">PSA 6</option><option value="5">PSA 5</option>
+                    <option value="4">PSA 4</option><option value="3">PSA 3</option>
+                    <option value="2">PSA 2</option><option value="1">PSA 1</option>
+                  </select>
+                  <input id="psaPopOneCount" type="text" inputmode="numeric" autocomplete="off"
+                         placeholder="Population at that grade" aria-label="Population">
+                  <button type="button" class="psa-pop-one-add" id="psaPopOneAdd">Add</button>
+                </div>
+                <div class="psa-pop-one-have" id="psaPopOneHave"></div>
                 <div class="psa-link-actions">
                   <button type="button" class="psa-link-save" id="psaPopSave" disabled>Save population</button>
                   <button type="button" class="psa-link-cancel" id="psaPopCancel">Cancel</button>
@@ -3213,7 +3228,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260720zj"></script>
+  <script src="app.js?v=20260720zl"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
