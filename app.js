@@ -10130,6 +10130,26 @@ async function savePsaPop(cardId, pop) {
   } catch (e) { /* local cache still holds it */ }
 }
 
+// A WOTC card's prints are separate markets with separate populations: 1st
+// Edition Base Charizard and the Unlimited copy share a card id but nothing
+// else. Storing them under one key would average two markets into a number
+// that describes neither. Suffixing the id keeps the worker and the D1
+// pop_history table exactly as they are — they only ever see an id string —
+// and leaves every population already stored under the plain id as Unlimited.
+function popIdFor(cardId, variant) {
+  return (!variant || variant === 'unlimited') ? cardId : `${cardId}#${variant}`;
+}
+
+// The prints worth tracking separately for a given card. Modern cards have
+// none — there is just the card.
+function popVariantsFor(card) {
+  if (!card || card.lang === 'JP') return [];
+  const out = [];
+  if (typeof _SO_FIRST_ED_SETS !== 'undefined' && _SO_FIRST_ED_SETS.has(card.sc)) out.push({ key: '1sted', label: '1st Edition' });
+  if (typeof _HVG_SHADOWLESS_SETS !== 'undefined' && _HVG_SHADOWLESS_SETS.has(card.sc)) out.push({ key: 'shadowless', label: 'Shadowless' });
+  return out.length ? [{ key: 'unlimited', label: 'Unlimited' }, ...out] : [];
+}
+
 // Set one grade's population without disturbing the others. A bulk import
 // skips whatever it couldn't match, and a report read off a phone is often
 // one grade at a time, so partial data has to be able to accumulate.
@@ -16350,8 +16370,12 @@ function renderHoldStrategy(card) {
     const _vdSub = _holdStratVariant === '1sted' ? _getCached1edPrice(card.i) : _getCachedShadowlessPrice(card.i);
     if (_vdSub?.pcPsa10 > 0) _rhsLp = _vdSub;
   }
-  // Resolve pop cache early — needed for both projection discount and badge display
-  const _holdCachedPop = card.i ? (_popDataCache.get(card.i) || null) : null;
+  // Resolve pop cache early — needed for both projection discount and badge
+  // display. Follows the selected print: the tiles are already showing that
+  // print's prices, so they must show that print's population too.
+  const _holdCachedPop = card.i
+    ? (_popDataCache.get(popIdFor(card.i, _holdVariantEligible ? _holdStratVariant : 'unlimited')) || null)
+    : null;
 
   const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
     const isOwnedSlab = slabAcq && slabAcq.grade === g;
@@ -17096,12 +17120,14 @@ function renderHoldStrategy(card) {
     } catch {}
   }, 300);
 
-  // Background fetch pop+sales if not yet cached — re-renders badges once data arrives
-  if (card.i && !_holdCachedPop && !_popFetchInFlight.has(card.i)) {
-    _popFetchInFlight.add(card.i);
-    Promise.all([_fetchPopData(card.i), _fetchSalesData(card.i)]).finally(() => {
-      _popFetchInFlight.delete(card.i);
-      if (_popDataCache.has(card.i) && selectedCard && selectedCard.i === card.i) {
+  // Background fetch pop+sales if not yet cached — re-renders badges once data
+  // arrives. The selected print has its own key, so fetch that one.
+  const _popId = popIdFor(card.i, _holdVariantEligible ? _holdStratVariant : 'unlimited');
+  if (card.i && !_holdCachedPop && !_popFetchInFlight.has(_popId)) {
+    _popFetchInFlight.add(_popId);
+    Promise.all([_fetchPopData(_popId), _fetchSalesData(card.i)]).finally(() => {
+      _popFetchInFlight.delete(_popId);
+      if (_popDataCache.has(_popId) && selectedCard && selectedCard.i === card.i) {
         renderHoldStrategy(card);
       }
     });
@@ -24631,6 +24657,116 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
   });
 }
 
+// Which print's population the override panel is editing. Separate from
+// _holdStratVariant so looking up a 1st Edition pop doesn't reprice the tiles.
+let _hoPopVariant = 'unlimited';
+
+// PSA population entry, sitting under the price overrides because it answers
+// the same question from the other side: the prices say what a grade is worth,
+// the population says how much that price can be trusted.
+function _hoPopBlock(card) {
+  const variants = popVariantsFor(card);
+  const active   = variants.some(v => v.key === _hoPopVariant) ? _hoPopVariant : 'unlimited';
+  const pop      = (_popDataCache.get(popIdFor(card.i, active)) || {}).pop || {};
+  const filled   = Object.keys(pop).filter(g => pop[g] != null).length;
+  let total = 0;
+  for (const g of Object.keys(pop)) total += Number(pop[g]) || 0;
+
+  return `
+    <div class="ho-pop">
+      <div class="ho-pop-head">
+        <span class="ho-pop-title">PSA population</span>
+        ${filled ? `<span class="ho-pop-total">${filled} grade${filled === 1 ? '' : 's'} · ${total.toLocaleString('en-GB')} graded</span>` : ''}
+      </div>
+      ${variants.length ? `<div class="ho-pop-tabs">${variants.map(v =>
+        `<button type="button" class="ho-pop-tab${v.key === active ? ' ho-pop-tab-on' : ''}" data-ho-pv="${v.key}">${v.label}</button>`
+      ).join('')}</div>` : ''}
+      <p class="ho-blurb">${variants.length
+        ? 'Each print is graded separately and its population is its own — a 1st Edition pop says nothing about the Unlimited copy. Enter the counts for the print selected above.'
+        : "Enter the counts from this card's PSA population report. They set the thick/thin confidence on every grade tile."}</p>
+      <div class="ho-pop-grid">
+        ${[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map(g => `
+          <div class="ho-pop-cell">
+            <label class="ho-pop-lbl" for="ho-pop-${g}">PSA ${g}</label>
+            <input type="number" id="ho-pop-${g}" class="ho-pop-input" data-ho-pop="${g}"
+                   min="0" step="1" inputmode="numeric" placeholder="—"
+                   value="${pop[g] != null ? pop[g] : ''}">
+          </div>`).join('')}
+      </div>
+      <div class="ho-pop-actions">
+        <span class="ho-pop-note" id="hoPopNote"></span>
+        ${filled ? `<button type="button" class="ho-pop-clear" id="hoPopClear">Clear this print's population</button>` : ''}
+      </div>
+    </div>`;
+}
+
+function _hoWirePop(host, card) {
+  const note = host.querySelector('#hoPopNote');
+  const variantOf = () => popVariantsFor(card).some(v => v.key === _hoPopVariant) ? _hoPopVariant : 'unlimited';
+
+  // A print's population lives under its own key, so switching prints may need
+  // a fetch before the inputs can be filled in.
+  const activeId = popIdFor(card.i, variantOf());
+  if (card.i && !_popDataCache.has(activeId) && !_popFetchInFlight.has(activeId)) {
+    _popFetchInFlight.add(activeId);
+    _fetchPopData(activeId).finally(() => {
+      _popFetchInFlight.delete(activeId);
+      if (selectedCard && selectedCard.i === card.i && _popDataCache.has(activeId)) {
+        const wasOpen = host.querySelector('.ho-details')?.open;
+        renderHoldOverridePanel(card);
+        const d = host.querySelector('.ho-details');
+        if (d && wasOpen) d.open = true;
+      }
+    });
+  }
+
+  host.querySelectorAll('[data-ho-pv]').forEach(btn => btn.addEventListener('click', () => {
+    _hoPopVariant = btn.dataset.hoPv;
+    renderHoldOverridePanel(card);
+    const d = host.querySelector('.ho-details');
+    if (d) d.open = true;
+  }));
+
+  let t = null;
+  host.querySelectorAll('.ho-pop-input').forEach(inp => {
+    const commit = async () => {
+      const g = parseInt(inp.dataset.hoPop, 10);
+      const raw = (inp.value || '').trim();
+      const variant = variantOf();
+      const id = popIdFor(card.i, variant);
+      if (raw === '') {
+        // Blank means "unknown", which is not the same as a population of zero.
+        const have = _popDataCache.get(id);
+        if (have && have.pop && have.pop[g] != null) {
+          const pop = { ...have.pop }; delete pop[g];
+          await savePsaPop(id, pop);
+        }
+      } else {
+        const n = parseInt(raw.replace(/[,\s]/g, ''), 10);
+        if (!(n >= 0)) { if (note) note.textContent = 'Whole numbers only.'; return; }
+        await savePsaPopGrade(id, g, n);
+      }
+      if (note) note.textContent = `Saved · ${popVariantsFor(card).length ? (popVariantsFor(card).find(v => v.key === variant) || {}).label + ' · ' : ''}PSA ${g}`;
+      try { renderHoldStrategy(card); } catch {}
+      try { renderPsaPopMissing(); } catch {}
+    };
+    inp.addEventListener('input', () => { if (t) clearTimeout(t); t = setTimeout(commit, 400); });
+    inp.addEventListener('blur', commit);
+  });
+
+  const clr = host.querySelector('#hoPopClear');
+  if (clr) clr.addEventListener('click', async () => {
+    const id = popIdFor(card.i, variantOf());
+    _popDataCache.delete(id);
+    try {
+      const base = typeof getMktWorkerUrl === 'function' ? getMktWorkerUrl() : 'https://pokemon-marketplace.simontariq.workers.dev';
+      await fetch(`${base}/pop?cardId=${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pop: {} }) });
+    } catch {}
+    renderHoldOverridePanel(card);
+    try { renderHoldStrategy(card); } catch {}
+  });
+}
+
 // Render the override editor UI inside the Hold Strategy section.
 // Five GBP inputs (Raw + PSA 7/8/9/10) collapsed behind a single details/summary.
 function renderHoldOverridePanel(card) {
@@ -24700,12 +24836,14 @@ function renderHoldOverridePanel(card) {
             `;
           }).join('')}
         </div>
+        ${_hoPopBlock(card)}
         <div class="ho-actions">
           <button type="button" class="ho-clear" id="holdOverrideClear">Clear all overrides for this card</button>
         </div>
       </div>
     </details>
   `;
+  _hoWirePop(host, card);
   // Wire input changes — debounce a touch so typing isn't laggy.
   let debounceT = null;
   host.querySelectorAll('.ho-input').forEach(inp => {
