@@ -1,1 +1,3 @@
 deploy/
+.wrangler/
+.claude/settings.local.json

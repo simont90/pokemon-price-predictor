@@ -10223,7 +10223,15 @@ function setupCertLookup() {
       d = await r.json();
     } catch (e) { show('Could not reach the lookup service.', 'cert-bad'); return; }
 
-    if (d && d.error)   { show(esc(d.error), 'cert-warn'); return; }
+    // The API can be unavailable for reasons no retry fixes — an unapproved
+    // account, a spent daily quota. PSA's own cert page is public and needs no
+    // key, so fall back to it rather than leaving a dead end.
+    if (d && d.error) {
+      show(esc(d.error) +
+        `<a class="cert-link" href="https://www.psacard.com/cert/${encodeURIComponent(cert)}" target="_blank" rel="noopener noreferrer">Check cert ${esc(cert)} on psacard.com ↗</a>`,
+        'cert-warn');
+      return;
+    }
     if (!d || !d.found) { show(`No PSA record for cert ${esc(cert)}. Treat that as a red flag.`, 'cert-bad'); return; }
 
     const desc = [d.year, d.brand, d.subject].filter(Boolean).join(' ');
@@ -11917,6 +11925,421 @@ function parsePsaPopPaste(text) {
   for (const g of grades) total += pop[g];
   if (!(total > 0)) return null;
   return { pop, total };
+}
+
+// ── Whole-set population report ────────────────────────────────────────────
+// PSA's Certified Population Report lists every card in a set as one row:
+//
+//   Card #   Description        AUTH  1  1.5  2 … 9  9.5  10   Total
+//   5        Gengar-Holo           0  2    0  1 … 411 46  116   1,204
+//
+// Pasting the whole table beats visiting 62 card pages. The columns only mean
+// what the header says they mean, so the header is mandatory — without it the
+// counts cannot be assigned to grades and guessing would write wrong pops,
+// which is worse than having none (same principle as parsePsaPopPaste).
+function parsePsaPopReport(text) {
+  if (!text || typeof text !== 'string') return null;
+  const lines = text
+    .replace(/ /g, ' ')
+    .replace(/[│|]/g, '\t')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return null;
+
+  const toks    = l => l.split(/\t+|\s{2,}|\s+/).filter(Boolean);
+  const isCount = t => /^(?:-|—|–|n\/a)$/i.test(t) || /^\d{1,3}(?:,\d{3})*$/.test(t) || /^\d+$/.test(t);
+  const toCount = t => /^\d[\d,]*$/.test(t) ? parseInt(t.replace(/,/g, ''), 10) : 0;
+
+  // ── Header: the row that names the grade columns, in order.
+  let gradeCols = null, hasTotal = false, headerIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const t = toks(lines[i]);
+    const cols = [];
+    let sawTen = false, total = false;
+    for (const raw of t) {
+      const tok = raw.replace(/^psa\s*/i, '').replace(/[^\w.\/]/g, '');
+      if (/^(10|[1-9](?:\.5)?|0\.5)$/.test(tok)) { cols.push(parseFloat(tok)); if (tok === '10') sawTen = true; }
+      else if (/^auth(entic)?$/i.test(tok)) cols.push(null);        // AUTH is not a grade
+      else if (/^tot(al)?$/i.test(tok)) total = true;
+    }
+    // A real header runs the full ladder up to 10. Anything shorter is a data
+    // row that happens to hold small numbers.
+    if (sawTen && cols.filter(c => c != null).length >= 6) {
+      gradeCols = cols; hasTotal = total; headerIdx = i; break;
+    }
+  }
+  if (!gradeCols) return null;
+
+  const expect = gradeCols.length + (hasTotal ? 1 : 0);
+  const rows = [];
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const t = toks(lines[i]);
+    if (t.length < expect + 1) continue;              // needs a label plus the counts
+    // The grade columns are the rightmost ones; anything earlier is the card's
+    // number and description (which may itself end in a digit, e.g. "Base 2").
+    const tail = t.slice(t.length - expect);
+    if (!tail.every(isCount)) continue;
+    let head = t.slice(0, t.length - expect);
+    if (!head.length) continue;
+
+    const pop = {};
+    let auth = 0;
+    gradeCols.forEach((g, k) => {
+      if (g == null) { auth += toCount(tail[k]); return; }   // AUTH is not a grade
+      const gi = Math.floor(g);                              // 8.5 / 9.5 fold into 8 / 9
+      if (gi < 1 || gi > 10) return;
+      pop[gi] = (pop[gi] || 0) + toCount(tail[k]);
+    });
+    if (!Object.keys(pop).length) continue;
+
+    // PSA split each entry across three rows — the graded counts ("Grade"), the
+    // qualified ones ("Q") and the pluses ("+") — and only the Grade row is the
+    // population being reported. The label sits at the end of the description.
+    let kind = '';
+    if (head.length && /^(grade|q|\+)$/i.test(head[head.length - 1])) {
+      kind = head[head.length - 1].toLowerCase();
+      head = head.slice(0, -1);
+    }
+    if (!head.length) head = [''];
+
+    // A leading bare number is the card number; otherwise the row is name-only
+    // (promos and some sealed entries are listed that way).
+    let no = '', nameToks = head;
+    if (/^#?\d+[a-z]?(?:\/\d+)?$/i.test(head[0])) { no = head[0].replace(/^#/, ''); nameToks = head.slice(1); }
+
+    let total = 0;
+    for (const g of Object.keys(pop)) total += pop[g];
+    rows.push({
+      no, kind, pop, total, auth,
+      name: nameToks.join(' ').replace(/-\s*$/, '').trim(),
+      reportedTotal: hasTotal ? toCount(tail[tail.length - 1]) : null,
+    });
+  }
+
+  let withPop = rows.filter(r => r.total > 0);
+  // When the Grade/Q/+ split is present, the other two rows are not populations
+  // and must not be allowed to land on a card.
+  if (withPop.some(r => r.kind === 'grade')) withPop = withPop.filter(r => r.kind === 'grade');
+  if (!withPop.length) return null;
+
+  // A card number appears once per print variant (1st Edition, Unlimited,
+  // Cosmos, Prerelease, error prints…). One card in the database can only hold
+  // one population, so keep the largest — the main print always dominates, and
+  // the alternatives are a rounding error against it.
+  const best = new Map();
+  let collapsed = 0;
+  const kept = [];
+  for (const r of withPop) {
+    if (!r.no) { kept.push(r); continue; }
+    const prev = best.get(r.no);
+    if (!prev) { best.set(r.no, r); continue; }
+    collapsed++;
+    if (r.total > prev.total) best.set(r.no, r);
+  }
+  const out = [...kept, ...best.values()];
+
+  // Every row carries its own total. If our per-grade reading doesn't add up to
+  // it, the columns were misread — worth saying out loud rather than importing.
+  const checked = out.filter(r => r.reportedTotal != null);
+  const mismatched = checked.filter(r => r.auth + r.total !== r.reportedTotal).length;
+
+  return { rows: out, collapsed, checked: checked.length, mismatched };
+}
+
+// ── PDF text extraction ────────────────────────────────────────────────────
+// PSA's pop report downloads as a PDF, and re-typing 62 rows defeats the point
+// of a bulk import. Rather than pull in a PDF library (this app ships as static
+// files with no build step), read the file directly: content streams are zlib
+// deflate, which the browser inflates natively via DecompressionStream, and the
+// text operators inside are simple enough to walk by hand. This only works on
+// text PDFs — a scanned page has no text operators and returns nothing, which
+// the caller reports rather than guessing at.
+async function _inflate(bytes) {
+  // PDF FlateDecode is zlib-wrapped; fall back to raw deflate for writers that
+  // omit the header. Read the output chunk by chunk and keep whatever inflated
+  // before any error: stream bounds in a PDF routinely include a trailing EOL
+  // or padding the compressor never wrote, and that tail would otherwise throw
+  // away a page of perfectly good text.
+  for (const fmt of ['deflate', 'deflate-raw']) {
+    try {
+      const ds = new DecompressionStream(fmt);
+      const w = ds.writable.getWriter();
+      w.write(bytes).catch(() => {});
+      w.close().catch(() => {});
+      const reader = ds.readable.getReader();
+      const chunks = [];
+      let total = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value); total += value.length;
+        }
+      } catch (e) { /* partial output is still usable */ }
+      if (total) {
+        const out = new Uint8Array(total);
+        let o = 0;
+        for (const c of chunks) { out.set(c, o); o += c.length; }
+        return out;
+      }
+    } catch (e) { /* try the next format */ }
+  }
+  return null;
+}
+
+// A PSA report is set in embedded subset fonts with Identity-H encoding: the
+// bytes in the content stream are glyph ids, not characters, and only the
+// font's /ToUnicode CMap maps them back to text. Read that CMap per font.
+function _pdfParseCMap(txt) {
+  const map = new Map();
+  const hexToStr = h => {
+    let s = '';
+    for (let i = 0; i + 3 < h.length; i += 4) s += String.fromCharCode(parseInt(h.substr(i, 4), 16));
+    return s || String.fromCharCode(parseInt(h, 16));
+  };
+  for (const blk of txt.match(/beginbfchar[\s\S]*?endbfchar/g) || []) {
+    const re = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g;
+    let m; while ((m = re.exec(blk))) map.set(parseInt(m[1], 16), hexToStr(m[2]));
+  }
+  for (const blk of txt.match(/beginbfrange[\s\S]*?endbfrange/g) || []) {
+    const re = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g;
+    let m;
+    while ((m = re.exec(blk))) {
+      const lo = parseInt(m[1], 16), hi = parseInt(m[2], 16), base = parseInt(m[3], 16);
+      for (let k = lo; k <= hi && k - lo < 65536; k++) map.set(k, String.fromCharCode(base + k - lo));
+    }
+  }
+  return map;
+}
+
+// Turn positioned glyphs into lines of text. Every glyph in these PDFs carries
+// its own position, so line breaks come from Y and column breaks from the gap
+// between glyphs: within a word that gap stays near the glyph advance (~1× the
+// font size at most), while a table's column gap is several times larger.
+function _pdfItemsToLines(items) {
+  if (!items.length) return [];
+  items.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+  const rows = [];
+  let cur = [], lastY = null;
+  for (const it of items) {
+    if (lastY === null || Math.abs(it.y - lastY) <= 1.5) cur.push(it);
+    else { rows.push(cur); cur = [it]; }
+    lastY = it.y;
+  }
+  if (cur.length) rows.push(cur);
+
+  return rows.map(r => {
+    r.sort((a, b) => a.x - b.x);
+    let out = r[0].s;
+    for (let i = 1; i < r.length; i++) {
+      const gap = r[i].x - r[i - 1].x;
+      const size = r[i].size || r[i - 1].size || 10;
+      out += (gap > size * 1.8 ? ' ' : '') + r[i].s;
+    }
+    return out.replace(/\s+/g, ' ').trim();
+  }).filter(Boolean);
+}
+
+// Walk one content stream, tracking the text matrix and the active font so each
+// run of glyphs can be decoded and placed.
+function _pdfReadContent(s, fontsByName) {
+  const items = [];
+  const tok = /\((?:\\[\s\S]|[^\\()])*\)|<[0-9A-Fa-f\s]*>|\/[A-Za-z0-9#+.\-]+|\[|\]|[-+]?[\d.]+|[A-Za-z'"*]+/g;
+  const unescape = str => str
+    .replace(/\\([nrtbf])/g, (m, c) => ({ n: '\n', r: '\r', t: '\t', b: '', f: '\f' }[c]))
+    .replace(/\\(\d{1,3})/g, (m, o) => String.fromCharCode(parseInt(o, 8)))
+    .replace(/\\([\s\S])/g, '$1');
+
+  // Text coordinates mean nothing without the graphics matrix: PSA draw the
+  // table under a cm that flips Y, so untransformed positions come out upside
+  // down and the header sorts below the rows it heads.
+  const mul = (m1, m2) => [
+    m1[0] * m2[0] + m1[1] * m2[2],
+    m1[0] * m2[1] + m1[1] * m2[3],
+    m1[2] * m2[0] + m1[3] * m2[2],
+    m1[2] * m2[1] + m1[3] * m2[3],
+    m1[4] * m2[0] + m1[5] * m2[2] + m2[4],
+    m1[4] * m2[1] + m1[5] * m2[3] + m2[5],
+  ];
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const ctmStack = [];
+
+  let stack = [], font = null, size = 10, x = 0, y = 0, tScale = 1;
+  let m;
+  while ((m = tok.exec(s))) {
+    const t = m[0];
+    if (t[0] === '(') { stack.push({ str: unescape(t.slice(1, -1)) }); continue; }
+    if (t[0] === '<') {
+      let h = t.slice(1, -1).replace(/\s/g, '');
+      if (h.length % 2) h += '0';
+      let str = '';
+      for (let i = 0; i + 1 < h.length; i += 2) str += String.fromCharCode(parseInt(h.substr(i, 2), 16));
+      stack.push({ str }); continue;
+    }
+    if (t[0] === '/') { stack.push({ name: t.slice(1) }); continue; }
+    if (t === '[' || t === ']') continue;
+    if (/^[-+]?[\d.]+$/.test(t)) { stack.push(parseFloat(t)); continue; }
+
+    const nums = stack.filter(v => typeof v === 'number');
+    switch (t) {
+      case 'q': ctmStack.push(ctm.slice()); break;
+      case 'Q': if (ctmStack.length) ctm = ctmStack.pop(); break;
+      case 'cm': if (nums.length >= 6) ctm = mul(nums.slice(0, 6), ctm); break;
+      case 'Tf': {
+        const names = stack.filter(v => v && v.name);
+        if (names.length) font = fontsByName.get(names[names.length - 1].name) || null;
+        if (nums.length) size = Math.abs(nums[nums.length - 1]) || size;
+        break;
+      }
+      case 'Td': case 'TD':
+        if (nums.length >= 2) { x += nums[nums.length - 2]; y += nums[nums.length - 1]; }
+        break;
+      case 'Tm':
+        if (nums.length >= 6) { x = nums[4]; y = nums[5]; tScale = Math.abs(nums[3]) || 1; }
+        break;
+      case 'T*': y -= size; break;
+      case 'TJ': case 'Tj': case "'": case '"': {
+        let str = '';
+        for (const v of stack) {
+          if (!v || typeof v.str !== 'string') continue;
+          if (font && font.twoByte) {
+            for (let i = 0; i + 1 < v.str.length; i += 2) {
+              const code = (v.str.charCodeAt(i) << 8) | v.str.charCodeAt(i + 1);
+              str += font.map.get(code) ?? '';
+            }
+          } else if (font && font.map.size) {
+            for (let i = 0; i < v.str.length; i++) str += font.map.get(v.str.charCodeAt(i)) ?? v.str[i];
+          } else {
+            str += v.str;
+          }
+        }
+        if (str.trim()) {
+          const dx = x * ctm[0] + y * ctm[2] + ctm[4];
+          const dy = x * ctm[1] + y * ctm[3] + ctm[5];
+          const scale = Math.hypot(ctm[1], ctm[3]) || 1;
+          items.push({ x: dx, y: Math.round(dy * 10) / 10, s: str, size: size * tScale * scale });
+        }
+        break;
+      }
+    }
+    stack = [];
+  }
+  return items;
+}
+
+async function extractPdfText(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  let raw = '';
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) raw += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+
+  // Index every object once; the file is large and most objects are glyph data
+  // we never touch, so bodies are sliced only when something references them.
+  const objs = new Map();
+  {
+    const re = /(\d+)\s+0\s+obj\b/g;
+    let m;
+    while ((m = re.exec(raw))) {
+      const start = m.index + m[0].length;
+      const end = raw.indexOf('endobj', start);
+      if (end > 0) objs.set(parseInt(m[1], 10), [start, end]);
+    }
+  }
+  const body = n => { const r = objs.get(n); return r ? raw.slice(r[0], r[1]) : ''; };
+
+  // Decode an object's stream, honouring /Length and trimming the EOL that
+  // precedes `endstream`.
+  const streamOf = async n => {
+    const r = objs.get(n);
+    if (!r) return null;
+    const b = raw.slice(r[0], r[1]);
+    const sm = /stream\r?\n?/.exec(b);
+    if (!sm) return null;
+    const absStart = r[0] + sm.index + sm[0].length;
+    const rel = b.lastIndexOf('endstream');
+    let absEnd = rel > 0 ? r[0] + rel : r[1];
+    const lenM = b.slice(0, sm.index).match(/\/Length\s+(\d+)\s*(?:\/|>>)/);
+    if (lenM) absEnd = Math.min(absStart + parseInt(lenM[1], 10), absEnd);
+    while (absEnd > absStart && (bytes[absEnd - 1] === 0x0a || bytes[absEnd - 1] === 0x0d)) absEnd--;
+    let data = bytes.subarray(absStart, absEnd);
+    if (/\/FlateDecode/.test(b.slice(0, sm.index))) {
+      data = await _inflate(data);
+      if (!data) return null;
+    }
+    let txt = '';
+    for (let i = 0; i < data.length; i += CH) txt += String.fromCharCode.apply(null, data.subarray(i, i + CH));
+    return txt;
+  };
+
+  // Fonts: object number → { map, twoByte }
+  const fonts = new Map();
+  for (const n of objs.keys()) {
+    const b = body(n);
+    if (b.indexOf('/Font') < 0) continue;
+    const tu = b.match(/\/ToUnicode\s+(\d+)\s+0\s+R/);
+    if (!tu) continue;
+    const cm = await streamOf(parseInt(tu[1], 10));
+    if (cm) fonts.set(n, { map: _pdfParseCMap(cm), twoByte: /\/Type0/.test(b) });
+  }
+
+  // Pages, in file order: each carries its own /Font resource names.
+  const lines = [];
+  for (const n of objs.keys()) {
+    const b = body(n);
+    if (!/\/Type\s*\/Page\b/.test(b) || b.indexOf('/Contents') < 0) continue;
+    const fontsByName = new Map();
+    const fre = /\/([A-Za-z][A-Za-z0-9]*)\s+(\d+)\s+0\s+R/g;
+    let fm;
+    while ((fm = fre.exec(b))) {
+      const f = fonts.get(parseInt(fm[2], 10));
+      if (f) fontsByName.set(fm[1], f);
+    }
+    const cm = b.match(/\/Contents\s+(?:(\d+)\s+0\s+R|\[([^\]]*)\])/);
+    if (!cm) continue;
+    const ids = cm[1] ? [parseInt(cm[1], 10)]
+      : (cm[2].match(/(\d+)\s+0\s+R/g) || []).map(s => parseInt(s, 10));
+    const items = [];
+    for (const id of ids) {
+      const s = await streamOf(id);
+      if (s) items.push(..._pdfReadContent(s, fontsByName));
+    }
+    lines.push(..._pdfItemsToLines(items));
+  }
+  return lines.join('\n');
+}
+
+// Tie each report row to a card in the set. Card number is the reliable key —
+// PSA and the card database agree on it far more often than they agree on
+// spelling ("Gengar-Holo" vs "Gengar") — so name matching is only a fallback.
+function matchPopReportToSet(rows, setId) {
+  const setCards = searchIndex.filter(c => c.sc === setId);
+  const normNo   = s => String(s || '').split('/')[0].replace(/^#/, '').replace(/^0+(?=\d)/, '').trim().toLowerCase();
+  const normName = s => String(s || '')
+    .toLowerCase()
+    .replace(/\(jp\)|holo(graphic)?|reverse|foil|1st ed(ition)?|shadowless|unlimited/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+  const byNo = new Map();
+  for (const c of setCards) {
+    const k = normNo(c.cn || c.ns);
+    if (k && !byNo.has(k)) byNo.set(k, c);
+  }
+
+  const matched = [], unmatched = [];
+  const used = new Set();
+  for (const row of rows) {
+    let card = row.no ? byNo.get(normNo(row.no)) : null;
+    if (!card) {
+      const rn = normName(row.name);
+      if (rn) card = setCards.find(c => normName(c.n) === rn)
+                 || setCards.find(c => rn.startsWith(normName(c.n)) && normName(c.n).length > 2);
+    }
+    if (card && !used.has(card.i)) { used.add(card.i); matched.push({ row, card }); }
+    else unmatched.push(row);
+  }
+  return { matched, unmatched };
 }
 
 // ── Population growth ──────────────────────────────────────────────────────
@@ -16220,7 +16643,7 @@ function renderHoldStrategy(card) {
   // variant has cached price data. Clicking a row switches the strategy tiles below.
   let variantBlock = '';
   // Unlimited PSA 10 values come from the anchor price (already resolved above).
-  const _anchorPsa10USD = getPsa10Anchor(card).usd; // always Unlimited for the comparison row
+  const _anchorPsa10USD = getPsa10Anchor(card, { ignoreVariant: true }).usd; // always Unlimited for the comparison row
   const _unlPsa10GBP = _anchorPsa10USD > 0 ? Math.round(_anchorPsa10USD * fx) : 0;
   const _unlPsa10Yr5 = _anchorPsa10USD > 0 ? Math.round(projectGradePrice(card, 10, _anchorPsa10USD, 5) * fx) : 0;
   const _unlPsa10Roi = _anchorPsa10USD > 0 ? Math.round((projectGradePrice(card, 10, _anchorPsa10USD, 5) - _anchorPsa10USD) / _anchorPsa10USD * 100) : null;
@@ -18398,10 +18821,15 @@ const PSA10_FROM_RAW = {
 //   'live'      — PriceCharting PSA 10 from a live fetch (very accurate)
 //   'estimated' — derived from raw market × rarity multiplier (±30% rule of thumb)
 //   'none'      — could not determine an anchor
-function getPsa10Anchor(card) {
+// `opts.ignoreVariant` skips the active-variant override and resolves the plain
+// Unlimited anchor. The variant comparison rows need that: they show Unlimited
+// and 1st Edition side by side, so the Unlimited figure cannot be allowed to
+// follow whichever variant is currently selected or both rows read the same.
+function getPsa10Anchor(card, opts) {
   if (!card) return { usd: 0, source: 'none' };
   // Variant (1st Ed / Shadowless) price takes top priority when active
-  if (_livePriceVariant && selectedCard && card.i === selectedCard.i && _livePriceVariant.pcPsa10 > 0) {
+  if (!(opts && opts.ignoreVariant)
+      && _livePriceVariant && selectedCard && card.i === selectedCard.i && _livePriceVariant.pcPsa10 > 0) {
     return { usd: _livePriceVariant.pcPsa10, source: 'live-variant' };
   }
   // Live PriceCharting PSA 10 takes priority for the currently-selected card
@@ -22045,7 +22473,10 @@ async function _hvgShadowlessFetchOne(card) {
     const ranked = products
       .filter(p => /shadowless/i.test(p.productName || ''))
       .sort((a, b) => scorePCProduct(b, card) - scorePCProduct(a, card));
-    const best = ranked[0] || products[0];
+    // Same reasoning as the 1st Edition fetch: never let an unfiltered hit
+    // masquerade as the Shadowless print.
+    const best = ranked[0];
+    if (!best) return null;
     const fg = await pcFetchFullGrades(best.id);
     const data = {
       pcPsa10: parsePCPrice(best.price2),
@@ -22098,7 +22529,11 @@ async function _hvg1edFetchOne(card) {
     const ranked = products
       .filter(p => /1st.?edition|first.?edition/i.test(p.productName || ''))
       .sort((a, b) => scorePCProduct(b, card) - scorePCProduct(a, card));
-    const best = ranked[0] || products[0];
+    // No 1st Edition product means this card has none. Falling back to the
+    // unfiltered top hit would cache the Unlimited price under the 1st Edition
+    // key and make the two read identically — report "no data" instead.
+    const best = ranked[0];
+    if (!best) return null;
     const fg = await pcFetchFullGrades(best.id);
     const data = {
       pcPsa10: parsePCPrice(best.price2),
@@ -26696,6 +27131,148 @@ async function _vgFetchPrices(cardId, el) {
 // ── Sets / ETB Hit Binder page ────────────────────────────────────────────
 let _setsPageSeries  = 'sv';
 let _setsExpandedId  = null;
+let _setsPopOpenId   = null;   // set whose PSA pop-report import panel is open
+
+// Write a whole set's populations. Each card is a separate PUT, so run them in
+// small batches — a 60-card set otherwise opens 60 sockets at once and the
+// worker starts shedding them.
+async function savePsaPopBulk(matches, onProgress) {
+  let done = 0;
+  for (let i = 0; i < matches.length; i += 5) {
+    await Promise.all(matches.slice(i, i + 5).map(async m => {
+      await savePsaPop(m.card.i, m.row.pop);
+      if (onProgress) onProgress(++done, matches.length);
+    }));
+  }
+  return done;
+}
+
+function _wireSetsPopPanel(setId) {
+  const ta      = document.getElementById('setsPopTa');
+  const preview = document.getElementById('setsPopPreview');
+  const importB = document.getElementById('setsPopImport');
+  const cancelB = document.getElementById('setsPopCancel');
+  if (!ta || !preview || !importB) return;
+
+  let result = null;
+
+  const refresh = () => {
+    const parsed = ta.value.trim() ? parsePsaPopReport(ta.value) : null;
+    result = null;
+    if (!ta.value.trim()) {
+      preview.textContent = '';
+      preview.className = 'sets-pop-preview';
+      importB.disabled = true;
+      return;
+    }
+    if (!parsed) {
+      preview.textContent = "Couldn't read a population table there. Include the header row that lists the grades (…9, 9.5, 10) along with the card rows.";
+      preview.className = 'sets-pop-preview sets-pop-bad';
+      importB.disabled = true;
+      return;
+    }
+    result = matchPopReportToSet(parsed.rows, setId);
+    const { matched, unmatched } = result;
+    if (!matched.length) {
+      preview.textContent = `Read ${parsed.rows.length} row${parsed.rows.length === 1 ? '' : 's'} but none matched a card in this set. Check the report is for this set.`;
+      preview.className = 'sets-pop-preview sets-pop-bad';
+      importB.disabled = true;
+      return;
+    }
+    // Card number wins over name when the two disagree, so surface any row
+    // where the report's own description doesn't look like the card it landed
+    // on — that is the signal the report belongs to a different set.
+    const looksOff = m => {
+      const a = (m.row.name || '').toLowerCase().replace(/[^a-z]/g, '');
+      const b = (m.card.n || '').toLowerCase().replace(/[^a-z]/g, '');
+      return a && b && !a.includes(b) && !b.includes(a);
+    };
+    const odd = matched.filter(looksOff);
+
+    // Show a couple of matches outright — a silent column shift is the failure
+    // that matters here, and seeing one row's numbers catches it immediately.
+    const sample = matched.slice(0, 3).map(m => {
+      const g = [10, 9, 8].filter(x => m.row.pop[x] != null)
+        .map(x => `${x}:${(m.row.pop[x] || 0).toLocaleString('en-GB')}`).join(' ');
+      const as = looksOff(m) ? ` (report says "${esc(m.row.name)}")` : '';
+      return `${esc(m.card.n)}${m.row.no ? ' #' + esc(m.row.no) : ''}${as} → ${g}`;
+    }).join('<br>');
+    preview.innerHTML =
+      `<strong>${matched.length} of ${parsed.rows.length} cards matched.</strong>` +
+      (unmatched.length ? ` ${unmatched.length} unmatched (skipped).` : '') +
+      (parsed.collapsed ? ` ${parsed.collapsed} extra print variant${parsed.collapsed === 1 ? '' : 's'} collapsed into the largest population.` : '') +
+      `<div class="sets-pop-sample">${sample}</div>` +
+      (odd.length
+        ? `<div class="sets-pop-check">${odd.length} row${odd.length === 1 ? "'s name doesn't" : "s' names don't"} match the card at that number — check this report is for this set.</div>`
+        : '') +
+      (parsed.mismatched
+        ? `<div class="sets-pop-check">${parsed.mismatched} row${parsed.mismatched === 1 ? "'s grades don't" : "s' grades don't"} add up to its own total — the columns may have been misread. Check before importing.</div>`
+        : parsed.checked ? `<div class="sets-pop-sample">Every row's grades add up to its printed total.</div>` : '') +
+      `<div class="sets-pop-check">Check those counts against the report before importing.</div>`;
+    preview.className = 'sets-pop-preview sets-pop-ok';
+    importB.disabled = false;
+  };
+
+  ta.addEventListener('input', refresh);
+  ta.addEventListener('paste', () => setTimeout(refresh, 0));
+
+  // File upload — PDF straight from PSA, or a CSV/text export. Whatever comes
+  // out lands in the textarea so the same preview (and the same chance to spot
+  // a bad read) applies before anything is saved.
+  const fileIn   = document.getElementById('setsPopFile');
+  const fileName = document.getElementById('setsPopFileName');
+  if (fileIn) fileIn.addEventListener('change', async () => {
+    const f = fileIn.files && fileIn.files[0];
+    if (!f) return;
+    if (fileName) fileName.textContent = `Reading ${f.name}…`;
+    let text = '';
+    try {
+      if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
+        text = await extractPdfText(await f.arrayBuffer());
+        if (!text.trim()) {
+          if (fileName) fileName.textContent = f.name;
+          preview.textContent = 'No text found in that PDF — it may be a scanned image. Open the report on psacard.com and paste the table instead.';
+          preview.className = 'sets-pop-preview sets-pop-bad';
+          importB.disabled = true;
+          return;
+        }
+      } else {
+        text = await f.text();
+        // A CSV's commas are column separators, but the counts use commas as
+        // thousands separators too, so only split on commas outside quotes.
+        if (/\.csv$/i.test(f.name) || f.type === 'text/csv') {
+          text = text.split(/\r?\n/).map(l => {
+            const cells = l.match(/("([^"]|"")*"|[^,]*)(,|$)/g) || [];
+            return cells.map(c => c.replace(/,$/, '').replace(/^"|"$/g, '').replace(/""/g, '"').trim()).join('\t');
+          }).join('\n');
+        }
+      }
+    } catch (e) {
+      if (fileName) fileName.textContent = f.name;
+      preview.textContent = `Could not read that file (${(e && e.message) || 'unknown error'}). Paste the table instead.`;
+      preview.className = 'sets-pop-preview sets-pop-bad';
+      importB.disabled = true;
+      return;
+    }
+    if (fileName) fileName.textContent = f.name;
+    ta.value = text;
+    refresh();
+  });
+
+  importB.addEventListener('click', async () => {
+    if (!result || !result.matched.length) return;
+    importB.disabled = true;
+    const n = result.matched.length;
+    importB.textContent = `Importing 0/${n}…`;
+    await savePsaPopBulk(result.matched, (done, tot) => { importB.textContent = `Importing ${done}/${tot}…`; });
+    preview.innerHTML = `<strong>Imported populations for ${n} cards.</strong>`;
+    preview.className = 'sets-pop-preview sets-pop-ok';
+    importB.textContent = 'Imported ✓';
+    setTimeout(() => { _setsPopOpenId = null; renderSetsPage(); }, 1200);
+  });
+
+  if (cancelB) cancelB.addEventListener('click', () => { _setsPopOpenId = null; renderSetsPage(); });
+}
 let _setsHitCache    = null; // Map<setId, card[]> — built once per page load
 
 // Rarity priority for hit card sorting (most desirable first)
@@ -26789,11 +27366,35 @@ function renderSetsPage() {
           ${hasEtb && needed > 0 ? `<div class="sets-need-badge">${needed} still needed</div>` : ''}
           ${hasEtb && hits.length > 0 && needed === 0 ? `<div class="sets-all-done">All hits tracked ✓</div>` : ''}
         </div>
+        <button class="sets-pop-btn${_setsPopOpenId===setId?' sets-pop-btn--on':''}" data-setpop="${esc(setId)}"
+                title="Paste the PSA population report for this set">Pop</button>
         <button class="sets-etb-btn${hasEtb?' sets-etb-btn--on':''}" data-etb="${esc(setMeta.name)}"
                 title="${hasEtb?'Remove ETB mark':'I have an ETB for this set'}">
           ${hasEtb ? '✓ ETB' : '+ ETB'}
         </button>
       </div>`;
+
+    if (_setsPopOpenId === setId) {
+      html += `<div class="sets-pop-panel">
+        <div class="sets-pop-hint">Upload the Certified Population Report you downloaded from psacard.com (PDF or CSV),
+          or paste the table straight from the page — include the header row of grades either way.
+          Card numbers are matched to the database.</div>
+        <div class="sets-pop-file">
+          <label class="sets-pop-filebtn">
+            Choose file
+            <input type="file" id="setsPopFile" accept=".pdf,.csv,.tsv,.txt,application/pdf,text/csv,text/plain" hidden>
+          </label>
+          <span class="sets-pop-filename" id="setsPopFileName">No file chosen — or paste below</span>
+        </div>
+        <textarea class="sets-pop-ta" id="setsPopTa" rows="6" spellcheck="false"
+                  placeholder="Card #&#9;Description&#9;AUTH&#9;1&#9;1.5&#9;…&#9;9.5&#9;10&#9;Total"></textarea>
+        <div class="sets-pop-preview" id="setsPopPreview"></div>
+        <div class="sets-pop-actions">
+          <button class="sets-pop-import" id="setsPopImport" disabled>Import</button>
+          <button class="sets-pop-cancel" id="setsPopCancel">Cancel</button>
+        </div>
+      </div>`;
+    }
 
     if (isOpen) {
       if (hits.length === 0) {
@@ -26853,12 +27454,24 @@ function renderSetsPage() {
   // Wire set expand/collapse
   el.querySelectorAll('[data-sets-toggle]').forEach(hdr => {
     hdr.addEventListener('click', e => {
-      if (e.target.closest('[data-etb]')) return;
+      if (e.target.closest('[data-etb]') || e.target.closest('[data-setpop]')) return;
       const id = hdr.dataset.setsToggle;
       _setsExpandedId = _setsExpandedId === id ? null : id;
       renderSetsPage();
     });
   });
+
+  // Wire the PSA pop-report import panel
+  el.querySelectorAll('[data-setpop]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.setpop;
+      _setsPopOpenId = _setsPopOpenId === id ? null : id;
+      renderSetsPage();
+      if (_setsPopOpenId === id) setTimeout(() => { const t = document.getElementById('setsPopTa'); if (t) t.focus(); }, 30);
+    });
+  });
+  if (_setsPopOpenId) _wireSetsPopPanel(_setsPopOpenId);
 
   // Wire ETB toggle
   el.querySelectorAll('[data-etb]').forEach(btn => {
