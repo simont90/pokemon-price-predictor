@@ -5222,6 +5222,7 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   padding: 2px 7px; border-radius: 5px;
 }
 .hold-variant-badge-active { background: rgba(52,168,110,.9); color: #fff; }
+.hold-variant-badge-ovr { background: var(--accent-dim, rgba(232,182,52,.18)); color: var(--accent, #e8b634); }
 .hold-variant-price { font-size: 13px; font-weight: 600; color: var(--text); }
 .hold-variant-roi { font-size: 13px; font-weight: 700; min-width: 50px; text-align: right; }
 .hold-variant-5yr { font-size: 11px; color: var(--text-muted); min-width: 60px; text-align: right; }

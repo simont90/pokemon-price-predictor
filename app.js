@@ -16802,7 +16802,21 @@ function renderHoldStrategy(card) {
       { key: 'unlimited',  name: 'Unlimited',   gbp: _unlPsa10GBP, roi: _unlPsa10Roi, yr5: _unlPsa10Yr5,                    avail: _unlPsa10GBP > 0 },
       { key: '1sted',      name: '1st Edition', gbp: _ed1Psa10GBP, roi: _ed1Psa10Roi, yr5: _ed1Psa10GBP > 0 ? Math.round(projectGradePrice(card, 10, _ed1Psa10GBP / fx, 5) * fx) : 0, avail: _ed1Psa10GBP > 0 },
       { key: 'shadowless', name: 'Shadowless',  gbp: _slPsa10GBP,  roi: _slPsa10Roi,  yr5: _slPsa10GBP  > 0 ? Math.round(projectGradePrice(card, 10, _slPsa10GBP  / fx, 5) * fx) : 0, avail: _slPsa10GBP > 0 },
-    ].filter(v => v.avail);
+    ]
+      // A PSA 10 override is the user's own correction of what that print's
+      // PSA 10 actually clears at. These rows are the headline comparison
+      // between prints, so ignoring it left the tiles below saying one number
+      // and the comparison above saying another for the same card and grade.
+      .map(v => {
+        const ovr = getHoldOverridesForCard(overrideIdFor(card, v.key));
+        const g = ovr && ovr.psa10;
+        if (!(g > 0)) return v;
+        const usd = g / fx;
+        const yr5 = projectGradePrice(card, 10, usd, 5);
+        return { ...v, gbp: Math.round(g), yr5: Math.round(yr5 * fx),
+                 roi: Math.round((yr5 - usd) / usd * 100), overridden: true, avail: true };
+      })
+      .filter(v => v.avail);
     const bestVariant = vcands.reduce((b, v) => (v.roi != null && (b.roi == null || v.roi > b.roi)) ? v : b, vcands[0]);
     const _va = roi => roi >= 5 ? '↗' : roi >= -5 ? '→' : '↘';
     const _vc = roi => roi >= 5 ? 'hold-pos' : roi >= -5 ? 'hold-flat' : 'hold-neg';
@@ -16815,6 +16829,7 @@ function renderHoldStrategy(card) {
       <span class="hold-variant-name">${v.name}</span>
       ${isBest && !isActive ? '<span class="hold-variant-badge">★ Best ROI</span>' : ''}
       ${isActive ? '<span class="hold-variant-badge hold-variant-badge-active">✓ Viewing</span>' : ''}
+      ${v.overridden ? '<span class="hold-variant-badge hold-variant-badge-ovr">your price</span>' : ''}
     </div>
     <div class="hold-variant-right">
       <span class="hold-variant-price">${fmtGBPDirect(v.gbp)}</span>
@@ -22685,7 +22700,7 @@ function _hvgShadowlessLadder(card) {
     if (usd > 0) ladder.push({ g, gbp: usdToGbp(usd) });
     else if (psa10gbp > 0) ladder.push({ g, gbp: psa10gbp * (PSA_RATIOS[g] || 0) });
   }
-  return { rawGBP: psa10gbp * 0.08, ladder };
+  return { rawGBP: pd.pcUngraded > 0 ? usdToGbp(pd.pcUngraded) : psa10gbp * 0.08, ladder };
 }
 
 async function _hvgShadowlessFetchOne(card) {
@@ -22702,12 +22717,17 @@ async function _hvgShadowlessFetchOne(card) {
     if (!best) return null;
     const fg = await pcFetchFullGrades(best.id);
     const data = {
+      pcUngraded: parsePCPrice(best.price1),   // this print's own raw price
       pcPsa10: parsePCPrice(best.price2),
       pcPsa9:  fg.pcPsa9  || 0,
       pcPsa8:  fg.pcPsa8  || 0,
       pcPsa7:  fg.pcPsa7  || 0,
       pcPsa6:  fg.pcPsa6  || 0,
       pcPsa5:  fg.pcPsa5  || 0,
+      pcPsa4:  fg.pcPsa4  || 0,
+      pcPsa3:  fg.pcPsa3  || 0,
+      pcPsa2:  fg.pcPsa2  || 0,
+      pcPsa1:  fg.pcPsa1  || 0,
       _ts: Date.now(),
     };
     _setShadowlessPrice(card.i, data);
@@ -22739,7 +22759,9 @@ function _hvg1edLadder(card) {
     if (usd > 0) ladder.push({ g, gbp: usdToGbp(usd) });
     else if (psa10gbp > 0) ladder.push({ g, gbp: psa10gbp * (PSA_RATIOS[g] || 0) });
   }
-  const rawGBP = psa10gbp * 0.1;
+  // Prefer this print's own raw price now that it is fetched; the 10% of
+  // PSA 10 rule was only ever a stand-in for not having one.
+  const rawGBP = pd.pcUngraded > 0 ? usdToGbp(pd.pcUngraded) : psa10gbp * 0.1;
   return { rawGBP, ladder };
 }
 
@@ -22759,12 +22781,20 @@ async function _hvg1edFetchOne(card) {
     if (!best) return null;
     const fg = await pcFetchFullGrades(best.id);
     const data = {
+      // price1 is this product's ungraded price. Without it the variant had no
+      // raw price of its own, so switching print left the headline showing the
+      // Unlimited raw — the graded rows moved and the big number did not.
+      pcUngraded: parsePCPrice(best.price1),
       pcPsa10: parsePCPrice(best.price2),
       pcPsa9:  fg.pcPsa9  || 0,
       pcPsa8:  fg.pcPsa8  || 0,
       pcPsa7:  fg.pcPsa7  || 0,
       pcPsa6:  fg.pcPsa6  || 0,
       pcPsa5:  fg.pcPsa5  || 0,
+      pcPsa4:  fg.pcPsa4  || 0,
+      pcPsa3:  fg.pcPsa3  || 0,
+      pcPsa2:  fg.pcPsa2  || 0,
+      pcPsa1:  fg.pcPsa1  || 0,
       _ts: Date.now(),
     };
     _set1edPrice(card.i, data);
