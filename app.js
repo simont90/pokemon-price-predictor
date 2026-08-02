@@ -15560,8 +15560,11 @@ function computeHoldCore(card) {
     return { label: `Buy PSA ${g}`, key: `psa${g}`, grade: g, today, yr5: sell, profit, roi };
   });
 
+  // No ownership context in this path, so it is scored as a purchase.
+  const _rawVar_hc = rawConditionVariance(card, false);
   const strategies = [
-    { label: 'Buy Raw',         key: 'raw',    today: rawEntryUSD_hc, yr5: rawSell5USD, profit: rawProfitUSD, roi: rawRoi,   variance: 0.20, risk: 'low' },
+    { label: 'Buy Raw',         key: 'raw',    today: rawEntryUSD_hc, yr5: rawSell5USD, profit: rawProfitUSD, roi: rawRoi,
+      variance: _rawVar_hc, risk: varianceRiskLabel(_rawVar_hc) },
     { label: 'Buy Raw + Grade', key: 'gamble', today: gradeCost, yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, variance: 0.85, risk: 'high' },
     ...gradedStrategies.map(s => ({
       ...s,
@@ -15693,6 +15696,36 @@ function getMaxBudgetGBP() {
 // Priority: (1) in-budget over over-budget, (2) Low Risk over Med/High Risk,
 // (3) within same risk tier: highest (riskAdjusted - ltpCapitalPenalty).
 const _LTP_RISK_ORD = { low: 0, med: 1, high: 2 };
+
+// Buying raw means buying an unknown grade, and how much of an unknown that is
+// depends entirely on the card's age. On a recent set a raw copy is pack-fresh
+// and near-mint is the default, so the spread of outcomes is narrow. On a
+// twenty-five-year-old holo, condition is the dominant variable and cannot be
+// confirmed from a listing photo — print lines, whitening and centring decide
+// whether the same card is a PSA 3 or a PSA 7, a difference of hundreds of
+// pounds. Treating that as the lowest-variance option on the card, which the
+// flat 0.20 did, made "buy raw" win on cards where it is the biggest gamble
+// available short of grading it yourself.
+//
+// A card already in hand is exempt: its condition is known by inspection, so
+// keeping it carries none of the buyer's uncertainty.
+const RAW_VARIANCE_BASE = 0.20;   // pack-fresh: what the old flat figure assumed
+const RAW_VARIANCE_MAX  = 0.75;   // vintage unknown-grade, just under the 0.85 grading gamble
+function rawConditionVariance(card, alreadyOwned) {
+  if (alreadyOwned) return RAW_VARIANCE_BASE;
+  const rd = (typeof setsData !== 'undefined' && setsData?.[card?.sc]?.releaseDate) || '';
+  const year = parseInt(String(rd).slice(0, 4), 10);
+  if (!year) return RAW_VARIANCE_BASE;
+  const age = new Date().getFullYear() - year;
+  if (age <= 5) return RAW_VARIANCE_BASE;
+  // Ramps from pack-fresh at 5 years to the vintage ceiling at ~25.
+  return Math.min(RAW_VARIANCE_MAX, RAW_VARIANCE_BASE + (age - 5) * 0.0275);
+}
+// The badge has to agree with the variance driving the score, or a tile reads
+// "Low risk" while being scored as the riskiest thing on the page.
+function varianceRiskLabel(v) {
+  return v >= 0.50 ? 'high' : v >= 0.30 ? 'med' : 'low';
+}
 function _pickBestLTP(candidates) {
   if (!candidates.length) return null;
   return candidates.reduce((a, b) => {
@@ -16489,11 +16522,22 @@ function renderHoldStrategy(card) {
     ? `Cost basis: ${fmtGBPDirect(acqCostGBP)} + \u00a3${aceFeeGBP_r} ACE ${aceInfo_r.label} \u2014 ${hasAceAnchor ? 'ACE 10 comp tracked' : 'protection, no resale uplift'}`
     : `ACE ${aceInfo_r.label} slab (\u00a3${aceFeeGBP_r}, ~${aceWaitDisplay_r}) \u2014 ${hasAceAnchor ? `ACE 10 comp: ${fmtGBPDirect(ace10USD * fx)}` : 'protection, no resale uplift'}`;
   const aceLabel_r  = usingAcqCost ? `Slab My Card (ACE ${aceInfo_r.label})` : `Buy Raw + Slab (ACE ${aceInfo_r.label})`;
-  const aceRisk_r   = hasAceAnchor ? 'med' : 'low';
-  const aceVariance_r = hasAceAnchor ? 0.45 : 0.20;
+  // Slabbing with ACE encapsulates the card, it does not grade it, so buying
+  // raw and slabbing carries exactly the same unknown condition as buying raw
+  // — the plastic does not tell you whether it was a PSA 3 or a PSA 7. Scored
+  // without that, the Best Pick simply moved one row down from Buy Raw to this
+  // one. Slabbing a card already owned is unaffected: its condition is known.
+  const _aceBuysRaw   = !usingAcqCost;
+  const aceVariance_r = Math.max(hasAceAnchor ? 0.45 : 0.20,
+                                 _aceBuysRaw ? rawConditionVariance(card, false) : 0);
+  const aceRisk_r     = _aceBuysRaw ? varianceRiskLabel(aceVariance_r)
+                                    : (hasAceAnchor ? 'med' : 'low');
 
+  // A raw card already in the collection has a condition you can see.
+  const _rawVar = rawConditionVariance(card, ownedCard && !slabAcq);
   const strategies = [
-    { label: (ownedCard && !slabAcq) ? 'Keep Raw' : 'Buy Raw', key: 'raw',    desc: rawDesc,    today: rawEntryUSD, yr5: rawSell5USD,  profit: rawProfitUSD, roi: rawRoi,    risk: slabAcq ? 'med' : 'low',      variance: 0.20,       acqCost: usingAcqCost },
+    { label: (ownedCard && !slabAcq) ? 'Keep Raw' : 'Buy Raw', key: 'raw',    desc: rawDesc,    today: rawEntryUSD, yr5: rawSell5USD,  profit: rawProfitUSD, roi: rawRoi,
+      risk: slabAcq ? 'med' : varianceRiskLabel(_rawVar), variance: _rawVar,       acqCost: usingAcqCost },
     { label: gambleLabel,  key: 'gamble', desc: gambleDesc, today: gradeCost,  yr5: gradeSell5EV, profit: gradeProfit, roi: gradeRoi, risk: 'high', variance: 0.85, waitMonths: gradingWaitMonths, waitDisplay: gradingWaitDisplay, lossProb, lossEV, acqCost: usingAcqCost },
     { label: aceLabel_r,   key: 'ace',    desc: aceDesc_r,  today: aceCost_r,  yr5: aceSell5EV_r, profit: aceProfit_r, roi: aceRoi_r, risk: aceRisk_r, variance: aceVariance_r, waitMonths: aceWaitMonths_r, waitDisplay: aceWaitDisplay_r, lossProb: 0, lossEV: 0, acqCost: usingAcqCost, aceMode: true },
     ...gradedStrategies.map(s => ({
