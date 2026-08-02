@@ -28368,8 +28368,28 @@ let _soGrade = 'raw'; // current grade filter for standouts carousel
 let _soSubGrade = 'raw'; // Raw | PSA 9 | PSA 10 sub-filter for Vintage/Spike tabs
 let _soVintage1stEd = false; // true = show only 1st-Edition-eligible WOTC sets
 
-// WOTC EN sets that had a 1st Edition print run
-const _SO_FIRST_ED_SETS = new Set(['base1','jungle','fossil','base3','gym1','gym2','neo1','neo2','neo3','neo4','basep']);
+// WOTC EN sets that had a 1st Edition print run, by the set codes the card
+// database actually uses. The list previously carried 'jungle' and 'fossil',
+// which are names rather than codes and matched nothing — Fossil only worked
+// because base3 happened to be listed alongside them, and Jungle had no 1st
+// Edition anywhere in the app despite every holo in it having one.
+//
+// Deliberately excluded, none of which were ever stamped 1st Edition:
+//   base4  Base Set 2            base6   Legendary Collection
+//   si1    Southern Islands      ecard1  Expedition
+//   basep  Wizards Black Star Promos
+const _SO_FIRST_ED_SETS = new Set([
+  'base1',  // Base
+  'base2',  // Jungle
+  'base3',  // Fossil
+  'base5',  // Team Rocket
+  'gym1',   // Gym Heroes
+  'gym2',   // Gym Challenge
+  'neo1',   // Neo Genesis
+  'neo2',   // Neo Discovery
+  'neo3',   // Neo Revelation
+  'neo4',   // Neo Destiny
+]);
 
 // Collect card IDs relevant to all 4 Standouts tabs (top 20 per tab + portfolio).
 function _soRefreshIds() {
