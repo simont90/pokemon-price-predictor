@@ -15453,8 +15453,12 @@ const EBAY_FIXED_FEE = 0.30;        // £0.30 per-transaction eBay UK charge
 //
 //   £0.10 per item, plus 4% up to £300, plus 2% of £300–£4,000, nothing above
 //
-// A ceiling on what to pay is therefore the checkout total — the card, plus
-// that fee, plus postage — which sits above the card's value, not below it.
+// On UK private-seller listings that fee is already inside the price shown,
+// which sounds like it should be ignored — but a seller setting an ask works
+// backwards from what they want to clear, so the fee gets priced straight
+// back in. Either way it comes out of the buyer's pocket, so the ceiling on a
+// displayed price is the card's value plus that fee plus postage, and sits
+// above the value rather than below it.
 // https://www.ebay.co.uk/help/buying/paying-items/buyer-protection-fee?id=5594
 const EBAY_BUYER_FEE_FIXED = 0.10;
 function ebayBuyerFee(priceGBP) {
@@ -17027,7 +17031,7 @@ function renderHoldStrategy(card) {
       const feeGBP  = ebayBuyerFee(todayGBP_tile);
       const ceilGBP = ebayCheckoutMax(todayGBP_tile, shipGBP);
       maxBuyStr = `<span class="hold-row-maxbuy"
-        title="${fmtGBPDirect(todayGBP_tile)} card + ${fmtGBPDirect(feeGBP)} eBay buyer fee + ${fmtGBPDirect(shipGBP)} postage. The seller's 12.8% final value fee is their cost, not yours.">Max buy ${fmtGBPDirect(ceilGBP)} <span class="hold-row-maxbuy-note">inc. fees + postage</span></span>`;
+        title="${fmtGBPDirect(todayGBP_tile)} card + ${fmtGBPDirect(feeGBP)} Buyer Protection + ${fmtGBPDirect(shipGBP)} postage. The fee sits inside the asking price on private listings, but sellers price it back in, so it is yours either way. The seller's 12.8% final value fee is not.">Max buy ${fmtGBPDirect(ceilGBP)} <span class="hold-row-maxbuy-note">inc. fees + postage</span></span>`;
     }
 
     // Per-grade annual growth rate label (always shown for PSA grade tiles)
