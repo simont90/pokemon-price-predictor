@@ -16825,7 +16825,12 @@ function renderHoldStrategy(card) {
   const _unlPsa10GBP = _anchorPsa10USD > 0 ? Math.round(_anchorPsa10USD * fx) : 0;
   const _unlPsa10Yr5 = _anchorPsa10USD > 0 ? Math.round(projectGradePrice(card, 10, _anchorPsa10USD, 5) * fx) : 0;
   const _unlPsa10Roi = _anchorPsa10USD > 0 ? Math.round((projectGradePrice(card, 10, _anchorPsa10USD, 5) - _anchorPsa10USD) / _anchorPsa10USD * 100) : null;
-  if (_isVariantCard && (_ed1Psa10GBP > 0 || _slPsa10GBP > 0)) {
+  // A hand-priced print counts towards showing the block at all, not just
+  // towards its own row — otherwise a card priced entirely by hand never got
+  // a comparison.
+  const _anyPrintPriced = _isVariantCard && popVariantsFor(card).some(p =>
+    p.key !== 'unlimited' && ((getHoldOverridesForCard(popIdFor(card.i, p.key)) || {}).psa10 > 0));
+  if (_isVariantCard && (_ed1Psa10GBP > 0 || _slPsa10GBP > 0 || _anyPrintPriced)) {
     const vcands = [
       { key: 'unlimited',  name: 'Unlimited',   gbp: _unlPsa10GBP, roi: _unlPsa10Roi, yr5: _unlPsa10Yr5,                    avail: _unlPsa10GBP > 0 },
       { key: '1sted',      name: '1st Edition', gbp: _ed1Psa10GBP, roi: _ed1Psa10Roi, yr5: _ed1Psa10GBP > 0 ? Math.round(projectGradePrice(card, 10, _ed1Psa10GBP / fx, 5) * fx) : 0, avail: _ed1Psa10GBP > 0 },
@@ -16840,18 +16845,19 @@ function renderHoldStrategy(card) {
         // and nowhere else, so asking for its overrides on a Neo card resolved
         // back to the Unlimited id and returned Unlimited's numbers — which is
         // how a Shadowless row appeared on a card that has no such print, at a
-        // price identical to Unlimited. An override also must not make a print
-        // available: it corrects a price, it does not bring a print into
-        // existence.
-        if (!v.avail) return v;
+        // price identical to Unlimited.
         if (!popVariantsFor(card).some(p => p.key === v.key)) return v;
         const ovr = getHoldOverridesForCard(popIdFor(card.i, v.key));
         const g = ovr && ovr.psa10;
         if (!(g > 0)) return v;
         const usd = g / fx;
         const yr5 = projectGradePrice(card, 10, usd, 5);
+        // A print priced by hand belongs in the comparison even when
+        // PriceCharting has not been fetched for it — the row was gated on the
+        // fetch alone, so a print the user had already corrected stayed hidden
+        // until an unrelated network call happened to fill the cache.
         return { ...v, gbp: Math.round(g), yr5: Math.round(yr5 * fx),
-                 roi: Math.round((yr5 - usd) / usd * 100), overridden: true };
+                 roi: Math.round((yr5 - usd) / usd * 100), overridden: true, avail: true };
       })
       .filter(v => v.avail);
     const bestVariant = vcands.reduce((b, v) => (v.roi != null && (b.roi == null || v.roi > b.roi)) ? v : b, vcands[0]);
