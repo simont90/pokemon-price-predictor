@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260721o">
+  <link rel="stylesheet" href="style.css?v=20260721p">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1624,6 +1624,27 @@
                 <div class="lp-cell"><span class="lp-label">ACE 9</span><span class="lp-val" id="pcAce9">—</span></div>
                 <div class="lp-cell"><span class="lp-label">Grading ROI</span><span class="lp-val pc-grading-roi" id="pcGradingRoi">—</span></div>
               </div>
+              <!-- Collectr: a second opinion per print, and the only source of
+                   dated price history the app has. -->
+              <div class="collectr-row" id="collectrRow">
+                <span class="collectr-icon">📉</span>
+                <span class="collectr-label">Collectr</span>
+                <a id="collectrOpen" class="collectr-open" href="#" target="_blank" rel="noopener noreferrer" style="display:none">Open ↗</a>
+                <span class="collectr-status" id="collectrStatus">not linked</span>
+                <button type="button" class="collectr-btn" id="collectrLinkBtn">Link Collectr</button>
+                <button type="button" class="collectr-btn" id="collectrRefreshBtn" style="display:none">Refresh</button>
+              </div>
+              <div class="collectr-edit" id="collectrEdit" style="display:none">
+                <input id="collectrInput" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                       placeholder="Paste the app.getcollectr.com product link for this card">
+                <div class="collectr-actions">
+                  <button type="button" class="collectr-save" id="collectrSave">Save &amp; fetch</button>
+                  <button type="button" class="collectr-cancel" id="collectrCancel">Cancel</button>
+                  <button type="button" class="collectr-remove" id="collectrRemove" style="display:none">Unlink</button>
+                </div>
+                <p class="collectr-hint">Collectr's own search is unreliable, so the product link is pasted rather than looked up. One card costs 2 credits and is cached for a day.</p>
+              </div>
+              <div class="collectr-data" id="collectrData" style="display:none"></div>
             </div>
               <!-- PSA reference link: pin the authoritative PSA page for this card -->
               <div class="psa-link-row" id="psaLinkRow">
@@ -3228,7 +3249,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260721o"></script>
+  <script src="app.js?v=20260721p"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

@@ -137,8 +137,9 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
 - `GET /health` → `ok` (used by uptime probes).
 - `GET /search?q=&max=&fx=&fxEur=&grade=` → fanned-out eBay UK / eBay US /
   Cardmarket search, returns ranked deals. Cached 5 min at the edge.
-- `GET /collectr?productId=` or `?url=` → Collectr prices split by print, PSA
-  grade prices, dated history and 30/90-day trend. Credit-metered — see
+- `GET /collectr?set=&number=&variant=` → resolves the card automatically and
+  returns Collectr prices split by print, PSA grade prices, dated history and
+  30/90-day trend. `productId=` / `url=` skip resolution. Credit-metered — see
   `COLLECTR_TOKEN`. **Do not use `?q=`**: the wrapper's `search_products`
   endpoint is broken — it returns the same fabricated 12 rows for any query
   (verified with a control query), ignores `limit`, and every `image_url` is a
@@ -150,6 +151,17 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
   - Prices are USD, not GBP. There is no currency field; the exact cent match
     with PriceCharting settles it.
   - `product_sub_type` is the print ("1st Edition Holofoil"), not the grade.
+  - Resolution is free and does not touch the metered API: a category index
+    page gives set name → groupId, and the set page carries the embedded
+    catalogue keyed by card number. Both cached in KV for 30 days. The set page
+    server-renders only its first 15 cards, which in a WOTC set is the holo
+    run; anything past that needs a pasted product link.
+  - Collectr splits Base Set into two groups — "Base Set (Unlimited)" (604) and
+    "Base Set (1st Edition & Shadowless)" (1663) — so the selected print picks
+    the group.
+  - The client uses Collectr for PSA 1–8 only, where PriceCharting has no
+    figure (`COLLECTR_TRUSTED_MAX_GRADE`). Those tiles are marked "via
+    Collectr". PSA 9/10 are excluded on purpose — see below.
   - Data quality is patchy above PSA 8: Unlimited Fossil Gengar returns
     psa9 = $99.99 against PriceCharting's $700.25. Treat the top of the ladder
     as unverified.

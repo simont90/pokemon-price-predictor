@@ -2608,6 +2608,93 @@ function collectrTrend(history, grade, days, print) {
   };
 }
 
+// ── Automatic product resolution ───────────────────────────────────────────
+// The wrapper's search endpoint is unusable — it answers every query with the
+// same fabricated rows — so ids are resolved from Collectr's own set pages
+// instead. Those are ordinary web pages, not the metered API, so resolution
+// costs no credits at all; only the final price fetch does.
+//
+// Two hops, both cached hard because neither changes: a category index gives
+// set name to groupId, and a set page carries the embedded catalogue for that
+// set, keyed by card number. The set page server-renders its first fifteen
+// cards, which in a WOTC set is the holo run — the cards actually being
+// valued. Anything past that falls back to a pasted link.
+const COLLECTR_SITE = 'https://app.getcollectr.com';
+const COLLECTR_POKEMON_CATEGORY = '3';
+const COLLECTR_MAP_TTL = 2592000;   // 30 days — ids are stable
+
+async function _collectrFetchText(url) {
+  const r = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+    cf: { cacheEverything: true, cacheTtl: 3600 },
+  });
+  if (!r.ok) throw new Error(`Collectr site returned ${r.status}`);
+  return r.text();
+}
+
+// name (lowercased, punctuation stripped) -> groupId
+async function collectrSetIndex(env) {
+  const key = 'collectr:setindex';
+  if (env.SYNC_KV) {
+    try { const hit = await env.SYNC_KV.get(key); if (hit) return JSON.parse(hit); } catch (e) {}
+  }
+  const html = await _collectrFetchText(`${COLLECTR_SITE}/sets/category/${COLLECTR_POKEMON_CATEGORY}`);
+  const out = {};
+  const re = /group_id..:..(\d+)[^}]{0,200}?group_name..:..([^\\"]{1,60})/g;
+  let m;
+  while ((m = re.exec(html))) out[_collectrNorm(m[2])] = m[1];
+  if (env.SYNC_KV && Object.keys(out).length) {
+    try { await env.SYNC_KV.put(key, JSON.stringify(out), { expirationTtl: COLLECTR_MAP_TTL }); } catch (e) {}
+  }
+  return out;
+}
+
+function _collectrNorm(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// card number -> { productId, subType } for one set
+async function collectrSetCards(env, groupId) {
+  const key = `collectr:set:${groupId}`;
+  if (env.SYNC_KV) {
+    try { const hit = await env.SYNC_KV.get(key); if (hit) return JSON.parse(hit); } catch (e) {}
+  }
+  const html = await _collectrFetchText(
+    `${COLLECTR_SITE}/sets/category/${COLLECTR_POKEMON_CATEGORY}/x?groupId=${encodeURIComponent(groupId)}&cardType=cards`);
+  const out = {};
+  const re = /product_id..:..(\d+).{0,400}?product_name..:..([^\\"]{1,40}).{0,200}?card_number..:..([^\\"]{1,12}).{0,160}?product_sub_type..:..([^\\"]{1,40})/g;
+  let m;
+  while ((m = re.exec(html))) {
+    const num = String(m[3]).trim().split('/')[0].replace(/^0+(?=\d)/, '');
+    if (!num || out[num]) continue;                 // first occurrence wins
+    out[num] = { productId: m[1], name: m[2].trim(), subType: m[4] };
+  }
+  if (env.SYNC_KV && Object.keys(out).length) {
+    try { await env.SYNC_KV.put(key, JSON.stringify(out), { expirationTtl: COLLECTR_MAP_TTL }); } catch (e) {}
+  }
+  return out;
+}
+
+// Collectr splits Base Set into an Unlimited group and a combined 1st
+// Edition/Shadowless one, so the print being viewed decides which to ask for.
+// Everything else is a single group per set.
+async function collectrResolve(env, setName, cardNumber, variant) {
+  if (!setName || !cardNumber) return null;
+  const index = await collectrSetIndex(env);
+  const want = _collectrNorm(setName);
+  const candidates = Object.keys(index).filter(n => n === want || n.startsWith(want + ' ') || n === want + ' unlimited');
+  if (!candidates.length) return null;
+
+  const wantsEarly = variant === '1sted' || variant === 'shadowless';
+  const pick = candidates.find(n => wantsEarly ? /1st edition|shadowless/.test(n) : !/1st edition|shadowless/.test(n))
+            || candidates[0];
+  const groupId = index[pick];
+  const cards = await collectrSetCards(env, groupId);
+  const num = String(cardNumber).trim().split('/')[0].replace(/^0+(?=\d)/, '');
+  const hit = cards[num];
+  return hit ? { ...hit, groupId, collectrSet: pick } : null;
+}
+
 async function _collectrCall(env, path, params) {
   const base = (env.COLLECTR_API_URL || COLLECTR_API_DEFAULT).replace(/\/+$/, '');
   const u = new URL(base + path);
@@ -2644,11 +2731,29 @@ async function handleCollectr(request, env, url) {
     if (!productId) return _jsonResp(400, { error: 'That is not a Collectr product link.' }, ch);
   }
 
-  // A resolved id is permanent, so it is worth a lookup of its own before
-  // spending a search credit.
+  // A resolved id is permanent, so it is worth a lookup of its own first.
   const idKey = cardId ? `collectr:pid:${cardId}` : null;
   if (!productId && idKey && env.SYNC_KV) {
     try { productId = (await env.SYNC_KV.get(idKey)) || ''; } catch (e) {}
+  }
+
+  // Resolve from Collectr's own set pages — free, unlike the broken search.
+  let resolved = null;
+  const setName = (url.searchParams.get('set') || '').trim();
+  const cardNo  = (url.searchParams.get('number') || '').trim();
+  const variant = (url.searchParams.get('variant') || 'unlimited').trim();
+  if (!productId && setName && cardNo) {
+    try {
+      resolved = await collectrResolve(env, setName, cardNo, variant);
+      if (resolved) {
+        productId = resolved.productId;
+        if (idKey && env.SYNC_KV) { try { await env.SYNC_KV.put(idKey, productId); } catch (e) {} }
+      }
+    } catch (e) { /* fall through to the search / paste paths */ }
+  }
+  if (!productId && setName && cardNo) {
+    return _jsonResp(200, { found: false, reason: 'not_in_collectr_set_page',
+      note: 'Collectr only renders the first fifteen cards of a set; paste the product link for anything past that.' }, ch);
   }
 
   let searched = false;

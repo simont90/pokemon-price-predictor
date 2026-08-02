@@ -650,6 +650,7 @@ async function init() {
   setupPCOverride();
   setupPsaLink();
   setupPsaPop();
+  setupCollectr();
   setupCertLookup();
   setupCPOverride();
   setupMLinkPicker();
@@ -3163,6 +3164,9 @@ function renderLivePrice(data) {
     pcRow.style.display = 'none';
     const varRow = $('pcVariantRow'); if (varRow) varRow.style.display = 'none';
   }
+
+  // Collectr — resolves itself from set + card number
+  try { ensureCollectrData(selectedCard); renderCollectrRow(); } catch (e) {}
 
   // Collectrics row
   const crRow = $('collectricsRow');
@@ -10232,6 +10236,241 @@ function renderPsaPopOneHave() {
   el.textContent = parts.length ? 'On file — ' + parts.join(' · ') : '';
 }
 
+// ── Collectr ───────────────────────────────────────────────────────────────
+// A second price opinion split by print, and the only dated history the app
+// has — which is what the valuation framework wants behind any "below market"
+// call. Collectr's own search returns fabricated results for every query, so
+// the product link is pasted per card rather than looked up, the same way
+// PriceCharting overrides already work.
+const COLLECTR_IDS_KEY  = 'pkm-collectr-ids-v1';    // cardId -> product id, synced
+const COLLECTR_DATA_KEY = 'pkm-collectr-cache-v1';  // productId -> payload, device-local
+const COLLECTR_TTL_MS   = 86400000;                 // matches the worker's day
+
+function getCollectrIds() {
+  try { return JSON.parse(localStorage.getItem(COLLECTR_IDS_KEY) || '{}'); } catch { return {}; }
+}
+function getCollectrId(cardId) { return getCollectrIds()[cardId] || null; }
+function setCollectrId(cardId, productId) {
+  const m = getCollectrIds();
+  if (productId) m[cardId] = productId; else delete m[cardId];
+  try { localStorage.setItem(COLLECTR_IDS_KEY, JSON.stringify(m)); } catch {}
+}
+function _collectrCache() {
+  try { return JSON.parse(localStorage.getItem(COLLECTR_DATA_KEY) || '{}'); } catch { return {}; }
+}
+function getCollectrData(cardId) {
+  const c = _collectrCache();
+  const pid = getCollectrId(cardId);
+  const hit = (pid && c[pid]) || c[`card:${cardId}`];
+  return hit && hit.data ? hit.data : null;
+}
+
+// Resolution is automatic: the worker matches the card by set and number
+// against Collectr's own set pages, which costs nothing. A pasted link is only
+// needed for cards Collectr does not render on the set page. Every price fetch
+// does spend credits from a small monthly allowance, so a cached payload is
+// reused until it is a day old and `force` is the only way past it.
+async function fetchCollectrData(card, { force = false, variant = 'unlimited' } = {}) {
+  if (!card || !card.i) return null;
+  const pid = getCollectrId(card.i);
+  const cacheKey = pid || `card:${card.i}`;
+  const cache = _collectrCache();
+  const hit = cache[cacheKey];
+  if (!force && hit && Date.now() - (hit.ts || 0) < COLLECTR_TTL_MS) return hit.data;
+
+  const base = typeof getMktWorkerUrl === 'function'
+    ? getMktWorkerUrl() : 'https://pokemon-marketplace.simontariq.workers.dev';
+  const qs = new URLSearchParams({ cardId: card.i });
+  if (pid) {
+    qs.set('productId', pid);
+  } else {
+    const setName = (typeof setsData !== 'undefined' && setsData?.[card.sc]?.name) || '';
+    if (!setName || !card.cn) return null;
+    qs.set('set', setName);
+    qs.set('number', String(card.cn));
+    qs.set('variant', variant);
+  }
+  const r = await fetch(`${base}/collectr?${qs}`);
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d) throw new Error((d && d.error) || 'Collectr lookup failed.');
+  if (d.found === false) {
+    // Cache the miss briefly so a card Collectr does not carry is not retried
+    // on every render.
+    cache[cacheKey] = { ts: Date.now(), data: null, miss: d.reason || 'not_found' };
+    try { localStorage.setItem(COLLECTR_DATA_KEY, JSON.stringify(cache)); } catch {}
+    return null;
+  }
+  if (d.product_id) setCollectrId(card.i, d.product_id);
+  cache[d.product_id || cacheKey] = { ts: Date.now(), data: d };
+  try { localStorage.setItem(COLLECTR_DATA_KEY, JSON.stringify(cache)); } catch {}
+  return d;
+}
+
+// Collectr names a print "1st Edition Holofoil"; the app calls the same thing
+// '1sted'. Matching on the qualifier rather than the whole string keeps the
+// foil wording out of it.
+function collectrPrintFor(data, variant) {
+  if (!data || !data.prints) return null;
+  const names = Object.keys(data.prints);
+  if (!names.length) return null;
+  const want = variant === '1sted' ? /1st\s*edition/i
+             : variant === 'shadowless' ? /shadowless/i
+             : /^(?!.*(1st\s*edition|shadowless)).*$/i;   // Unlimited: neither
+  return names.find(n => want.test(n)) || null;
+}
+
+function collectrPricesFor(data, variant) {
+  const name = collectrPrintFor(data, variant);
+  return name ? { name, prices: data.prints[name] } : null;
+}
+
+// Renders the Collectr row and its price line under the PriceCharting grid.
+const _collectrInFlight = new Set();
+
+// Fetched on view rather than on demand: resolution is free and the price
+// call is cached for a day, so a card costs at most 2 credits daily and only
+// when actually looked at.
+function ensureCollectrData(card) {
+  if (!card || !card.i) return;
+  if (getCollectrData(card.i) || _collectrInFlight.has(card.i)) return;
+  _collectrInFlight.add(card.i);
+  fetchCollectrData(card, { variant: (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited' })
+    .catch(() => null)
+    .finally(() => {
+      _collectrInFlight.delete(card.i);
+      if (selectedCard && selectedCard.i === card.i) {
+        try { renderCollectrRow(); } catch {}
+        try { renderHoldStrategy(card); } catch {}
+      }
+    });
+}
+
+function renderCollectrRow() {
+  const row = document.getElementById('collectrRow');
+  const out = document.getElementById('collectrData');
+  if (!row || !out) return;
+  const card = (typeof selectedCard !== 'undefined') ? selectedCard : null;
+  if (!card) { row.style.display = 'none'; out.style.display = 'none'; return; }
+  row.style.display = '';
+
+  const pid    = getCollectrId(card.i);
+  const status = document.getElementById('collectrStatus');
+  const open   = document.getElementById('collectrOpen');
+  const linkB  = document.getElementById('collectrLinkBtn');
+  const refB   = document.getElementById('collectrRefreshBtn');
+  const rmB    = document.getElementById('collectrRemove');
+
+  if (open) {
+    open.style.display = pid ? '' : 'none';
+    if (pid) open.href = `https://app.getcollectr.com/explore/product/${pid}`;
+  }
+  if (linkB) linkB.textContent = pid ? 'Change link' : 'Link Collectr';
+  if (refB)  refB.style.display = pid ? '' : 'none';
+  if (rmB)   rmB.style.display  = pid ? '' : 'none';
+
+  const data = getCollectrData(card.i);
+  if (!data) {
+    if (status) status.textContent = _collectrInFlight.has(card.i) ? 'looking up…' : 'no Collectr match';
+    out.style.display = 'none';
+    return;
+  }
+  if (status) status.textContent = `${data.card_name || ''} · ${data.set_name || ''}`.trim();
+
+  const variant = (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited';
+  const hit = collectrPricesFor(data, variant);
+  if (!hit) {
+    out.style.display = '';
+    out.innerHTML = `<span class="collectr-none">No Collectr price for this print. It lists: ${
+      Object.keys(data.prints || {}).map(esc).join(', ') || 'nothing'}.</span>`;
+    return;
+  }
+
+  const p = hit.prices;
+  const cell = (label, usd, warn) => usd > 0
+    ? `<div class="lp-cell"><span class="lp-label">${label}</span><span class="lp-val${warn ? ' collectr-doubt' : ''}">${fmtGBP(usd)}</span></div>`
+    : '';
+  const tr = (data.trend || {})[hit.name] || {};
+  const trendBit = t => t ? `<span class="collectr-trend ${t.pct >= 0 ? 'hold-pos' : 'hold-neg'}">${
+    t.pct >= 0 ? '+' : ''}${t.pct}% over ${t.days}d</span>` : '';
+
+  out.style.display = '';
+  out.innerHTML =
+    `<div class="collectr-print">${esc(hit.name)}</div>
+     <div class="live-prices-grid collectr-grid">
+       ${cell('Ungraded', p.raw)}
+       ${cell('PSA 8', p.psa8)}
+       ${cell('PSA 9', p.psa9, true)}
+       ${cell('PSA 10', p.psa10, true)}
+     </div>
+     ${(tr.raw_30d || tr.raw_90d) ? `<div class="collectr-trends">Raw ${trendBit(tr.raw_30d) || '—'} ${
+        tr.raw_90d ? '· 90d ' + trendBit(tr.raw_90d) : ''}</div>` : ''}
+     <div class="collectr-note">Collectr's data above PSA 8 disagrees sharply with PriceCharting on some cards — treat those two as unverified.</div>`;
+}
+
+function setupCollectr() {
+  const linkB  = document.getElementById('collectrLinkBtn');
+  const edit   = document.getElementById('collectrEdit');
+  const input  = document.getElementById('collectrInput');
+  const saveB  = document.getElementById('collectrSave');
+  const cancel = document.getElementById('collectrCancel');
+  const rmB    = document.getElementById('collectrRemove');
+  const refB   = document.getElementById('collectrRefreshBtn');
+  const status = document.getElementById('collectrStatus');
+  if (!linkB || !edit || !input) return;
+
+  const productIdFrom = raw => {
+    try {
+      const u = new URL(raw.trim());
+      if (!u.hostname.endsWith('getcollectr.com')) return null;
+      const m = u.pathname.match(/\/explore\/product\/(\d+)/);
+      return m ? m[1] : null;
+    } catch { return /^\d+$/.test(raw.trim()) ? raw.trim() : null; }
+  };
+
+  linkB.addEventListener('click', () => {
+    if (!selectedCard) return;
+    const opening = edit.style.display === 'none';
+    edit.style.display = opening ? '' : 'none';
+    if (opening) {
+      const pid = getCollectrId(selectedCard.i);
+      input.value = pid ? `https://app.getcollectr.com/explore/product/${pid}` : '';
+      setTimeout(() => input.focus(), 30);
+    }
+  });
+  if (cancel) cancel.addEventListener('click', () => { edit.style.display = 'none'; });
+
+  const doFetch = async (force) => {
+    if (!selectedCard) return;
+    if (status) status.textContent = 'fetching…';
+    try {
+      await fetchCollectrData(selectedCard, { force, variant: (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited' });
+    } catch (e) {
+      if (status) status.textContent = (e && e.message) || 'fetch failed';
+      return;
+    }
+    renderCollectrRow();
+    try { renderHoldStrategy(selectedCard); } catch {}
+  };
+
+  if (saveB) saveB.addEventListener('click', async () => {
+    if (!selectedCard) return;
+    const pid = productIdFrom(input.value || '');
+    if (!pid) { if (status) status.textContent = 'that is not a Collectr product link'; return; }
+    setCollectrId(selectedCard.i, pid);
+    edit.style.display = 'none';
+    renderCollectrRow();
+    await doFetch(true);
+  });
+  if (rmB) rmB.addEventListener('click', () => {
+    if (!selectedCard) return;
+    setCollectrId(selectedCard.i, null);
+    edit.style.display = 'none';
+    renderCollectrRow();
+    try { renderHoldStrategy(selectedCard); } catch {}
+  });
+  if (refB) refB.addEventListener('click', () => doFetch(true));
+}
+
 function setupPsaPop() {
   const btn     = document.getElementById('psaPopBtn');
   const edit    = document.getElementById('psaPopEdit');
@@ -12602,6 +12841,22 @@ function _liveGradeUSD(lp, g) {
   if (g === 10) return lp.pcPsa10 > 0 ? lp.pcPsa10 : 0;
   if (g === 9)  return lp.pcPsa9 > 0 ? lp.pcPsa9 : (lp.pcGrade9 > 0 ? lp.pcGrade9 : 0);
   const v = lp['pcPsa' + g];
+  return v > 0 ? v : 0;
+}
+
+// Collectr covers PSA 1–8 on cards where PriceCharting tracks only the top of
+// the ladder, which is most of the low grades the vintage work cares about. It
+// fills gaps rather than overriding: PriceCharting stays authoritative where it
+// has a figure, and PSA 9/10 are left alone because Collectr's numbers there
+// disagree badly enough not to be trusted — Unlimited Fossil Gengar comes back
+// at $99.99 for PSA 9.
+const COLLECTR_TRUSTED_MAX_GRADE = 8;
+function _collectrGradeUSD(card, g, variant) {
+  if (!card || !(g >= 1 && g <= COLLECTR_TRUSTED_MAX_GRADE)) return 0;
+  const data = (typeof getCollectrData === 'function') ? getCollectrData(card.i) : null;
+  if (!data) return 0;
+  const hit = collectrPricesFor(data, variant || 'unlimited');
+  const v = hit && hit.prices ? hit.prices['psa' + g] : 0;
   return v > 0 ? v : 0;
 }
 
@@ -16515,9 +16770,12 @@ function renderHoldStrategy(card) {
     // premium. On Shadowless Base Set Mewtwo it valued a PSA 3 at £415 against
     // a corrected £49, and reported the gap between the two as an 854% return.
     const _ovrGBP = (getHoldOverridesForCard(overrideIdFor(card, _shownPrint)) || {})['psa' + g];
+    const _collectrUSD = _collectrGradeUSD(card, g, _shownPrint);
     const baseUSD = _ovrGBP > 0 ? _ovrGBP / fx
                   : liveUSD_r > 0 ? liveUSD_r
+                  : _collectrUSD > 0 ? _collectrUSD
                   : estimateGradePrice(card, g, psa10Price);
+    const _fromCollectr = !(_ovrGBP > 0) && !(liveUSD_r > 0) && _collectrUSD > 0;
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
     // For owned slabs: cost basis is what was paid; projections still anchor to current market.
     const today = isOwnedSlab ? slabAcq.costGBP / fx : baseUSD + slabShipGBP / fx;
@@ -16529,7 +16787,7 @@ function renderHoldStrategy(card) {
     const label = isOwnedSlab ? `Keep PSA ${g}` : `Buy PSA ${g}`;
     const slabMarketGBP = isOwnedSlab ? usdToGbp(baseUSD) : null;
     const slabGainGBP = isOwnedSlab ? (slabMarketGBP - slabAcq.costGBP) : null;
-    return { label, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi, annualRate, isOwnedSlab, slabMarketGBP, slabGainGBP };
+    return { label, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi, annualRate, isOwnedSlab, slabMarketGBP, slabGainGBP, fromCollectr: _fromCollectr };
   });
 
   // Labels and descs for each strategy tile
@@ -17110,7 +17368,8 @@ function renderHoldStrategy(card) {
           <span class="hold-row-cost">${entryCtx}${waitStr}</span>
           ${maxBuyStr}
           <span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>
-          ${annualRateStr}${liqBadge}${gradeProbStr}${lossStr}${_holdPopBadge(_holdCachedPop, s.grade)}
+          ${annualRateStr}${liqBadge}${gradeProbStr}${lossStr}${_holdPopBadge(_holdCachedPop, s.grade)}${
+            s.fromCollectr ? '<span class="hold-row-src" title="PriceCharting has no price at this grade — this one is Collectr\'s">via Collectr</span>' : ''}
         </div>
         <div class="hold-row-right">
           <div class="hold-row-roi ${_roiArrCls(s.roi)}">${_roiArrow(s.roi)} ${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</div>
@@ -25607,6 +25866,7 @@ const SYNC_KEYS = [
   'pkm-vintage-v1',              // Vintage page targets (WOTC-era PSA hunt list)
   'pkm-dupe-dismissed-v1',        // Dismissed duplicate / counterpart pairs
   'pkm-price-seen-v1',           // Ever-fetched card IDs (persists across cache evictions)
+  'pkm-collectr-ids-v1',         // Collectr product id per card (resolution is free; keep it)
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';
