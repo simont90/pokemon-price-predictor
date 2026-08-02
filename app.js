@@ -779,6 +779,14 @@ function getCharacterMultiplier(cardName) {
 
 // ---- Get Current Price (live or fallback to static) ----
 function getCurrentPrice(card) {
+  // Collectr first when it has an ungraded price for the print in view. It
+  // takes its figures from PSA sales directly, which tracks the market closer
+  // than the blend of PriceCharting and TCGPlayer sitting below — on Fossil
+  // Gengar that is $211 against a blended $353. Only the raw price is taken
+  // this way; graded figures are resolved separately.
+  const _crRaw = (typeof collectrRawUSD === 'function') ? collectrRawUSD(card) : 0;
+  if (_crRaw > 0) return _crRaw;
+
   // If we have live price data for the selected card, use it
   if (livePrice && selectedCard && card.i === selectedCard.i) {
     // Midpoint when both PC and TCGPlayer have prices (computed inline so stale cache still benefits)
@@ -2942,6 +2950,8 @@ window.switchMarketPCVariant = async function(variant) {
   if (variant === 'unlimited') {
     _livePriceVariant = null;
     if (_lastLiveData) _applyPCCells(_lastLiveData);
+    try { renderCollectrRow(); } catch {}
+    try { _refreshLiveHeadline(); } catch {}
     if (typeof renderHoldStrategy === 'function') try { renderHoldStrategy(selectedCard); } catch {}
     return;
   }
@@ -2981,8 +2991,28 @@ window.switchMarketPCVariant = async function(variant) {
   _applyPCCells(merged, varLabel + ' · ' + (selectedCard.n || ''));
   // Feed variant prices into Hold Strategy so PSA tiles reflect 1st Ed / Shadowless pricing
   _livePriceVariant = merged;
+  // The headline and the Collectr row are both per print, so they move too.
+  try { renderCollectrRow(); } catch {}
+  try { _refreshLiveHeadline(); } catch {}
   if (typeof renderHoldStrategy === 'function') try { renderHoldStrategy(selectedCard); } catch {}
 };
+
+// Repaints just the big Live Market Price figure for the print in view.
+// Called on a print switch, where a full re-render would refetch prices.
+function _refreshLiveHeadline() {
+  const el = document.getElementById('liveMainPrice');
+  if (!el || !selectedCard) return;
+  const usd = (typeof collectrRawUSD === 'function') ? collectrRawUSD(selectedCard) : 0;
+  const lp  = _livePriceVariant || livePrice || getCachedPrice(selectedCard.i) || {};
+  const mid = (lp.pcUngraded > 0 && lp.tcgMarket > 0) ? (lp.pcUngraded + lp.tcgMarket) / 2 : 0;
+  const price = usd > 0 ? usd
+              : mid > 0 ? mid
+              : (lp.pcUngraded || lp.market || lp.mid || 0);
+  el.textContent = price > 0 ? fmtGBP(price) : '—';
+  const sub = document.getElementById('liveMainUSD');
+  if (sub) sub.textContent = price > 0
+    ? fmtUSD(price) + (usd > 0 ? ' · Collectr' : mid > 0 ? ' · PC & TCG avg' : '') : '';
+}
 
 // Render live pricing panel
 function renderLivePrice(data) {
@@ -3003,15 +3033,22 @@ function renderLivePrice(data) {
   const _pcTcgMid = (data.pcUngraded > 0 && data.tcgMarket > 0)
     ? (data.pcUngraded + data.tcgMarket) / 2
     : 0;
-  const isComposite = _pcTcgMid > 0;
-  const primaryPrice = isComposite
-    ? _pcTcgMid
-    : (data.pcUngraded > 0)
-      ? data.pcUngraded
-      : (data.market || data.mid || data.cmTrend || data.cmAvg7 || 0);
+  // Collectr's ungraded figure leads when it has one — it follows PSA sales
+  // rather than blending listings, and it is quoted per print, so switching
+  // between Unlimited and 1st Edition moves this number as it should.
+  const _crRawUSD = (typeof collectrRawUSD === 'function' && selectedCard)
+    ? collectrRawUSD(selectedCard) : 0;
+  const isComposite = !(_crRawUSD > 0) && _pcTcgMid > 0;
+  const primaryPrice = _crRawUSD > 0
+    ? _crRawUSD
+    : isComposite
+      ? _pcTcgMid
+      : (data.pcUngraded > 0)
+        ? data.pcUngraded
+        : (data.market || data.mid || data.cmTrend || data.cmAvg7 || 0);
   $('liveMainPrice').textContent = primaryPrice > 0 ? fmtGBP(primaryPrice) : '—';
   $('liveMainUSD').textContent = primaryPrice > 0
-    ? fmtUSD(primaryPrice) + (isComposite ? ' · PC & TCG avg' : '')
+    ? fmtUSD(primaryPrice) + (_crRawUSD > 0 ? ' · Collectr' : isComposite ? ' · PC & TCG avg' : '')
     : '';
 
   // Comparison to static price
@@ -10304,6 +10341,20 @@ async function fetchCollectrData(card, { force = false, variant = 'unlimited' } 
   cache[d.product_id || cacheKey] = { ts: Date.now(), data: d };
   try { localStorage.setItem(COLLECTR_DATA_KEY, JSON.stringify(cache)); } catch {}
   return d;
+}
+
+// The ungraded price for whichever print is in view, in USD like every other
+// price the model handles. Returns 0 rather than null so callers can treat it
+// as "no figure" without a special case.
+function collectrRawUSD(card) {
+  if (!card || !card.i) return 0;
+  const data = getCollectrData(card.i);
+  if (!data) return 0;
+  const variant = (typeof selectedCard !== 'undefined' && selectedCard && selectedCard.i === card.i
+                   && typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited';
+  const hit = collectrPricesFor(data, variant) || collectrPricesFor(data, 'unlimited');
+  const v = hit && hit.prices ? hit.prices.raw : 0;
+  return v > 0 ? v : 0;
 }
 
 // Collectr names a print "1st Edition Holofoil"; the app calls the same thing

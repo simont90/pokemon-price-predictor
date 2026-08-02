@@ -2559,6 +2559,27 @@ function parseCollectrResponse(body) {
     if (p != null) printOf('default').raw = p;
   }
 
+  // A grade ladder should not fall as the grade rises. Where it does by a wide
+  // margin the figure is a placeholder rather than a price — Unlimited Fossil
+  // Gengar quotes PSA 9 at $99.99 against $341 for PSA 8. Those are dropped and
+  // named, so the rest of the ladder stays usable instead of the whole top end
+  // being distrusted. A little noise is tolerated; a collapse is not.
+  const suspect = [];
+  const LADDER = ['psa1', 'psa1_5', 'psa2', 'psa3', 'psa4', 'psa5', 'psa6', 'psa7', 'psa8', 'psa9', 'psa10'];
+  for (const [printName, p] of Object.entries(prints)) {
+    let floor = 0;
+    for (const key of LADDER) {
+      const v = p[key];
+      if (!(v > 0)) continue;
+      if (floor > 0 && v < floor * 0.6) {
+        suspect.push({ print: printName, grade: key, price: v, below: floor });
+        delete p[key];
+        continue;
+      }
+      if (v > floor) floor = v;
+    }
+  }
+
   const price_history = (Array.isArray(d.price_history) ? d.price_history : [])
     .map(h => {
       const id = parseInt(h.grade_id, 10);
@@ -2579,6 +2600,7 @@ function parseCollectrResponse(body) {
     currency: 'USD',
     prints,
     price_history,
+    suspect,
   };
 }
 
