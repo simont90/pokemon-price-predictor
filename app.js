@@ -16503,7 +16503,10 @@ function renderHoldStrategy(card) {
   // price for the matching strategy row(s) but leave 5yr targets on the model's
   // projection — that way ROI honestly reflects "I paid £X, here's what the
   // model says it'll be worth."
-  if (typeof applyHoldOverrides === 'function') applyHoldOverrides(card, strategies, fx, gradingFeeUSD);
+  if (typeof applyHoldOverrides === 'function') applyHoldOverrides(card, strategies, fx, gradingFeeUSD, {
+    gamble: gradingFeeUSD + gradingMaterialsUSD,
+    ace:    aceFeeUSD_r   + gradingMaterialsUSD,
+  });
 
   // When an acquisition cost is recorded but no manual override is set, surface
   // the live/current market price as "Market now" on the raw tile so the user
@@ -24778,7 +24781,10 @@ function setHoldOverrideNA(cardId, gradeKey, isNA) {
 //   Has acq cost: override is "current market" only — profit/ROI stay on acq cost basis.
 //     → "I bought at £10, it's now worth £15, project from there."
 //     Surfaces gain-so-far (£10→£15) as a sub-row without changing the ROI denominator.
-function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
+// `addOnUSD` maps a strategy key to the cost stacked on top of the raw price —
+// grading or slabbing fees plus materials. Without it an overridden raw only
+// reached the rows that hard-coded their own add-on.
+function applyHoldOverrides(card, strategies, fx, gradingFeeUSD, addOnUSD) {
   if (!card || !card.i || !Array.isArray(strategies)) return;
   // Read the print the tiles are actually showing.
   const overrides = getHoldOverridesForCard(overrideIdFor(card, _holdStratVariant));
@@ -24792,7 +24798,12 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
   // The "gamble" (Buy Raw + Grade) row buys raw upfront, so it shares the raw override.
   // Every graded tier can be overridden, not just 7–10 — low-grade vintage is
   // exactly where the ratio estimate is least reliable.
-  const sourceKey = { raw: 'raw', gamble: 'raw' };
+  // Buying raw and slabbing it with ACE starts from the same raw card as the
+  // other two raw routes, so it shares the raw override. Missing here, the ACE
+  // row kept the un-corrected raw and came out cheaper than the raw row it is
+  // built on — a slabbed copy priced below the loose card.
+  const sourceKey = { raw: 'raw', gamble: 'raw', ace: 'raw' };
+  const addOns = addOnUSD || { gamble: gradingFeeUSD };
   for (let g = 1; g <= 10; g++) sourceKey['psa' + g] = 'psa' + g;
   strategies.forEach(s => {
     const ok = sourceKey[s.key];
@@ -24821,11 +24832,7 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD) {
     // No acq cost recorded: override replaces the buy-in price and recomputes ROI.
     // The override is treated as an all-in price (listing + shipping already included),
     // so slabShipGBP is intentionally NOT added here.
-    if (s.key === 'gamble') {
-      s.today = usd + gradingFeeUSD;
-    } else {
-      s.today = usd;
-    }
+    s.today = usd + (addOns[s.key] || 0);
     s.slabShipGBP = 0; // suppress the "Est. UK shipping" sub-row — already in the override
     s.profit = s.yr5 - s.today;
     s.roi = s.today > 0 ? (s.profit / s.today) * 100 : 0;
