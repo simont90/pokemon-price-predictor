@@ -16595,6 +16595,52 @@ function renderHoldStrategy(card) {
     ace:    aceFeeUSD_r   + gradingMaterialsUSD,
   });
 
+  // ── Round trip ───────────────────────────────────────────────────────────
+  // Profit was card value against future card value: neither end was a price
+  // anyone transacts at. What matters is the money that actually leaves and
+  // returns — you pay the buyer fee and the postage going in, and the seller's
+  // 12.8% comes off on the way out. On the Shadowless PSA 3 that is the
+  // difference between a headline +43% and the truth.
+  //
+  // The buyer fee applies to the card being bought, not to a grading fee paid
+  // to PSA, so the grade and slab routes only gross up their raw portion.
+  strategies.forEach(s => {
+    if (s.na) return;
+    const todayGBP = s.today * fx;
+    const yr5GBP   = s.yr5 * fx;
+    if (!(todayGBP > 0) || !(yr5GBP > 0)) return;
+
+    // Already yours: the money went out at a price you know, with no eBay
+    // purchase to gross up.
+    const alreadyHeld = !!(s.isOwnedSlab || s.acqCost);
+    // An un-overridden all-in already carries postage; an override replaces it
+    // with a flat figure and zeroes the shipping line, so postage has to be put
+    // back. Adding it in both cases counted it twice.
+    const gradeNum   = s.key && s.key.startsWith('psa') ? parseInt(s.key.slice(3), 10) : null;
+    const shipIfNeeded = !s.overridden ? 0
+      : gradeNum ? estimateUkSlabShipping(todayGBP) : UK_RAW_SHIPPING_GBP;
+
+    let buyGBP;
+    if (alreadyHeld) {
+      buyGBP = todayGBP;
+    } else if (s.key === 'gamble' || s.key === 'ace') {
+      // Grading and slabbing fees go straight to PSA or ACE — no eBay buyer
+      // fee on those, only on the card itself.
+      const feesGBP = ((s.key === 'gamble' ? gradingFeeUSD + gradingMaterialsUSD
+                                           : aceFeeUSD_r  + gradingMaterialsUSD)) * fx;
+      const cardGBP = Math.max(0, todayGBP - feesGBP);
+      buyGBP = ebayCheckoutMax(cardGBP, s.overridden ? UK_RAW_SHIPPING_GBP : 0) + feesGBP;
+    } else {
+      buyGBP = ebayCheckoutMax(todayGBP, shipIfNeeded);
+    }
+
+    const netSaleGBP = yr5GBP * (1 - EBAY_FEE_UK) - EBAY_FIXED_FEE;
+    s.buyAllInGBP = buyGBP;
+    s.netSaleGBP  = netSaleGBP;
+    s.profit = (netSaleGBP - buyGBP) / fx;              // display converts back
+    s.roi    = buyGBP > 0 ? ((netSaleGBP - buyGBP) / buyGBP) * 100 : 0;
+  });
+
   // When an acquisition cost is recorded but no manual override is set, surface
   // the live/current market price as "Market now" on the raw tile so the user
   // can see how much the card has grown since purchase — same display as the
@@ -17026,12 +17072,11 @@ function renderHoldStrategy(card) {
     // figure is what the card itself is worth; buying it costs that plus the
     // buyer fee and postage, so the ceiling sits above the all-in, not below.
     let maxBuyStr = '';
-    if (!s.isOwnedSlab && !s.acqCost && todayGBP_tile > 0) {
-      const shipGBP = gradeNum ? estimateUkSlabShipping(todayGBP_tile) : UK_RAW_SHIPPING_GBP;
+    if (!s.isOwnedSlab && !s.acqCost && s.buyAllInGBP > 0) {
       const feeGBP  = ebayBuyerFee(todayGBP_tile);
-      const ceilGBP = ebayCheckoutMax(todayGBP_tile, shipGBP);
       maxBuyStr = `<span class="hold-row-maxbuy"
-        title="${fmtGBPDirect(todayGBP_tile)} card + ${fmtGBPDirect(feeGBP)} Buyer Protection + ${fmtGBPDirect(shipGBP)} postage. The fee sits inside the asking price on private listings, but sellers price it back in, so it is yours either way. The seller's 12.8% final value fee is not.">Max buy ${fmtGBPDirect(ceilGBP)} <span class="hold-row-maxbuy-note">inc. fees + postage</span></span>`;
+        title="${fmtGBPDirect(todayGBP_tile)} all-in + ${fmtGBPDirect(feeGBP)} Buyer Protection${
+          s.buyAllInGBP > todayGBP_tile + feeGBP + 0.01 ? ' + postage' : ''}. The fee sits inside the asking price on private listings, but sellers price it back in, so it is yours either way. Profit is measured from this figure to what an eBay sale would leave you.">Max buy ${fmtGBPDirect(s.buyAllInGBP)} <span class="hold-row-maxbuy-note">inc. fees + postage</span></span>`;
     }
 
     // Per-grade annual growth rate label (always shown for PSA grade tiles)
@@ -17071,7 +17116,8 @@ function renderHoldStrategy(card) {
           <div class="hold-row-roi ${_roiArrCls(s.roi)}">${_roiArrow(s.roi)} ${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</div>
           <div class="hold-row-profit ${s.profit >= 0 ? 'hold-pos' : 'hold-neg'}"
                title="Gross of any selling costs, measured against ${s.isOwnedSlab ? 'the price paid' : 'the all-in cost'}.">Profit ${profitSign}${fmtGBP(Math.abs(s.profit))}</div>
-          <div class="hold-row-target">5yr ${fmtGBP(s.yr5)}</div>
+          <div class="hold-row-target">5yr ${fmtGBP(s.yr5)}${
+            s.netSaleGBP > 0 ? ` <span class="hold-row-maxbuy-note">· nets ${fmtGBPDirect(s.netSaleGBP)}</span>` : ''}</div>
         </div>
       </div>
     </div>`;
