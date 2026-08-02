@@ -16431,7 +16431,17 @@ function renderHoldStrategy(card) {
     const _shownPrint  = _holdVariantEligible ? _holdStratVariant : 'unlimited';
     const isOwnedSlab = slabAcq && slabAcq.grade === g && (slabAcq.variant || 'unlimited') === _shownPrint;
     const liveUSD_r = _liveGradeUSD(_rhsLp, g);
-    const baseUSD = liveUSD_r > 0 ? liveUSD_r : estimateGradePrice(card, g, psa10Price);
+    // An override is the user's correction of what this grade actually clears
+    // at, so it is the best market figure available and the projection has to
+    // grow from it. Left out, growth was projected from the ratio estimate
+    // instead — and that estimate is a fixed percentage of the PSA 10 price,
+    // which breaks down on cards whose PSA 10 carries an extreme scarcity
+    // premium. On Shadowless Base Set Mewtwo it valued a PSA 3 at £415 against
+    // a corrected £49, and reported the gap between the two as an 854% return.
+    const _ovrGBP = (getHoldOverridesForCard(overrideIdFor(card, _shownPrint)) || {})['psa' + g];
+    const baseUSD = _ovrGBP > 0 ? _ovrGBP / fx
+                  : liveUSD_r > 0 ? liveUSD_r
+                  : estimateGradePrice(card, g, psa10Price);
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
     // For owned slabs: cost basis is what was paid; projections still anchor to current market.
     const today = isOwnedSlab ? slabAcq.costGBP / fx : baseUSD + slabShipGBP / fx;
