@@ -16185,14 +16185,21 @@ function renderHoldStrategy(card) {
   if (!section || !card) return;
   const anchor = getPsa10Anchor(card);
   let psa10Price = anchor.usd;
-  const rawUSD = getCurrentPrice(card);
+  let rawUSD = getCurrentPrice(card);
 
   // Variant override: if a non-Unlimited variant is selected and the card is eligible,
   // swap psa10Price with the cached variant PSA 10 price.
   const _holdVariantEligible = card.lang !== 'JP' && (_SO_FIRST_ED_SETS.has(card.sc) || _HVG_SHADOWLESS_SETS.has(card.sc));
   if (_holdVariantEligible && _holdStratVariant !== 'unlimited') {
     const _vd = _holdStratVariant === '1sted' ? _getCached1edPrice(card.i) : _getCachedShadowlessPrice(card.i);
-    if (_vd?.pcPsa10 > 0) psa10Price = _vd.pcPsa10;
+    if (_vd?.pcPsa10 > 0) {
+      psa10Price = _vd.pcPsa10;
+      // The raw row has to move to this print as well. Left on the Unlimited
+      // raw it projected the wrong card entirely: a Shadowless Base Mewtwo
+      // entered at its own raw price but growing from the Unlimited one, which
+      // showed as an £198 buy with a £30 five-year target and an −85% return.
+      if (_vd.pcUngraded > 0) rawUSD = _vd.pcUngraded;
+    }
     else _holdStratVariant = 'unlimited'; // fallback if no data
   }
 
