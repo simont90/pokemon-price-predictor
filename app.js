@@ -15428,8 +15428,11 @@ function estimateUkSlabShipping(slabValueGBP) {
   return 25;
 }
 const OPPORTUNITY_COST_ANNUAL = 0.06; // pre-tax return you could earn elsewhere while capital is locked
-// eBay UK final value fee for Trading Cards (inc. managed payments).
-const EBAY_FEE_UK = 0.129;
+// eBay UK final value fee, private sellers: 12.8% of the total sale amount
+// (item price, postage and taxes) plus 30p per order. This is the seller's
+// cost — a buyer never pays it.
+// https://www.ebay.co.uk/help/selling/fees-credits-invoices/fees-private-sellers-activated-managed-payments?id=4822
+const EBAY_FEE_UK = 0.128;
 // Sell-side friction used by the hold strategy — eBay UK FVF since that's the
 // primary exit venue. Previously 10%; updated to match actual eBay rate so
 // 5yr exit values and ROI projections are realistic for eBay sellers.
@@ -15443,6 +15446,30 @@ const BUY_SELL_FRICTION = EBAY_FEE_UK;
 // where fees genuinely decide something, such as flip-versus-crack EV.
 const HOLD_PROJECTION_FRICTION = 0;
 const EBAY_FIXED_FEE = 0.30;        // £0.30 per-transaction eBay UK charge
+
+// ── What a buyer actually hands over on eBay UK ────────────────────────────
+// The 12.8% + 30p final value fee above is the seller's cost. The buyer pays
+// the Buyer Protection fee, which is tiered rather than flat:
+//
+//   £0.10 per item, plus 4% up to £300, plus 2% of £300–£4,000, nothing above
+//
+// A ceiling on what to pay is therefore the checkout total — the card, plus
+// that fee, plus postage — which sits above the card's value, not below it.
+// https://www.ebay.co.uk/help/buying/paying-items/buyer-protection-fee?id=5594
+const EBAY_BUYER_FEE_FIXED = 0.10;
+function ebayBuyerFee(priceGBP) {
+  if (!(priceGBP > 0)) return 0;
+  let fee = EBAY_BUYER_FEE_FIXED;
+  fee += Math.min(priceGBP, 300) * 0.04;
+  if (priceGBP > 300) fee += (Math.min(priceGBP, 4000) - 300) * 0.02;
+  return fee;
+}
+
+// The most this is worth paying at checkout for a card worth `valueGBP`.
+function ebayCheckoutMax(valueGBP, shippingGBP) {
+  if (!(valueGBP > 0)) return 0;
+  return valueGBP + ebayBuyerFee(valueGBP) + (shippingGBP || 0);
+}
 // Expected premium of eBay listing prices over raw market (PriceCharting / CM).
 // Sellers price up to recover the ~13% fee and earn a small margin — 15% is a
 // conservative midpoint estimate based on observed UK single-card listings.
@@ -16991,21 +17018,16 @@ function renderHoldStrategy(card) {
       liqBadge = `<span class="liq-badge liq-${liq}" title="Pop ${gradePop ?? '–'} at this grade, ${gradeSales ?? 'no'} sales in 90 days">${liqText}</span>`;
     }
 
-    // Max buy: the most you can pay today and still not lose money on the
-    // five-year exit. The projections are gross because the exit route is not
-    // decided, but a ceiling on what to pay has to assume you sell somewhere
-    // that charges — you pay that fee, not the seller. Anything above this
-    // line is a hold that needs the card to beat its own forecast just to get
-    // your money back.
+    // Max buy: the most this is worth paying at an eBay checkout. The all-in
+    // figure is what the card itself is worth; buying it costs that plus the
+    // buyer fee and postage, so the ceiling sits above the all-in, not below.
     let maxBuyStr = '';
-    if (!s.isOwnedSlab && !s.acqCost && s.yr5 > 0) {
-      const netGBP = (s.yr5 * fx) * (1 - EBAY_FEE_UK) - EBAY_FIXED_FEE;
-      if (netGBP > 0) {
-        const over = todayGBP_tile > netGBP;
-        maxBuyStr = `<span class="hold-row-maxbuy${over ? ' hold-row-maxbuy-over' : ''}"
-          title="Highest entry price that still breaks even after ${(EBAY_FEE_UK * 100).toFixed(1)}% selling fees on the ${fmtGBPDirect(s.yr5 * fx)} five-year figure.">Max buy ${fmtGBPDirect(netGBP)}${
-            over ? ' · you are above it' : ''}</span>`;
-      }
+    if (!s.isOwnedSlab && !s.acqCost && todayGBP_tile > 0) {
+      const shipGBP = gradeNum ? estimateUkSlabShipping(todayGBP_tile) : UK_RAW_SHIPPING_GBP;
+      const feeGBP  = ebayBuyerFee(todayGBP_tile);
+      const ceilGBP = ebayCheckoutMax(todayGBP_tile, shipGBP);
+      maxBuyStr = `<span class="hold-row-maxbuy"
+        title="${fmtGBPDirect(todayGBP_tile)} card + ${fmtGBPDirect(feeGBP)} eBay buyer fee + ${fmtGBPDirect(shipGBP)} postage. The seller's 12.8% final value fee is their cost, not yours.">Max buy ${fmtGBPDirect(ceilGBP)} <span class="hold-row-maxbuy-note">inc. fees + postage</span></span>`;
     }
 
     // Per-grade annual growth rate label (always shown for PSA grade tiles)
