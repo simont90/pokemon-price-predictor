@@ -16192,6 +16192,11 @@ function renderHoldStrategy(card) {
   const _holdVariantEligible = card.lang !== 'JP' && (_SO_FIRST_ED_SETS.has(card.sc) || _HVG_SHADOWLESS_SETS.has(card.sc));
   if (_holdVariantEligible && _holdStratVariant !== 'unlimited') {
     const _vd = _holdStratVariant === '1sted' ? _getCached1edPrice(card.i) : _getCachedShadowlessPrice(card.i);
+    // A print priced by hand is selectable on that basis alone. Requiring a
+    // fetched price here meant a row could be shown from an override and then
+    // bounce straight back to Unlimited when tapped, which reads as the row
+    // simply not being clickable.
+    const _vOvr = (getHoldOverridesForCard(overrideIdFor(card, _holdStratVariant)) || {}).psa10;
     if (_vd?.pcPsa10 > 0) {
       psa10Price = _vd.pcPsa10;
       // The raw row has to move to this print as well. Left on the Unlimited
@@ -16200,7 +16205,14 @@ function renderHoldStrategy(card) {
       // showed as an £198 buy with a £30 five-year target and an −85% return.
       if (_vd.pcUngraded > 0) rawUSD = _vd.pcUngraded;
     }
-    else _holdStratVariant = 'unlimited'; // fallback if no data
+    else if (_vOvr > 0) {
+      // `fx` is declared further down this function, so compute the rate here.
+      const _fxNow = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
+      psa10Price = _vOvr / _fxNow;
+      const _rawOvr = (getHoldOverridesForCard(overrideIdFor(card, _holdStratVariant)) || {}).raw;
+      if (_rawOvr > 0) rawUSD = _rawOvr / _fxNow;
+    }
+    else _holdStratVariant = 'unlimited'; // fallback if no data at all
   }
 
   // Need both a raw and a PSA 10 anchor to do the comparison.
@@ -25045,8 +25057,19 @@ function renderHoldOverridePanel(card) {
   const summaryNote = activeCount > 0
     ? `<span class="ho-active">${activeCount} active override${activeCount === 1 ? '' : 's'}</span>`
     : `<span class="ho-hint">${_hasLiveRaw ? 'Using live price · override to correct eBay' : 'Override fair value with actual eBay prices'}</span>`;
+  // The panel is rebuilt on every redraw of the Hold Strategy, including a tap
+  // on the variant rows. Deriving "open" from the override count each time
+  // meant any card with overrides re-opened the panel on every such redraw, so
+  // switching print looked like it was trying to open the override tool. Carry
+  // the state the user actually left it in; fall back to the override count
+  // only the first time this card is drawn.
+  const _prevDetails = host.querySelector('.ho-details');
+  const _sameCard = host.dataset.hoCard === card.i;
+  const _openNow = _hoKeepOpen
+    || (_sameCard && _prevDetails ? _prevDetails.open : activeCount > 0);
+  host.dataset.hoCard = card.i;
   host.innerHTML = `
-    <details class="ho-details"${(activeCount > 0 || _hoKeepOpen) ? ' open' : ''}>
+    <details class="ho-details"${_openNow ? ' open' : ''}>
       <summary class="ho-summary">
         <span class="ho-label"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg> Market price override</span>
         ${summaryNote}
@@ -25099,6 +25122,10 @@ function renderHoldOverridePanel(card) {
       </div>
     </details>
   `;
+  // One-shot: it exists so the panel survives its own Save, not so it reopens
+  // on every later redraw. Left set, any re-render — including switching print
+  // in the variant rows — sprang the panel open again.
+  _hoKeepOpen = false;
   _hoWirePop(host, card);
   // Wire input changes — debounce a touch so typing isn't laggy.
   let debounceT = null;
