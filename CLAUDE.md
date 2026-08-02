@@ -137,9 +137,22 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
 - `GET /health` → `ok` (used by uptime probes).
 - `GET /search?q=&max=&fx=&fxEur=&grade=` → fanned-out eBay UK / eBay US /
   Cardmarket search, returns ranked deals. Cached 5 min at the edge.
-- `GET /collectr?cardId=&q=` → Collectr prices by grade plus dated history and
-  30/90-day trend. `productId=` skips the search; `url=` accepts a pasted
-  app.getcollectr.com product link. Credit-metered — see `COLLECTR_TOKEN`.
+- `GET /collectr?productId=` or `?url=` → Collectr prices split by print, PSA
+  grade prices, dated history and 30/90-day trend. Credit-metered — see
+  `COLLECTR_TOKEN`. **Do not use `?q=`**: the wrapper's `search_products`
+  endpoint is broken — it returns the same fabricated 12 rows for any query
+  (verified with a control query), ignores `limit`, and every `image_url` is a
+  YouTube link. Product ids must come from a pasted Collectr URL.
+  - `grade_id` 1–11 = PSA 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10 in order; 52 =
+    ungraded. Ids above 11 are other grading companies and are ignored.
+    Established by matching against PriceCharting's labelled rows on Fossil
+    Gengar #5 — id 3 = $157.50 against "Grade 2" $157.50, exact.
+  - Prices are USD, not GBP. There is no currency field; the exact cent match
+    with PriceCharting settles it.
+  - `product_sub_type` is the print ("1st Edition Holofoil"), not the grade.
+  - Data quality is patchy above PSA 8: Unlimited Fossil Gengar returns
+    psa9 = $99.99 against PriceCharting's $700.25. Treat the top of the ladder
+    as unverified.
 - `GET /sync?key=` → returns stored snapshot JSON or `{data:null,ts:0}`.
 - `PUT /sync?key=` → stores raw body (must be valid JSON, ≤ 5 MB).
 - `DELETE /sync?key=` → deletes stored snapshot.

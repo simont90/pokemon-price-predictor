@@ -1,12 +1,13 @@
 // Smoke test for the /collectr worker route.
-// Run with: node test-collectr.mjs
-// Requires COLLECTR_TOKEN env var (or tests the token-missing error path).
-//
-// The test mocks globalThis.fetch so no real network calls are made.
+// The pure helpers are inlined from worker-paste-this.js — keep them in step.
+// Fixtures are real responses captured from the API, not invented shapes.
+import assert from 'node:assert';
 
-import assert from 'node:assert/strict';
-
-// ─── Inline the pure helpers from worker-paste-this.js ───────────────────────
+const COLLECTR_PSA_GRADE = {
+  1: 'psa1', 2: 'psa1_5', 3: 'psa2',  4: 'psa3', 5: 'psa4', 6: 'psa5',
+  7: 'psa6', 8: 'psa7',   9: 'psa8', 10: 'psa9', 11: 'psa10',
+};
+const COLLECTR_RAW_GRADE_ID = 52;
 
 function extractCollectrProductId(rawUrl) {
   try {
@@ -28,129 +29,49 @@ function extractNumericPrice(v) {
 }
 
 function parseCollectrResponse(body) {
-  const d = body?.data ?? body;
+  const d = body?.data?.data ?? body?.data ?? body;
   if (!d) return null;
-  const current_prices = {};
-  const rawPrice = extractNumericPrice(d.market_price ?? d.ungraded_market_price);
-  if (rawPrice != null) current_prices.raw = rawPrice;
-  if (Array.isArray(d.ungraded_sub_types)) {
-    const rawEntry = d.ungraded_sub_types[0];
-    if (rawEntry) {
-      const p = extractNumericPrice(rawEntry.market_price ?? rawEntry.price);
-      if (p != null) current_prices.raw = p;
-    }
+  const prints = {};
+  const printOf = name => (prints[name] ||= {});
+  for (const u of (d.ungraded_sub_types || [])) {
+    const p = extractNumericPrice(u.market_price ?? u.price);
+    if (p != null) printOf(u.product_sub_type || 'default').raw = p;
   }
-  if (Array.isArray(d.graded_sub_types)) {
-    for (const g of d.graded_sub_types) {
-      const label = (g.product_sub_type || g.name || '').toLowerCase();
-      const p = extractNumericPrice(g.market_price ?? g.price);
-      if (p == null) continue;
-      if (label.includes('psa 10') || label.includes('psa10')) current_prices.psa10 = p;
-      else if (label.includes('psa 9') || label.includes('psa9')) current_prices.psa9 = p;
-      else if (label.includes('psa 8') || label.includes('psa8')) current_prices.psa8 = p;
-      else if (label.includes('psa 7') || label.includes('psa7')) current_prices.psa7 = p;
-    }
+  for (const g of (d.graded_sub_types || [])) {
+    const key = COLLECTR_PSA_GRADE[parseInt(g.grade_id, 10)];
+    if (!key) continue;
+    const p = extractNumericPrice(g.market_price ?? g.price);
+    if (p != null) printOf(g.product_sub_type || 'default')[key] = p;
   }
-  const historyRaw = d.price_history ?? d.priceHistory ?? d.history ?? [];
-  const price_history = Array.isArray(historyRaw)
-    ? historyRaw.map(h => ({
-        date: h.date ?? h.ts ?? h.timestamp ?? h.created_at ?? h.insertion_date ?? '',
-        grade: h.grade ?? h.product_sub_type ?? h.type ?? 'raw',
-        price: extractNumericPrice(h.price ?? h.market_price ?? h.value) ?? 0,
-      })).filter(h => h.price > 0)
-    : [];
+  if (!Object.keys(prints).length) {
+    const p = extractNumericPrice(d.market_price);
+    if (p != null) printOf('default').raw = p;
+  }
+  const price_history = (Array.isArray(d.price_history) ? d.price_history : [])
+    .map(h => {
+      const id = parseInt(h.grade_id, 10);
+      return {
+        date:  h.insertion_date ?? h.date ?? '',
+        print: h.product_sub_type || 'default',
+        grade: id === COLLECTR_RAW_GRADE_ID ? 'raw' : (COLLECTR_PSA_GRADE[id] || null),
+        price: extractNumericPrice(h.price) ?? 0,
+      };
+    })
+    .filter(h => h.price > 0 && h.grade && h.date);
   return {
-    card_name: d.name ?? d.card_name ?? d.product_name ?? '',
-    set_name: d.set_name ?? d.set ?? d.expansion ?? '',
-    currency: d.currency ?? 'GBP',
-    current_prices,
+    card_name: d.product_name ?? '',
+    set_name:  d.catalog_group ?? '',
+    card_number: d.card_number ?? null,
+    rarity: d.rarity ?? null,
+    currency: 'USD',
+    prints,
     price_history,
   };
 }
 
-// ─── Tests ────────────────────────────────────────────────────────────────────
-
-let passed = 0;
-
-function test(name, fn) {
-  try { fn(); console.log(`  ✓ ${name}`); passed++; }
-  catch (e) { console.error(`  ✗ ${name}\n    ${e.message}`); }
-}
-
-// extractCollectrProductId
-test('extracts product id from valid URL', () => {
-  assert.equal(extractCollectrProductId('https://app.getcollectr.com/explore/product/42382'), '42382');
-});
-test('returns null for non-getcollectr URL', () => {
-  assert.equal(extractCollectrProductId('https://evil.com/explore/product/1'), null);
-});
-test('returns null for getcollectr URL without product path', () => {
-  assert.equal(extractCollectrProductId('https://app.getcollectr.com/collection'), null);
-});
-test('returns null for garbage string', () => {
-  assert.equal(extractCollectrProductId('not-a-url'), null);
-});
-
-// extractNumericPrice
-test('handles numeric value', () => { assert.equal(extractNumericPrice(12.5), 12.5); });
-test('handles string price with currency symbol', () => { assert.equal(extractNumericPrice('£12.50'), 12.5); });
-test('returns null for zero string', () => { assert.equal(extractNumericPrice('0'), null); });
-test('returns null for null', () => { assert.equal(extractNumericPrice(null), null); });
-
-// parseCollectrResponse — flat shape
-test('parses flat response with market_price', () => {
-  const r = parseCollectrResponse({ name: 'Charizard', market_price: 150.0, currency: 'GBP', price_history: [] });
-  assert.equal(r.current_prices.raw, 150);
-  assert.equal(r.card_name, 'Charizard');
-});
-
-// parseCollectrResponse — nested graded_sub_types
-test('parses graded_sub_types for psa10', () => {
-  const r = parseCollectrResponse({
-    name: 'Charizard',
-    graded_sub_types: [
-      { product_sub_type: 'PSA 10', market_price: 999 },
-      { product_sub_type: 'PSA 9', market_price: 400 },
-      { product_sub_type: 'PSA 8', market_price: 220 },
-      { product_sub_type: 'PSA 7', market_price: 140 },
-    ],
-    price_history: [],
-  });
-  assert.equal(r.current_prices.psa10, 999);
-  assert.equal(r.current_prices.psa9, 400);
-  assert.equal(r.current_prices.psa8, 220);
-  assert.equal(r.current_prices.psa7, 140);
-});
-
-// parseCollectrResponse — price_history
-test('maps price_history entries', () => {
-  const r = parseCollectrResponse({
-    price_history: [
-      { date: '2025-01-01', grade: 'raw', price: 80 },
-      { date: '2025-06-01', grade: 'psa10', price: 900 },
-    ],
-  });
-  assert.equal(r.price_history.length, 2);
-  assert.equal(r.price_history[1].price, 900);
-});
-
-// parseCollectrResponse — data envelope
-test('handles { data: { ... } } wrapper shape', () => {
-  const r = parseCollectrResponse({ data: { name: 'Blastoise', market_price: 75, price_history: [] } });
-  assert.equal(r.card_name, 'Blastoise');
-  assert.equal(r.current_prices.raw, 75);
-});
-
-// parseCollectrResponse — null body
-test('returns null for null body', () => {
-  assert.equal(parseCollectrResponse(null), null);
-});
-
-// ─── collectrTrend (inlined from worker-paste-this.js) ───────────────────────
-
-function collectrTrend(history, grade, days) {
+function collectrTrend(history, grade, days, print) {
   const rows = (history || [])
-    .filter(h => String(h.grade).toLowerCase().replace(/\s/g, '') === String(grade).toLowerCase().replace(/\s/g, ''))
+    .filter(h => h.grade === grade && (!print || h.print === print))
     .map(h => ({ t: Date.parse(h.date), price: h.price }))
     .filter(h => isFinite(h.t) && h.price > 0)
     .sort((a, b) => a.t - b.t);
@@ -168,60 +89,102 @@ function collectrTrend(history, grade, days) {
   };
 }
 
-const HIST = [
-  { date: '2026-04-04', grade: 'raw', price: 100 },
-  { date: '2026-06-03', grade: 'raw', price: 120 },
-  { date: '2026-07-04', grade: 'raw', price: 110 },
-  { date: '2026-08-03', grade: 'raw', price: 132 },
-  { date: '2026-08-03', grade: 'PSA 10', price: 900 },
-];
+// Real response, Fossil Gengar #5 (product 106521), trimmed.
+const GENGAR = { status: 'success', data: {
+  product_id: '106521', product_name: 'Gengar', catalog_group: 'Fossil',
+  card_number: '5', rarity: 'Holo Rare', market_price: '601.4900',
+  product_sub_types: ['Unlimited Holofoil', '1st Edition Holofoil'],
+  price_history: [
+    { product_sub_type: 'Unlimited Holofoil',   grade_id: '52', insertion_date: '2026-08-01T00:00:00.000Z', price: '210.9200' },
+    { product_sub_type: '1st Edition Holofoil', grade_id: '52', insertion_date: '2026-08-01T00:00:00.000Z', price: '601.4900' },
+    { product_sub_type: '1st Edition Holofoil', grade_id: '52', insertion_date: '2026-07-31T00:00:00.000Z', price: '429.7460' },
+    { product_sub_type: 'Unlimited Holofoil',   grade_id: '9',  insertion_date: '2026-07-31T00:00:00.000Z', price: '341.7001' },
+    { product_sub_type: '1st Edition Holofoil', grade_id: '78', insertion_date: '2026-07-31T00:00:00.000Z', price: '240.0000' },
+  ],
+  ungraded_sub_types: [
+    { product_sub_type: '1st Edition Holofoil', market_price: '601.4900' },
+    { product_sub_type: 'Unlimited Holofoil',   market_price: '210.9200' },
+  ],
+  graded_sub_types: [
+    { product_sub_type: '1st Edition Holofoil', grade_id: '3',  market_price: '157.5000' },
+    { product_sub_type: '1st Edition Holofoil', grade_id: '5',  market_price: '294.3333' },
+    { product_sub_type: '1st Edition Holofoil', grade_id: '8',  market_price: '689.8990' },
+    { product_sub_type: '1st Edition Holofoil', grade_id: '9',  market_price: '983.5150' },
+    { product_sub_type: '1st Edition Holofoil', grade_id: '11', market_price: '2630.1731' },
+  ],
+}};
 
-test('trend: 30d measures from the reading at or before the cutoff', () => {
-  const t = collectrTrend(HIST, 'raw', 30);
-  assert.equal(t.from, 110);
-  assert.equal(t.to, 132);
-  assert.equal(t.pct, 20);
-});
-test('trend: 90d spans a longer window than 30d', () => {
-  const t = collectrTrend(HIST, 'raw', 90);
-  assert.equal(t.from, 100);
-  assert.equal(t.pct, 32);
-});
-test('trend: falls to the oldest reading when none predates the cutoff', () => {
-  const t = collectrTrend(HIST, 'raw', 3650);
-  assert.equal(t.from, 100);
-});
-test('trend: grade match ignores spacing and case', () => {
-  const rows = [
-    { date: '2026-01-01', grade: 'psa10', price: 500 },
-    { date: '2026-08-01', grade: 'PSA 10', price: 750 },
-  ];
-  assert.equal(collectrTrend(rows, 'PSA 10', 30).pct, 50);
-});
-test('trend: null when a grade has a single reading', () => {
-  assert.equal(collectrTrend(HIST, 'PSA 10', 30), null);
-});
-test('trend: null on an empty history', () => {
-  assert.equal(collectrTrend([], 'raw', 30), null);
-});
-test('trend: a falling market reports a negative move', () => {
-  const rows = [
-    { date: '2026-05-01', grade: 'raw', price: 200 },
-    { date: '2026-08-01', grade: 'raw', price: 150 },
-  ];
-  assert.equal(collectrTrend(rows, 'raw', 30).pct, -25);
-});
+let passed = 0;
+function test(name, fn) {
+  try { fn(); console.log(`  ✓ ${name}`); passed++; }
+  catch (e) { console.error(`  ✗ ${name}\n    ${e.message}`); process.exitCode = 1; }
+}
 
-// insertion_date is what the wrapper actually returns for history rows
-test('parses insertion_date as the history date', () => {
-  const r = parseCollectrResponse({
-    price_history: [{ insertion_date: '2026-07-01', product_sub_type: 'PSA 10', price: 910 }],
-  });
-  assert.equal(r.price_history[0].date, '2026-07-01');
-  assert.equal(r.price_history[0].grade, 'PSA 10');
+test('extracts product id from a Collectr URL', () => {
+  assert.equal(extractCollectrProductId('https://app.getcollectr.com/explore/product/106521'), '106521');
 });
-test('rejects a zero numeric price', () => {
-  assert.equal(extractNumericPrice(0), null);
+test('rejects a look-alike host', () => {
+  assert.equal(extractCollectrProductId('https://evil.com/explore/product/1'), null);
+});
+test('rejects a Collectr URL with no product path', () => {
+  assert.equal(extractCollectrProductId('https://app.getcollectr.com/collection'), null);
+});
+test('handles a string price with a currency symbol', () => {
+  assert.equal(extractNumericPrice('$12.50'), 12.5);
+});
+test('treats zero as no price', () => { assert.equal(extractNumericPrice('0'), null); });
+
+test('splits prices by print', () => {
+  const r = parseCollectrResponse(GENGAR);
+  assert.deepEqual(Object.keys(r.prints).sort(), ['1st Edition Holofoil', 'Unlimited Holofoil']);
+  assert.equal(r.prints['Unlimited Holofoil'].raw, 210.92);
+  assert.equal(r.prints['1st Edition Holofoil'].raw, 601.49);
+});
+test('maps grade ids onto PSA grades', () => {
+  const p = parseCollectrResponse(GENGAR).prints['1st Edition Holofoil'];
+  assert.equal(p.psa2, 157.50);   // verified exact against PriceCharting Grade 2
+  assert.equal(p.psa4, 294.3333);
+  assert.equal(p.psa7, 689.899);
+  assert.equal(p.psa8, 983.515);
+  assert.equal(p.psa10, 2630.1731);
+});
+test('ignores grade ids belonging to other grading companies', () => {
+  const r = parseCollectrResponse(GENGAR);
+  assert.equal(r.price_history.some(h => h.price === 240), false);  // id 78
+});
+test('reads the set from catalog_group', () => {
+  assert.equal(parseCollectrResponse(GENGAR).set_name, 'Fossil');
+});
+test('treats grade id 52 as the raw price', () => {
+  const r = parseCollectrResponse(GENGAR);
+  const raws = r.price_history.filter(h => h.grade === 'raw');
+  assert.equal(raws.length, 3);
+});
+test('unwraps the status/data envelope', () => {
+  assert.equal(parseCollectrResponse(GENGAR).card_name, 'Gengar');
+});
+test('returns null for an empty body', () => { assert.equal(parseCollectrResponse(null), null); });
+
+test('trend is measured within one print', () => {
+  const r = parseCollectrResponse(GENGAR);
+  const t = collectrTrend(r.price_history, 'raw', 30, '1st Edition Holofoil');
+  assert.equal(t.from, 429.746);
+  assert.equal(t.to, 601.49);
+  assert.equal(t.pct, 40);
+});
+test('a print with one reading has no trend', () => {
+  const r = parseCollectrResponse(GENGAR);
+  assert.equal(collectrTrend(r.price_history, 'raw', 30, 'Unlimited Holofoil'), null);
+});
+test('a falling market reports a negative move', () => {
+  const rows = [
+    { date: '2026-05-01', print: 'p', grade: 'psa10', price: 200 },
+    { date: '2026-08-01', print: 'p', grade: 'psa10', price: 150 },
+  ];
+  assert.equal(collectrTrend(rows, 'psa10', 30, 'p').pct, -25);
+});
+test('trend is null on an empty history', () => {
+  assert.equal(collectrTrend([], 'raw', 30, 'p'), null);
 });
 
 console.log(`\n${passed} tests passed.`);

@@ -2511,47 +2511,73 @@ function extractNumericPrice(v) {
   return null;
 }
 
-// Collapses the wrapper's response into the shape the client already speaks:
-// a flat price per grade plus a dated history. Field names vary between the
-// flat and enveloped forms, so each is read through a small fallback chain
-// rather than assuming one shape.
+// Collectr identifies grades by a numeric id, not a label — `product_sub_type`
+// carries the print ("1st Edition Holofoil"), not the grade. Ids 1–11 are PSA's
+// eleven steps in order, including the 1.5 half grade; 52 is the ungraded
+// price. Established by matching prices against PriceCharting's labelled rows
+// on the same card, Fossil Gengar #5:
+//
+//   id 3 = $157.50 against PriceCharting "Grade 2" $157.50   exact
+//   id 5 = $294.33 against "Grade 4" $294.45
+//   id 8 = $689.90 against "Grade 7" $680.00
+//   id 9 = $983.52 against "Grade 8" $974.00
+//   id 9 = $341.70 against "Grade 8" $327.50 on the Unlimited print
+//
+// Ids above 11 belong to other grading companies (BGS, CGC, SGC and so on) and
+// are ignored rather than guessed at. The exact cent match also settles the
+// currency: these are USD, the same as PriceCharting, and there is no currency
+// field in the response to say so.
+const COLLECTR_PSA_GRADE = {
+  1: 'psa1', 2: 'psa1_5', 3: 'psa2',  4: 'psa3', 5: 'psa4', 6: 'psa5',
+  7: 'psa6', 8: 'psa7',   9: 'psa8', 10: 'psa9', 11: 'psa10',
+};
+const COLLECTR_RAW_GRADE_ID = 52;
+
+// Collectr splits a card by print the same way the app does, so prices come
+// back keyed by print rather than flattened — a Shadowless Charizard and a 1st
+// Edition Charizard are one product here with two price sets.
 function parseCollectrResponse(body) {
-  const d = body?.data ?? body;
+  const d = body?.data?.data ?? body?.data ?? body;
   if (!d) return null;
-  const current_prices = {};
-  const rawPrice = extractNumericPrice(d.market_price ?? d.ungraded_market_price);
-  if (rawPrice != null) current_prices.raw = rawPrice;
-  if (Array.isArray(d.ungraded_sub_types)) {
-    const rawEntry = d.ungraded_sub_types[0];
-    if (rawEntry) {
-      const p = extractNumericPrice(rawEntry.market_price ?? rawEntry.price);
-      if (p != null) current_prices.raw = p;
-    }
+
+  const prints = {};
+  const printOf = name => (prints[name] ||= {});
+
+  for (const u of (d.ungraded_sub_types || [])) {
+    const p = extractNumericPrice(u.market_price ?? u.price);
+    if (p != null) printOf(u.product_sub_type || 'default').raw = p;
   }
-  if (Array.isArray(d.graded_sub_types)) {
-    for (const g of d.graded_sub_types) {
-      const label = (g.product_sub_type || g.name || '').toLowerCase();
-      const p = extractNumericPrice(g.market_price ?? g.price);
-      if (p == null) continue;
-      if (label.includes('psa 10') || label.includes('psa10')) current_prices.psa10 = p;
-      else if (label.includes('psa 9') || label.includes('psa9')) current_prices.psa9 = p;
-      else if (label.includes('psa 8') || label.includes('psa8')) current_prices.psa8 = p;
-      else if (label.includes('psa 7') || label.includes('psa7')) current_prices.psa7 = p;
-    }
+  for (const g of (d.graded_sub_types || [])) {
+    const key = COLLECTR_PSA_GRADE[parseInt(g.grade_id, 10)];
+    if (!key) continue;                       // another grading company
+    const p = extractNumericPrice(g.market_price ?? g.price);
+    if (p != null) printOf(g.product_sub_type || 'default')[key] = p;
   }
-  const historyRaw = d.price_history ?? d.priceHistory ?? d.history ?? [];
-  const price_history = Array.isArray(historyRaw)
-    ? historyRaw.map(h => ({
-        date: h.date ?? h.ts ?? h.timestamp ?? h.created_at ?? h.insertion_date ?? '',
-        grade: h.grade ?? h.product_sub_type ?? h.type ?? 'raw',
-        price: extractNumericPrice(h.price ?? h.market_price ?? h.value) ?? 0,
-      })).filter(h => h.price > 0)
-    : [];
+  // Flat shape fallback for a product with no sub-types at all.
+  if (!Object.keys(prints).length) {
+    const p = extractNumericPrice(d.market_price);
+    if (p != null) printOf('default').raw = p;
+  }
+
+  const price_history = (Array.isArray(d.price_history) ? d.price_history : [])
+    .map(h => {
+      const id = parseInt(h.grade_id, 10);
+      return {
+        date:  h.insertion_date ?? h.date ?? '',
+        print: h.product_sub_type || 'default',
+        grade: id === COLLECTR_RAW_GRADE_ID ? 'raw' : (COLLECTR_PSA_GRADE[id] || null),
+        price: extractNumericPrice(h.price) ?? 0,
+      };
+    })
+    .filter(h => h.price > 0 && h.grade && h.date);
+
   return {
-    card_name: d.name ?? d.card_name ?? d.product_name ?? '',
-    set_name: d.set_name ?? d.set ?? d.expansion ?? '',
-    currency: d.currency ?? 'GBP',
-    current_prices,
+    card_name: d.product_name ?? '',
+    set_name:  d.catalog_group ?? '',        // not `set_name` — Collectr calls it this
+    card_number: d.card_number ?? null,
+    rarity: d.rarity ?? null,
+    currency: 'USD',
+    prints,
     price_history,
   };
 }
@@ -2559,9 +2585,9 @@ function parseCollectrResponse(body) {
 // Percentage move over a window, taken from the history rather than a
 // separate call. This is the number the valuation framework wants beside any
 // "below market" claim and has never had.
-function collectrTrend(history, grade, days) {
+function collectrTrend(history, grade, days, print) {
   const rows = (history || [])
-    .filter(h => String(h.grade).toLowerCase().replace(/\s/g, '') === String(grade).toLowerCase().replace(/\s/g, ''))
+    .filter(h => h.grade === grade && (!print || h.print === print))
     .map(h => ({ t: Date.parse(h.date), price: h.price }))
     .filter(h => isFinite(h.t) && h.price > 0)
     .sort((a, b) => a.t - b.t);
@@ -2662,18 +2688,17 @@ async function handleCollectr(request, env, url) {
   const parsed = parseCollectrResponse(detail);
   if (!parsed) return _jsonResp(502, { error: 'Collectr returned nothing usable for that product.' }, ch);
 
-  const out = {
-    found: true,
-    product_id: productId,
-    ...parsed,
-    trend: {
-      raw_30d:   collectrTrend(parsed.price_history, 'raw', 30),
-      raw_90d:   collectrTrend(parsed.price_history, 'raw', 90),
-      psa10_30d: collectrTrend(parsed.price_history, 'psa 10', 30),
-      psa10_90d: collectrTrend(parsed.price_history, 'psa 10', 90),
-    },
-    credits_used: searched ? 3 : 2,
-  };
+  // A trend per print, since that is the level the prices are quoted at.
+  const trend = {};
+  for (const print of Object.keys(parsed.prints)) {
+    trend[print] = {
+      raw_30d:   collectrTrend(parsed.price_history, 'raw',   30, print),
+      raw_90d:   collectrTrend(parsed.price_history, 'raw',   90, print),
+      psa10_30d: collectrTrend(parsed.price_history, 'psa10', 30, print),
+      psa10_90d: collectrTrend(parsed.price_history, 'psa10', 90, print),
+    };
+  }
+  const out = { found: true, product_id: productId, ...parsed, trend, credits_used: searched ? 3 : 2 };
   const body = JSON.stringify(out);
   if (env.SYNC_KV) {
     try { await env.SYNC_KV.put(priceKey, body, { expirationTtl: COLLECTR_PRICE_TTL }); } catch (e) {}
