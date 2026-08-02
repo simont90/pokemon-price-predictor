@@ -883,6 +883,7 @@ async function handle(request, env, ctx) {
   if (url.pathname === '/tcg-price') return handleTcgPrice(request, url);
   if (url.pathname === '/price-warm') return handlePriceWarm(request, env, url);
   if (url.pathname === '/prices') return handlePricesBatch(request, env, url);
+  if (url.pathname === '/collectr') return handleCollectr(request, env, url);
   if (url.pathname === '/pop')   return handlePopQuery(request, env, url);
   if (url.pathname === '/pop-history') return handlePopHistory(request, env, url);
   if (url.pathname === '/cert')  return handleCertLookup(request, env, url);
@@ -2471,6 +2472,212 @@ async function handleCertLookup(request, env, url) {
   };
   const body = JSON.stringify(out);
   if (env.SYNC_KV) { try { await env.SYNC_KV.put(ck, body); } catch (e) {} }
+  return new Response(body, { headers: { ...ch, 'X-Cache': 'miss' } });
+}
+
+// ── Collectr ───────────────────────────────────────────────────────────────
+// Price history by grade, which nothing else in the app provides — the
+// marketplace scan and PriceCharting are both point-in-time, so a "below
+// market" call currently has no trend behind it.
+//
+// Reached through an independent REST wrapper rather than Collectr directly.
+// That wrapper meters by credit — 1 to search, 2 for detail — against a
+// monthly allowance, so both halves are cached hard: a card's product id
+// never changes and is kept forever, while prices are held for a day. A cold
+// card therefore costs 3 credits once and 2 a day thereafter, and a warm one
+// costs nothing.
+// Note the id here is the scraper's, which is not the one in the marketplace
+// page URL. Overridable by secret so a re-published endpoint does not need a
+// code change and a deploy.
+const COLLECTR_API_DEFAULT = 'https://api.parse.bot/scraper/f9af367c-0a37-4e37-b6fe-637f181eaf96';
+const COLLECTR_PRICE_TTL = 86400;   // 24h — prices move, ids do not
+
+function extractCollectrProductId(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    if (!u.hostname.endsWith('getcollectr.com')) return null;
+    const m = u.pathname.match(/\/explore\/product\/(\d+)/);
+    return m ? m[1] : null;
+  } catch { return null; }
+}
+
+function extractNumericPrice(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return v > 0 ? v : null;
+  if (typeof v === 'string') {
+    const n = parseFloat(v.replace(/[^0-9.]/g, ''));
+    return isFinite(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
+// Collapses the wrapper's response into the shape the client already speaks:
+// a flat price per grade plus a dated history. Field names vary between the
+// flat and enveloped forms, so each is read through a small fallback chain
+// rather than assuming one shape.
+function parseCollectrResponse(body) {
+  const d = body?.data ?? body;
+  if (!d) return null;
+  const current_prices = {};
+  const rawPrice = extractNumericPrice(d.market_price ?? d.ungraded_market_price);
+  if (rawPrice != null) current_prices.raw = rawPrice;
+  if (Array.isArray(d.ungraded_sub_types)) {
+    const rawEntry = d.ungraded_sub_types[0];
+    if (rawEntry) {
+      const p = extractNumericPrice(rawEntry.market_price ?? rawEntry.price);
+      if (p != null) current_prices.raw = p;
+    }
+  }
+  if (Array.isArray(d.graded_sub_types)) {
+    for (const g of d.graded_sub_types) {
+      const label = (g.product_sub_type || g.name || '').toLowerCase();
+      const p = extractNumericPrice(g.market_price ?? g.price);
+      if (p == null) continue;
+      if (label.includes('psa 10') || label.includes('psa10')) current_prices.psa10 = p;
+      else if (label.includes('psa 9') || label.includes('psa9')) current_prices.psa9 = p;
+      else if (label.includes('psa 8') || label.includes('psa8')) current_prices.psa8 = p;
+      else if (label.includes('psa 7') || label.includes('psa7')) current_prices.psa7 = p;
+    }
+  }
+  const historyRaw = d.price_history ?? d.priceHistory ?? d.history ?? [];
+  const price_history = Array.isArray(historyRaw)
+    ? historyRaw.map(h => ({
+        date: h.date ?? h.ts ?? h.timestamp ?? h.created_at ?? h.insertion_date ?? '',
+        grade: h.grade ?? h.product_sub_type ?? h.type ?? 'raw',
+        price: extractNumericPrice(h.price ?? h.market_price ?? h.value) ?? 0,
+      })).filter(h => h.price > 0)
+    : [];
+  return {
+    card_name: d.name ?? d.card_name ?? d.product_name ?? '',
+    set_name: d.set_name ?? d.set ?? d.expansion ?? '',
+    currency: d.currency ?? 'GBP',
+    current_prices,
+    price_history,
+  };
+}
+
+// Percentage move over a window, taken from the history rather than a
+// separate call. This is the number the valuation framework wants beside any
+// "below market" claim and has never had.
+function collectrTrend(history, grade, days) {
+  const rows = (history || [])
+    .filter(h => String(h.grade).toLowerCase().replace(/\s/g, '') === String(grade).toLowerCase().replace(/\s/g, ''))
+    .map(h => ({ t: Date.parse(h.date), price: h.price }))
+    .filter(h => isFinite(h.t) && h.price > 0)
+    .sort((a, b) => a.t - b.t);
+  if (rows.length < 2) return null;
+  const latest = rows[rows.length - 1];
+  const cutoff = latest.t - days * 86400000;
+  // The reading closest to the cutoff without going past it — history is not
+  // evenly spaced, so picking by index would compare different windows on
+  // different cards.
+  let base = null;
+  for (const r of rows) { if (r.t <= cutoff) base = r; else break; }
+  if (!base) base = rows[0];
+  if (!(base.price > 0) || base === latest) return null;
+  return {
+    pct: +(((latest.price - base.price) / base.price) * 100).toFixed(1),
+    from: base.price, to: latest.price,
+    days: Math.round((latest.t - base.t) / 86400000),
+  };
+}
+
+async function _collectrCall(env, path, params) {
+  const base = (env.COLLECTR_API_URL || COLLECTR_API_DEFAULT).replace(/\/+$/, '');
+  const u = new URL(base + path);
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  const r = await fetch(u.toString(), {
+    headers: { 'X-API-Key': env.COLLECTR_TOKEN, 'Accept': 'application/json' },
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    const err = new Error(`Collectr API returned ${r.status}`);
+    err.status = r.status;
+    err.detail = text.slice(0, 200);
+    throw err;
+  }
+  return r.json();
+}
+
+// GET /collectr?cardId=&q=      resolve by search, then fetch prices
+// GET /collectr?productId=      skip the search when the id is already known
+// GET /collectr?url=            accept a pasted app.getcollectr.com product link
+async function handleCollectr(request, env, url) {
+  const ch = { ...corsHeaders(request), 'Content-Type': 'application/json' };
+  if (!env.COLLECTR_TOKEN) {
+    return _jsonResp(503, { error: 'Collectr lookup is not configured yet — add the COLLECTR_TOKEN secret.' }, ch);
+  }
+
+  const cardId = (url.searchParams.get('cardId') || '').trim();
+  const q      = (url.searchParams.get('q') || '').trim();
+  const pasted = (url.searchParams.get('url') || '').trim();
+  let productId = (url.searchParams.get('productId') || '').trim();
+
+  if (!productId && pasted) {
+    productId = extractCollectrProductId(pasted) || '';
+    if (!productId) return _jsonResp(400, { error: 'That is not a Collectr product link.' }, ch);
+  }
+
+  // A resolved id is permanent, so it is worth a lookup of its own before
+  // spending a search credit.
+  const idKey = cardId ? `collectr:pid:${cardId}` : null;
+  if (!productId && idKey && env.SYNC_KV) {
+    try { productId = (await env.SYNC_KV.get(idKey)) || ''; } catch (e) {}
+  }
+
+  let searched = false;
+  if (!productId) {
+    if (!q) return _jsonResp(400, { error: 'Pass productId, url, or q= to search for.' }, ch);
+    let hits;
+    try {
+      hits = await _collectrCall(env, '/search_products', { query: q, limit: '5' });
+    } catch (e) {
+      return _jsonResp(e.status === 429 ? 429 : 502,
+        { error: e.status === 429 ? 'Collectr credit limit or rate limit reached.' : e.message, detail: e.detail || null }, ch);
+    }
+    searched = true;
+    const items = hits?.items || hits?.data?.items || [];
+    if (!items.length) return _jsonResp(200, { found: false, query: q, credits_used: 1 }, ch);
+    productId = String(items[0].product_id ?? items[0].productId ?? '');
+    if (!productId) return _jsonResp(200, { found: false, query: q, credits_used: 1 }, ch);
+    if (idKey && env.SYNC_KV) { try { await env.SYNC_KV.put(idKey, productId); } catch (e) {} }
+  }
+
+  const priceKey = `collectr:data:${productId}`;
+  if (env.SYNC_KV && !searched) {
+    try {
+      const hit = await env.SYNC_KV.get(priceKey);
+      if (hit) return new Response(hit, { headers: { ...ch, 'X-Cache': 'hit' } });
+    } catch (e) {}
+  }
+
+  let detail;
+  try {
+    detail = await _collectrCall(env, '/get_product_details', { product_id: productId });
+  } catch (e) {
+    return _jsonResp(e.status === 429 ? 429 : 502,
+      { error: e.status === 429 ? 'Collectr credit limit or rate limit reached.' : e.message, detail: e.detail || null }, ch);
+  }
+
+  const parsed = parseCollectrResponse(detail);
+  if (!parsed) return _jsonResp(502, { error: 'Collectr returned nothing usable for that product.' }, ch);
+
+  const out = {
+    found: true,
+    product_id: productId,
+    ...parsed,
+    trend: {
+      raw_30d:   collectrTrend(parsed.price_history, 'raw', 30),
+      raw_90d:   collectrTrend(parsed.price_history, 'raw', 90),
+      psa10_30d: collectrTrend(parsed.price_history, 'psa 10', 30),
+      psa10_90d: collectrTrend(parsed.price_history, 'psa 10', 90),
+    },
+    credits_used: searched ? 3 : 2,
+  };
+  const body = JSON.stringify(out);
+  if (env.SYNC_KV) {
+    try { await env.SYNC_KV.put(priceKey, body, { expirationTtl: COLLECTR_PRICE_TTL }); } catch (e) {}
+  }
   return new Response(body, { headers: { ...ch, 'X-Cache': 'miss' } });
 }
 

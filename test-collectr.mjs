@@ -19,7 +19,7 @@ function extractCollectrProductId(rawUrl) {
 
 function extractNumericPrice(v) {
   if (v == null) return null;
-  if (typeof v === 'number') return v;
+  if (typeof v === 'number') return v > 0 ? v : null;
   if (typeof v === 'string') {
     const n = parseFloat(v.replace(/[^0-9.]/g, ''));
     return isFinite(n) && n > 0 ? n : null;
@@ -54,7 +54,7 @@ function parseCollectrResponse(body) {
   const historyRaw = d.price_history ?? d.priceHistory ?? d.history ?? [];
   const price_history = Array.isArray(historyRaw)
     ? historyRaw.map(h => ({
-        date: h.date ?? h.ts ?? h.timestamp ?? h.created_at ?? '',
+        date: h.date ?? h.ts ?? h.timestamp ?? h.created_at ?? h.insertion_date ?? '',
         grade: h.grade ?? h.product_sub_type ?? h.type ?? 'raw',
         price: extractNumericPrice(h.price ?? h.market_price ?? h.value) ?? 0,
       })).filter(h => h.price > 0)
@@ -144,6 +144,84 @@ test('handles { data: { ... } } wrapper shape', () => {
 // parseCollectrResponse — null body
 test('returns null for null body', () => {
   assert.equal(parseCollectrResponse(null), null);
+});
+
+// ─── collectrTrend (inlined from worker-paste-this.js) ───────────────────────
+
+function collectrTrend(history, grade, days) {
+  const rows = (history || [])
+    .filter(h => String(h.grade).toLowerCase().replace(/\s/g, '') === String(grade).toLowerCase().replace(/\s/g, ''))
+    .map(h => ({ t: Date.parse(h.date), price: h.price }))
+    .filter(h => isFinite(h.t) && h.price > 0)
+    .sort((a, b) => a.t - b.t);
+  if (rows.length < 2) return null;
+  const latest = rows[rows.length - 1];
+  const cutoff = latest.t - days * 86400000;
+  let base = null;
+  for (const r of rows) { if (r.t <= cutoff) base = r; else break; }
+  if (!base) base = rows[0];
+  if (!(base.price > 0) || base === latest) return null;
+  return {
+    pct: +(((latest.price - base.price) / base.price) * 100).toFixed(1),
+    from: base.price, to: latest.price,
+    days: Math.round((latest.t - base.t) / 86400000),
+  };
+}
+
+const HIST = [
+  { date: '2026-04-04', grade: 'raw', price: 100 },
+  { date: '2026-06-03', grade: 'raw', price: 120 },
+  { date: '2026-07-04', grade: 'raw', price: 110 },
+  { date: '2026-08-03', grade: 'raw', price: 132 },
+  { date: '2026-08-03', grade: 'PSA 10', price: 900 },
+];
+
+test('trend: 30d measures from the reading at or before the cutoff', () => {
+  const t = collectrTrend(HIST, 'raw', 30);
+  assert.equal(t.from, 110);
+  assert.equal(t.to, 132);
+  assert.equal(t.pct, 20);
+});
+test('trend: 90d spans a longer window than 30d', () => {
+  const t = collectrTrend(HIST, 'raw', 90);
+  assert.equal(t.from, 100);
+  assert.equal(t.pct, 32);
+});
+test('trend: falls to the oldest reading when none predates the cutoff', () => {
+  const t = collectrTrend(HIST, 'raw', 3650);
+  assert.equal(t.from, 100);
+});
+test('trend: grade match ignores spacing and case', () => {
+  const rows = [
+    { date: '2026-01-01', grade: 'psa10', price: 500 },
+    { date: '2026-08-01', grade: 'PSA 10', price: 750 },
+  ];
+  assert.equal(collectrTrend(rows, 'PSA 10', 30).pct, 50);
+});
+test('trend: null when a grade has a single reading', () => {
+  assert.equal(collectrTrend(HIST, 'PSA 10', 30), null);
+});
+test('trend: null on an empty history', () => {
+  assert.equal(collectrTrend([], 'raw', 30), null);
+});
+test('trend: a falling market reports a negative move', () => {
+  const rows = [
+    { date: '2026-05-01', grade: 'raw', price: 200 },
+    { date: '2026-08-01', grade: 'raw', price: 150 },
+  ];
+  assert.equal(collectrTrend(rows, 'raw', 30).pct, -25);
+});
+
+// insertion_date is what the wrapper actually returns for history rows
+test('parses insertion_date as the history date', () => {
+  const r = parseCollectrResponse({
+    price_history: [{ insertion_date: '2026-07-01', product_sub_type: 'PSA 10', price: 910 }],
+  });
+  assert.equal(r.price_history[0].date, '2026-07-01');
+  assert.equal(r.price_history[0].grade, 'PSA 10');
+});
+test('rejects a zero numeric price', () => {
+  assert.equal(extractNumericPrice(0), null);
 });
 
 console.log(`\n${passed} tests passed.`);

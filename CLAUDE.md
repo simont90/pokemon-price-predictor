@@ -137,6 +137,9 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
 - `GET /health` → `ok` (used by uptime probes).
 - `GET /search?q=&max=&fx=&fxEur=&grade=` → fanned-out eBay UK / eBay US /
   Cardmarket search, returns ranked deals. Cached 5 min at the edge.
+- `GET /collectr?cardId=&q=` → Collectr prices by grade plus dated history and
+  30/90-day trend. `productId=` skips the search; `url=` accepts a pasted
+  app.getcollectr.com product link. Credit-metered — see `COLLECTR_TOKEN`.
 - `GET /sync?key=` → returns stored snapshot JSON or `{data:null,ts:0}`.
 - `PUT /sync?key=` → stores raw body (must be valid JSON, ≤ 5 MB).
 - `DELETE /sync?key=` → deletes stored snapshot.
@@ -149,6 +152,11 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
 - `PSA_API_TOKEN` — PSA public API for `/cert`. Cert verification only: the
   public tier returns no population or pricing, and allows ~100 calls a day,
   so `/cert` caches every result permanently.
+- `COLLECTR_TOKEN` — Collectr price history via the parse.bot REST wrapper
+  (`X-API-Key`). Metered by credit: 1 per search, 2 per detail fetch, against a
+  monthly allowance — so `/collectr` caches a card's product id forever and its
+  prices for 24h. `COLLECTR_API_URL` optionally overrides the wrapper base URL
+  if the endpoint is re-published.
 - `POKEMONTCG_API_KEY` — optional. pokemontcg.io rate-limits Cloudflare's
   shared egress IPs hard on the anonymous tier; a free key from
   `dev.pokemontcg.io` removes that. `_pcgFetch` uses it when present.
