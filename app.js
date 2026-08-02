@@ -16991,6 +16991,23 @@ function renderHoldStrategy(card) {
       liqBadge = `<span class="liq-badge liq-${liq}" title="Pop ${gradePop ?? '–'} at this grade, ${gradeSales ?? 'no'} sales in 90 days">${liqText}</span>`;
     }
 
+    // Max buy: the most you can pay today and still not lose money on the
+    // five-year exit. The projections are gross because the exit route is not
+    // decided, but a ceiling on what to pay has to assume you sell somewhere
+    // that charges — you pay that fee, not the seller. Anything above this
+    // line is a hold that needs the card to beat its own forecast just to get
+    // your money back.
+    let maxBuyStr = '';
+    if (!s.isOwnedSlab && !s.acqCost && s.yr5 > 0) {
+      const netGBP = (s.yr5 * fx) * (1 - EBAY_FEE_UK) - EBAY_FIXED_FEE;
+      if (netGBP > 0) {
+        const over = todayGBP_tile > netGBP;
+        maxBuyStr = `<span class="hold-row-maxbuy${over ? ' hold-row-maxbuy-over' : ''}"
+          title="Highest entry price that still breaks even after ${(EBAY_FEE_UK * 100).toFixed(1)}% selling fees on the ${fmtGBPDirect(s.yr5 * fx)} five-year figure.">Max buy ${fmtGBPDirect(netGBP)}${
+            over ? ' · you are above it' : ''}</span>`;
+      }
+    }
+
     // Per-grade annual growth rate label (always shown for PSA grade tiles)
     const annualRateStr = (gradeNum && s.annualRate != null)
       ? `<span class="hold-row-annual-rate" title="Projected annual growth rate for this grade">${s.annualRate.toFixed(1)}%/yr</span>`
@@ -17020,6 +17037,7 @@ function renderHoldStrategy(card) {
         <div class="hold-row-left">
           <span class="hold-row-label">${s.label}</span>
           <span class="hold-row-cost">${entryCtx}${waitStr}</span>
+          ${maxBuyStr}
           <span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>
           ${annualRateStr}${liqBadge}${gradeProbStr}${lossStr}${_holdPopBadge(_holdCachedPop, s.grade)}
         </div>

@@ -5286,6 +5286,15 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   font-size: 11px;
   color: var(--text-muted);
 }
+/* Ceiling on what to pay, sitting under the all-in price it constrains. */
+.hold-row-maxbuy {
+  display: block;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-faint, var(--text-muted));
+  margin-top: 1px;
+}
+.hold-row-maxbuy-over { color: #e57373; font-weight: 600; }
 .hold-row-loss {
   font-size: 10px;
   color: #fca5a5;
