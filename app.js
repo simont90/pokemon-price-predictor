@@ -26073,17 +26073,33 @@ function syncApplyPayload(payload, mode) {
         continue;
       }
       // merge — last-write-wins per key for arrays (prevents deleted items coming back),
-      // shallow-merge for objects, remote-wins for scalars.
-      const local = JSON.parse(localStorage.getItem(k) || 'null');
-      let remote;
-      try { remote = JSON.parse(remoteRaw); } catch { remote = remoteRaw; }
+      // shallow-merge for objects, last-write-wins for scalars.
+      const localRaw = localStorage.getItem(k);
+      // Not every key holds JSON: a sort order is the bare string 'dex'. Parsing
+      // that throws, and the catch around this loop used to swallow it and skip
+      // the key — which is why those settings never synced at all.
+      let local;  try { local  = JSON.parse(localRaw ?? 'null'); } catch { local  = localRaw; }
+      let remote; try { remote = JSON.parse(remoteRaw); }         catch { remote = remoteRaw; }
+      const localTs  = (_getSyncKeyTs())[k] || 0;
+      const remoteTs = (payload.keyTs && payload.keyTs[k]) || 0;
       let merged = remote;
+      if (!Array.isArray(local) && !Array.isArray(remote) &&
+          !(local && typeof local === 'object') && !(remote && typeof remote === 'object')) {
+        // A scalar — a budget, a sort order, a service preference. There is
+        // nothing to merge: one value replaces the other, so the newer write
+        // wins. Taking remote unconditionally, as this used to, let a stale
+        // snapshot from another device silently revert a setting you had just
+        // changed here. Compare the raw strings so non-JSON values survive.
+        const winnerRaw = (localRaw !== null && localTs >= remoteTs) ? localRaw : remoteRaw;
+        localStorage.setItem(k, winnerRaw);
+        if (remoteTs > localTs) _setSyncKeyTs(k, remoteTs);
+        applied.push(k);
+        continue;
+      }
       if (Array.isArray(local) && Array.isArray(remote)) {
         // Compare per-key timestamps to decide which side wins outright.
         // If local was modified more recently, keep local entirely (deletions are preserved).
         // If remote is newer, replace with remote. Fall back to union only when timestamps unknown.
-        const localTs  = (_getSyncKeyTs())[k] || 0;
-        const remoteTs = (payload.keyTs && payload.keyTs[k]) || 0;
         if (localTs || remoteTs) {
           // At least one side has a timestamp: 0 loses to any real timestamp,
           // so local wins if it was written more recently, remote wins otherwise.
