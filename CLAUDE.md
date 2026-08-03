@@ -159,12 +159,18 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
   - Collectr splits Base Set into two groups — "Base Set (Unlimited)" (604) and
     "Base Set (1st Edition & Shadowless)" (1663) — so the selected print picks
     the group.
-  - The client uses Collectr for PSA 1–8 only, where PriceCharting has no
-    figure (`COLLECTR_TRUSTED_MAX_GRADE`). Those tiles are marked "via
-    Collectr". PSA 9/10 are excluded on purpose — see below.
-  - Data quality is patchy above PSA 8: Unlimited Fossil Gengar returns
-    psa9 = $99.99 against PriceCharting's $700.25. Treat the top of the ladder
-    as unverified.
+  - **Collectr is the primary price source; PriceCharting is the backup.** It
+    leads on the raw price (the Live Market Price headline and
+    `getCurrentPrice`) and on every PSA grade it carries. Order per grade is:
+    your own override, then Collectr, then PriceCharting, then the ratio
+    estimate. Tiles priced from Collectr are marked "via Collectr".
+  - Placeholder prices are stripped in the worker before the client sees them:
+    a grade priced below 60% of *both* its neighbours is a trough, not a price.
+    Unlimited Fossil Gengar quotes PSA 9 at $99.99 between $341 and $839.
+    Testing against both sides matters — a ladder that merely falls is often
+    real at the bottom, where the same card has PSA 1 at $372 against PSA 2 at
+    $157. Dropped values are listed in the response's `suspect` array.
+  - `?refresh=1` bypasses the 24h price cache. Costs 2 credits.
 - `GET /sync?key=` → returns stored snapshot JSON or `{data:null,ts:0}`.
 - `PUT /sync?key=` → stores raw body (must be valid JSON, ≤ 5 MB).
 - `DELETE /sync?key=` → deletes stored snapshot.

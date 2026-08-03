@@ -784,7 +784,8 @@ function getCurrentPrice(card) {
   // than the blend of PriceCharting and TCGPlayer sitting below — on Fossil
   // Gengar that is $211 against a blended $353. Only the raw price is taken
   // this way; graded figures are resolved separately.
-  const _crRaw = (typeof collectrRawUSD === 'function') ? collectrRawUSD(card) : 0;
+  const _crRaw = (typeof collectrRawUSD === 'function')
+    ? collectrRawUSD(card, (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited') : 0;
   if (_crRaw > 0) return _crRaw;
 
   // If we have live price data for the selected card, use it
@@ -3002,7 +3003,7 @@ window.switchMarketPCVariant = async function(variant) {
 function _refreshLiveHeadline() {
   const el = document.getElementById('liveMainPrice');
   if (!el || !selectedCard) return;
-  const usd = (typeof collectrRawUSD === 'function') ? collectrRawUSD(selectedCard) : 0;
+  const usd = (typeof collectrRawUSD === 'function') ? collectrRawUSD(selectedCard, _marketPCVariant || 'unlimited') : 0;
   const lp  = _livePriceVariant || livePrice || getCachedPrice(selectedCard.i) || {};
   const mid = (lp.pcUngraded > 0 && lp.tcgMarket > 0) ? (lp.pcUngraded + lp.tcgMarket) / 2 : 0;
   const price = usd > 0 ? usd
@@ -3037,7 +3038,7 @@ function renderLivePrice(data) {
   // rather than blending listings, and it is quoted per print, so switching
   // between Unlimited and 1st Edition moves this number as it should.
   const _crRawUSD = (typeof collectrRawUSD === 'function' && selectedCard)
-    ? collectrRawUSD(selectedCard) : 0;
+    ? collectrRawUSD(selectedCard, _marketPCVariant || 'unlimited') : 0;
   const isComposite = !(_crRawUSD > 0) && _pcTcgMid > 0;
   const primaryPrice = _crRawUSD > 0
     ? _crRawUSD
@@ -10346,13 +10347,13 @@ async function fetchCollectrData(card, { force = false, variant = 'unlimited' } 
 // The ungraded price for whichever print is in view, in USD like every other
 // price the model handles. Returns 0 rather than null so callers can treat it
 // as "no figure" without a special case.
-function collectrRawUSD(card) {
+// The Market tab and the Strategy tab each have their own print selector, so
+// the caller says which one it is speaking for rather than this guessing.
+function collectrRawUSD(card, variant) {
   if (!card || !card.i) return 0;
   const data = getCollectrData(card.i);
   if (!data) return 0;
-  const variant = (typeof selectedCard !== 'undefined' && selectedCard && selectedCard.i === card.i
-                   && typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited';
-  const hit = collectrPricesFor(data, variant) || collectrPricesFor(data, 'unlimited');
+  const hit = collectrPricesFor(data, variant || 'unlimited') || collectrPricesFor(data, 'unlimited');
   const v = hit && hit.prices ? hit.prices.raw : 0;
   return v > 0 ? v : 0;
 }
@@ -10391,6 +10392,10 @@ function ensureCollectrData(card) {
       _collectrInFlight.delete(card.i);
       if (selectedCard && selectedCard.i === card.i) {
         try { renderCollectrRow(); } catch {}
+        // The headline is painted before this lands, so it has to be repainted
+        // once the figure exists — otherwise the panel shows PriceCharting's
+        // raw above a Collectr row quoting a different one.
+        try { _refreshLiveHeadline(); } catch {}
         try { renderHoldStrategy(card); } catch {}
       }
     });
@@ -12895,13 +12900,13 @@ function _liveGradeUSD(lp, g) {
   return v > 0 ? v : 0;
 }
 
-// Collectr covers PSA 1–8 on cards where PriceCharting tracks only the top of
-// the ladder, which is most of the low grades the vintage work cares about. It
-// fills gaps rather than overriding: PriceCharting stays authoritative where it
-// has a figure, and PSA 9/10 are left alone because Collectr's numbers there
-// disagree badly enough not to be trusted — Unlimited Fossil Gengar comes back
-// at $99.99 for PSA 9.
-const COLLECTR_TRUSTED_MAX_GRADE = 8;
+// Collectr leads on every grade it carries. Its figures follow PSA sales
+// rather than blending listings, and PriceCharting's can swing hard on thin
+// vintage — the two disagree by 7x on 1st Edition Fossil Gengar PSA 10. The
+// worker strips placeholder prices before they get here (a grade priced far
+// below both its neighbours), so the whole ladder is usable rather than the
+// top being distrusted wholesale.
+const COLLECTR_TRUSTED_MAX_GRADE = 10;
 function _collectrGradeUSD(card, g, variant) {
   if (!card || !(g >= 1 && g <= COLLECTR_TRUSTED_MAX_GRADE)) return 0;
   const data = (typeof getCollectrData === 'function') ? getCollectrData(card.i) : null;
@@ -16585,6 +16590,17 @@ function renderHoldStrategy(card) {
     else _holdStratVariant = 'unlimited'; // fallback if no data at all
   }
 
+  // Collectr overrides both anchors wherever it has a figure for the print in
+  // view. It is applied after the variant block rather than inside it so the
+  // preference holds for Unlimited as well, where that block never runs.
+  {
+    const _crPrint = _holdVariantEligible ? _holdStratVariant : 'unlimited';
+    const _crRaw = (typeof collectrRawUSD === 'function') ? collectrRawUSD(card, _crPrint) : 0;
+    if (_crRaw > 0) rawUSD = _crRaw;
+    const _crP10 = _collectrGradeUSD(card, 10, _crPrint);
+    if (_crP10 > 0) psa10Price = _crP10;
+  }
+
   // Need both a raw and a PSA 10 anchor to do the comparison.
   if (!psa10Price || psa10Price <= 0 || !rawUSD || rawUSD <= 0) {
     section.style.display = 'none';
@@ -16822,11 +16838,13 @@ function renderHoldStrategy(card) {
     // a corrected £49, and reported the gap between the two as an 854% return.
     const _ovrGBP = (getHoldOverridesForCard(overrideIdFor(card, _shownPrint)) || {})['psa' + g];
     const _collectrUSD = _collectrGradeUSD(card, g, _shownPrint);
+    // Your own correction wins, then Collectr, then PriceCharting, then the
+    // ratio estimate as a last resort.
     const baseUSD = _ovrGBP > 0 ? _ovrGBP / fx
-                  : liveUSD_r > 0 ? liveUSD_r
                   : _collectrUSD > 0 ? _collectrUSD
+                  : liveUSD_r > 0 ? liveUSD_r
                   : estimateGradePrice(card, g, psa10Price);
-    const _fromCollectr = !(_ovrGBP > 0) && !(liveUSD_r > 0) && _collectrUSD > 0;
+    const _fromCollectr = !(_ovrGBP > 0) && _collectrUSD > 0;
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
     // For owned slabs: cost basis is what was paid; projections still anchor to current market.
     const today = isOwnedSlab ? slabAcq.costGBP / fx : baseUSD + slabShipGBP / fx;

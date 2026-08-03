@@ -2559,24 +2559,27 @@ function parseCollectrResponse(body) {
     if (p != null) printOf('default').raw = p;
   }
 
-  // A grade ladder should not fall as the grade rises. Where it does by a wide
-  // margin the figure is a placeholder rather than a price — Unlimited Fossil
-  // Gengar quotes PSA 9 at $99.99 against $341 for PSA 8. Those are dropped and
-  // named, so the rest of the ladder stays usable instead of the whole top end
-  // being distrusted. A little noise is tolerated; a collapse is not.
+  // Placeholder prices show up as a trough: a grade priced far below both the
+  // grade under it and the grade over it. Unlimited Fossil Gengar quotes PSA 9
+  // at $99.99 between $341 and $839, which is not a price.
+  //
+  // Testing against both neighbours matters. A ladder that simply falls is
+  // often real at the bottom — the same card has PSA 1 at $372 against PSA 2
+  // at $157, because low-grade vintage is thin and an "authentic" label on an
+  // iconic card carries its own demand. An earlier version compared each grade
+  // against the running maximum and threw away five good prices to catch one
+  // bad one.
   const suspect = [];
   const LADDER = ['psa1', 'psa1_5', 'psa2', 'psa3', 'psa4', 'psa5', 'psa6', 'psa7', 'psa8', 'psa9', 'psa10'];
   for (const [printName, p] of Object.entries(prints)) {
-    let floor = 0;
-    for (const key of LADDER) {
-      const v = p[key];
-      if (!(v > 0)) continue;
-      if (floor > 0 && v < floor * 0.6) {
-        suspect.push({ print: printName, grade: key, price: v, below: floor });
+    const present = LADDER.filter(k => p[k] > 0);
+    for (let i = 1; i < present.length - 1; i++) {
+      const key = present[i], v = p[key];
+      const prev = p[present[i - 1]], next = p[present[i + 1]];
+      if (v < prev * 0.6 && v < next * 0.6) {
+        suspect.push({ print: printName, grade: key, price: v, between: [prev, next] });
         delete p[key];
-        continue;
       }
-      if (v > floor) floor = v;
     }
   }
 
@@ -2797,7 +2800,8 @@ async function handleCollectr(request, env, url) {
   }
 
   const priceKey = `collectr:data:${productId}`;
-  if (env.SYNC_KV && !searched) {
+  const refresh = url.searchParams.get('refresh') === '1';
+  if (env.SYNC_KV && !searched && !refresh) {
     try {
       const hit = await env.SYNC_KV.get(priceKey);
       if (hit) return new Response(hit, { headers: { ...ch, 'X-Cache': 'hit' } });
