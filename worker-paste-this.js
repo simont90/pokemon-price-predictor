@@ -2829,7 +2829,23 @@ async function handleCollectr(request, env, url) {
       psa10_90d: collectrTrend(parsed.price_history, 'psa10', 90, print),
     };
   }
-  const out = { found: true, product_id: productId, ...parsed, trend, credits_used: searched ? 3 : 2 };
+  // The trend above is computed from the whole history; the history itself is
+  // then trimmed before it goes over the wire. Collectr returns a reading per
+  // grade per print per day — 4,659 rows on Fossil Gengar — and the client was
+  // holding all of it in localStorage, 441KB for one card, re-parsed on every
+  // price lookup. Callers only ever draw the recent shape, so a year is kept.
+  const CUTOFF = Date.now() - 400 * 86400000;
+  const trimmed = parsed.price_history
+    .filter(h => { const t = Date.parse(h.date); return isFinite(t) && t >= CUTOFF; })
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+    .slice(0, 400);
+
+  const out = {
+    found: true, product_id: productId, ...parsed,
+    price_history: trimmed,
+    history_total: parsed.price_history.length,
+    trend, credits_used: searched ? 3 : 2,
+  };
   const body = JSON.stringify(out);
   if (env.SYNC_KV) {
     try { await env.SYNC_KV.put(priceKey, body, { expirationTtl: COLLECTR_PRICE_TTL }); } catch (e) {}

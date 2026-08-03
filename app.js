@@ -650,6 +650,7 @@ async function init() {
   setupPCOverride();
   setupPsaLink();
   setupPsaPop();
+  _collectrMigrateCache();
   setupCollectr();
   setupCertLookup();
   setupCPOverride();
@@ -10280,21 +10281,66 @@ function renderPsaPopOneHave() {
 // call. Collectr's own search returns fabricated results for every query, so
 // the product link is pasted per card rather than looked up, the same way
 // PriceCharting overrides already work.
-const COLLECTR_IDS_KEY  = 'pkm-collectr-ids-v1';    // cardId -> product id, synced
-const COLLECTR_DATA_KEY = 'pkm-collectr-cache-v1';  // productId -> payload, device-local
+const COLLECTR_IDS_KEY  = 'pkm-collectr-ids-v1';  // cardId -> product id, synced
+// Deliberately unprefixed: a price cache is device-local, and any pkm-* write
+// wakes the sync push. It was pkm- prefixed to begin with, so the old key is
+// migrated and dropped below.
+const COLLECTR_DATA_KEY = 'collectr-cache-v1';
+const COLLECTR_DATA_KEY_OLD = 'pkm-collectr-cache-v1';
 const COLLECTR_TTL_MS   = 86400000;                 // matches the worker's day
+const COLLECTR_HISTORY_CAP = 120;
 
+// Entries written before the history was trimmed carry thousands of rows —
+// 441KB for a single card, re-parsed on every price lookup, and counted against
+// a localStorage budget shared with the sync payload. Trim them once on load
+// rather than waiting for each to age out.
+function _collectrMigrateCache() {
+  try {
+    const oldRaw = localStorage.getItem(COLLECTR_DATA_KEY_OLD);
+    const raw = localStorage.getItem(COLLECTR_DATA_KEY) || oldRaw;
+    if (oldRaw) localStorage.removeItem(COLLECTR_DATA_KEY_OLD);
+    if (!raw) return;
+    const c = JSON.parse(raw);
+    let trimmed = false;
+    for (const v of Object.values(c)) {
+      const h = v && v.data && v.data.price_history;
+      if (Array.isArray(h) && h.length > COLLECTR_HISTORY_CAP) {
+        v.data.price_history = h.slice(0, COLLECTR_HISTORY_CAP);
+        trimmed = true;
+      }
+    }
+    if (trimmed || oldRaw) localStorage.setItem(COLLECTR_DATA_KEY, JSON.stringify(c));
+  } catch { try { localStorage.removeItem(COLLECTR_DATA_KEY_OLD); } catch {} }
+}
+
+let _collectrIdMemo = null;
 function getCollectrIds() {
-  try { return JSON.parse(localStorage.getItem(COLLECTR_IDS_KEY) || '{}'); } catch { return {}; }
+  if (_collectrIdMemo) return _collectrIdMemo;
+  try { _collectrIdMemo = JSON.parse(localStorage.getItem(COLLECTR_IDS_KEY) || '{}'); }
+  catch { _collectrIdMemo = {}; }
+  return _collectrIdMemo;
 }
 function getCollectrId(cardId) { return getCollectrIds()[cardId] || null; }
 function setCollectrId(cardId, productId) {
   const m = getCollectrIds();
   if (productId) m[cardId] = productId; else delete m[cardId];
+  _collectrIdMemo = m;
   try { localStorage.setItem(COLLECTR_IDS_KEY, JSON.stringify(m)); } catch {}
 }
+// Parsed once and held in memory. getCollectrData sits under getCurrentPrice,
+// which runs inside render loops, so re-reading and re-parsing localStorage per
+// call cost 0.5ms a time — a few hundred calls a render.
+let _collectrMemo = null;
 function _collectrCache() {
-  try { return JSON.parse(localStorage.getItem(COLLECTR_DATA_KEY) || '{}'); } catch { return {}; }
+  if (_collectrMemo) return _collectrMemo;
+  try { _collectrMemo = JSON.parse(localStorage.getItem(COLLECTR_DATA_KEY) || '{}'); }
+  catch { _collectrMemo = {}; }
+  return _collectrMemo;
+}
+function _collectrCacheWrite(cache) {
+  _collectrMemo = cache;
+  try { localStorage.setItem(COLLECTR_DATA_KEY, JSON.stringify(cache)); }
+  catch { /* over quota — the in-memory copy still serves this session */ }
 }
 function getCollectrData(cardId) {
   const c = _collectrCache();
@@ -10335,13 +10381,17 @@ async function fetchCollectrData(card, { force = false, variant = 'unlimited' } 
     // Cache the miss briefly so a card Collectr does not carry is not retried
     // on every render.
     cache[cacheKey] = { ts: Date.now(), data: null, miss: d.reason || 'not_found' };
-    try { localStorage.setItem(COLLECTR_DATA_KEY, JSON.stringify(cache)); } catch {}
+    _collectrCacheWrite(cache);
     return null;
   }
   if (d.product_id) setCollectrId(card.i, d.product_id);
-  cache[d.product_id || cacheKey] = { ts: Date.now(), data: d };
-  try { localStorage.setItem(COLLECTR_DATA_KEY, JSON.stringify(cache)); } catch {}
-  return d;
+  // Store a slim copy: prices and trend are what the app reads, and history is
+  // only used for the sparkline, so a long tail of it is dead weight in
+  // localStorage — which is shared with the sync payload and has a hard cap.
+  const slim = { ...d, price_history: (d.price_history || []).slice(0, COLLECTR_HISTORY_CAP) };
+  cache[d.product_id || cacheKey] = { ts: Date.now(), data: slim };
+  _collectrCacheWrite(cache);
+  return slim;
 }
 
 // The ungraded price for whichever print is in view, in USD like every other
