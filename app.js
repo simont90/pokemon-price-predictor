@@ -10403,7 +10403,12 @@ function collectrRawUSD(card, variant) {
   if (!card || !card.i) return 0;
   const data = getCollectrData(card.i);
   if (!data) return 0;
-  const hit = collectrPricesFor(data, variant || 'unlimited') || collectrPricesFor(data, 'unlimited');
+  // No cross-print fallback. Falling back to Unlimited quoted an Unlimited raw
+  // price under a 1st Edition heading — wrong on its own, and it desynced the
+  // panels: the headline took Collectr while every PSA tile got 0 here and
+  // dropped to PriceCharting, because the grade lookup never had this fallback.
+  // Answer for the print that was asked for, or not at all.
+  const hit = collectrPricesFor(data, variant || 'unlimited');
   const v = hit && hit.prices ? hit.prices.raw : 0;
   return v > 0 ? v : 0;
 }
