@@ -863,7 +863,7 @@ function _inferJPRarityRc(card) {
 function getInvestmentStars(card, desTot) {
   if (!card) return { stars: 0, tier: '', hint: '', color: '' };
   const charScore = getCharacterScore(card.n);
-  const rc = card.rc || _inferJPRarityRc(card);
+  const rc = cardRarityCode(card) || _inferJPRarityRc(card);
   const des = typeof desTot === 'number' ? desTot : 5;
   const isS   = charScore >= 9.0;
   const isA   = charScore >= 7.5 && !isS;
@@ -883,6 +883,16 @@ function getInvestmentStars(card, desTot) {
   if (des >= 3.0 && (isHighArtRarity || rc === 'SR' || rc === 'RR'))
     return { stars: 2, tier: 'Veg', color: '#4ade80',
       hint: 'Some appeal · buy with a clear thesis, not momentum' };
+  // One star is a verdict, and a verdict needs something to stand on. A card
+  // with no rarity from its own record, no English twin to inherit one from and
+  // no inferable JP rarity has told us nothing — calling that "negligible growth
+  // expected" reads as a judgement of the card when it is a gap in our data.
+  // It lands almost entirely on Japanese cards, which are mostly user-added here
+  // and never carry a rarity code.
+  if (!rc) {
+    return { stars: 0, tier: 'Unrated', color: '#94a3b8',
+      hint: 'No rarity or set data for this card — add the set, or link the English version to rate it' };
+  }
   return { stars: 1, tier: 'Carbs', color: '#94a3b8',
     hint: 'Negligible growth expected · sub-£20 target zone' };
 }
@@ -895,7 +905,7 @@ const _RARITY_LABELS = {
 };
 
 function _buildStarRationale(card, desTot) {
-  const rc        = card.rc || _inferJPRarityRc(card);
+  const rc        = cardRarityCode(card) || _inferJPRarityRc(card);
   const des       = typeof desTot === 'number' ? desTot : 5;
   const charScore = getCharacterScore(card.n);
   const displayName = card.n; // full card name as shown in the UI
@@ -954,7 +964,17 @@ function renderStarRating(card, des) {
   if (!el || !card) return;
   const desVal = (des && typeof des === 'object') ? (des.total ?? 5) : (des ?? 5);
   const { stars, tier, hint, color } = getInvestmentStars(card, desVal);
-  if (!stars) { el.style.display = 'none'; if (rationaleEl) rationaleEl.textContent = ''; return; }
+  // Unrated is a state worth showing: hiding the row looks like the card simply
+  // has no rating, when what it actually has is missing data the user can fix.
+  if (!stars && tier !== 'Unrated') { el.style.display = 'none'; if (rationaleEl) rationaleEl.textContent = ''; return; }
+  if (!stars) {
+    el.style.display = 'flex';
+    iconsEl.innerHTML = `<span class="star-empty">${'★'.repeat(5)}</span>`;
+    if (tierEl) tierEl.textContent = '';
+    hintEl.textContent = hint;
+    if (rationaleEl) rationaleEl.textContent = '';
+    return;
+  }
   el.style.display = 'flex';
   iconsEl.innerHTML = `<span style="color:${color}">${'★'.repeat(stars)}</span><span class="star-empty">${'★'.repeat(5 - stars)}</span>`;
   if (tierEl) tierEl.textContent = '';
@@ -978,13 +998,13 @@ function autoFillDesirability(card, pullCost) {
   const appealScore = getAppealScore(card.n);
 
   // Art/Hype: base from rarity + card type (use price-inferred RC for JP cards with no rc)
-  let artScore = getArtBaseScore(card.rc || _inferJPRarityRc(card), card.n);
+  let artScore = getArtBaseScore(cardRarityCode(card) || _inferJPRarityRc(card), card.n);
 
   // Price-premium adjustment: if card trades above/below expected for its rarity, adjust art.
   // For S/A-tier characters the price premium is already captured by charScore, so upward
   // art boosts are skipped to avoid double-counting. Downward adjustments still apply.
   const price = getCurrentPrice(card);
-  const expected = EXPECTED_PRICE_BY_RARITY[card.rc] || 2;
+  const expected = EXPECTED_PRICE_BY_RARITY[cardRarityCode(card)] || 2;
   const isTopChar = charScore >= 7.5; // A-tier or above
   if (price > 0 && expected > 0) {
     const ratio = price / expected;
@@ -1111,6 +1131,9 @@ function counterpartSetMatch(scA, scB) {
 }
 
 function buildCounterpartIndex(cards) {
+  // Inherited rarity/age is read out of this index, so anything cached against
+  // the old one is stale the moment it is rebuilt.
+  if (typeof _cardBasisMemo !== 'undefined') _cardBasisMemo.clear();
   counterpartIndex = new Map();
   counterpartByCard = new Map();
   for (const c of cards) {
@@ -3829,9 +3852,9 @@ function computeSignal(card, pullCost, desirability) {
   const modelVsMarket = modelPrice / marketPrice;
 
   // Compute directly — avoids calling forecast() which builds 15 scenario objects we don't need
-  const rarityRate = (RARITY_RATES[card.rc] || RARITY_RATES['']).base;
+  const rarityRate = (RARITY_RATES[cardRarityCode(card)] || RARITY_RATES['']).base;
   const charMult   = getCharacterMultiplier(card.n);
-  const ageMonths  = getSetAgeMonths(card.sc);
+  const ageMonths  = cardAgeMonths(card);
   const ageMult    = getAgeMultiplier(ageMonths, 1);
 
   const momentum = getMarketMomentum();
@@ -3842,7 +3865,7 @@ function computeSignal(card, pullCost, desirability) {
   const isSuperIconic = charMult >= 1.6;  // S-tier: Charizard, Mewtwo, Pikachu, Mew, Umbreon, Eevee
   const isJP          = card.lang === 'JP';
   const isWotcFirst   = _HVG_1ED_SETS.has(card.sc);   // 1st Ed eligible WOTC sets — supply fully discontinued
-  const isAltArt      = card.rc === 'SIR' || card.rc === 'SAR';
+  const isAltArt      = cardRarityCode(card) === 'SIR' || cardRarityCode(card) === 'SAR';
 
   // Primary signal: model's projected annual growth rate (rarityRate × charMult × ageMult)
   // Benchmarked against ~8% opportunity cost. This is the direct output of the forecast model.
@@ -4450,6 +4473,46 @@ function getSetAgeMonths(setCode) {
   return Math.max(0, (now - releaseDate) / (1000 * 60 * 60 * 24 * 30.44));
 }
 
+// A card with no set code and no rarity is not a Standard card from last year —
+// it is a card we lack data for, and the two are not the same. getSetAgeMonths
+// returns a flat 12 for an unknown set and RARITY_RATES falls through to
+// 'Standard' (base 0.02, the floor), so every such card was modelled as a
+// recent bulk rare no matter what it actually is.
+//
+// That hits Japanese cards hardest by a wide margin. The JP catalogue here is
+// mostly user-added rather than indexed — 336 of the 407 user-added cards are
+// JP — and user-added records carry a set *name* but never a set code or a
+// rarity. So a 1996 Base Set Charizard was scored at rarity base 0.02 against
+// the English copy's 0.07, and aged at 12 months against its 331, losing the
+// vintage premium as well. One star, "negligible growth expected".
+//
+// The counterpart index already knows the English twin of these cards, and that
+// twin has both fields. Read them from there before falling back. Resolved on
+// the in-memory card only — the stored record keeps its own empty fields, since
+// an English set code is not true of a Japanese card and only stands in here to
+// date the print run.
+const _cardBasisMemo = new Map();
+function _cardBasis(card) {
+  if (!card) return { rc: '', ageMonths: 12 };
+  const key = card.i;
+  if (key && _cardBasisMemo.has(key)) return _cardBasisMemo.get(key);
+  let rc = card.rc || '';
+  let sc = card.sc || '';
+  if ((!rc || !sc) && typeof findCounterparts === 'function') {
+    let twin = null;
+    try { twin = (findCounterparts(card) || {}).primary; } catch {}
+    if (twin) {
+      if (!rc && twin.rc) rc = twin.rc;
+      if (!sc && twin.sc) sc = twin.sc;
+    }
+  }
+  const basis = { rc, sc, ageMonths: sc ? getSetAgeMonths(sc) : 12, inherited: !card.rc || !card.sc };
+  if (key) _cardBasisMemo.set(key, basis);
+  return basis;
+}
+function cardRarityCode(card) { return _cardBasis(card).rc; }
+function cardAgeMonths(card)  { return _cardBasis(card).ageMonths; }
+
 function getAgeMultiplier(monthsOld, yearsForward) {
   const futureMonths = monthsOld + (yearsForward * 12);
   if (futureMonths < 6) return 0.6;
@@ -4461,9 +4524,9 @@ function getAgeMultiplier(monthsOld, yearsForward) {
 }
 
 function forecast(card, pullCost, desirability) {
-  const rarityRate = (RARITY_RATES[card.rc] || RARITY_RATES['']).base;
+  const rarityRate = (RARITY_RATES[cardRarityCode(card)] || RARITY_RATES['']).base;
   const charMult = getCharacterMultiplier(card.n);
-  const ageMonths = getSetAgeMonths(card.sc);
+  const ageMonths = cardAgeMonths(card);
 
   const currentPriceUSD = getCurrentPrice(card);
   const years = [1, 2, 3, 4, 5];
@@ -4527,7 +4590,7 @@ function renderForecast(card, pullCost, desirability) {
   }
   table.querySelector('tbody').innerHTML = html;
 
-  const rarityInfo = RARITY_RATES[card.rc] || RARITY_RATES[''];
+  const rarityInfo = RARITY_RATES[cardRarityCode(card)] || RARITY_RATES[''];
   const rateLabel = rarityInfo.label;
   const rarityReason = rarityInfo.reason || '';
   const charMult = fc.charMult;
@@ -9496,7 +9559,7 @@ function scanValuePicks(filter) {
     const charMult = getCharacterMultiplier(c.n);
     if (charMult < 1.1) continue;
 
-    const rarityInfo = RARITY_RATES[c.rc] || RARITY_RATES[''];
+    const rarityInfo = RARITY_RATES[cardRarityCode(c)] || RARITY_RATES[''];
     const rarityRate = rarityInfo.base;
     if (rarityRate < 0.10) continue;
 
@@ -9532,7 +9595,7 @@ function scanValuePicks(filter) {
     const { priceUSD: modelPrice } = predictPrice(pullCost, modelDes);
 
     // ---- Set age (supply tightening) ----
-    const ageMonths = getSetAgeMonths(c.sc);
+    const ageMonths = cardAgeMonths(c);
     const ageFactor = ageMonths > 48 ? 1.35 : ageMonths > 24 ? 1.15 : ageMonths < 6 ? 0.8 : 1.0;
 
     // ---- Composite value score ----
@@ -12999,9 +13062,9 @@ function estimateGradePrice(card, grade, psa10Price) {
 // liquidity discount to thin-data grades (reduces modelled growth rate).
 function projectGradePrice(card, grade, currentGradePrice, years, popData) {
   if (!currentGradePrice) return 0;
-  const rarityRate = (RARITY_RATES[card.rc] || RARITY_RATES['']).base;
+  const rarityRate = (RARITY_RATES[cardRarityCode(card)] || RARITY_RATES['']).base;
   const charMult = getCharacterMultiplier(card.n);
-  const ageMonths = getSetAgeMonths(card.sc);
+  const ageMonths = cardAgeMonths(card);
   const ageMult = getAgeMultiplier(ageMonths, years);
   const annualRate = rarityRate * charMult * ageMult * (GRADE_GROWTH_PREMIUM[grade] || 1);
   const momentum = getMarketMomentum();
@@ -13147,7 +13210,7 @@ function renderPsaGradeRange(card, pullCost, desirability) {
   }
 
   // Footnote — per-grade annual rates and wall detection
-  const rateLabel = (RARITY_RATES[card.rc] || RARITY_RATES['']).label;
+  const rateLabel = (RARITY_RATES[cardRarityCode(card)] || RARITY_RATES['']).label;
   const rawPart = (rawPriceUSD && rawPriceUSD > 0) ? ` · raw ≈ ${fmtGBP(rawPriceUSD)}` : '';
 
   // Wall detection: find grade steps >50%
@@ -16124,12 +16187,21 @@ const _LTP_RISK_ORD = { low: 0, med: 1, high: 2 };
 // keeping it carries none of the buyer's uncertainty.
 const RAW_VARIANCE_BASE = 0.20;   // pack-fresh: what the old flat figure assumed
 const RAW_VARIANCE_MAX  = 0.75;   // vintage unknown-grade, just under the 0.85 grading gamble
+// Undatable is not the same as new. Reading the release date straight off
+// card.sc meant a card with no set code — every user-added card, and so most of
+// the Japanese ones — fell to the pack-fresh base and was labelled Low risk.
+// A 1996 Base Set Charizard bought raw was scored as the safest play on the
+// board while "buy raw and grade it", which carries exactly the same unknown
+// condition, sat at High risk beside it.
+const RAW_VARIANCE_UNKNOWN = 0.40;   // undatable print run -> medium, never low
 function rawConditionVariance(card, alreadyOwned) {
   if (alreadyOwned) return RAW_VARIANCE_BASE;
-  const rd = (typeof setsData !== 'undefined' && setsData?.[card?.sc]?.releaseDate) || '';
-  const year = parseInt(String(rd).slice(0, 4), 10);
-  if (!year) return RAW_VARIANCE_BASE;
-  const age = new Date().getFullYear() - year;
+  const basis = (typeof _cardBasis === 'function') ? _cardBasis(card) : null;
+  // No set code from the card and none inheritable from its counterpart: the
+  // print run cannot be dated, so neither "pack-fresh" nor "vintage" is a claim
+  // we can make. Sit in the middle rather than defaulting to the safe end.
+  if (!basis || !basis.sc) return RAW_VARIANCE_UNKNOWN;
+  const age = basis.ageMonths / 12;
   if (age <= 5) return RAW_VARIANCE_BASE;
   // Ramps from pack-fresh at 5 years to the vintage ceiling at ~25.
   return Math.min(RAW_VARIANCE_MAX, RAW_VARIANCE_BASE + (age - 5) * 0.0275);
@@ -22871,7 +22943,7 @@ function openHomePip(id, imgUrl) {
       potentialEl.textContent = `${fmtGBP(yr5USD)} · +${pct}%`;
       if (rationaleEl) {
         const annualPct = (fc.scenarios.expected[0].rate * 100).toFixed(1);
-        const rarityLabel = (RARITY_RATES[card.rc] || RARITY_RATES['']).label;
+        const rarityLabel = (RARITY_RATES[cardRarityCode(card)] || RARITY_RATES['']).label;
         const charLabel = fc.charMult > 1 ? ` · ×${fc.charMult.toFixed(1)} char` : '';
         const ageLabel = fc.ageMonths >= 48 ? ' · vintage' : fc.ageMonths < 6 ? ' · very new' : fc.ageMonths < 24 ? ' · recent' : '';
         rationaleEl.textContent = `${rarityLabel}${charLabel} · ${annualPct}%/yr${ageLabel}`;
@@ -25154,10 +25226,10 @@ function urScanRaw() {
     const discount = Math.min(rawDiscount, 2.5);
     const logDiscount = Math.log(rawDiscount); // 0 at parity, grows slowly
 
-    const rarityRate = (RARITY_RATES[c.rc] || RARITY_RATES['']).base;
+    const rarityRate = (RARITY_RATES[cardRarityCode(c)] || RARITY_RATES['']).base;
     if (rarityRate < 0.03) continue; // standard commons rarely move
 
-    const ageMonths = getSetAgeMonths(c.sc);
+    const ageMonths = cardAgeMonths(c);
     const ageFactor = ageMonths > 48 ? 1.30 : ageMonths > 24 ? 1.12 : ageMonths < 6 ? 0.85 : 1.0;
 
     // 5yr projection — use PSA 9 trajectory deflated back to raw growth rate
@@ -25241,8 +25313,8 @@ function urScanGrade(fmt) {
       const discount = Math.min(fairUsdRaw / effectiveUsd, 2.0);
       const fairUsd = effectiveUsd * discount;
       const charMult = getCharacterMultiplier(c.n);
-      const rarityRate = (RARITY_RATES[c.rc] || RARITY_RATES['']).base;
-      const ageMonths = getSetAgeMonths(c.sc);
+      const rarityRate = (RARITY_RATES[cardRarityCode(c)] || RARITY_RATES['']).base;
+      const ageMonths = cardAgeMonths(c);
       const ageFactor = ageMonths > 48 ? 1.30 : ageMonths > 24 ? 1.12 : ageMonths < 6 ? 0.85 : 1.0;
       const roiFactor = 1 + Math.max(0, Math.min(roi5, 3)) * 0.7;
       // PSA grade trust: PSA 10 is the most liquid, PSA 6 is thin.
@@ -25371,7 +25443,7 @@ function urRender(results) {
         <img class="ur-img" src="${getCardImg(c)}" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0">
         <div class="ur-info">
           <div class="ur-name">${esc(c.n)} ${langPill}</div>
-          <div class="ur-meta">${esc(c.s || '—')} · ${esc((RARITY_RATES[c.rc] || RARITY_RATES['']).label || 'Rare')}</div>
+          <div class="ur-meta">${esc(c.s || '—')} · ${esc((RARITY_RATES[cardRarityCode(c)] || RARITY_RATES['']).label || 'Rare')}</div>
           <div class="ur-reasons">${p.reasons}</div>
         </div>
         <div class="ur-values">
@@ -27998,7 +28070,7 @@ function _vgDealScore(card) {
 function _focusScoreBonus(card, stars) {
   const focus = getFocus();
   if (!focus || !focus.id) return 0;
-  const rc = card.rc || _inferJPRarityRc(card);
+  const rc = cardRarityCode(card) || _inferJPRarityRc(card);
   switch (focus.id) {
     case 'art-rares':
       return HIGH_ART_RARITIES.has(rc) ? 15 : -8;
@@ -31006,7 +31078,7 @@ async function _showCardAiOverlay(card) {
   const modelGBP = usdToGbp(modelUSD);
 
   // Set context
-  const ageMonths = Math.round(getSetAgeMonths(card.sc));
+  const ageMonths = Math.round(cardAgeMonths(card));
   const isVintage = (typeof _vintageSets === 'function') && _vintageSets().some(s => s.code === card.sc);
   const gemRate   = card.g != null ? (card.g * 100).toFixed(1) + '%' : null;
   const owned     = Array.isArray(portfolio) && portfolio.some(p => p.id === card.i);

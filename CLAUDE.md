@@ -307,6 +307,34 @@ For worker changes:
 
 ---
 
+## Missing card data is not zero data
+
+User-added cards (`pkm-user-cards-v1`) carry a set *name* but never a set code
+or a rarity code. That is most of the JP catalogue here — 336 of 407 user-added
+cards are Japanese — so the gap lands overwhelmingly on Japanese cards.
+
+Every model input that reads `card.rc` or `card.sc` must go through
+`cardRarityCode()` / `cardAgeMonths()` (both from `_cardBasis()`), which fill the
+gap from the card's counterpart before falling back. Reading the fields raw
+silently produced worst-case answers rather than no answer:
+
+- `RARITY_RATES[undefined]` falls through to `''` = Standard, base 0.02 — the
+  floor — against a real Holo Rare's 0.07.
+- `getSetAgeMonths('')` returns a flat 12, so a 1996 card was modelled as one
+  year old and lost the vintage premium.
+- `rawConditionVariance` read `setsData[card.sc]` directly and bailed to the
+  pack-fresh base, labelling raw vintage **Low risk** — the safest play on the
+  board — while "buy raw and grade it", which carries the identical unknown
+  condition, sat at High risk beside it.
+
+Together those scored a JP Base Set Charizard at one star, "negligible growth
+expected · sub-£20 target zone".
+
+Counterpart inheritance only reaches ~16% of JP user cards (55 of 336) — the
+rest have no English twin. For those, say so rather than guessing: rarity with
+no source returns the `Unrated` star state, and an undatable print run gets
+`RAW_VARIANCE_UNKNOWN` (0.40, medium) rather than the safe end of the scale.
+
 ## Common pitfalls (do not repeat)
 
 - **Worker secrets** (`EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`) are set in the
