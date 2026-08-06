@@ -10285,8 +10285,12 @@ const COLLECTR_IDS_KEY  = 'pkm-collectr-ids-v1';  // cardId -> product id, synce
 // Deliberately unprefixed: a price cache is device-local, and any pkm-* write
 // wakes the sync push. It was pkm- prefixed to begin with, so the old key is
 // migrated and dropped below.
-const COLLECTR_DATA_KEY = 'collectr-cache-v1';
-const COLLECTR_DATA_KEY_OLD = 'pkm-collectr-cache-v1';
+// v2: everything cached under v1 was parsed with a grade ladder that omitted
+// PSA 8.5, so its psa10 is really a psa9 and its psa10 is missing. Those
+// payloads cannot be repaired here — the grade ids are gone by this point — so
+// they are dropped and refetched rather than migrated.
+const COLLECTR_DATA_KEY = 'collectr-cache-v2';
+const COLLECTR_STALE_KEYS = ['collectr-cache-v1', 'pkm-collectr-cache-v1'];
 const COLLECTR_TTL_MS   = 86400000;                 // matches the worker's day
 const COLLECTR_HISTORY_CAP = 120;
 
@@ -10295,10 +10299,12 @@ const COLLECTR_HISTORY_CAP = 120;
 // a localStorage budget shared with the sync payload. Trim them once on load
 // rather than waiting for each to age out.
 function _collectrMigrateCache() {
+  for (const k of COLLECTR_STALE_KEYS) { try { localStorage.removeItem(k); } catch {} }
+  // Entries written before the history was trimmed carry thousands of rows —
+  // 441KB for a single card, re-parsed on every price lookup. Trim them once on
+  // load rather than waiting for each to age out.
   try {
-    const oldRaw = localStorage.getItem(COLLECTR_DATA_KEY_OLD);
-    const raw = localStorage.getItem(COLLECTR_DATA_KEY) || oldRaw;
-    if (oldRaw) localStorage.removeItem(COLLECTR_DATA_KEY_OLD);
+    const raw = localStorage.getItem(COLLECTR_DATA_KEY);
     if (!raw) return;
     const c = JSON.parse(raw);
     let trimmed = false;
@@ -10309,8 +10315,8 @@ function _collectrMigrateCache() {
         trimmed = true;
       }
     }
-    if (trimmed || oldRaw) localStorage.setItem(COLLECTR_DATA_KEY, JSON.stringify(c));
-  } catch { try { localStorage.removeItem(COLLECTR_DATA_KEY_OLD); } catch {} }
+    if (trimmed) localStorage.setItem(COLLECTR_DATA_KEY, JSON.stringify(c));
+  } catch {}
 }
 
 let _collectrIdMemo = null;

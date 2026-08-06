@@ -326,8 +326,15 @@ function scoreDeals(buckets, fairValueGBP, fxUsdToGbp, fxEurToGbp) {
 // Accepts ?url=<eBay listing URL>, fetches the listing page, and extracts
 // all carousel image URLs from eBay's embedded JSON data and meta tags.
 // No extra API permissions needed — reads the public listing page.
+// No Cache-Control meant browsers fell back to heuristic caching and held a
+// response for hours on their own initiative. Every route that caches on
+// purpose does it in KV with a TTL it chooses, so a second, invisible cache in
+// front of that only serves stale data after a fix — which is exactly what
+// happened when the Collectr grade ids were corrected and clients kept reading
+// the old ladder back out of their own cache.
 function _jsonResp(status, body, ch) {
-  return new Response(JSON.stringify(body), { status, headers: { ...ch, 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), { status, headers: {
+    ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }
 
 async function handleImgProxy(request, env, url) {
@@ -2512,10 +2519,9 @@ function extractNumericPrice(v) {
 }
 
 // Collectr identifies grades by a numeric id, not a label — `product_sub_type`
-// carries the print ("1st Edition Holofoil"), not the grade. Ids 1–11 are PSA's
-// eleven steps in order, including the 1.5 half grade; 52 is the ungraded
-// price. Established by matching prices against PriceCharting's labelled rows
-// on the same card, Fossil Gengar #5:
+// carries the print ("1st Edition Holofoil"), not the grade. Ids 1–12 walk PSA's
+// scale in order; 52 is the ungraded price. Established by matching prices
+// against PriceCharting's labelled rows on the same card, Fossil Gengar #5:
 //
 //   id 3 = $157.50 against PriceCharting "Grade 2" $157.50   exact
 //   id 5 = $294.33 against "Grade 4" $294.45
@@ -2523,13 +2529,24 @@ function extractNumericPrice(v) {
 //   id 9 = $983.52 against "Grade 8" $974.00
 //   id 9 = $341.70 against "Grade 8" $327.50 on the Unlimited print
 //
-// Ids above 11 belong to other grading companies (BGS, CGC, SGC and so on) and
-// are ignored rather than guessed at. The exact cent match also settles the
-// currency: these are USD, the same as PriceCharting, and there is no currency
-// field in the response to say so.
+// PSA's scale carries a half grade at 8.5 as well as at 1.5 — NM-MT+ sits
+// between 8 and 9 — so the ladder is twelve steps, not eleven. Leaving 8.5 out
+// shifted everything above PSA 8 down a rung: id 11 was read as PSA 10 when it
+// is PSA 9, and the real PSA 10 at id 12 fell past the top of the table and was
+// discarded as another grading company. Confirmed on Team Rocket's Mewtwo ex
+// #281 against Collectr's own page: PSA 8 $360 (id 9), PSA 9 $355 (id 11),
+// PSA 10 $819 (id 12). Nothing above id 9 had ever been checked — the four
+// matches above all sit at or below it, and the top of the ladder was assumed.
+//
+// Ids above 12 belong to other grading companies (BGS, CGC, SGC and so on) and
+// are ignored rather than guessed at; `unmapped_grade_ids` in the response
+// lists what was skipped, so a future change surfaces instead of silently
+// truncating the ladder again. The exact cent match also settles the currency:
+// these are USD, the same as PriceCharting, and there is no currency field in
+// the response to say so.
 const COLLECTR_PSA_GRADE = {
-  1: 'psa1', 2: 'psa1_5', 3: 'psa2',  4: 'psa3', 5: 'psa4', 6: 'psa5',
-  7: 'psa6', 8: 'psa7',   9: 'psa8', 10: 'psa9', 11: 'psa10',
+  1: 'psa1', 2: 'psa1_5', 3: 'psa2',  4: 'psa3',   5: 'psa4', 6: 'psa5',
+  7: 'psa6', 8: 'psa7',   9: 'psa8', 10: 'psa8_5', 11: 'psa9', 12: 'psa10',
 };
 const COLLECTR_RAW_GRADE_ID = 52;
 
@@ -2547,9 +2564,11 @@ function parseCollectrResponse(body) {
     const p = extractNumericPrice(u.market_price ?? u.price);
     if (p != null) printOf(u.product_sub_type || 'default').raw = p;
   }
+  const unmapped = new Set();
   for (const g of (d.graded_sub_types || [])) {
-    const key = COLLECTR_PSA_GRADE[parseInt(g.grade_id, 10)];
-    if (!key) continue;                       // another grading company
+    const id = parseInt(g.grade_id, 10);
+    const key = COLLECTR_PSA_GRADE[id];
+    if (!key) { if (isFinite(id)) unmapped.add(id); continue; }  // another grading company
     const p = extractNumericPrice(g.market_price ?? g.price);
     if (p != null) printOf(g.product_sub_type || 'default')[key] = p;
   }
@@ -2570,7 +2589,7 @@ function parseCollectrResponse(body) {
   // against the running maximum and threw away five good prices to catch one
   // bad one.
   const suspect = [];
-  const LADDER = ['psa1', 'psa1_5', 'psa2', 'psa3', 'psa4', 'psa5', 'psa6', 'psa7', 'psa8', 'psa9', 'psa10'];
+  const LADDER = ['psa1', 'psa1_5', 'psa2', 'psa3', 'psa4', 'psa5', 'psa6', 'psa7', 'psa8', 'psa8_5', 'psa9', 'psa10'];
   for (const [printName, p] of Object.entries(prints)) {
     const present = LADDER.filter(k => p[k] > 0);
     for (let i = 1; i < present.length - 1; i++) {
@@ -2604,6 +2623,7 @@ function parseCollectrResponse(body) {
     prints,
     price_history,
     suspect,
+    unmapped_grade_ids: [...unmapped].sort((a, b) => a - b),
   };
 }
 
@@ -2799,12 +2819,13 @@ async function handleCollectr(request, env, url) {
     if (idKey && env.SYNC_KV) { try { await env.SYNC_KV.put(idKey, productId); } catch (e) {} }
   }
 
-  const priceKey = `collectr:data:${productId}`;
+  const priceKey = `collectr:data:v2:${productId}`;   // v2: grade ids remapped, 8.5 added
   const refresh = url.searchParams.get('refresh') === '1';
   if (env.SYNC_KV && !searched && !refresh) {
     try {
       const hit = await env.SYNC_KV.get(priceKey);
-      if (hit) return new Response(hit, { headers: { ...ch, 'X-Cache': 'hit' } });
+      if (hit) return new Response(hit, { headers: {
+        ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Cache': 'hit' } });
     } catch (e) {}
   }
 
@@ -2850,7 +2871,8 @@ async function handleCollectr(request, env, url) {
   if (env.SYNC_KV) {
     try { await env.SYNC_KV.put(priceKey, body, { expirationTtl: COLLECTR_PRICE_TTL }); } catch (e) {}
   }
-  return new Response(body, { headers: { ...ch, 'X-Cache': 'miss' } });
+  return new Response(body, { headers: {
+    ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Cache': 'miss' } });
 }
 
 // GET  /pop?cardId=   — returns cached pop data or fetches fresh and caches it

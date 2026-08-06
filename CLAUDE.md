@@ -144,10 +144,20 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
   endpoint is broken — it returns the same fabricated 12 rows for any query
   (verified with a control query), ignores `limit`, and every `image_url` is a
   YouTube link. Product ids must come from a pasted Collectr URL.
-  - `grade_id` 1–11 = PSA 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10 in order; 52 =
-    ungraded. Ids above 11 are other grading companies and are ignored.
-    Established by matching against PriceCharting's labelled rows on Fossil
-    Gengar #5 — id 3 = $157.50 against "Grade 2" $157.50, exact.
+  - `grade_id` 1–12 = PSA 1, 1.5, 2, 3, 4, 5, 6, 7, 8, **8.5**, 9, 10 in order;
+    52 = ungraded. Ids above 12 are other grading companies and are ignored —
+    the response lists what it skipped in `unmapped_grade_ids` so a future shift
+    surfaces instead of silently truncating the ladder. Established by matching
+    against PriceCharting's labelled rows on Fossil Gengar #5 — id 3 = $157.50
+    against "Grade 2" $157.50, exact.
+  - **PSA's scale has a half grade at 8.5 (NM-MT+) as well as 1.5.** Omitting it
+    shifted everything above PSA 8 down a rung: id 11 read as PSA 10 when it is
+    PSA 9, and the real PSA 10 at id 12 fell past the end of the table and was
+    thrown away as another grading company. The tiles then showed PSA 9's price
+    labelled PSA 10, and PSA 9 itself fell through to the ratio estimate.
+    Corrected against Collectr's own page for Team Rocket's Mewtwo ex #281:
+    PSA 8 $360 (id 9), PSA 9 $355 (id 11), PSA 10 $819 (id 12). Only ids ≤ 9 had
+    ever been verified; the top of the ladder was assumed.
   - Prices are USD, not GBP. There is no currency field; the exact cent match
     with PriceCharting settles it.
   - `product_sub_type` is the print ("1st Edition Holofoil"), not the grade.
@@ -171,6 +181,11 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
     real at the bottom, where the same card has PSA 1 at $372 against PSA 2 at
     $157. Dropped values are listed in the response's `suspect` array.
   - `?refresh=1` bypasses the 24h price cache. Costs 2 credits.
+  - Responses carry `Cache-Control: no-store`. The worker caches deliberately in
+    KV with a TTL it picks; without the header browsers and the Cloudflare edge
+    applied heuristic caching on top and kept serving a stale body for hours
+    after a fix. Anything cached on purpose belongs in KV, not in a second
+    invisible cache in front of it.
 - `GET /sync?key=` → returns stored snapshot JSON or `{data:null,ts:0}`.
 - `PUT /sync?key=` → stores raw body (must be valid JSON, ≤ 5 MB).
 - `DELETE /sync?key=` → deletes stored snapshot.
