@@ -5252,6 +5252,37 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   font-family: var(--font); font-size: 10px; font-weight: 800;
   letter-spacing: 0.04em; text-transform: uppercase;
 }
+/* Collector pick — the best way to own the card when nothing clears the
+   investment bar. Deliberately not green: this is an answer to a different
+   question, not a weaker Best pick, and it must not read as an endorsement
+   of the return. */
+/* Amber is set literally, not via --accent: that variable is red on this
+   theme, which collides with the red "Above budget" tag and reads as an alert.
+   This badge has to sit clearly apart from green (best pick) and red. */
+.hold-tile.hold-collector {
+  border: 1.5px solid #e8b634;
+  background: rgba(232,182,52,0.07);
+}
+.hold-collector-tag {
+  position: absolute; top: -9px; left: 12px;
+  padding: 2px 8px; border-radius: 5px;
+  background: #e8b634; color: #2a1f00;
+  font-family: var(--font); font-size: 10px; font-weight: 800;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.hold-collector-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid #e8b634;
+  border-radius: 6px;
+  background: rgba(232,182,52,0.09);
+  font-family: var(--font); font-size: 12.5px; line-height: 1.5;
+  color: var(--text);
+}
+.hold-collector-note strong { color: #b8860b; }
+@media (prefers-color-scheme: dark) {
+  .hold-collector-note strong { color: #e8b634; }
+}
 .hold-tile-over-budget {
   border: 1.5px solid rgba(248,113,113,0.4);
   opacity: 0.72;
@@ -5530,7 +5561,8 @@ body.pwa-standalone { padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
   .hold-out-chip { font-size: 9px; padding: 2px 6px; }
   .hold-tile { padding: 12px; }
   .hold-tile-foot { gap: 4px; }
-  .hold-winner-tag { font-size: 9px; padding: 2px 7px; }
+  .hold-winner-tag, .hold-collector-tag { font-size: 9px; padding: 2px 7px; }
+  .hold-collector-note { font-size: 11.5px; padding: 9px 10px; }
 }
 
 /* Small landscape / phablet middle ground — 2 columns. */

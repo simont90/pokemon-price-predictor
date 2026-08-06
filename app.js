@@ -3948,11 +3948,21 @@ function updateSignal(card, pullCost, desirability) {
     }
   }
 
+  // A Buy on a card you don't own scores the card, not the trade — so it can
+  // sit above a Hold Strategy that found no route worth the capital. Rather
+  // than let the two read as a contradiction, keep the Buy and say which kind
+  // of buy it is. 'none' means the strategy ran and nothing cleared the bar;
+  // null means it hasn't run yet, which is not the same thing.
+  let collectorCaveat = '';
+  if (!owned && _holdWinnerKey === 'none' && (signal === 'BUY' || signal === 'STRONG BUY')) {
+    collectorCaveat = ' Collection buy, not an investment — no grade clears the 5-year opportunity-cost bar, so buy it because you want it.';
+  }
+
   wrap.style.display = 'flex';
   wrap.classList.remove('is-expanded'); // reset tap-expanded state on card change
   $('signalBadge').textContent = signal;
   $('signalBadge').className = `signal-badge ${cls}`;
-  $('signalReason').textContent = signalSentence(signal, reasons, owned);
+  $('signalReason').textContent = signalSentence(signal, reasons, owned) + collectorCaveat;
   const scoreEl = $('signalScore');
   if (scoreEl) {
     let ns = signal === 'STRONG BUY' ? 55 : signal === 'BUY' ? 30 : signal === 'HOLD' ? 5 : -30;
@@ -16146,6 +16156,63 @@ function _pickBestLTP(candidates) {
   });
 }
 
+// The collector counterpart to _pickBestLTP. That function leads on risk tier,
+// which is an investment lens: it will hand you the single low-risk row even
+// when it is the largest outlay on the board. Recommending the dearest slab to
+// someone who has just been told this is not an investment is the wrong answer
+// to the question they asked, so this ranks on cost instead.
+//
+// The question here is "I want this card — what is the sensible way to own it",
+// so: the cheapest route that is not a gamble and is not actively losing money,
+// preferring the better projection when two cost the same. A graded copy that
+// undercuts raw wins on both counts — cheaper and no condition risk.
+function _pickCollectorEntry(strategies, maxBudgetGBP, fx) {
+  const capped = maxBudgetGBP < BUDGET_DEFAULT;
+  const affordable = s => !capped || (s.today * fx) <= maxBudgetGBP;
+
+  const byGrade = {};
+  for (const s of (strategies || [])) {
+    if (s.na || s.isOwnedSlab || !/^psa\d+$/.test(s.key) || !(s.today > 0)) continue;
+    byGrade[parseInt(s.key.slice(3), 10)] = s;
+  }
+  const grades = Object.keys(byGrade).map(Number).sort((a, b) => a - b);
+
+  if (grades.length >= 2) {
+    // Section 7 of the valuation framework: walk the ladder down from the top,
+    // and the first wall you meet is the ceiling of value pricing. Everything
+    // above it is paying for the grade; the rung directly below it is paying
+    // mostly for the card. That rung is the pick — not the cheapest one on the
+    // sheet, which is the mistake the framework calls out by name.
+    const step = i => (byGrade[grades[i + 1]].today - byGrade[grades[i]].today) / byGrade[grades[i]].today;
+    let below = -1;
+    for (let i = grades.length - 2; i >= 0; i--) {
+      if (step(i) > 0.50) { below = i; break; }
+    }
+    // No cliff anywhere: fall back to the largest step on the ladder, so the
+    // answer is still "the rung before the biggest jump" rather than the top.
+    if (below < 0) {
+      let biggest = 0;
+      for (let i = 1; i < grades.length - 1; i++) if (step(i) > step(biggest)) biggest = i;
+      below = biggest;
+    }
+    // Budget then walks the pick down rung by rung rather than discarding it.
+    for (let j = below; j >= 0; j--) {
+      if (affordable(byGrade[grades[j]])) return byGrade[grades[j]];
+    }
+  } else if (grades.length === 1 && affordable(byGrade[grades[0]])) {
+    return byGrade[grades[0]];
+  }
+
+  // Nothing graded fits — fall back to the cheapest non-gamble route, which is
+  // usually raw. Still an honest way to own the card, just without the slab.
+  const base = (strategies || []).filter(s => !s.na && s.key !== 'gamble' && !s.isOwnedSlab);
+  for (const pool of [base.filter(s => s.roi >= 0 && affordable(s)), base.filter(affordable), base]) {
+    if (pool.length) return pool.reduce((a, b) =>
+      b.today !== a.today ? (b.today < a.today ? b : a) : (b.roi > a.roi ? b : a));
+  }
+  return null;
+}
+
 // Render the EN ↔ JP side-by-side comparison inside the Hold Strategy card.
 // Shows the winning strategy + key economics for each language and lets the
 // algorithm pick the smarter version of the same card. No-op when there is
@@ -17112,6 +17179,25 @@ function renderHoldStrategy(card) {
     !s.na && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
   const bestLongTermPick = _pickBestLTP(ltpCandidates);
 
+  // Failing the investment test is not the same as "don't buy". When nothing
+  // clears the 35% hurdle the panel used to badge nothing at all, which reads
+  // as silence rather than as an answer — while the signal above it still said
+  // Buy, because that scores the card, not the trade. So name the route anyway
+  // and label what it is: the best way to own this card, recommended for the
+  // collection rather than as a position. Same ranking as the real pick, just
+  // without the opportunity-cost bar. Grading stays excluded — it is a gamble
+  // whatever the reason for buying.
+  // A pick that exists but is priced out of the budget renders no badge either
+  // — the tile shows "Above budget" instead — so the panel goes silent in that
+  // case too. Treat it the same as having no pick: name the best route you can
+  // actually afford.
+  const _ltpBudget = getMaxBudgetGBP();
+  const bestPickOverBudget = !!bestLongTermPick && !bestLongTermPick.isOwnedSlab &&
+    _ltpBudget < BUDGET_DEFAULT && (bestLongTermPick.today * fx) > _ltpBudget;
+  const collectorPick = (bestLongTermPick && !bestPickOverBudget)
+    ? null
+    : _pickCollectorEntry(strategies, _ltpBudget, fx);
+
   const winner = overallWinner; // used for recommendation copy below
   // Store winner key so updateSignal can stay in sync regardless of call order.
   // 'none' = Hold Strategy ran but no strategy qualifies as BEST LONG-TERM PICK.
@@ -17135,6 +17221,42 @@ function renderHoldStrategy(card) {
 
   // Refresh the Market tab's strategy insight now that we have the winner
   _renderMktStratInsight();
+
+  // Say out loud what the badge means, otherwise "Collector pick" reads as a
+  // weaker version of "Best pick" rather than a different question answered.
+  const collectorNote = $('holdCollectorNote');
+  if (collectorNote) {
+    if (collectorPick) {
+      const _cROI = Math.round(collectorPick.roi);
+      const _cGBP = fmtGBPDirect(collectorPick.today * fx);
+      collectorNote.style.display = '';
+      const _lead = bestPickOverBudget
+        ? `<strong>Priced out, not ruled out.</strong> The pick that clears the bar is ` +
+          `<strong>${esc(bestLongTermPick.label)}</strong> at ${fmtGBPDirect(bestLongTermPick.today * fx)}, ` +
+          `over your ${fmtGBPDirect(_ltpBudget)} per-card budget. `
+        : `<strong>Buy it if you want it \u2014 not as an investment.</strong> ` +
+          `No route clears the 5-year opportunity-cost bar (35%), so nothing here is a position worth taking. `;
+      // Name the wall. "Best way in" with no reason is a black box, and the
+      // step to the next grade is the single number that explains the choice.
+      let _why = '';
+      if (/^psa\d+$/.test(collectorPick.key)) {
+        const _g = parseInt(collectorPick.key.slice(3), 10);
+        const _next = strategies.find(s => s.key === 'psa' + (_g + 1) && !s.na && s.today > 0);
+        if (_next && collectorPick.today > 0) {
+          const _stepPct = Math.round((_next.today - collectorPick.today) / collectorPick.today * 100);
+          if (_stepPct >= 25) _why = ` PSA ${_g} is the last rung before a ${_stepPct}% jump to PSA ${_g + 1} ` +
+            `(${fmtGBPDirect(_next.today * fx)}) \u2014 above that you are paying for the grade, not the card.`;
+        }
+      }
+      collectorNote.innerHTML = _lead +
+        `If you want the card for the collection, <strong>${esc(collectorPick.label)}</strong> at ${_cGBP} ` +
+        `is the best way in.${_why}` +
+        (_cROI > 0 ? ` It still projects ${_cROI}% over 5 yrs, just not enough to beat leaving the money alone.` : '');
+    } else {
+      collectorNote.style.display = 'none';
+      collectorNote.innerHTML = '';
+    }
+  }
 
   // Unified "Smart move" recommendation across all strategies (PSA + ACE + raw + graded).
   const recEl = $('holdRecommendation');
@@ -17416,6 +17538,7 @@ function renderHoldStrategy(card) {
     // telling you that you can't afford something you already paid for.
     const isOverBudget  = !s.isOwnedSlab && _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
     const isWinner      = bestLongTermPick && s.key === bestLongTermPick.key && !isOverBudget;
+    const isCollector   = collectorPick && s.key === collectorPick.key && !isOverBudget;
     const gradeNum      = s.key.startsWith('psa') ? parseInt(s.key.replace('psa', '')) : null;
     const isCollapsed   = gradeNum !== null && _hiddenGradeNums.has(gradeNum);
     const profitSign    = s.profit >= 0 ? '+' : '−';
@@ -17489,8 +17612,11 @@ function renderHoldStrategy(card) {
       }
     }
 
-    return `<div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${s.overridden ? 'hold-tile-overridden' : ''} ${isCollapsed ? 'hold-tile-collapsed' : ''}"${isCollapsed ? ' style="display:none"' : ''}>
-      ${isOverBudget ? '<div class="hold-over-budget-tag">Above budget</div>' : (isWinner ? '<div class="hold-winner-tag">★ Best pick</div>' : '')}
+    return `<div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isCollector ? 'hold-collector' : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${s.overridden ? 'hold-tile-overridden' : ''} ${isCollapsed ? 'hold-tile-collapsed' : ''}"${isCollapsed ? ' style="display:none"' : ''}>
+      ${isOverBudget ? '<div class="hold-over-budget-tag">Above budget</div>'
+        : isWinner ? '<div class="hold-winner-tag">★ Best pick</div>'
+        : isCollector ? '<div class="hold-collector-tag" title="Best way to own this card. The return does not clear the 5-year opportunity-cost bar, so buy it because you want it, not as an investment.">♥ Collector pick</div>'
+        : ''}
       ${s.overridden ? `<div class="hold-tile-override-tag" title="Price override">${s.marketOverrideGBP != null ? 'Mkt' : 'Override'} £${(+s.overrideGBP).toFixed(2)}</div>` : ''}
       <div class="hold-row-inner">
         <div class="hold-row-left">
