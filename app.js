@@ -16035,7 +16035,7 @@ function computeHoldCore(card) {
   // keeping is simply that holding beats netting out today.
   const ltpCandidates = strategies.filter(s =>
     !s.na && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
-  const bestLongTermPick = _pickBestLTP(ltpCandidates);
+  const bestLongTermPick = _pickBestLTP(ltpCandidates, strategies);
 
   // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
   // funding/concentration risk that a £59 alternative doesn't. We only apply
@@ -16139,21 +16139,71 @@ function rawConditionVariance(card, alreadyOwned) {
 function varianceRiskLabel(v) {
   return v >= 0.50 ? 'high' : v >= 0.30 ? 'med' : 'low';
 }
-function _pickBestLTP(candidates) {
-  if (!candidates.length) return null;
-  return candidates.reduce((a, b) => {
-    // An owned slab's "today" is what was already paid, not money about to
-    // leave the account, so it carries no outlay penalty and cannot be ruled
-    // out by the budget — you are not buying it again.
-    const pa = a.isOwnedSlab ? 0 : ltpCapitalPenalty(gbpFromUSD(a.today));
-    const pb = b.isOwnedSlab ? 0 : ltpCapitalPenalty(gbpFromUSD(b.today));
+// Section 7 of the valuation framework, factored out so every pick in the app
+// reads the same curve. Walk the ladder down from the top; the first step over
+// 50% is the wall, and the rung directly beneath it is where you stop paying
+// for the card and start paying for the grade. When no step reaches 50% the
+// curve has no cliff, so fall back to the rung under the largest step — the
+// answer stays "before the biggest jump" rather than defaulting to the top.
+//
+// `accept` decides whether a rung is usable at all (budget, ROI hurdle, ...).
+// A rejected rung steps the walk one further down rather than abandoning it,
+// so a pick priced out of budget degrades to the next grade instead of
+// vanishing.
+function _ladderValueRung(gradeStrategies, accept) {
+  const rungs = (gradeStrategies || [])
+    .filter(s => s && !s.na && /^psa\d+$/.test(s.key) && s.today > 0)
+    .sort((a, b) => parseInt(a.key.slice(3), 10) - parseInt(b.key.slice(3), 10));
+  if (!rungs.length) return null;
+  if (rungs.length === 1) return accept(rungs[0]) ? rungs[0] : null;
+
+  const step = i => (rungs[i + 1].today - rungs[i].today) / rungs[i].today;
+  let below = -1;
+  for (let i = rungs.length - 2; i >= 0; i--) { if (step(i) > 0.50) { below = i; break; } }
+  if (below < 0) {
+    let biggest = 0;
+    for (let i = 1; i < rungs.length - 1; i++) if (step(i) > step(biggest)) biggest = i;
+    below = biggest;
+  }
+  for (let j = below; j >= 0; j--) if (accept(rungs[j])) return rungs[j];
+  return null;
+}
+
+// `candidates` have already cleared the ROI hurdle; `allStrategies` is the full
+// board, needed because the ladder's shape depends on grades that did not clear
+// it — the step into PSA 8 is measured from PSA 7 whether or not PSA 7 qualifies.
+//
+// Grade choice is the ladder's job. Ranking grades by riskAdjusted minus a
+// fixed capital-penalty step function decided it on where a price fell against
+// hardcoded band edges instead: on Dark Charizard, PSA 8 beat PSA 7 on both ROI
+// (47% vs 37%) and risk-adjusted return, then lost because £938 crossed the
+// £800 band and cost 70 penalty points to buy back 5. Nothing about the card
+// said stop at 7 — its wall is at PSA 9, one rung above.
+//
+// The old scoring still settles graded-vs-raw, where there is no ladder to walk.
+function _pickBestLTP(candidates, allStrategies) {
+  if (!candidates || !candidates.length) return null;
+  const penaltyOf = s => s.isOwnedSlab ? 0 : ltpCapitalPenalty(gbpFromUSD(s.today));
+  const better = (a, b) => {
+    const pa = penaltyOf(a), pb = penaltyOf(b);
     const aOut = pa >= 99999, bOut = pb >= 99999;
     if (aOut !== bOut) return bOut ? a : b; // in-budget always beats over-budget
     const rA = _LTP_RISK_ORD[a.risk ?? 'med'] ?? 1;
     const rB = _LTP_RISK_ORD[b.risk ?? 'med'] ?? 1;
     if (rA !== rB) return rA < rB ? a : b;  // lower risk always wins within same budget tier
     return (b.riskAdjusted - pb) > (a.riskAdjusted - pa) ? b : a;
-  });
+  };
+
+  const eligible = new Set(candidates);
+  const rung = _ladderValueRung(
+    (allStrategies && allStrategies.length ? allStrategies : candidates),
+    s => eligible.has(s) && penaltyOf(s) < 99999
+  );
+
+  const nonGraded = candidates.filter(s => !/^psa\d+$/.test(s.key));
+  if (!rung) return candidates.reduce(better);
+  if (!nonGraded.length) return rung;
+  return [rung, ...nonGraded].reduce(better);
 }
 
 // The collector counterpart to _pickBestLTP. That function leads on risk tier,
@@ -16170,38 +16220,11 @@ function _pickCollectorEntry(strategies, maxBudgetGBP, fx) {
   const capped = maxBudgetGBP < BUDGET_DEFAULT;
   const affordable = s => !capped || (s.today * fx) <= maxBudgetGBP;
 
-  const byGrade = {};
-  for (const s of (strategies || [])) {
-    if (s.na || s.isOwnedSlab || !/^psa\d+$/.test(s.key) || !(s.today > 0)) continue;
-    byGrade[parseInt(s.key.slice(3), 10)] = s;
-  }
-  const grades = Object.keys(byGrade).map(Number).sort((a, b) => a - b);
-
-  if (grades.length >= 2) {
-    // Section 7 of the valuation framework: walk the ladder down from the top,
-    // and the first wall you meet is the ceiling of value pricing. Everything
-    // above it is paying for the grade; the rung directly below it is paying
-    // mostly for the card. That rung is the pick — not the cheapest one on the
-    // sheet, which is the mistake the framework calls out by name.
-    const step = i => (byGrade[grades[i + 1]].today - byGrade[grades[i]].today) / byGrade[grades[i]].today;
-    let below = -1;
-    for (let i = grades.length - 2; i >= 0; i--) {
-      if (step(i) > 0.50) { below = i; break; }
-    }
-    // No cliff anywhere: fall back to the largest step on the ladder, so the
-    // answer is still "the rung before the biggest jump" rather than the top.
-    if (below < 0) {
-      let biggest = 0;
-      for (let i = 1; i < grades.length - 1; i++) if (step(i) > step(biggest)) biggest = i;
-      below = biggest;
-    }
-    // Budget then walks the pick down rung by rung rather than discarding it.
-    for (let j = below; j >= 0; j--) {
-      if (affordable(byGrade[grades[j]])) return byGrade[grades[j]];
-    }
-  } else if (grades.length === 1 && affordable(byGrade[grades[0]])) {
-    return byGrade[grades[0]];
-  }
+  const rung = _ladderValueRung(
+    (strategies || []).filter(s => !s.isOwnedSlab),
+    s => affordable(s)
+  );
+  if (rung) return rung;
 
   // Nothing graded fits — fall back to the cheapest non-gamble route, which is
   // usually raw. Still an honest way to own the card, just without the slab.
@@ -17177,7 +17200,7 @@ function renderHoldStrategy(card) {
   // keeping is simply that holding beats netting out today.
   const ltpCandidates = strategies.filter(s =>
     !s.na && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
-  const bestLongTermPick = _pickBestLTP(ltpCandidates);
+  const bestLongTermPick = _pickBestLTP(ltpCandidates, strategies);
 
   // Failing the investment test is not the same as "don't buy". When nothing
   // clears the 35% hurdle the panel used to badge nothing at all, which reads
@@ -23798,7 +23821,7 @@ function _bestInBudgetPick(card, maxBudget, fx) {
   const candidates = (hc.strategies || []).filter(
     s => s.key !== 'gamble' && s.risk === 'low' && s.roi > 0 && s.today * fx <= maxBudget
   );
-  const pick = candidates.length ? _pickBestLTP(candidates) : null;
+  const pick = candidates.length ? _pickBestLTP(candidates, hc.strategies) : null;
   if (!pick) return null;
   const displayGBP = pick.today * fx;
   const stratLabel = pick.key === 'raw' ? 'Raw' : pick.key.startsWith('psa') ? pick.key.replace('psa', 'PSA ') : '';

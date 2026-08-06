@@ -422,6 +422,18 @@ Then state the recommended grade(s) with the specific reasoning (which wall, wha
 confidence, what trend) — so the pick is auditable, not a black box. If two grades are
 close calls, present both and say why, rather than forcing a single answer.
 
+**Implementation:** `_ladderValueRung()` in `app.js` is the single walk — it
+takes the grade strategies plus an `accept` predicate and returns the rung below
+the highest wall, stepping further down whenever `accept` rejects one (budget,
+ROI hurdle). Both `_pickBestLTP()` (Best pick) and `_pickCollectorEntry()`
+(Collector pick) go through it, so the two badges cannot drift apart. Do not
+rank grades against each other by any other means: ranking them by
+`riskAdjusted` minus `ltpCapitalPenalty()` decided the pick on where a price
+fell against hardcoded band edges rather than on the card's own curve — on 1st
+Ed Dark Charizard it returned PSA 7 over PSA 8 despite PSA 8 leading on both ROI
+and risk-adjusted return, because £938 crossed the £800 band. That scoring now
+only settles graded-vs-raw, where there is no ladder to walk.
+
 **Common outcome to expect:** the smart pick is very often NOT the cheapest grade
 available. A pop-5000 PSA 3 might be cheap but sits on a compressed part of the curve
 with no wall above it — no value being left behind by buying the 4 or 5 instead. The
