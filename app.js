@@ -3314,7 +3314,8 @@ function recalcWithLivePrice(card) {
   try {
     const popGrid = document.getElementById('cdPopGrid');
     const popHdr  = document.getElementById('cdPopHdr');
-    const gemRate = livePrice.crGemRate > 0 ? livePrice.crGemRate : (card.g != null ? card.g * 100 : null);
+    const _gLocal = cardGemRate(card);
+    const gemRate = livePrice.crGemRate > 0 ? livePrice.crGemRate : (_gLocal != null ? _gLocal * 100 : null);
     const psa10Gbp = livePrice.crPsa10 > 0 ? livePrice.crPsa10 : (livePrice.pcPsa10 > 0 ? usdToGbp(livePrice.pcPsa10) : (card.p10 > 0 ? usdToGbp(card.p10) : null));
     const rawGbp  = livePrice.crRaw > 0 ? livePrice.crRaw : usdToGbp(lp);
     if (popGrid && (gemRate !== null || psa10Gbp !== null)) {
@@ -3657,7 +3658,7 @@ function selectCard(id) {
   $('marketRawGBP').textContent = fmtGBP(card.p);
   $('psa10USD').textContent = card.p10 > 0 ? fmtUSD(card.p10) : '—';
   $('psa10GBP').textContent = card.p10 > 0 ? fmtGBP(card.p10) : '—';
-  $('gemPct').textContent = card.g ? `${(card.g * 100).toFixed(1)}%` : '—';
+  { const _g = cardGemRate(card); $('gemPct').textContent = _g ? `${(_g * 100).toFixed(1)}%` : '—'; }
 
   // Card Details accordion
   try {
@@ -3896,7 +3897,7 @@ function computeSignal(card, pullCost, desirability) {
   else if (ageMonths >= 48) { score += 1; reasons.push('Vintage scarcity premium'); }
 
   // Gem-rate signal: hard-to-grade cards command extra PSA 10 scarcity premium
-  const gemRate = card.g != null ? card.g : null;
+  const gemRate = cardGemRate(card);
   if (gemRate !== null) {
     if (gemRate < 0.03)       { score += 2; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — PSA 10 pop extremely scarce`); }
     else if (gemRate < 0.05)  { score += 1; reasons.push(`${(gemRate*100).toFixed(1)}% gem rate — very hard to grade`); }
@@ -4042,7 +4043,8 @@ async function _loadCardAiBrief(card) {
   const psa10GBP = usdToGbp(anchor.usd);
   const setMeta  = setsData?.[card.sc] || {};
   const setName  = setMeta.name || card.s || '';
-  const gemStr   = card.g != null ? (card.g * 100).toFixed(0) + '%' : null;
+  const _gemR = cardGemRate(card);
+  const gemStr   = _gemR != null ? (_gemR * 100).toFixed(0) + '%' : null;
   const ratio    = rawGBP > 0 && psa10GBP > 0 ? (psa10GBP / rawGBP).toFixed(1) : null;
   const lang     = card.lang === 'JP' ? 'Japanese' : 'English';
 
@@ -4366,7 +4368,7 @@ function _renderCardInsightsGrid(card, signal, pullCost, desirability) {
   const popEl  = document.getElementById('ciPopVal');
   const popSub = document.getElementById('ciPopSub');
   if (popEl) {
-    const gemRate = card.g != null ? card.g * 100 : null;
+    const gemRate = cardGemRate(card) != null ? cardGemRate(card) * 100 : null;
     if (gemRate !== null) {
       if (gemRate >= 50)      { popEl.textContent = 'High';   popEl.className = 'ci-value ci-green'; }
       else if (gemRate >= 30) { popEl.textContent = 'Good';   popEl.className = 'ci-value ci-green'; }
@@ -4399,7 +4401,7 @@ function _renderCardInsightsGrid(card, signal, pullCost, desirability) {
       const ratio = rawGBP > 0 ? psa10GBP / rawGBP : 0;
       if (ratio >= 2.5) tags.push({label: 'GRADE ROI', cls: 'stag-green'});
     } catch {}
-    if (card.g != null && card.g * 100 >= 30) tags.push({label: 'POPULATION', cls: 'stag-green'});
+    { const _g = cardGemRate(card); if (_g != null && _g * 100 >= 30) tags.push({label: 'POPULATION', cls: 'stag-green'}); }
     if (d >= 70) tags.push({label: 'HIGH DEMAND', cls: 'stag-green'});
     tagsEl.innerHTML = tags.map(t => `<span class="cd-stag ${t.cls}">${t.label}</span>`).join('');
     tagsEl.style.display = '';
@@ -4512,6 +4514,32 @@ function _cardBasis(card) {
 }
 function cardRarityCode(card) { return _cardBasis(card).rc; }
 function cardAgeMonths(card)  { return _cardBasis(card).ageMonths; }
+
+// Gem rate is PSA 10s over everything submitted, not the PSA 10 population on
+// its own — a card with 400 tens out of 40,000 submissions is a hard grade, and
+// one with 400 out of 800 is not. Where a pop report exists that ratio can be
+// computed exactly rather than looked up, since the report carries every grade.
+//
+// Order: the card's own pop report first (real counts for this exact card and
+// the definition applied directly), then the static catalogue figure, then the
+// counterpart's. Returns null when nothing knows — never a default. The scorers
+// already skip the gem-rate term on null, and a made-up rate would move the
+// signal without any evidence under it.
+function cardGemRate(card) {
+  if (!card) return null;
+  const pop = (typeof _popDataCache !== 'undefined' && card.i) ? _popDataCache.get(card.i) : null;
+  if (pop && pop.pop) {
+    const fromPop = _gradeSuccessProb(pop.pop, 10);
+    if (fromPop != null && fromPop > 0) return fromPop;
+  }
+  if (card.g != null && card.g > 0) return card.g;
+  if (typeof findCounterparts === 'function') {
+    let twin = null;
+    try { twin = (findCounterparts(card) || {}).primary; } catch {}
+    if (twin && twin.g != null && twin.g > 0) return twin.g;
+  }
+  return null;
+}
 
 function getAgeMultiplier(monthsOld, yearsForward) {
   const futureMonths = monthsOld + (yearsForward * 12);
@@ -5681,8 +5709,9 @@ function renderGradingROI(apiData) {
   // Use scan expected grade if available — no sight-unseen penalty for cards in hand
   const scanAcq = (typeof getAcq === 'function') ? getAcq(card.i) : null;
   const expectedGrade = scanAcq?.expectedGrade ?? null;
-  const baseGemRate = (typeof card.g === 'number' && card.g > 0) ? card.g : DEFAULT_GEM_RATE;
-  const gemPct = expectedGrade ? baseGemRate : (card.g || null);
+  const _gemResolved = cardGemRate(card);
+  const baseGemRate = (typeof _gemResolved === 'number' && _gemResolved > 0) ? _gemResolved : DEFAULT_GEM_RATE;
+  const gemPct = expectedGrade ? baseGemRate : (_gemResolved || null);
   const gemRateDisplay = gemPct !== null ? (gemPct * 100).toFixed(1) : null;
 
   const valueGain = psa10Price - rawPrice;
@@ -6970,8 +6999,9 @@ function setupUpgradesList() {
 let _soUpgradeItems = []; // cache so onclick can reference by index
 
 function _soGemBadge(card) {
-  const measured = card.g != null;
-  const g = measured ? card.g : DEFAULT_GEM_RATE;
+  const _gm = cardGemRate(card);
+  const measured = _gm != null;
+  const g = measured ? _gm : DEFAULT_GEM_RATE;
   const pct = (g * 100).toFixed(0);
   const color = g >= 0.30 ? '#34d399' : g >= 0.15 ? '#fbbf24' : '#fb923c';
   const bg    = g >= 0.30 ? 'rgba(52,211,153,0.12)' : g >= 0.15 ? 'rgba(251,191,36,0.12)' : 'rgba(251,146,60,0.12)';
