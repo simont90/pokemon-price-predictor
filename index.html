@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260723m">
+  <link rel="stylesheet" href="style.css?v=20260723n">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -959,7 +959,7 @@
                 <button class="home-view-all" id="homeOpenCollection">View all</button>
               </div>
               <div class="home-total" id="homeCollTotal"></div>
-              <div class="home-scroll-row" id="homeCollList"><div class="home-empty">No cards in collection yet.<br>Search a card and tap + to add it.</div></div>
+              <div class="home-scroll-row home-reco-rows" id="homeCollList"><div class="home-empty">No cards in collection yet.<br>Search a card and tap + to add it.</div></div>
             </section>
           </div>
           <div class="home-htab-panel" data-htab-panel="coll-grading" style="display:none">
@@ -3283,7 +3283,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260723m"></script>
+  <script src="app.js?v=20260723n"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
