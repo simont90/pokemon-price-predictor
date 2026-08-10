@@ -3762,6 +3762,7 @@ function selectCard(id) {
   renderStarRating(card, des);
   // Runs on every card open, unlike the block inside renderLivePrice, which is
   // skipped entirely when the card has no live price yet.
+  try { renderCardPageHead(card); } catch {}
   try { _paintGemTile(card); } catch {}
   try { renderPriceHistory(card); } catch {}
   updateRipOrBuy(card, pullCost);
@@ -4578,6 +4579,59 @@ function cardAgeMonths(card)  { return _cardBasis(card).ageMonths; }
 // Paints the gem-rate tile on its own. renderLivePrice returns early when there
 // is no live price, which is exactly when a hand-entered gem rate matters, so
 // the tile cannot depend on that function having run.
+// The page head: breadcrumb, name, set, rarity/number, and the live price with
+// its move. Reads the same figures the panels below do rather than keeping its
+// own copy, so the headline cannot drift from the card it sits above.
+function renderCardPageHead(card) {
+  const host = document.getElementById('cdPageHead');
+  if (!host) return;
+  if (!card) { host.style.display = 'none'; return; }
+  host.style.display = '';
+
+  const setName = card.s || (typeof setsData !== 'undefined' && setsData?.[card.sc]?.name) || '';
+  const crumbs = document.getElementById('cdCrumbs');
+  if (crumbs) {
+    crumbs.innerHTML =
+      `<button type="button" data-crumb="home">Pokémon</button><span>›</span>` +
+      (setName ? `<button type="button" data-crumb="set">${esc(setName)}</button><span>›</span>` : '') +
+      `<button type="button" class="is-current" disabled>${esc(card.n || '')}</button>`;
+  }
+  const nameEl = document.getElementById('cdPhName');
+  if (nameEl) nameEl.textContent = card.n || '';
+  const setEl = document.getElementById('cdPhSet');
+  if (setEl) { setEl.textContent = setName; setEl.style.display = setName ? '' : 'none'; }
+
+  const rarity = (typeof _RARITY_LABELS !== 'undefined' && _RARITY_LABELS[cardRarityCode(card)])
+    || card.r || '';
+  const num = card.cn ? `${card.cn}${card.sr ? '/' + card.sr : ''}` : '';
+  const metaEl = document.getElementById('cdPhMeta');
+  if (metaEl) metaEl.textContent = [rarity, num].filter(Boolean).join('  •  ');
+
+  // Same source the Live Market Price headline uses.
+  const usd = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
+  const priceEl = document.getElementById('cdPhPrice');
+  if (priceEl) priceEl.textContent = usd > 0 ? fmtGBP(usd) : '—';
+
+  const deltaEl = document.getElementById('cdPhDelta');
+  if (deltaEl) {
+    // 30-day move from Collectr's own trend when it has one; it is the only
+    // dated series on hand, and quoting a move without a window is meaningless.
+    let pct = null;
+    try {
+      const d = getCollectrData(card.i);
+      const print = collectrPrintFor(d, (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited');
+      const tr = d && d.trend && print ? d.trend[print] : null;
+      const raw = tr && (tr.raw || tr.ungraded || tr['30d'] || tr.d30);
+      if (raw && isFinite(raw.pct)) pct = raw.pct;
+    } catch {}
+    if (pct == null) { deltaEl.textContent = ''; deltaEl.className = 'cd-ph-delta'; }
+    else {
+      deltaEl.textContent = `${pct >= 0 ? '+' : ''}${pct}% over 30d`;
+      deltaEl.className = 'cd-ph-delta ' + (pct > 0.5 ? 'is-up' : pct < -0.5 ? 'is-down' : 'is-flat');
+    }
+  }
+}
+
 function _paintGemTile(card) {
   const el = document.getElementById('cdPopGem');
   if (!el || !card) return;
@@ -24767,6 +24821,32 @@ function setupPageNav() {
     _renderHomeWatchlist();
     _renderHomeReco(true);
     _homeVintageHash = ''; try { _renderHomeVintage(); } catch(e) {}
+  });
+
+  // Breadcrumb navigation. Delegated — the head is re-rendered per card.
+  document.addEventListener('click', e => {
+    const b = e.target.closest('#cdCrumbs button[data-crumb]');
+    if (!b) return;
+    e.preventDefault();
+    if (b.dataset.crumb === 'home') { try { go('home'); } catch {} return; }
+    if (b.dataset.crumb === 'set' && selectedCard) {
+      // Same destination the set name under the title goes to, so the two
+      // cannot disagree about what "the set" means.
+      const setEl = document.getElementById('cdPhSet');
+      if (setEl) setEl.click();
+    }
+  });
+  // The set name under the title opens that set's card list.
+  document.getElementById('cdPhSet')?.addEventListener('click', e => {
+    e.preventDefault();
+    if (!selectedCard) return;
+    const name = selectedCard.s || (typeof setsData !== 'undefined' && setsData?.[selectedCard.sc]?.name) || '';
+    if (!name) return;
+    try {
+      go('cards');
+      const inp = document.getElementById('searchInput') || document.querySelector('input[placeholder*="earch" i]');
+      if (inp) { inp.value = name; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+    } catch {}
   });
 
   // Price-history range toggles. Delegated because the panels are re-rendered

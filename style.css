@@ -18205,3 +18205,54 @@ h1, h2, h3 {
   .ph-title { font-size: 12.5px; }
   .ph-range { padding: 3px 7px; font-size: 10px; }
 }
+
+/* ---- Card page head (Collectr-style) ------------------------------------- */
+.cd-pagehead {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 20px; padding: 4px 2px 16px;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+  margin-bottom: 14px;
+}
+.cd-ph-left { min-width: 0; }
+.cd-crumbs {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  font-family: var(--font-mono, monospace); font-size: 11px; opacity: 0.55; margin-bottom: 6px;
+}
+.cd-crumbs button {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 2px;
+}
+.cd-crumbs button:hover { opacity: 1; color: var(--accent, #e8b634); }
+.cd-crumbs span { opacity: 0.5; }
+.cd-crumbs .is-current { text-decoration: none; cursor: default; opacity: 1; font-weight: 600; }
+.cd-ph-name {
+  margin: 0; font-family: var(--font, sans-serif);
+  font-size: clamp(26px, 3.4vw, 42px); font-weight: 800; line-height: 1.08; letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.cd-ph-set {
+  margin-top: 4px; padding: 0; border: 0; background: none; cursor: pointer;
+  color: inherit; opacity: 0.75; font-family: var(--font, sans-serif); font-size: 14px;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.cd-ph-set:hover { opacity: 1; color: var(--accent, #e8b634); }
+.cd-ph-meta {
+  margin-top: 3px; opacity: 0.55;
+  font-family: var(--font-mono, monospace); font-size: 12px; letter-spacing: 0.01em;
+}
+.cd-ph-right { text-align: right; flex: 0 0 auto; }
+.cd-ph-price {
+  font-family: var(--font-mono, monospace);
+  font-size: clamp(22px, 2.6vw, 34px); font-weight: 700; line-height: 1.1; white-space: nowrap;
+}
+.cd-ph-delta {
+  margin-top: 2px; font-family: var(--font-mono, monospace); font-size: 12px; white-space: nowrap;
+}
+.cd-ph-delta.is-up   { color: #22c55e; }
+.cd-ph-delta.is-down { color: #f87171; }
+.cd-ph-delta.is-flat { opacity: 0.55; }
+@media (max-width: 640px) {
+  .cd-pagehead { flex-direction: column; gap: 8px; padding-bottom: 12px; margin-bottom: 10px; }
+  .cd-ph-right { text-align: left; }
+  .cd-ph-name { font-size: 24px; }
+}

@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260722r">
+  <link rel="stylesheet" href="style.css?v=20260722t">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1253,6 +1253,20 @@
               <button class="cp-btn cp-btn-primary" id="cpOpenBtn">Open counterpart</button>
               <button class="cp-btn cp-btn-secondary" id="cpCompareBtn">Compare side-by-side</button>
               <button class="cp-btn cp-btn-tertiary" id="cpOverrideBtn" title="Pick the correct EN/JP counterpart manually">Wrong card? Pick manually</button>
+            </div>
+          </div>
+          <!-- Collectr-style page head: breadcrumb, title block, price. Sits above
+               the art so the card identifies itself before anything is scored. -->
+          <div class="cd-pagehead" id="cdPageHead" style="display:none">
+            <div class="cd-ph-left">
+              <nav class="cd-crumbs" id="cdCrumbs"></nav>
+              <h1 class="cd-ph-name" id="cdPhName"></h1>
+              <button type="button" class="cd-ph-set" id="cdPhSet"></button>
+              <div class="cd-ph-meta" id="cdPhMeta"></div>
+            </div>
+            <div class="cd-ph-right">
+              <div class="cd-ph-price" id="cdPhPrice">—</div>
+              <div class="cd-ph-delta" id="cdPhDelta"></div>
             </div>
           </div>
           <div class="selected-card-header">
@@ -3257,7 +3271,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260722r"></script>
+  <script src="app.js?v=20260722t"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
