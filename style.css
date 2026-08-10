@@ -18597,7 +18597,10 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
    a full-width button was taking more height than the six picks beneath it. */
 .tp-featured {
   display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 10px;
-  padding: 9px 4px; margin: 0; border: 0; border-bottom: 1px solid var(--border);
+  /* The numbered rows carry a rank column the featured pick has none of, so its
+     art started 28px to the left of every row beneath it. Indent by the width
+     of that column plus the row gap so the thumbnails share an edge. */
+  padding: 9px 4px 9px 32px; margin: 0; border: 0; border-bottom: 1px solid var(--border);
   background: transparent; box-shadow: none; border-radius: 8px;
 }
 .tp-featured:hover { background: var(--bg-raised); }
