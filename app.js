@@ -3338,7 +3338,7 @@ function recalcWithLivePrice(card) {
     // Your own figure outranks the live collectrics one — an override exists
     // precisely because the fetched number was absent or wrong.
     try { _paintGemTile(card); } catch {}
-  const _gVariant = (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited';
+    const _gVariant = (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited';
     const _gOverride = card.i ? getGemOverride(card.i, _gVariant) : null;
     const _gLocal = cardGemRate(card, _gVariant);
     const _lp = livePrice || {};
@@ -3763,6 +3763,7 @@ function selectCard(id) {
   // Runs on every card open, unlike the block inside renderLivePrice, which is
   // skipped entirely when the card has no live price yet.
   try { _paintGemTile(card); } catch {}
+  try { renderPriceHistory(card); } catch {}
   updateRipOrBuy(card, pullCost);
   updateSignal(card, pullCost, des.total);
   updatePortfolioButton();
@@ -10502,7 +10503,11 @@ const COLLECTR_IDS_KEY  = 'pkm-collectr-ids-v1';  // cardId -> product id, synce
 const COLLECTR_DATA_KEY = 'collectr-cache-v2';
 const COLLECTR_STALE_KEYS = ['collectr-cache-v1', 'pkm-collectr-cache-v1'];
 const COLLECTR_TTL_MS   = 86400000;                 // matches the worker's day
-const COLLECTR_HISTORY_CAP = 120;
+// 400 rows within 400 days, matching what the worker returns, so the 1M/3M/6M/1Y
+// toggles all have real density. This was 120 while the only consumer was a
+// price lookup; the charts need the tail. Still far short of the 4,659 rows that
+// caused the original 441KB blob, and the in-memory memo means it is parsed once.
+const COLLECTR_HISTORY_CAP = 400;
 
 // Entries written before the history was trimmed carry thousands of rows —
 // 441KB for a single card, re-parsed on every price lookup, and counted against
@@ -10647,6 +10652,142 @@ function collectrPricesFor(data, variant) {
   return name ? { name, prices: data.prints[name] } : null;
 }
 
+// ---- Price history charts -------------------------------------------------
+// Inline SVG rather than a charting library: the site ships as static files
+// with no build step, and a line chart is a polyline and some ticks.
+//
+// The data is already on hand — Collectr's price_history carries one row per
+// {date, print, grade, price}, so the ungraded chart is the 'raw' rows and the
+// graded chart is one series per PSA grade. No extra fetch, no credits.
+const PH_RANGES = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
+// Colour-blind-safe and distinct against the dark panel. PSA 10 leads in blue
+// because it is the series people look for first.
+const PH_GRADE_COLOURS = {
+  psa10: '#3b82f6', psa9: '#22c55e', psa8: '#e8b634', psa7: '#f97316',
+  psa6: '#a78bfa', psa5: '#ec4899', psa4: '#14b8a6', psa3: '#94a3b8',
+  psa2: '#64748b', psa1: '#475569', raw: '#22d3ee',
+};
+
+// Rows for one print, bucketed by grade, oldest first, inside the window.
+function _phSeries(card, { print, days, grades }) {
+  const d = (typeof getCollectrData === 'function') ? getCollectrData(card && card.i) : null;
+  const hist = d && Array.isArray(d.price_history) ? d.price_history : [];
+  if (!hist.length) return {};
+  const cutoff = Date.now() - days * 86400000;
+  const out = {};
+  for (const h of hist) {
+    if (!h || !(h.price > 0) || !h.grade) continue;
+    if (print && h.print && h.print !== print) continue;
+    if (grades && !grades.includes(h.grade)) continue;
+    const t = Date.parse(h.date);
+    if (!isFinite(t) || t < cutoff) continue;
+    (out[h.grade] ||= []).push({ t, v: h.price });
+  }
+  for (const k of Object.keys(out)) {
+    out[k].sort((a, b) => a.t - b.t);
+    if (out[k].length < 2) delete out[k];   // a single point is not a history
+  }
+  return out;
+}
+
+function _phSvg(series, { height = 200, fill = false, fx = 1, currency = '\u00a3' } = {}) {
+  const keys = Object.keys(series);
+  if (!keys.length) return '';
+  const W = 640, H = height, PADL = 46, PADR = 10, PADT = 12, PADB = 28;
+  let tMin = Infinity, tMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+  for (const k of keys) for (const p of series[k]) {
+    if (p.t < tMin) tMin = p.t; if (p.t > tMax) tMax = p.t;
+    const v = p.v * fx;
+    if (v < vMin) vMin = v; if (v > vMax) vMax = v;
+  }
+  if (!(tMax > tMin)) return '';
+  // Start the scale at zero like Collectr's — a zoomed axis makes every card
+  // look volatile, which is the opposite of what these charts are for.
+  vMin = 0;
+  if (!(vMax > 0)) return '';
+  vMax *= 1.08;
+  const x = t => PADL + (t - tMin) / (tMax - tMin) * (W - PADL - PADR);
+  const y = v => H - PADB - (v / vMax) * (H - PADT - PADB);
+
+  const money = v => currency + (v >= 1000 ? Math.round(v).toLocaleString() : v.toFixed(v < 10 ? 2 : 0));
+  const ticks = 4;
+  let grid = '';
+  for (let i = 0; i <= ticks; i++) {
+    const v = vMax * i / ticks, yy = y(v);
+    grid += `<line class="ph-grid" x1="${PADL}" y1="${yy.toFixed(1)}" x2="${W - PADR}" y2="${yy.toFixed(1)}"/>` +
+            `<text class="ph-ytick" x="${PADL - 6}" y="${(yy + 3.5).toFixed(1)}" text-anchor="end">${money(v)}</text>`;
+  }
+  const fmtDate = t => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  let xlab = '';
+  for (let i = 0; i <= 4; i++) {
+    const t = tMin + (tMax - tMin) * i / 4;
+    xlab += `<text class="ph-xtick" x="${x(t).toFixed(1)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}">${fmtDate(t)}</text>`;
+  }
+
+  let paths = '';
+  for (const k of keys) {
+    const pts = series[k].map(p => `${x(p.t).toFixed(1)},${y(p.v * fx).toFixed(1)}`).join(' ');
+    const col = PH_GRADE_COLOURS[k] || '#94a3b8';
+    if (fill && keys.length === 1) {
+      const first = series[k][0], last = series[k][series[k].length - 1];
+      paths += `<polygon class="ph-fill" fill="${col}" points="${x(first.t).toFixed(1)},${(H - PADB).toFixed(1)} ${pts} ${x(last.t).toFixed(1)},${(H - PADB).toFixed(1)}"/>`;
+    }
+    paths += `<polyline class="ph-line" stroke="${col}" points="${pts}"/>`;
+    const lastP = series[k][series[k].length - 1];
+    paths += `<circle class="ph-dot" cx="${x(lastP.t).toFixed(1)}" cy="${y(lastP.v * fx).toFixed(1)}" r="3" fill="${col}"/>`;
+  }
+  return `<svg class="ph-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${grid}${paths}${xlab}</svg>`;
+}
+
+function _phLegend(series, fx, currency) {
+  const order = ['psa10','psa9','psa8','psa7','psa6','psa5','psa4','psa3','psa2','psa1'];
+  return order.filter(k => series[k]).map(k => {
+    const s = series[k], last = s[s.length - 1].v * fx;
+    return `<span class="ph-leg"><i style="background:${PH_GRADE_COLOURS[k]}"></i>` +
+           `${k.replace('psa', 'PSA ')} <em>${currency}${last >= 1000 ? Math.round(last).toLocaleString() : last.toFixed(2)}</em></span>`;
+  }).join('');
+}
+
+let _phRange = '1Y';
+function renderPriceHistory(card) {
+  const host = document.getElementById('priceHistoryPanels');
+  if (!host) return;
+  card = card || (typeof selectedCard !== 'undefined' ? selectedCard : null);
+  if (!card) { host.style.display = 'none'; return; }
+  const days = PH_RANGES[_phRange] || 365;
+  const print = (typeof collectrPrintFor === 'function' && typeof getCollectrData === 'function')
+    ? collectrPrintFor(getCollectrData(card.i), (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited')
+    : null;
+  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 1;   // Collectr quotes USD
+
+  const rawS    = _phSeries(card, { print, days, grades: ['raw'] });
+  const gradedS = _phSeries(card, { print, days, grades: Object.keys(PH_GRADE_COLOURS).filter(k => k !== 'raw') });
+
+  if (!Object.keys(rawS).length && !Object.keys(gradedS).length) {
+    host.style.display = 'none';
+    return;
+  }
+  host.style.display = '';
+  const tabs = Object.keys(PH_RANGES).map(r =>
+    `<button type="button" class="ph-range${r === _phRange ? ' is-on' : ''}" data-ph-range="${r}">${r}</button>`).join('');
+
+  const panel = (title, svg, legend, empty) => `
+    <div class="ph-panel">
+      <div class="ph-head">
+        <span class="ph-title">${title}</span>
+        <span class="ph-ranges">${tabs}</span>
+      </div>
+      ${svg ? `<div class="ph-plot">${svg}</div>` : `<div class="ph-empty">${empty}</div>`}
+      ${legend ? `<div class="ph-legend">${legend}</div>` : ''}
+    </div>`;
+
+  host.innerHTML =
+    panel('Ungraded Price History', _phSvg(rawS, { fill: true, fx }), '',
+          `No ungraded history in this ${_phRange} window.`) +
+    panel('Graded Price History', _phSvg(gradedS, { height: 220, fx }), _phLegend(gradedS, fx, '\u00a3'),
+          `No graded history in this ${_phRange} window.`);
+}
+
 // Renders the Collectr row and its price line under the PriceCharting grid.
 const _collectrInFlight = new Set();
 
@@ -10663,6 +10804,7 @@ function ensureCollectrData(card) {
       _collectrInFlight.delete(card.i);
       if (selectedCard && selectedCard.i === card.i) {
         try { renderCollectrRow(); } catch {}
+        try { renderPriceHistory(card); } catch {}
         // The art is painted before this lands, so a card whose primary image
         // 404'd is already showing a card back by now — swap it once Collectr's
         // copy exists rather than waiting for the next visit.
@@ -24625,6 +24767,16 @@ function setupPageNav() {
     _renderHomeWatchlist();
     _renderHomeReco(true);
     _homeVintageHash = ''; try { _renderHomeVintage(); } catch(e) {}
+  });
+
+  // Price-history range toggles. Delegated because the panels are re-rendered
+  // wholesale, which would drop directly-bound handlers.
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-ph-range]');
+    if (!btn) return;
+    e.preventDefault();
+    _phRange = btn.dataset.phRange;
+    try { renderPriceHistory(); } catch {}
   });
 
   // Gem-rate override. Entering a number must not reload the page — the field

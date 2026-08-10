@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260722p">
+  <link rel="stylesheet" href="style.css?v=20260722r">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1395,6 +1395,8 @@
               <div class="ci-sub" id="ciPopSub">gem rate</div>
             </div>
           </div>
+          <!-- Price history — Collectr history, rendered as inline SVG -->
+          <div class="ph-panels" id="priceHistoryPanels" style="display:none"></div>
           <!-- Grading Population — populated by renderLivePrice() -->
           <div class="cd-section-hdr" id="cdPopHdr" style="display:none">
             <svg class="cd-section-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -3255,7 +3257,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260722p"></script>
+  <script src="app.js?v=20260722r"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
