@@ -18468,3 +18468,12 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
   font-family: var(--mono, monospace); font-size: 10.5px; font-weight: 700;
 }
 .pf-filterclear:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Collection panel folds to its header rather than vanishing. */
+.portfolio-panel.is-collapsed > *:not(.portfolio-header) { display: none; }
+.portfolio-panel.is-collapsed .portfolio-header { margin-bottom: 0; border-bottom: 0; }
+.portfolio-close {
+  font-family: var(--mono, monospace); font-size: 15px; line-height: 1;
+  padding: 4px 9px; border-radius: 6px;
+}
+.portfolio-close:hover { background: var(--bg); color: var(--accent); }

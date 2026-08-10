@@ -6283,7 +6283,29 @@ function getMarketMomentum() {
 // ---- Portfolio ----
 function setupPortfolio() {
   $('portfolioToggle').addEventListener('click', togglePortfolio);
-  $('portfolioClose').addEventListener('click', () => { $('portfolioPanel').style.display = 'none'; });
+  // Collapse, not dismiss. Hiding the whole panel meant a stray click on the
+  // ✕ wiped the collection off the screen with no hint of how to get it back;
+  // folding it leaves the header, the total and the way to reopen in place.
+  // Navigation still hides it outright via _pfHidePanel.
+  const PF_COLLAPSE_KEY = 'portfolio-collapsed-v1';
+  const _pfApplyCollapse = on => {
+    const panel = $('portfolioPanel'), btn = $('portfolioClose');
+    if (!panel) return;
+    panel.classList.toggle('is-collapsed', on);
+    if (btn) {
+      btn.textContent = on ? '⌄' : '⌃';
+      btn.title = on ? 'Expand collection' : 'Collapse collection';
+      btn.setAttribute('aria-expanded', on ? 'false' : 'true');
+    }
+  };
+  let _pfCollapsed = false;
+  try { _pfCollapsed = localStorage.getItem(PF_COLLAPSE_KEY) === '1'; } catch {}
+  _pfApplyCollapse(_pfCollapsed);
+  $('portfolioClose').addEventListener('click', () => {
+    _pfCollapsed = !$('portfolioPanel').classList.contains('is-collapsed');
+    _pfApplyCollapse(_pfCollapsed);
+    try { localStorage.setItem(PF_COLLAPSE_KEY, _pfCollapsed ? '1' : '0'); } catch {}
+  });
   $('addPortfolioBtn').addEventListener('click', toggleCardInPortfolio);
 
   const refreshBtn = $('portfolioRefreshBtn');
@@ -6307,7 +6329,7 @@ function setupPortfolio() {
   const dupesBtn = $('portfolioDupesBtn');
   if (dupesBtn) {
     dupesBtn.addEventListener('click', () => {
-      $('portfolioClose')?.click();
+      _pfHidePanel();
       go('tools');
       setTimeout(() => {
         document.querySelector('[data-toolstab="dupes"]')?.click();
@@ -6826,6 +6848,13 @@ function _pfSetView(v) {
   try { renderPortfolio(); } catch {}
 }
 
+// Used where the panel genuinely should go away (navigating elsewhere), as
+// distinct from the header control, which only folds it.
+function _pfHidePanel() {
+  const p = document.getElementById('portfolioPanel');
+  if (p) p.style.display = 'none';
+}
+
 function renderPortfolio() {
   const list = $('portfolioList');
   const countEl = $('portfolioCount');
@@ -6951,7 +6980,7 @@ function renderPortfolio() {
   // long collection, and the choice is remembered per device.
   list.classList.toggle('is-grid', _pfView() === 'grid');
   document.getElementById('portDupeGoBtn')?.addEventListener('click', () => {
-    document.getElementById('portfolioClose')?.click();
+    _pfHidePanel();
     go('tools');
     setTimeout(() => document.querySelector('[data-toolstab="dupes"]')?.click(), 80);
   });
