@@ -18428,3 +18428,10 @@ h1, h2, h3 {
 .hold-ai-toggle .hat-chev { transition: transform 0.18s; opacity: 0.6; }
 .hold-ai-toggle[aria-expanded="true"] .hat-chev { transform: rotate(180deg); }
 .hold-ai-group[hidden] { display: none; }
+
+/* Trending in the rail: narrower column, so the movers list needs to stack
+   rather than run as a wide row. */
+.home-brief-rail { margin-bottom: 10px; }
+.home-brief-rail .home-brief-row,
+.home-brief-rail .brief-row { flex-wrap: wrap; }
+.home-brief-rail .brief-price { margin-left: auto; }

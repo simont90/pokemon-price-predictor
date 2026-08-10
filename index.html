@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260722y">
+  <link rel="stylesheet" href="style.css?v=20260722z">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -908,9 +908,6 @@
           </button>
         </div>
 
-        <!-- Daily Brief: one-glance market summary built from the app's engines -->
-        <div id="homeDailyBrief" class="home-brief" style="display:none"></div>
-
         <!-- GROUP: Top Picks — Buy / Avoid -->
         <div class="home-tab-group" id="hTabTopPicks">
           <div class="home-group-hd">
@@ -935,6 +932,9 @@
         </div><!-- /home-main-col -->
         <div class="home-side-col">
           <div class="home-holdings" id="homeHoldings" style="display:none"></div>
+          <!-- Trending: moved out of the main column so the value chart leads,
+               matching where Collectr puts it. -->
+          <div id="homeDailyBrief" class="home-brief home-brief-rail" style="display:none"></div>
 
         <!-- GROUP: My Collection & Consider Grading -->
         <div class="home-tab-group" id="hTabColl">
@@ -3283,7 +3283,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260722y"></script>
+  <script src="app.js?v=20260722z"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
