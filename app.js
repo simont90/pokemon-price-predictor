@@ -271,6 +271,10 @@ function collectrImgFor(cardId) {
 }
 
 function getCardImg(card) {
+  // Collectr's art beats the card-back placeholder outright. The placeholder is
+  // a data URI, so it *loads* — the onerror fallback never fires against it, and
+  // a linked card sat showing a card back with its own artwork one field away.
+  const _crArt = () => (card && card.i && collectrImgFor(card.i)) || CARD_PLACEHOLDER_IMG;
   // Accept direct image URLs or recognised CDN domains as-is.
   if (card.img && /^(https?:)?\/\//i.test(card.img)) {
     const u = card.img.toLowerCase();
@@ -284,7 +288,7 @@ function getCardImg(card) {
     // the real CDN image, then re-render. Show a placeholder meanwhile.
     if (typeof isTCGCollectorCardURL === 'function' && isTCGCollectorCardURL(card.img)) {
       _resolveLegacyTCGCImage(card).catch(() => {});
-      return CARD_PLACEHOLDER_IMG;
+      return _crArt();
     }
   }
   if (card.lang === 'JP') {
@@ -292,12 +296,13 @@ function getCardImg(card) {
     const parts = card.i.replace('jp-', '').split('-');
     const setCode = parts[0];
     const num = parts.slice(1).join('-');
+    if (!setCode || !num) return _crArt();
     return `https://assets.tcgdex.net/ja/${setCode}/${num}/high.png`;
   }
   // EN cards: pokemontcg.io _hires.png — 734×1024 px, crisp on Retina.
   // The standard .png (245×342 px) looks blurry at the 440 px display height
   // on 2× screens; _hires avoids upscaling artifacts.
-  if (!card.sc) return CARD_PLACEHOLDER_IMG;
+  if (!card.sc || !(card.cn || card.ns)) return _crArt();
   return `https://images.pokemontcg.io/${card.sc}/${card.cn || card.ns || ''}_hires.png`;
 }
 
@@ -10867,10 +10872,20 @@ function ensureCollectrData(card) {
           if (_cr) {
             for (const id of ['cardImage', 'cardImageJp']) {
               const el = document.getElementById(id);
-              if (!el || el.style.display === 'none' && !el.src) continue;
-              if (el.style.display === 'none' || !el.src) { el.src = _cr; el.style.display = 'block'; }
-              else el.setAttribute('data-collectr-img', _cr);
+              if (!el) continue;
+              // Replace outright when what is on screen is the card-back
+              // placeholder or a failed load; otherwise arm it as the fallback.
+              const showingPlaceholder = !el.src || el.src.startsWith('data:image/svg+xml');
+              if (showingPlaceholder || el.style.display === 'none') {
+                el.src = _cr;
+                el.style.display = 'block';
+                el.removeAttribute('data-collectr-img');
+              } else {
+                el.setAttribute('data-collectr-img', _cr);
+              }
             }
+            try { const bg = document.getElementById('cardHeroBg');
+                  if (bg && /svg\+xml/.test(bg.style.backgroundImage || '')) bg.style.backgroundImage = `url("${_cr}")`; } catch {}
           }
         } catch {}
         // The headline is painted before this lands, so it has to be repainted
