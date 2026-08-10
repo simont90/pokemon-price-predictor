@@ -10797,6 +10797,68 @@ function collectrPricesFor(data, variant) {
   return name ? { name, prices: data.prints[name] } : null;
 }
 
+// The app predicts; it does not track. A line of where the collection has been
+// says nothing you cannot read off the cards, and on a new collection it says
+// nothing at all. These are the model's own projections — the same
+// projectGradePrice the Hold Strategy uses per card, summed — so the home
+// figure and the per-card forecasts cannot disagree.
+const PV_HORIZONS = { '1Y': 1, '3Y': 3, '5Y': 5, '10Y': 10 };
+let _pvHorizon = '5Y';
+
+// What a holding is worth today, in GBP, by the same rules the collection uses.
+function _pvHoldingTodayGBP(p, card) {
+  const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(p.id) : null;
+  const v = collectionEntryValue(p, card, cached);
+  let gbp = (v && v.gbp > 0) ? v.gbp : 0;
+  if (!(gbp > 0) && typeof getCurrentPrice === 'function') {
+    const usd = getCurrentPrice(card);
+    if (usd > 0) gbp = usdToGbp(usd);
+  }
+  return gbp;
+}
+
+// Projected collection value at a horizon. A slab grows on its grade's curve;
+// a raw card on the card's own. Anything the model cannot project is carried
+// forward flat rather than dropped — losing it would quietly shrink the
+// collection at longer horizons and read as a forecast of decline.
+function pvForecastGBP(years) {
+  if (typeof portfolio === 'undefined' || !Array.isArray(portfolio)) return 0;
+  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 1;
+  let total = 0;
+  for (const p of portfolio) {
+    const card = (typeof getCardById === 'function') ? getCardById(p.id) : null;
+    if (!card) continue;
+    const copies = p.copies || p.qty || 1;
+    const todayGBP = _pvHoldingTodayGBP(p, card);
+    if (!(todayGBP > 0)) continue;
+    if (years === 0) { total += todayGBP * copies; continue; }
+    const slab = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(p.id) : null;
+    const grade = slab && slab.grade ? slab.grade : null;
+    let projGBP = 0;
+    try {
+      const usdNow = todayGBP / (fx || 1);
+      const usdThen = (typeof projectGradePrice === 'function')
+        ? projectGradePrice(card, grade || 8, usdNow, years) : 0;
+      projGBP = usdThen > 0 ? usdThen * fx : 0;
+    } catch {}
+    total += (projGBP > 0 ? projGBP : todayGBP) * copies;
+  }
+  return total;
+}
+
+// now / 1 / 3 / 5 / 10, so the shape of the curve is visible rather than just
+// its endpoints.
+function pvForecastSeries(maxYears) {
+  const steps = [0, ...[1, 2, 3, 5, 7, 10].filter(y => y <= maxYears)];
+  if (!steps.includes(maxYears)) steps.push(maxYears);
+  const now = Date.now();
+  return [...new Set(steps)].sort((a, b) => a - b).map(y => ({
+    t: now + y * 365 * 86400000,
+    v: pvForecastGBP(y),
+    years: y,
+  })).filter(r => r.v > 0);
+}
+
 let _pvRange = '1M';
 // The home hero: what the collection is worth, how it has moved over the chosen
 // window, and the line behind it. Reuses the same SVG renderer the card charts
@@ -10808,39 +10870,41 @@ function renderHomePortfolioValue() {
   if (!owned) { host.style.display = 'none'; return; }
   host.style.display = '';
 
-  const total = pvCurrentTotalGBP();
-  const days = PV_RANGES[_pvRange] ?? 30;
-  const rows = pvSeries(days);
+  const years = PV_HORIZONS[_pvHorizon] ?? 5;
+  const today = pvForecastGBP(0);
+  const then  = pvForecastGBP(years);
+  const rows  = pvForecastSeries(years);
 
-  // Delta across the window, against the earliest reading in it.
-  let deltaHtml = '';
-  if (rows.length >= 2) {
-    const first = rows[0].v, last = rows[rows.length - 1].v;
-    const d = last - first, pct = first > 0 ? (d / first) * 100 : 0;
+  let projHtml;
+  if (today > 0 && then > 0) {
+    const d = then - today, pct = (d / today) * 100;
     const cls = d > 0 ? 'is-up' : d < 0 ? 'is-down' : 'is-flat';
-    deltaHtml = `<span class="hpv-delta ${cls}">${d >= 0 ? '+' : '−'}${fmtGBPDirect(Math.abs(d))} ` +
-                `(${d >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span> <span class="hpv-window">over ${_pvRange}</span>`;
+    const cagr = years > 0 ? (Math.pow(then / today, 1 / years) - 1) * 100 : 0;
+    projHtml = `<span class="hpv-delta ${cls}">${d >= 0 ? '+' : '\u2212'}${fmtGBPDirect(Math.abs(d))} ` +
+               `(${d >= 0 ? '+' : ''}${pct.toFixed(1)}%)</span> ` +
+               `<span class="hpv-window">projected over ${_pvHorizon} \u00b7 ${cagr.toFixed(1)}%/yr</span>`;
   } else {
-    deltaHtml = `<span class="hpv-window">Tracking from today — the line fills in as prices refresh</span>`;
+    projHtml = `<span class="hpv-window">Not enough priced cards to project yet.</span>`;
   }
 
-  const tabs = Object.keys(PV_RANGES).map(r =>
-    `<button type="button" class="hpv-range${r === _pvRange ? ' is-on' : ''}" data-pv-range="${r}">${r}</button>`).join('');
+  const tabs = Object.keys(PV_HORIZONS).map(r =>
+    `<button type="button" class="hpv-range${r === _pvHorizon ? ' is-on' : ''}" data-pv-horizon="${r}">${r}</button>`).join('');
   const chart = rows.length >= 2
-    ? _phSvg({ value: rows }, { height: 210, fill: true, fx: 1 })
-    : `<div class="hpv-empty">Not enough history yet for a ${_pvRange} line.</div>`;
+    ? _phSvg({ forecast: rows }, { height: 210, fill: true, fx: 1 })
+    : `<div class="hpv-empty">Not enough priced cards to project yet.</div>`;
 
   host.innerHTML = `
     <div class="hpv-head">
       <div>
-        <div class="hpv-label">Collection value</div>
-        <div class="hpv-total">${fmtGBPDirect(total)}</div>
-        <div class="hpv-sub">${deltaHtml}</div>
+        <div class="hpv-label">Collection value \u00b7 projected</div>
+        <div class="hpv-total">${fmtGBPDirect(then > 0 ? then : today)}</div>
+        <div class="hpv-sub">${projHtml}</div>
       </div>
-      <div class="hpv-count">${owned} card${owned === 1 ? '' : 's'}</div>
+      <div class="hpv-count">${fmtGBPDirect(today)} today<br>${owned} card${owned === 1 ? '' : 's'}</div>
     </div>
     <div class="hpv-plot">${chart}</div>
-    <div class="hpv-ranges">${tabs}</div>`;
+    <div class="hpv-ranges">${tabs}</div>
+    <div class="hpv-foot">Model projection, not a guarantee \u2014 the same per-card forecast the Hold Strategy uses, summed.</div>`;
 }
 
 // Right-rail companions: what the collection is made of, and what leads it.
@@ -10862,10 +10926,14 @@ function renderHomeHoldings() {
     isSlab ? graded++ : raw++;
     const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(p.id) : null;
     const v = collectionEntryValue(p, card, cached);
+    let gbp = (v && v.gbp > 0) ? v.gbp : 0;
+    if (!(gbp > 0) && typeof getCurrentPrice === 'function') {
+      const usd = getCurrentPrice(card);
+      if (usd > 0) gbp = usdToGbp(usd);
+    }
     const print = isSlab && acq.variant && acq.variant !== 'unlimited'
       ? (acq.variant === '1sted' ? ' 1st Ed' : ' Shadowless') : '';
-    rows.push({ id: card.i, n: card.n, set: card.s || card.sc || '',
-                gbp: (v && v.gbp > 0) ? v.gbp : 0,
+    rows.push({ id: card.i, n: card.n, set: card.s || card.sc || '', gbp,
                 grade: isSlab ? `PSA ${acq.grade}${print}` : 'Raw' });
   }
   const tot = graded + raw || 1;
@@ -10934,7 +11002,16 @@ function pvCurrentTotalGBP() {
     // and the list cannot disagree about what a holding is worth.
     const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(p.id) : null;
     const v = collectionEntryValue(p, card, cached);
-    if (v && v.gbp > 0) total += v.gbp * (p.copies || p.qty || 1);
+    // collectionEntryValue reads the price cache and card.p only. When neither
+    // has landed it returns 0, which is a missing price, not a worthless card —
+    // fall back to getCurrentPrice, which also knows Collectr and the live
+    // panel. Reporting a collection as £0.00 is worse than reporting it raw.
+    let gbp = (v && v.gbp > 0) ? v.gbp : 0;
+    if (!(gbp > 0) && typeof getCurrentPrice === 'function') {
+      const usd = getCurrentPrice(card);
+      if (usd > 0) gbp = usdToGbp(usd);
+    }
+    if (gbp > 0) total += gbp * (p.copies || p.qty || 1);
   }
   return total;
 }
@@ -25185,10 +25262,10 @@ function setupPageNav() {
   // Collection view toggle. Delegated — the header is re-rendered per paint.
   // Collection value range toggles.
   document.addEventListener('click', e => {
-    const r = e.target.closest('[data-pv-range]');
+    const r = e.target.closest('[data-pv-horizon]');
     if (!r) return;
     e.preventDefault();
-    _pvRange = r.dataset.pvRange;
+    _pvHorizon = r.dataset.pvHorizon;
     try { renderHomePortfolioValue(); } catch {}
   });
 

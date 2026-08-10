@@ -18522,12 +18522,16 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
   overflow-x: visible; overflow-y: auto; max-height: 340px;
   scroll-snap-type: none;
 }
+.home-reco-rows.home-scroll-row .home-card-tile,
 .home-reco-rows .home-card-tile {
-  width: 100%; flex-shrink: 1;
+  width: 100%; flex-shrink: 0;
   display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 10px;
   padding: 8px 4px; border: 0; border-radius: 8px;
   border-bottom: 1px solid var(--border);
   background: transparent; box-shadow: none;
+  /* The scroll-row tile is a fixed-size poster with overflow hidden, which
+     clipped the row to 30px and cut the art off. Let it size to its content. */
+  height: auto; min-height: 77px; overflow: visible;
 }
 .home-reco-rows .home-card-tile:last-child { border-bottom: 0; }
 .home-reco-rows .home-card-tile:hover { transform: none; box-shadow: none; background: var(--bg-raised); }
@@ -18535,10 +18539,31 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
   width: 44px; height: 61px; aspect-ratio: auto;
   object-fit: contain; border-radius: 4px; padding: 0; background: var(--bg);
 }
-.home-reco-rows .home-card-info {
-  padding: 0; background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none;
-  min-width: 0; display: block;
+/* The info block is an absolutely-positioned overlay with a dark gradient and
+   light text — built to sit on top of the art in the tall tile. Out of flow it
+   never joined the row grid, and its gradient over a white panel is what
+   rendered as black bars. Put it back in flow and strip the overlay costume. */
+/* Specificity matters here: the overlay is set by
+   [data-theme="light"] .home-scroll-row .home-card-info, and the container
+   carries both classes — a plain .home-reco-rows selector loses to it. */
+.home-reco-rows.home-scroll-row .home-card-info,
+[data-theme="light"] .home-reco-rows.home-scroll-row .home-card-info,
+[data-theme="dark"] .home-reco-rows.home-scroll-row .home-card-info {
+  position: static; inset: auto;
+  padding: 0; border: 0; min-width: 0; display: block;
+  background: none; background-image: none;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  color: inherit;
 }
+.home-reco-rows.home-scroll-row .home-card-name,
+[data-theme="light"] .home-reco-rows.home-scroll-row .home-card-name,
+.home-reco-rows.home-scroll-row .home-card-sub,
+[data-theme="light"] .home-reco-rows.home-scroll-row .home-card-sub {
+  color: inherit; text-shadow: none;
+}
+.home-reco-rows.home-scroll-row .home-card-name { font-size: 13px; font-weight: 600; margin-bottom: 1px; }
+.home-reco-rows.home-scroll-row .home-card-sub  { font-size: 10.5px; opacity: 0.6; }
+.home-reco-rows.home-scroll-row .home-card-price { font-size: 13px; margin-top: 0; }
 .home-reco-rows .home-card-name {
   font-size: 13px; font-weight: 600; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; margin-bottom: 1px;
@@ -18605,3 +18630,9 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
 .tp-list { display: flex; flex-direction: column; }
 .tp-row { padding: 8px 4px; gap: 10px; }
 .tp-row .tp-sig-tags { display: none; }
+
+.hpv-foot {
+  margin-top: 8px; text-align: center; opacity: 0.45;
+  font-family: var(--mono, monospace); font-size: 10px; line-height: 1.4;
+}
+.hpv-count { text-align: right; line-height: 1.5; }
