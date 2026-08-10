@@ -18213,7 +18213,7 @@ h1, h2, h3 {
   border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
   margin-bottom: 14px;
 }
-.cd-ph-left { min-width: 0; }
+.cd-ph-left { min-width: 0; flex: 1 1 auto; }
 .cd-crumbs {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   font-family: var(--font-mono, monospace); font-size: 11px; opacity: 0.55; margin-bottom: 6px;
@@ -18252,9 +18252,21 @@ h1, h2, h3 {
 .cd-ph-delta.is-down { color: #f87171; }
 .cd-ph-delta.is-flat { opacity: 0.55; }
 @media (max-width: 640px) {
-  .cd-pagehead { flex-direction: column; gap: 8px; padding-bottom: 12px; margin-bottom: 10px; }
-  .cd-ph-right { text-align: left; }
-  .cd-ph-name { font-size: 24px; }
+  /* Collectr keeps the price beside the name on a phone rather than stacking it
+     — the two things you want at a glance stay on one line, and the art gets
+     the room instead. Stacking pushed the card itself below the fold. */
+  .cd-pagehead { flex-direction: row; align-items: flex-start; gap: 12px; padding-bottom: 12px; margin-bottom: 10px; }
+  .cd-ph-right { text-align: right; }
+  .cd-ph-name { font-size: 26px; line-height: 1.1; }
+  .cd-ph-price { font-size: 21px; }
+  .cd-ph-delta { font-size: 11px; }
+  .cd-ph-set { font-size: 13px; }
+  .cd-ph-meta { font-size: 11px; }
+  .cd-crumbs { font-size: 10px; margin-bottom: 4px; }
+}
+@media (max-width: 380px) {
+  .cd-ph-name { font-size: 22px; }
+  .cd-ph-price { font-size: 18px; }
 }
 
 /* ---- Collection as a card grid (Collectr-style) --------------------------
@@ -18321,3 +18333,98 @@ h1, h2, h3 {
 }
 .pf-viewbtn:hover { opacity: 0.9; }
 .pf-viewbtn.is-on { opacity: 1; background: var(--bg); box-shadow: 0 1px 2px rgba(0,0,0,0.25); }
+
+/* ---- Home: collection value hero ---------------------------------------- */
+.home-pv {
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--bg-raised); padding: 16px 18px 12px; margin-bottom: 12px;
+}
+.hpv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.hpv-label {
+  font-family: var(--mono, monospace); font-size: 10px; letter-spacing: 0.08em;
+  text-transform: uppercase; opacity: 0.55;
+}
+.hpv-total {
+  font-family: var(--mono, monospace); font-size: clamp(26px, 3.2vw, 38px);
+  font-weight: 700; line-height: 1.15; margin-top: 2px;
+}
+.hpv-sub { margin-top: 3px; font-family: var(--mono, monospace); font-size: 12px; }
+.hpv-delta.is-up { color: var(--green, #22c55e); }
+.hpv-delta.is-down { color: var(--red, #f87171); }
+.hpv-delta.is-flat { opacity: 0.6; }
+.hpv-window { opacity: 0.5; }
+.hpv-count {
+  flex: 0 0 auto; font-family: var(--mono, monospace); font-size: 11px; opacity: 0.55;
+  padding-top: 4px; white-space: nowrap;
+}
+.hpv-plot { margin-top: 10px; }
+.hpv-plot .ph-svg { height: 210px; }
+.hpv-empty {
+  padding: 40px 4px; text-align: center; opacity: 0.45;
+  font-family: var(--mono, monospace); font-size: 11px;
+}
+.hpv-ranges { display: flex; justify-content: center; gap: 2px; margin-top: 8px; padding: 2px; }
+.hpv-range {
+  padding: 4px 12px; border: 0; border-radius: 7px; cursor: pointer;
+  background: transparent; color: inherit; opacity: 0.55;
+  font-family: var(--mono, monospace); font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+}
+.hpv-range:hover { opacity: 0.9; }
+.hpv-range.is-on { opacity: 1; background: var(--bg); }
+
+/* ---- Home: holdings rail ------------------------------------------------- */
+.home-holdings { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.hh-panel { border: 1px solid var(--border); border-radius: 14px; background: var(--bg-raised); padding: 14px 16px; }
+.hh-title { font-family: var(--font, sans-serif); font-size: 14px; font-weight: 700; margin-bottom: 10px; }
+.hh-bar { height: 8px; border-radius: 5px; background: var(--accent, #e8b634); overflow: hidden; margin-bottom: 10px; }
+.hh-bar i { display: block; height: 100%; background: #22d3ee; }
+.hh-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; font-family: var(--mono, monospace); font-size: 12px;
+  border-top: 1px solid var(--border);
+}
+.hh-row:first-of-type { border-top: 0; }
+.hh-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
+.hh-dot-raw { background: #22d3ee; }
+.hh-dot-graded { background: var(--accent, #e8b634); }
+.hh-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 0; border-top: 1px solid var(--border);
+}
+.hh-item:first-of-type { border-top: 0; }
+.hh-item-main { min-width: 0; }
+.hh-item-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hh-item-sub { font-family: var(--mono, monospace); font-size: 10.5px; opacity: 0.55; margin-top: 1px; }
+.hh-item-val { font-family: var(--mono, monospace); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.hh-empty { font-family: var(--mono, monospace); font-size: 11px; opacity: 0.5; }
+
+/* ---- Card art on a phone -------------------------------------------------
+   Collectr gives the card the full column width and lets it run tall. The art
+   is the thing you came to look at, so it leads rather than sharing a row. */
+@media (max-width: 640px) {
+  .selected-card-header { flex-direction: column; align-items: stretch; }
+  .card-images { width: 100%; display: flex; justify-content: center; }
+  .card-thumb {
+    width: 100%; max-width: 340px; height: auto; aspect-ratio: 5 / 7;
+    object-fit: contain; border-radius: 12px;
+  }
+  .selected-card-info { width: 100%; margin-top: 12px; }
+  .home-pv { padding: 14px 14px 10px; }
+  .hpv-plot .ph-svg { height: 168px; }
+  .hpv-range { padding: 4px 9px; font-size: 10.5px; }
+}
+
+/* ---- Hold Strategy: AI analysis behind a toggle ---------------------------
+   The narrative blocks are useful but they push the buy options below the fold.
+   Kept in full, just folded away until asked for. */
+.hold-ai-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin: 2px 0 12px; padding: 6px 12px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: transparent; color: inherit; cursor: pointer;
+  font-family: var(--font, sans-serif); font-size: 12px; font-weight: 600;
+}
+.hold-ai-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.hold-ai-toggle .hat-chev { transition: transform 0.18s; opacity: 0.6; }
+.hold-ai-toggle[aria-expanded="true"] .hat-chev { transform: rotate(180deg); }
+.hold-ai-group[hidden] { display: none; }

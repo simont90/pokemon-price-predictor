@@ -10742,6 +10742,197 @@ function collectrPricesFor(data, variant) {
   return name ? { name, prices: data.prints[name] } : null;
 }
 
+let _pvRange = '1M';
+// The home hero: what the collection is worth, how it has moved over the chosen
+// window, and the line behind it. Reuses the same SVG renderer the card charts
+// use so the two cannot diverge in style or in how they scale.
+function renderHomePortfolioValue() {
+  const host = document.getElementById('homePortfolioValue');
+  if (!host) return;
+  const owned = (typeof portfolio !== 'undefined' && Array.isArray(portfolio)) ? portfolio.length : 0;
+  if (!owned) { host.style.display = 'none'; return; }
+  host.style.display = '';
+
+  const total = pvCurrentTotalGBP();
+  const days = PV_RANGES[_pvRange] ?? 30;
+  const rows = pvSeries(days);
+
+  // Delta across the window, against the earliest reading in it.
+  let deltaHtml = '';
+  if (rows.length >= 2) {
+    const first = rows[0].v, last = rows[rows.length - 1].v;
+    const d = last - first, pct = first > 0 ? (d / first) * 100 : 0;
+    const cls = d > 0 ? 'is-up' : d < 0 ? 'is-down' : 'is-flat';
+    deltaHtml = `<span class="hpv-delta ${cls}">${d >= 0 ? '+' : '−'}${fmtGBPDirect(Math.abs(d))} ` +
+                `(${d >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span> <span class="hpv-window">over ${_pvRange}</span>`;
+  } else {
+    deltaHtml = `<span class="hpv-window">Tracking from today — the line fills in as prices refresh</span>`;
+  }
+
+  const tabs = Object.keys(PV_RANGES).map(r =>
+    `<button type="button" class="hpv-range${r === _pvRange ? ' is-on' : ''}" data-pv-range="${r}">${r}</button>`).join('');
+  const chart = rows.length >= 2
+    ? _phSvg({ value: rows }, { height: 210, fill: true, fx: 1 })
+    : `<div class="hpv-empty">Not enough history yet for a ${_pvRange} line.</div>`;
+
+  host.innerHTML = `
+    <div class="hpv-head">
+      <div>
+        <div class="hpv-label">Collection value</div>
+        <div class="hpv-total">${fmtGBPDirect(total)}</div>
+        <div class="hpv-sub">${deltaHtml}</div>
+      </div>
+      <div class="hpv-count">${owned} card${owned === 1 ? '' : 's'}</div>
+    </div>
+    <div class="hpv-plot">${chart}</div>
+    <div class="hpv-ranges">${tabs}</div>`;
+}
+
+// Right-rail companions: what the collection is made of, and what leads it.
+function renderHomeHoldings() {
+  const host = document.getElementById('homeHoldings');
+  if (!host) return;
+  const owned = (typeof portfolio !== 'undefined' && Array.isArray(portfolio)) ? portfolio : [];
+  if (!owned.length) { host.style.display = 'none'; return; }
+  host.style.display = '';
+  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 1;
+
+  let graded = 0, raw = 0;
+  const rows = [];
+  for (const p of owned) {
+    const card = (typeof getCardById === 'function') ? getCardById(p.id) : null;
+    if (!card) continue;
+    const acq = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(p.id) : null;
+    const isSlab = !!(acq && acq.grade);
+    isSlab ? graded++ : raw++;
+    const usd = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
+    rows.push({ n: card.n, set: card.s || card.sc || '', gbp: usd * fx, grade: isSlab ? `PSA ${acq.grade}` : 'Raw' });
+  }
+  const tot = graded + raw || 1;
+  rows.sort((a, b) => b.gbp - a.gbp);
+  const top = rows.slice(0, 4);
+
+  host.innerHTML = `
+    <div class="hh-panel">
+      <div class="hh-title">Holdings breakdown</div>
+      <div class="hh-bar"><i style="width:${(raw / tot * 100).toFixed(1)}%"></i></div>
+      <div class="hh-row"><span><b class="hh-dot hh-dot-raw"></b>Raw (${(raw / tot * 100).toFixed(0)}%)</span><span>${raw}</span></div>
+      <div class="hh-row"><span><b class="hh-dot hh-dot-graded"></b>Graded (${(graded / tot * 100).toFixed(0)}%)</span><span>${graded}</span></div>
+    </div>
+    <div class="hh-panel">
+      <div class="hh-title">Most valuable</div>
+      ${top.map(r => `<div class="hh-item">
+        <div class="hh-item-main"><div class="hh-item-name">${esc(r.n)}</div>
+          <div class="hh-item-sub">${esc(r.set)} · ${esc(r.grade)}</div></div>
+        <div class="hh-item-val">${r.gbp > 0 ? fmtGBPDirect(r.gbp) : '—'}</div>
+      </div>`).join('') || '<div class="hh-empty">No priced cards yet.</div>'}
+    </div>`;
+}
+
+// ---- Portfolio value history ---------------------------------------------
+// The app has never stored what the collection was worth on a given day — only
+// current prices and a refresh timestamp — so a value-over-time chart had
+// nothing to draw. This records one total per day going forward, and
+// reconstructs backwards from Collectr's per-card history for anything linked,
+// so the chart is not empty on the first day.
+//
+// Synced: it is a record of your holdings, and a chart that resets per device
+// would be worse than none. Capped at 400 days, one small number per day.
+const PV_HISTORY_KEY = 'pkm-portfolio-history-v1';
+const PV_MAX_DAYS = 400;
+const PV_RANGES = { '1D': 1, '7D': 7, '1M': 30, '3M': 90, '6M': 180, 'MAX': PV_MAX_DAYS };
+
+function _pvDay(ts) { return new Date(ts ?? Date.now()).toISOString().slice(0, 10); }
+function pvLoad() {
+  try { const o = JSON.parse(localStorage.getItem(PV_HISTORY_KEY) || '{}'); return (o && typeof o === 'object') ? o : {}; }
+  catch { return {}; }
+}
+function pvSave(map) {
+  // Keep the newest PV_MAX_DAYS entries; the map is keyed by date so this is a
+  // sort on strings, no parsing needed.
+  const keys = Object.keys(map).sort();
+  const trimmed = keys.length > PV_MAX_DAYS ? keys.slice(keys.length - PV_MAX_DAYS) : keys;
+  const out = {};
+  for (const k of trimmed) out[k] = map[k];
+  try { localStorage.setItem(PV_HISTORY_KEY, JSON.stringify(out)); } catch {}
+  return out;
+}
+
+// Today's total, from the same prices the collection panel shows.
+function pvCurrentTotalGBP() {
+  if (typeof portfolio === 'undefined' || !Array.isArray(portfolio)) return 0;
+  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 1;
+  let total = 0;
+  for (const p of portfolio) {
+    const card = (typeof getCardById === 'function') ? getCardById(p.id) : null;
+    if (!card) continue;
+    const usd = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
+    if (usd > 0) total += usd * fx * (p.copies || p.qty || 1);
+  }
+  return total;
+}
+
+function pvRecordToday() {
+  const total = pvCurrentTotalGBP();
+  if (!(total > 0)) return;                 // nothing priced yet — do not log a zero
+  const map = pvLoad();
+  map[_pvDay()] = +total.toFixed(2);        // last write of the day wins
+  pvSave(map);
+}
+
+// Reconstruct earlier totals by re-pricing today's holdings against Collectr's
+// dated history. It answers "what would this collection have been worth then",
+// which is the honest reading — it cannot know what you owned on a past date,
+// so a day is only emitted when every priced holding has a reading for it.
+function pvBackfillFromCollectr() {
+  if (typeof portfolio === 'undefined' || !Array.isArray(portfolio) || !portfolio.length) return 0;
+  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 1;
+  const perCard = [];
+  for (const p of portfolio) {
+    const card = (typeof getCardById === 'function') ? getCardById(p.id) : null;
+    if (!card) continue;
+    const d = (typeof getCollectrData === 'function') ? getCollectrData(card.i) : null;
+    const hist = d && Array.isArray(d.price_history) ? d.price_history : null;
+    if (!hist || !hist.length) return 0;    // one unlinked card and the total is wrong
+    const print = (typeof collectrPrintFor === 'function')
+      ? collectrPrintFor(d, 'unlimited') : null;
+    const byDay = {};
+    for (const h of hist) {
+      if (!h || h.grade !== 'raw' || !(h.price > 0)) continue;
+      if (print && h.print && h.print !== print) continue;
+      byDay[_pvDay(Date.parse(h.date))] = h.price;
+    }
+    if (!Object.keys(byDay).length) return 0;
+    perCard.push({ byDay, copies: p.copies || p.qty || 1 });
+  }
+  if (!perCard.length) return 0;
+
+  const days = Object.keys(perCard[0].byDay);
+  const map = pvLoad();
+  let added = 0;
+  for (const day of days) {
+    if (map[day] != null) continue;         // never overwrite a real recording
+    let total = 0, complete = true;
+    for (const c of perCard) {
+      const v = c.byDay[day];
+      if (!(v > 0)) { complete = false; break; }
+      total += v * fx * c.copies;
+    }
+    if (complete && total > 0) { map[day] = +total.toFixed(2); added++; }
+  }
+  if (added) pvSave(map);
+  return added;
+}
+
+function pvSeries(days) {
+  const map = pvLoad();
+  const cutoff = Date.now() - days * 86400000;
+  return Object.entries(map)
+    .map(([d, v]) => ({ t: Date.parse(d + 'T12:00:00Z'), v }))
+    .filter(r => isFinite(r.t) && r.t >= cutoff && r.v > 0)
+    .sort((a, b) => a.t - b.t);
+}
+
 // ---- Price history charts -------------------------------------------------
 // Inline SVG rather than a charting library: the site ships as static files
 // with no build step, and a line chart is a polyline and some ticks.
@@ -23069,6 +23260,12 @@ function _renderHomeTopPicks(force) {
 }
 
 function renderHomeDashboard() {
+  // Record today's total and fill in what Collectr can tell us about the past,
+  // before anything reads the series.
+  try { pvRecordToday(); } catch {}
+  try { pvBackfillFromCollectr(); } catch {}
+  try { renderHomePortfolioValue(); } catch {}
+  try { renderHomeHoldings(); } catch {}
   _renderHomeCollection();
   _renderHomeCombinedWishlist();
   _renderHomeConsiderGrading();
@@ -24862,6 +25059,8 @@ function setupPageNav() {
   document.getElementById('homeRefreshAll')?.addEventListener('click', () => {
     const btn = document.getElementById('homeRefreshAll');
     if (btn) { btn.classList.add('spinning'); setTimeout(() => btn.classList.remove('spinning'), 600); }
+    try { renderHomePortfolioValue(); } catch {}
+    try { renderHomeHoldings(); } catch {}
     _renderHomeCollection();
     _renderHomeWishlist();
     _renderHomeWatchlist();
@@ -24869,7 +25068,40 @@ function setupPageNav() {
     _homeVintageHash = ''; try { _renderHomeVintage(); } catch(e) {}
   });
 
+  // Hold Strategy AI analysis toggle. Collapsed by default so the buy options
+  // sit at the top of the panel; the choice is remembered per device.
+  (() => {
+    const KEY = 'hold-ai-open-v1';
+    const btn = document.getElementById('holdAiToggle');
+    const grp = document.getElementById('holdAiGroup');
+    const lbl = document.getElementById('holdAiToggleLabel');
+    if (!btn || !grp) return;
+    const apply = open => {
+      grp.hidden = !open;
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (lbl) lbl.textContent = open ? 'Hide AI analysis' : 'Show AI analysis';
+    };
+    let open = false;
+    try { open = localStorage.getItem(KEY) === '1'; } catch {}
+    apply(open);
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      open = grp.hidden;
+      apply(open);
+      try { localStorage.setItem(KEY, open ? '1' : '0'); } catch {}
+    });
+  })();
+
   // Collection view toggle. Delegated — the header is re-rendered per paint.
+  // Collection value range toggles.
+  document.addEventListener('click', e => {
+    const r = e.target.closest('[data-pv-range]');
+    if (!r) return;
+    e.preventDefault();
+    _pvRange = r.dataset.pvRange;
+    try { renderHomePortfolioValue(); } catch {}
+  });
+
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-pfview]');
     if (!b) return;
@@ -26723,6 +26955,7 @@ const SYNC_KEYS = [
   'pkm-acquisitions-v1',            // How each card was obtained (pack / single + cost)
   'pkm-hold-overrides',             // Per-card grade-specific market price overrides
   'pkm-gem-overrides-v1',           // Per-card (and per-print) gem rate, entered by hand
+  'pkm-portfolio-history-v1',       // Daily collection total, for the value chart
   'pkm-tcg-overrides-v1',          // TCGPlayer URL overrides (auto-enriched or manual)
   'pkm-tcg-price-overrides-v1',   // TCGPlayer market price overrides (manual USD entry)
   'pkm-jp-psa10-overrides-v1',     // Manually entered JP PSA 10 prices for EN↔JP comparison

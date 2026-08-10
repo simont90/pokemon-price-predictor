@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260722v">
+  <link rel="stylesheet" href="style.css?v=20260722x">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -870,6 +870,9 @@
       <div class="home-dashboard">
         <div class="home-main-col">
 
+        <!-- Collection value hero: total, move over the window, and the line -->
+        <div class="home-pv" id="homePortfolioValue" style="display:none"></div>
+
         <!-- Market Brief banner (light mode only) -->
         <div class="market-brief" id="marketBrief" onclick="go('know')">
           <div class="market-brief-top">
@@ -931,6 +934,7 @@
 
         </div><!-- /home-main-col -->
         <div class="home-side-col">
+          <div class="home-holdings" id="homeHoldings" style="display:none"></div>
 
         <!-- GROUP: My Collection & Consider Grading -->
         <div class="home-tab-group" id="hTabColl">
@@ -1746,6 +1750,12 @@
             </div>
           </div>
           <!-- ACE tier picker: always visible — both PSA and ACE strategies are always shown -->
+          <button type="button" class="hold-ai-toggle" id="holdAiToggle" aria-expanded="false">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.09 3.26L16.5 6.5l-3.26 1.09L12 11l-1.09-3.26L7.5 6.5l3.26-1.09z"/><path d="M19 14l.73 2.18L22 17l-2.18.73L19 20l-.73-2.18L16 17l2.18-.73z"/></svg>
+            <span id="holdAiToggleLabel">Show AI analysis</span>
+            <svg class="hat-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="hold-ai-group" id="holdAiGroup" hidden>
           <div class="ace-tier-picker" id="aceTierPicker" role="radiogroup" aria-label="ACE grading tier">
             <div class="ace-tier-picker-title">
               <span>ACE tier</span>
@@ -1756,6 +1766,7 @@
           <div class="hold-collector-note" id="holdCollectorNote" style="display:none"></div>
           <div class="hold-recommendation" id="holdRecommendation"></div>
           <div class="hold-market-context" id="holdMarketContext" style="display:none"></div>
+          </div><!-- /hold-ai-group -->
           <div class="hold-override" id="holdOverride"></div>
           <div class="hold-cp-compare" id="holdCounterpartCompare" style="display:none"></div>
           <!-- AI Strategy Facts — Card-Facts style narrative -->
@@ -3272,7 +3283,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260722v"></script>
+  <script src="app.js?v=20260722x"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
