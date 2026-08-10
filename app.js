@@ -24413,9 +24413,12 @@ function _hvgWireGroup() {
 }
 
 function _renderHomeVintage() {
-  _hvgWireGroup();
+  // The home Vintage panel was removed — the Vintage page covers it in full.
+  // Guard before wiring so the leftover callers are no-ops rather than doing
+  // setup work for a group that is not on the page.
   const area = document.getElementById('homeVintageArea');
   if (!area) return;
+  _hvgWireGroup();
 
   const isJP = _hvgLang === 'jp';
   const sets = isJP ? _vintageJPSets() : _vintageSets();
