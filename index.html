@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260723b">
+  <link rel="stylesheet" href="style.css?v=20260723h">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1037,7 +1037,7 @@
               <div class="home-section-hd">
                 <span class="home-count-badge" id="homeRecoCount">0</span>
               </div>
-              <div class="home-scroll-row" id="homeRecoList"><div class="home-empty">Scanning…</div></div>
+              <div class="home-scroll-row home-reco-rows" id="homeRecoList"><div class="home-empty">Scanning…</div></div>
             </section>
           </div>
           <div class="home-htab-panel" data-htab-panel="reco-grading" style="display:none">
@@ -3283,7 +3283,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260723b"></script>
+  <script src="app.js?v=20260723h"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

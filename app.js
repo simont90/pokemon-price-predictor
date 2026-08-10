@@ -10860,9 +10860,13 @@ function renderHomeHoldings() {
     const acq = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(p.id) : null;
     const isSlab = !!(acq && acq.grade);
     isSlab ? graded++ : raw++;
-    const usd = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
-    rows.push({ id: card.i, n: card.n, set: card.s || card.sc || '', gbp: usd * fx,
-                grade: isSlab ? `PSA ${acq.grade}` : 'Raw' });
+    const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(p.id) : null;
+    const v = collectionEntryValue(p, card, cached);
+    const print = isSlab && acq.variant && acq.variant !== 'unlimited'
+      ? (acq.variant === '1sted' ? ' 1st Ed' : ' Shadowless') : '';
+    rows.push({ id: card.i, n: card.n, set: card.s || card.sc || '',
+                gbp: (v && v.gbp > 0) ? v.gbp : 0,
+                grade: isSlab ? `PSA ${acq.grade}${print}` : 'Raw' });
   }
   const tot = graded + raw || 1;
   rows.sort((a, b) => b.gbp - a.gbp);
@@ -10920,13 +10924,17 @@ function pvSave(map) {
 // Today's total, from the same prices the collection panel shows.
 function pvCurrentTotalGBP() {
   if (typeof portfolio === 'undefined' || !Array.isArray(portfolio)) return 0;
-  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 1;
   let total = 0;
   for (const p of portfolio) {
     const card = (typeof getCardById === 'function') ? getCardById(p.id) : null;
     if (!card) continue;
-    const usd = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
-    if (usd > 0) total += usd * fx * (p.copies || p.qty || 1);
+    // collectionEntryValue, not getCurrentPrice: a recorded PSA 10 is worth the
+    // PSA 10 price, and pricing it raw understated the collection by orders of
+    // magnitude. It is the same helper the collection list uses, so the chart
+    // and the list cannot disagree about what a holding is worth.
+    const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(p.id) : null;
+    const v = collectionEntryValue(p, card, cached);
+    if (v && v.gbp > 0) total += v.gbp * (p.copies || p.qty || 1);
   }
   return total;
 }
@@ -24615,9 +24623,15 @@ function _renderHomeWishlist() {
       if (displayGBP <= target) { alertClass = 'alert-buy'; alertLabel = 'BUY NOW'; }
       else if (displayGBP <= target * 1.10) { alertClass = 'alert-watch'; alertLabel = 'Close'; }
     }
+    // Set, then rarity and number — the identifying line Collectr shows under
+    // the name. The target and the strategy follow, since those are ours.
     const subParts = [];
+    const _setName = w.set || card.s || '';
+    if (_setName) subParts.push(_setName);
+    const _rar = (typeof _RARITY_LABELS !== 'undefined' && _RARITY_LABELS[cardRarityCode(card)]) || card.r || '';
+    const _num = card.cn ? `${card.cn}${card.sr ? '/' + card.sr : ''}` : '';
+    if (_rar || _num) subParts.push([_rar, _num].filter(Boolean).join(' • '));
     if (target > 0) subParts.push(`Target: ${fmtGBPDirect(target)}`);
-    else if (w.set) subParts.push(w.set);
     if (stratLabel) subParts.push(stratLabel);
     const urgentBuy = !!budgetPick && budgetPick.pick.roi >= 150;
     return [_homeTile(w.id, w.img, w.name, displayGBP > 0 ? fmtGBPDirect(displayGBP) : '—', alertClass, alertLabel, '', subParts.join(' · '),

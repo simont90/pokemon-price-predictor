@@ -18477,3 +18477,131 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
   padding: 4px 9px; border-radius: 6px;
 }
 .portfolio-close:hover { background: var(--bg); color: var(--accent); }
+
+/* ---- Home card strips, Collectr-style ------------------------------------
+   Wider tiles, and the art shown whole rather than cropped. object-fit: cover
+   at 63/88 was slicing the top and bottom off full-art cards — the part people
+   recognise the card by. */
+.home-card-list .home-card-tile,
+.home-card-strip .home-card-tile { width: 196px; }
+.home-card-list .home-card-art,
+.home-card-strip .home-card-art {
+  aspect-ratio: 5 / 7;
+  object-fit: contain;
+  background: var(--bg);
+  padding: 8px 8px 0;
+}
+.home-card-list .home-card-info,
+.home-card-strip .home-card-info { padding: 10px 12px 12px; }
+.home-card-list .home-card-name,
+.home-card-strip .home-card-name {
+  font-size: 14px; font-weight: 700; white-space: normal; line-height: 1.25;
+}
+.home-card-list .home-card-sub,
+.home-card-strip .home-card-sub {
+  font-size: 11px; white-space: normal; line-height: 1.45; margin-top: 4px;
+}
+.home-card-list .home-card-price,
+.home-card-strip .home-card-price { font-size: 16px; margin-top: 6px; display: block; }
+@media (max-width: 640px) {
+  .home-card-list .home-card-tile,
+  .home-card-strip .home-card-tile { width: 158px; }
+  .home-card-list .home-card-name,
+  .home-card-strip .home-card-name { font-size: 13px; }
+  .home-card-list .home-card-price,
+  .home-card-strip .home-card-price { font-size: 15px; }
+}
+
+/* ---- Recommendations as compact rows -------------------------------------
+   Same shape as Today's Market Brief: thumbnail, name and set, figures right.
+   The tall overlay tiles put the text on top of the art, which made both hard
+   to read and pushed three cards' worth of height into a narrow rail. Reuses
+   the existing tile markup — only the layout changes. */
+.home-reco-rows {
+  display: flex; flex-direction: column; gap: 0;
+  overflow-x: visible; overflow-y: auto; max-height: 340px;
+  scroll-snap-type: none;
+}
+.home-reco-rows .home-card-tile {
+  width: 100%; flex-shrink: 1;
+  display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 10px;
+  padding: 8px 4px; border: 0; border-radius: 8px;
+  border-bottom: 1px solid var(--border);
+  background: transparent; box-shadow: none;
+}
+.home-reco-rows .home-card-tile:last-child { border-bottom: 0; }
+.home-reco-rows .home-card-tile:hover { transform: none; box-shadow: none; background: var(--bg-raised); }
+.home-reco-rows .home-card-art {
+  width: 44px; height: 61px; aspect-ratio: auto;
+  object-fit: contain; border-radius: 4px; padding: 0; background: var(--bg);
+}
+.home-reco-rows .home-card-info {
+  padding: 0; background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none;
+  min-width: 0; display: block;
+}
+.home-reco-rows .home-card-name {
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; margin-bottom: 1px;
+}
+.home-reco-rows .home-card-sub {
+  font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0;
+}
+.home-reco-rows .home-card-price {
+  grid-column: 3; font-size: 13.5px; text-align: right; white-space: nowrap; text-shadow: none;
+}
+/* Everything that belonged to the tall poster tile. Recommendation tiles carry
+   more than the other strips do — action buttons, signal tags, a conviction row
+   and a full sentence of rationale — and left in a row they stacked into dark
+   bars with the name pushed out of view. The detail still lives on the card. */
+.home-reco-rows .home-card-signal,
+.home-reco-rows .home-card-rarity,
+.home-reco-rows .home-pip-trigger,
+.home-reco-rows .home-card-newtab,
+.home-reco-rows .card-score-badge,
+.home-reco-rows .reco-actions,
+.home-reco-rows .reco-tags,
+.home-reco-rows .reco-conviction-row,
+.home-reco-rows .card-score-wrap { display: none; }
+/* Keep the two figures that matter inline with the name. */
+.home-reco-rows .home-card-info > .home-card-price { grid-column: auto; text-align: left; font-size: 13px; }
+.home-reco-rows .reco-gem-tag { display: none; }
+
+/* ---- Top Picks as a compact list -----------------------------------------
+   Same shape as Trending Today. The featured pick keeps its badge and leads the
+   list, but loses the poster treatment: a hero tile with its own stat boxes and
+   a full-width button was taking more height than the six picks beneath it. */
+.tp-featured {
+  display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 10px;
+  padding: 9px 4px; margin: 0; border: 0; border-bottom: 1px solid var(--border);
+  background: transparent; box-shadow: none; border-radius: 8px;
+}
+.tp-featured:hover { background: var(--bg-raised); }
+.tp-feat-top { display: contents; }
+.tp-feat-img {
+  width: 44px; height: 61px; object-fit: contain;
+  border-radius: 4px; background: var(--bg); margin: 0;
+}
+.tp-feat-body { display: contents; }
+.tp-feat-info { min-width: 0; }
+.tp-feat-name {
+  font-size: 13px; font-weight: 700; line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tp-feat-set { font-size: 10.5px; margin-top: 1px; }
+/* The furniture that made it a poster. The numbers still live in the row and
+   on the card page — this only stops them being rendered twice, large. */
+/* Hide the wrapper, not just its children — as a grid item it still claimed a
+   second row and kept the tile poster-height. */
+.tp-featured .tp-feat-stats,
+.tp-featured .tp-stat-box,
+.tp-featured .tp-view-btn,
+.tp-featured .tp-feat-desc,
+.tp-featured .tp-sig-tags { display: none; }
+.tp-feat-badge {
+  grid-column: 3; justify-self: end; align-self: center;
+  font-size: 9px; padding: 2px 7px; white-space: nowrap;
+}
+/* Rows tighten to match */
+.tp-list { display: flex; flex-direction: column; }
+.tp-row { padding: 8px 4px; gap: 10px; }
+.tp-row .tp-sig-tags { display: none; }
