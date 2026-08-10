@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260723l">
+  <link rel="stylesheet" href="style.css?v=20260723m">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1057,7 +1057,7 @@
                 </div>
                 <span class="home-count-badge" id="homeAiG10Count">0</span>
               </div>
-              <div class="home-scroll-row" id="homeAiG10List"></div>
+              <div class="home-scroll-row home-reco-rows" id="homeAiG10List"></div>
             </section>
             <section class="home-section-wrap" id="homeAiG9Wrap" style="display:none">
               <div class="home-section-hd">
@@ -1067,7 +1067,7 @@
                 </div>
                 <span class="home-count-badge" id="homeAiG9Count">0</span>
               </div>
-              <div class="home-scroll-row" id="homeAiG9List"></div>
+              <div class="home-scroll-row home-reco-rows" id="homeAiG9List"></div>
             </section>
             <section class="home-section-wrap" id="homeGradeCandWrap" style="display:none">
               <div class="home-section-hd">
@@ -1080,7 +1080,7 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
                 </button>
               </div>
-              <div class="home-scroll-row" id="homeGradeCandList"></div>
+              <div class="home-scroll-row home-reco-rows" id="homeGradeCandList"></div>
             </section>
             <!-- ACE Grading Picks — collection cards with positive ACE 10 ROI -->
             <section class="home-section-wrap" id="homeAcePicksWrap" style="display:none">
@@ -1092,7 +1092,7 @@
                 <span class="home-count-badge" id="homeAcePicksCount">0</span>
               </div>
               <div class="ace-picks-batch-note" id="homeAcePicksBatchNote"></div>
-              <div class="home-scroll-row" id="homeAcePicksList"></div>
+              <div class="home-scroll-row home-reco-rows" id="homeAcePicksList"></div>
             </section>
           </div>
         </div>
@@ -1120,7 +1120,7 @@
                 </div>
                 <span class="home-count-badge" id="homeRecoBuyRawCount">0</span>
               </div>
-              <div class="home-scroll-row" id="homeRecoBuyRawList"><div class="home-empty">Scanning…</div></div>
+              <div class="home-scroll-row home-reco-rows" id="homeRecoBuyRawList"><div class="home-empty">Scanning…</div></div>
             </section>
           </div>
           <div class="home-htab-panel" data-htab-panel="psa8" style="display:none">
@@ -1132,7 +1132,7 @@
                 </div>
                 <span class="home-count-badge" id="homeRecoPsa8Count">0</span>
               </div>
-              <div class="home-scroll-row" id="homeRecoPsa8List"><div class="home-empty">Scanning…</div></div>
+              <div class="home-scroll-row home-reco-rows" id="homeRecoPsa8List"><div class="home-empty">Scanning…</div></div>
             </section>
           </div>
           <div class="home-htab-panel" data-htab-panel="psa9" style="display:none">
@@ -1144,7 +1144,7 @@
                 </div>
                 <span class="home-count-badge" id="homeRecoPsa9Count">0</span>
               </div>
-              <div class="home-scroll-row" id="homeRecoPsa9List"><div class="home-empty">Scanning…</div></div>
+              <div class="home-scroll-row home-reco-rows" id="homeRecoPsa9List"><div class="home-empty">Scanning…</div></div>
             </section>
           </div>
           <div class="home-htab-panel" data-htab-panel="psa10" style="display:none">
@@ -1156,7 +1156,7 @@
                 </div>
                 <span class="home-count-badge" id="homeRecoPsa10Count">0</span>
               </div>
-              <div class="home-scroll-row" id="homeRecoPsa10List"><div class="home-empty">Scanning…</div></div>
+              <div class="home-scroll-row home-reco-rows" id="homeRecoPsa10List"><div class="home-empty">Scanning…</div></div>
             </section>
           </div>
         </div>
@@ -3283,7 +3283,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260723l"></script>
+  <script src="app.js?v=20260723m"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
