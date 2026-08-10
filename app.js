@@ -271,10 +271,20 @@ function collectrImgFor(cardId) {
 }
 
 function getCardImg(card) {
-  // Collectr's art beats the card-back placeholder outright. The placeholder is
-  // a data URI, so it *loads* — the onerror fallback never fires against it, and
-  // a linked card sat showing a card back with its own artwork one field away.
   const _crArt = () => (card && card.i && collectrImgFor(card.i)) || CARD_PLACEHOLDER_IMG;
+
+  // A card you have edited keeps the image you gave it.
+  // Otherwise, when Collectr is linked its art wins outright rather than being
+  // an onerror fallback. Two reasons the fallback could not do the job:
+  // the card-back placeholder is a data URI and *loads*, so no error fires; and
+  // pokemontcg.io simply has no image for recent sets, so the URL 404s — but
+  // only once the browser gets round to requesting it, which never happens
+  // while the panel is off-screen. Collectr resolved the exact product, so its
+  // image is both correct for the print and known to exist.
+  if (card && card.i && !card.img) {
+    const cr = collectrImgFor(card.i);
+    if (cr) return cr;
+  }
   // Accept direct image URLs or recognised CDN domains as-is.
   if (card.img && /^(https?:)?\/\//i.test(card.img)) {
     const u = card.img.toLowerCase();
