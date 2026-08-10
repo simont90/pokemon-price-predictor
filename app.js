@@ -6808,6 +6808,16 @@ function renderRoiChart() {
 // Collection view mode. Device-local: how you like to look at a list is not
 // something to push to your other devices, so no pkm- prefix.
 const PF_VIEW_KEY = 'portfolio-view-v1';
+// Raw / graded filter, driven by the home holdings breakdown. Session-only: it
+// is a lens you clicked through with, not a setting — surviving a reload would
+// leave you looking at a partial collection with no memory of why.
+let _pfFilter = 'all';
+function _pfMatchesFilter(id) {
+  if (_pfFilter === 'all') return true;
+  const acq = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(id) : null;
+  const isSlab = !!(acq && acq.grade);
+  return _pfFilter === 'graded' ? isSlab : !isSlab;
+}
 function _pfView() {
   try { return localStorage.getItem(PF_VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch { return 'grid'; }
 }
@@ -6834,7 +6844,10 @@ function renderPortfolio() {
   let totalGBP = 0;
   let totalCostGBP = 0;
   let hasAnyAcq = false;
-  const items = portfolio.map(p => {
+  // The raw/graded lens from the home holdings breakdown. Totals are computed
+  // from the full collection below regardless, so filtering the view never
+  // changes what the collection is reported to be worth.
+  const items = portfolio.filter(p => _pfMatchesFilter(p.id)).map(p => {
     const currentCard = getCardById(p.id);
     const cached = getCachedPrice(p.id);           // valid since last 6AM GMT
     const stale = !cached ? getLastKnownPrice(p.id) : null; // pre-6AM fallback
@@ -6930,7 +6943,10 @@ function renderPortfolio() {
         <button class="portfolio-dupe-link" id="portDupeGoBtn">Review &amp; merge</button>
       </div>`
     : '';
-  list.innerHTML = dupeBanner + items.join('');
+  const filterBar = _pfFilter === 'all' ? '' :
+    `<div class="pf-filterbar">Showing <strong>${_pfFilter}</strong> only` +
+    `<button type="button" class="pf-filterclear" data-hh-filter="all">Clear</button></div>`;
+  list.innerHTML = dupeBanner + filterBar + items.join('');
   // Grid is the default now; the row list stays a click away for scanning a
   // long collection, and the choice is remembered per device.
   list.classList.toggle('is-grid', _pfView() === 'grid');
@@ -10816,7 +10832,8 @@ function renderHomeHoldings() {
     const isSlab = !!(acq && acq.grade);
     isSlab ? graded++ : raw++;
     const usd = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
-    rows.push({ n: card.n, set: card.s || card.sc || '', gbp: usd * fx, grade: isSlab ? `PSA ${acq.grade}` : 'Raw' });
+    rows.push({ id: card.i, n: card.n, set: card.s || card.sc || '', gbp: usd * fx,
+                grade: isSlab ? `PSA ${acq.grade}` : 'Raw' });
   }
   const tot = graded + raw || 1;
   rows.sort((a, b) => b.gbp - a.gbp);
@@ -10826,16 +10843,19 @@ function renderHomeHoldings() {
     <div class="hh-panel">
       <div class="hh-title">Holdings breakdown</div>
       <div class="hh-bar"><i style="width:${(raw / tot * 100).toFixed(1)}%"></i></div>
-      <div class="hh-row"><span><b class="hh-dot hh-dot-raw"></b>Raw (${(raw / tot * 100).toFixed(0)}%)</span><span>${raw}</span></div>
-      <div class="hh-row"><span><b class="hh-dot hh-dot-graded"></b>Graded (${(graded / tot * 100).toFixed(0)}%)</span><span>${graded}</span></div>
+      <button type="button" class="hh-row" data-hh-filter="raw"${raw ? '' : ' disabled'}>
+        <span><b class="hh-dot hh-dot-raw"></b>Raw (${(raw / tot * 100).toFixed(0)}%)</span><span>${raw}</span></button>
+      <button type="button" class="hh-row" data-hh-filter="graded"${graded ? '' : ' disabled'}>
+        <span><b class="hh-dot hh-dot-graded"></b>Graded (${(graded / tot * 100).toFixed(0)}%)</span><span>${graded}</span></button>
     </div>
     <div class="hh-panel">
       <div class="hh-title">Most valuable</div>
-      ${top.map(r => `<div class="hh-item">
+      ${top.map(r => `<button type="button" class="hh-item" data-hh-card="${esc(r.id)}">
         <div class="hh-item-main"><div class="hh-item-name">${esc(r.n)}</div>
           <div class="hh-item-sub">${esc(r.set)} · ${esc(r.grade)}</div></div>
         <div class="hh-item-val">${r.gbp > 0 ? fmtGBPDirect(r.gbp) : '—'}</div>
-      </div>`).join('') || '<div class="hh-empty">No priced cards yet.</div>'}
+      </button>`).join('') || '<div class="hh-empty">No priced cards yet.</div>'}
+      ${rows.length > top.length ? `<button type="button" class="hh-viewall" data-hh-filter="all">View all ${rows.length} →</button>` : ''}
     </div>`;
 }
 
@@ -25101,6 +25121,23 @@ function setupPageNav() {
       try { localStorage.setItem(KEY, open ? '1' : '0'); } catch {}
     });
   })();
+
+  // The home holdings panels are clickable: a figure in a list you cannot act on
+  // is decoration. A most-valuable row opens that card; a breakdown row opens
+  // the collection filtered to raw or graded.
+  document.addEventListener('click', e => {
+    const cardBtn = e.target.closest('[data-hh-card]');
+    if (cardBtn) { e.preventDefault(); try { selectCard(cardBtn.dataset.hhCard); } catch {} return; }
+    const filt = e.target.closest('[data-hh-filter]');
+    if (!filt) return;
+    e.preventDefault();
+    _pfFilter = filt.dataset.hhFilter || 'all';
+    try { renderPortfolio(); } catch {}
+    const panel = document.getElementById('portfolioPanel');
+    if (panel && getComputedStyle(panel).display === 'none') {
+      document.getElementById('portfolioToggle')?.click();
+    }
+  });
 
   // Collection view toggle. Delegated — the header is re-rendered per paint.
   // Collection value range toggles.
