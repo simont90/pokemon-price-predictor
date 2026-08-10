@@ -6795,6 +6795,17 @@ function renderRoiChart() {
   }
 }
 
+// Collection view mode. Device-local: how you like to look at a list is not
+// something to push to your other devices, so no pkm- prefix.
+const PF_VIEW_KEY = 'portfolio-view-v1';
+function _pfView() {
+  try { return localStorage.getItem(PF_VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch { return 'grid'; }
+}
+function _pfSetView(v) {
+  try { localStorage.setItem(PF_VIEW_KEY, v === 'list' ? 'list' : 'grid'); } catch {}
+  try { renderPortfolio(); } catch {}
+}
+
 function renderPortfolio() {
   const list = $('portfolioList');
   const countEl = $('portfolioCount');
@@ -6873,7 +6884,17 @@ function renderPortfolio() {
     return `
       <div class="portfolio-item-card" data-id="${p.id}">
         <div class="portfolio-item" data-id="${p.id}">
-          ${p.img ? `<img class="portfolio-item-img" src="${_hiresUrl(p.img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="portfolio-item-img"></div>'}
+          ${(() => {
+            // Route through getCardImg so a linked card's Collectr art reaches
+            // the collection too — p.img is a snapshot taken when the card was
+            // added and is empty for anything the CDNs had no image for.
+            const _pc = (typeof getCardById === 'function' && getCardById(p.id)) || null;
+            const _src = _pc ? _hiresUrl(getCardImg(_pc)) : (p.img ? _hiresUrl(p.img) : '');
+            const _alt = _pc && typeof collectrImgFor === 'function' ? collectrImgFor(_pc.i) : '';
+            return _src
+              ? `<img class="portfolio-item-img" src="${_src}" alt="" loading="lazy" decoding="async"${_alt ? ` data-collectr-img="${_alt}"` : ''} onerror="_onImgError(this)">`
+              : '<div class="portfolio-item-img"></div>';
+          })()}
           <div class="portfolio-item-info">
             <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}${copiesBadge}</div>
             <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}${isStale ? ' · <span class="stale-price-tag" title="Price from before today\'s 6AM — tap Refresh prices to update">cached</span>' : ''}</div>
@@ -6900,11 +6921,21 @@ function renderPortfolio() {
       </div>`
     : '';
   list.innerHTML = dupeBanner + items.join('');
+  // Grid is the default now; the row list stays a click away for scanning a
+  // long collection, and the choice is remembered per device.
+  list.classList.toggle('is-grid', _pfView() === 'grid');
   document.getElementById('portDupeGoBtn')?.addEventListener('click', () => {
     document.getElementById('portfolioClose')?.click();
     go('tools');
     setTimeout(() => document.querySelector('[data-toolstab="dupes"]')?.click(), 80);
   });
+  const viewHost = document.getElementById('portfolioViewToggle');
+  if (viewHost) {
+    const v = _pfView();
+    viewHost.innerHTML =
+      `<button type="button" class="pf-viewbtn${v === 'grid' ? ' is-on' : ''}" data-pfview="grid">Grid</button>` +
+      `<button type="button" class="pf-viewbtn${v === 'list' ? ' is-on' : ''}" data-pfview="list">List</button>`;
+  }
   const dupesHeaderBtn = document.getElementById('portfolioDupesBtn');
   const dupesCountEl   = document.getElementById('portfolioDupeCount');
   if (dupesHeaderBtn) {
@@ -24836,6 +24867,14 @@ function setupPageNav() {
     _renderHomeWatchlist();
     _renderHomeReco(true);
     _homeVintageHash = ''; try { _renderHomeVintage(); } catch(e) {}
+  });
+
+  // Collection view toggle. Delegated — the header is re-rendered per paint.
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-pfview]');
+    if (!b) return;
+    e.preventDefault();
+    _pfSetView(b.dataset.pfview);
   });
 
   // Breadcrumb navigation. Delegated — the head is re-rendered per card.

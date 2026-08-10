@@ -18256,3 +18256,68 @@ h1, h2, h3 {
   .cd-ph-right { text-align: left; }
   .cd-ph-name { font-size: 24px; }
 }
+
+/* ---- Collection as a card grid (Collectr-style) --------------------------
+   Scoped to .portfolio-list.is-grid so the compact row list is still available
+   and nothing else that reuses .portfolio-item is affected. The markup is
+   unchanged — every badge, acquisition line and signal still renders, it is
+   only laid out as a tile with the art leading. */
+.portfolio-list.is-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+  gap: 12px;
+  max-height: none;
+}
+.portfolio-list.is-grid .portfolio-item-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-raised);
+  overflow: hidden;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.portfolio-list.is-grid .portfolio-item-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+.portfolio-list.is-grid .portfolio-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 12px 12px 10px;
+}
+/* The art leads, at the card's real 5:7 so nothing is cropped. */
+.portfolio-list.is-grid .portfolio-item-img {
+  width: 100%; height: auto; aspect-ratio: 5 / 7;
+  object-fit: contain;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: var(--bg);
+}
+.portfolio-list.is-grid .portfolio-item-info { flex: none; width: 100%; }
+.portfolio-list.is-grid .portfolio-item-name {
+  font-size: 14px; font-weight: 700; line-height: 1.25;
+  white-space: normal; overflow: visible; text-overflow: clip;
+}
+.portfolio-list.is-grid .portfolio-item-meta { font-size: 11px; margin-top: 3px; line-height: 1.45; }
+.portfolio-list.is-grid .portfolio-item-right {
+  text-align: left; width: 100%; margin-top: 8px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.portfolio-list.is-grid .portfolio-item-price { font-size: 16px; }
+.portfolio-list.is-grid .portfolio-acq-line { font-size: 10.5px; margin-top: 4px; }
+@media (max-width: 640px) {
+  .portfolio-list.is-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .portfolio-list.is-grid .portfolio-item { padding: 10px 10px 8px; }
+  .portfolio-list.is-grid .portfolio-item-name { font-size: 13px; }
+  .portfolio-list.is-grid .portfolio-item-price { font-size: 15px; }
+}
+/* View toggle */
+.pf-viewtoggle { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: rgba(127,127,127,0.12); }
+.pf-viewbtn {
+  padding: 3px 10px; border: 0; border-radius: 6px; cursor: pointer;
+  background: transparent; color: inherit; opacity: 0.6;
+  font-family: var(--mono, monospace); font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em;
+}
+.pf-viewbtn:hover { opacity: 0.9; }
+.pf-viewbtn.is-on { opacity: 1; background: var(--bg); box-shadow: 0 1px 2px rgba(0,0,0,0.25); }

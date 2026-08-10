@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260722u">
+  <link rel="stylesheet" href="style.css?v=20260722v">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -225,6 +225,7 @@
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="4"/><circle cx="15" cy="15" r="4"/></svg>
           Duplicates <span id="portfolioDupeCount"></span>
         </button>
+        <span class="pf-viewtoggle" id="portfolioViewToggle"></span>
         <span class="pi-load-status" id="portfolioLoadAllStatus"></span>
       </div>
       <div id="portfolioGrowthSection" class="portfolio-growth-section" style="display:none">
@@ -3271,7 +3272,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260722u"></script>
+  <script src="app.js?v=20260722v"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
