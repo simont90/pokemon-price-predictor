@@ -258,6 +258,18 @@ const CARD_PLACEHOLDER_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
 const _pendingImgResolves = new Set();
 
 // ---- Image URL Helper (reconstructed from card ID to save DB size) ----
+// Collectr resolves the exact product, so when it is linked its artwork is the
+// right image for the print in view — and it exists for cards pokemontcg.io and
+// tcgdex have nothing for, which is most of the JP catalogue. Used as a fallback
+// rather than a replacement: the primary CDNs are higher resolution.
+function collectrImgFor(cardId) {
+  try {
+    const d = (typeof getCollectrData === 'function') ? getCollectrData(cardId) : null;
+    const u = d && d.image;
+    return (typeof u === 'string' && /^https?:\/\//i.test(u)) ? u : '';
+  } catch { return ''; }
+}
+
 function getCardImg(card) {
   // Accept direct image URLs or recognised CDN domains as-is.
   if (card.img && /^(https?:)?\/\//i.test(card.img)) {
@@ -304,11 +316,20 @@ function _hiresUrl(url) {
 function _onImgError(el) {
   if (el.src && el.src.includes('_hires')) {
     el.src = el.src.replace('_hires.png', '.png');
-    el.onerror = function() { el.style.display = 'none'; el.onerror = null; };
-  } else {
-    el.style.display = 'none';
-    el.onerror = null;
+    el.onerror = function() { _onImgError(this); };
+    return;
   }
+  // Before hiding the image and leaving a card back, try Collectr's copy. The
+  // element carries it so this handler stays usable from inline onerror.
+  const alt = el.getAttribute('data-collectr-img');
+  if (alt && el.src !== alt) {
+    el.removeAttribute('data-collectr-img');
+    el.src = alt;
+    el.onerror = function() { el.style.display = 'none'; el.onerror = null; };
+    return;
+  }
+  el.style.display = 'none';
+  el.onerror = null;
 }
 
 // Background resolver for legacy bad img values (TCGC card-page URLs).
@@ -3314,18 +3335,36 @@ function recalcWithLivePrice(card) {
   try {
     const popGrid = document.getElementById('cdPopGrid');
     const popHdr  = document.getElementById('cdPopHdr');
-    const _gLocal = cardGemRate(card);
-    const gemRate = livePrice.crGemRate > 0 ? livePrice.crGemRate : (_gLocal != null ? _gLocal * 100 : null);
-    const psa10Gbp = livePrice.crPsa10 > 0 ? livePrice.crPsa10 : (livePrice.pcPsa10 > 0 ? usdToGbp(livePrice.pcPsa10) : (card.p10 > 0 ? usdToGbp(card.p10) : null));
-    const rawGbp  = livePrice.crRaw > 0 ? livePrice.crRaw : usdToGbp(lp);
-    if (popGrid && (gemRate !== null || psa10Gbp !== null)) {
+    // Your own figure outranks the live collectrics one — an override exists
+    // precisely because the fetched number was absent or wrong.
+    try { _paintGemTile(card); } catch {}
+  const _gVariant = (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited';
+    const _gOverride = card.i ? getGemOverride(card.i, _gVariant) : null;
+    const _gLocal = cardGemRate(card, _gVariant);
+    const _lp = livePrice || {};
+    const gemRate = _gOverride != null ? _gOverride * 100
+                  : _lp.crGemRate > 0 ? _lp.crGemRate
+                  : (_gLocal != null ? _gLocal * 100 : null);
+    const psa10Gbp = _lp.crPsa10 > 0 ? _lp.crPsa10 : (_lp.pcPsa10 > 0 ? usdToGbp(_lp.pcPsa10) : (card.p10 > 0 ? usdToGbp(card.p10) : null));
+    const rawGbp  = _lp.crRaw > 0 ? _lp.crRaw : usdToGbp(lp);
+    // Show the grid even with nothing in it: a blank gem rate is the case where
+    // the user most needs the field to type one into, and hiding the row hides
+    // the only way to fix it.
+    if (popGrid) {
       const gemEl = document.getElementById('cdPopGem');
       const p10El = document.getElementById('cdPopPsa10');
       const roiEl = document.getElementById('cdPopRoi');
       if (gemEl) {
         gemEl.textContent = gemRate !== null ? gemRate.toFixed(1) + '%' : '—';
-        gemEl.className = 'cd-pop-val' + (gemRate >= 30 ? ' cd-val-green' : gemRate !== null && gemRate < 15 ? ' cd-val-yellow' : '');
+        gemEl.className = 'cd-pop-val cd-pop-editable'
+          + (_gOverride != null ? ' is-gem-override'
+             : gemRate >= 30 ? ' cd-val-green'
+             : gemRate !== null && gemRate < 15 ? ' cd-val-yellow' : '');
       }
+      const gemInput = document.getElementById('cdGemInput');
+      if (gemInput) gemInput.value = _gOverride != null ? (_gOverride * 100) : '';
+      const gemClear = document.getElementById('cdGemClear');
+      if (gemClear) gemClear.style.display = _gOverride != null ? '' : 'none';
       if (p10El) p10El.textContent = psa10Gbp ? fmtGBPDirect(psa10Gbp) : '—';
       if (roiEl && psa10Gbp && rawGbp > 0) {
         const roi = ((psa10Gbp - rawGbp - 18) / rawGbp * 100).toFixed(0);
@@ -3538,6 +3577,8 @@ function selectCard(id) {
   // Card images — click to open the full-resolution lightbox
   if (isJP) {
     const jpImg = $('cardImageJp');
+    const _crImgJp = collectrImgFor(card.i);
+    if (_crImgJp) jpImg.setAttribute('data-collectr-img', _crImgJp); else jpImg.removeAttribute('data-collectr-img');
     jpImg.onerror = function() { _onImgError(this); };
     jpImg.src = getCardImg(card);
     jpImg.style.display = 'block';
@@ -3547,6 +3588,8 @@ function selectCard(id) {
     $('cardImage').style.display = 'none';
   } else {
     const enImg = $('cardImage');
+    const _crImgEn = collectrImgFor(card.i);
+    if (_crImgEn) enImg.setAttribute('data-collectr-img', _crImgEn); else enImg.removeAttribute('data-collectr-img');
     enImg.onerror = function() { _onImgError(this); };
     enImg.src = getCardImg(card);
     enImg.style.display = 'block';
@@ -3717,6 +3760,9 @@ function selectCard(id) {
   $('forecastSection').style.display = 'block';
   renderForecast(card, pullCost, des.total);
   renderStarRating(card, des);
+  // Runs on every card open, unlike the block inside renderLivePrice, which is
+  // skipped entirely when the card has no live price yet.
+  try { _paintGemTile(card); } catch {}
   updateRipOrBuy(card, pullCost);
   updateSignal(card, pullCost, des.total);
   updatePortfolioButton();
@@ -4525,8 +4571,69 @@ function cardAgeMonths(card)  { return _cardBasis(card).ageMonths; }
 // counterpart's. Returns null when nothing knows — never a default. The scorers
 // already skip the gem-rate term on null, and a made-up rate would move the
 // signal without any evidence under it.
-function cardGemRate(card) {
+// Your own reading of the gem rate, keyed the same way pop is so it can differ
+// per print — 1st Edition Alakazam gems at 3.5% against Shadowless at 0.75%,
+// and one figure for the card would be wrong for both.
+// Paints the gem-rate tile on its own. renderLivePrice returns early when there
+// is no live price, which is exactly when a hand-entered gem rate matters, so
+// the tile cannot depend on that function having run.
+function _paintGemTile(card) {
+  const el = document.getElementById('cdPopGem');
+  if (!el || !card) return;
+  const variant = (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited';
+  const ovr = card.i ? getGemOverride(card.i, variant) : null;
+  const lp  = (typeof livePrice !== 'undefined' && livePrice) ? livePrice : {};
+  const resolved = cardGemRate(card, variant);
+  const pct = ovr != null ? ovr * 100
+            : lp.crGemRate > 0 ? lp.crGemRate
+            : (resolved != null ? resolved * 100 : null);
+  el.textContent = pct != null ? pct.toFixed(1) + '%' : '\u2014';
+  el.className = 'cd-pop-val cd-pop-editable'
+    + (ovr != null ? ' is-gem-override'
+       : pct >= 30 ? ' cd-val-green'
+       : pct != null && pct < 15 ? ' cd-val-yellow' : '');
+  const input = document.getElementById('cdGemInput');
+  if (input) input.value = ovr != null ? (ovr * 100) : '';
+  const clr = document.getElementById('cdGemClear');
+  if (clr) clr.style.display = ovr != null ? '' : 'none';
+  const grid = document.getElementById('cdPopGrid');
+  const hdr  = document.getElementById('cdPopHdr');
+  if (grid) grid.style.display = '';
+  if (hdr)  hdr.style.display = '';
+}
+
+const GEM_OVERRIDE_KEY = 'pkm-gem-overrides-v1';
+function getGemOverrides() {
+  try { return JSON.parse(localStorage.getItem(GEM_OVERRIDE_KEY) || '{}'); } catch { return {}; }
+}
+// Stored as a percentage because that is how it is read off a pop report or
+// Collectr; everything downstream works in the 0–1 fraction.
+function getGemOverride(cardId, variant) {
+  const v = getGemOverrides()[popIdFor(cardId, variant)];
+  return (typeof v === 'number' && v > 0 && v <= 100) ? v / 100 : null;
+}
+// Validated here rather than in the input handler: a value can also arrive from
+// another device through sync, and a gem rate outside 0–100 would quietly
+// poison the signal, the star rating and the grading EV all at once.
+function setGemOverride(cardId, variant, pct) {
+  const all = getGemOverrides();
+  const key = popIdFor(cardId, variant);
+  const n = Number(pct);
+  if (pct == null || !isFinite(n) || n <= 0 || n > 100) delete all[key];
+  else all[key] = n;
+  try { localStorage.setItem(GEM_OVERRIDE_KEY, JSON.stringify(all)); } catch {}
+}
+// Anything already stored out of range (older writes, a bad sync) is ignored on
+// read too, so a bad value cannot survive by sitting in localStorage.
+
+
+function cardGemRate(card, variant) {
   if (!card) return null;
+  // Your correction outranks every source, same as the price overrides.
+  if (card.i) {
+    const ovr = getGemOverride(card.i, variant || (typeof _marketPCVariant !== 'undefined' ? _marketPCVariant : 'unlimited'));
+    if (ovr != null) return ovr;
+  }
   const pop = (typeof _popDataCache !== 'undefined' && card.i) ? _popDataCache.get(card.i) : null;
   if (pop && pop.pop) {
     const fromPop = _gradeSuccessProb(pop.pop, 10);
@@ -10556,6 +10663,20 @@ function ensureCollectrData(card) {
       _collectrInFlight.delete(card.i);
       if (selectedCard && selectedCard.i === card.i) {
         try { renderCollectrRow(); } catch {}
+        // The art is painted before this lands, so a card whose primary image
+        // 404'd is already showing a card back by now — swap it once Collectr's
+        // copy exists rather than waiting for the next visit.
+        try {
+          const _cr = collectrImgFor(card.i);
+          if (_cr) {
+            for (const id of ['cardImage', 'cardImageJp']) {
+              const el = document.getElementById(id);
+              if (!el || el.style.display === 'none' && !el.src) continue;
+              if (el.style.display === 'none' || !el.src) { el.src = _cr; el.style.display = 'block'; }
+              else el.setAttribute('data-collectr-img', _cr);
+            }
+          }
+        } catch {}
         // The headline is painted before this lands, so it has to be repainted
         // once the figure exists — otherwise the panel shows PriceCharting's
         // raw above a Collectr row quoting a different one.
@@ -22811,12 +22932,16 @@ function _renderHomeDailyBrief() {
     const hot = _recoCached?.general?.find(r => !_bHasBudget || r.marketGBP <= _bBudget) ?? null;
     let picksHtml = '';
     if (hot) {
+      const _hotBuy = cardRecommendedBuy(hot.card, usdToGbp(1));
+      const _hotSub = _hotBuy
+        ? `${_hotBuy.label} · ${_hotBuy.kind === 'collector' ? 'collector pick' : 'best pick'}`
+        : esc((hot.reasons || [])[0] || hot.card.s || '');
       picksHtml += rowHTML(hot.card, `<div class="brief-main">
         <span class="brief-tag brief-tag-buy">Hottest to buy</span>
         <span class="brief-name">${esc(hot.card.n)}</span>
-        <span class="brief-sub">${esc((hot.reasons || [])[0] || hot.card.s || '')}</span>
+        <span class="brief-sub">${_hotBuy ? esc(_hotSub) : _hotSub}</span>
       </div>
-      <span class="brief-price">${fmtGBPDirect(hot.marketGBP)}</span>`);
+      <span class="brief-price">${fmtGBPDirect(_hotBuy ? _hotBuy.gbp : hot.marketGBP)}</span>`);
     }
     let sell = null;
     for (const p of portfolio.slice(0, 60)) {
@@ -23916,6 +24041,33 @@ async function _hvgRefreshPrices() {
 // (ROI >= 80%), and within budget. Cards with only medium/high-risk or weak
 // strategies are excluded entirely — the home lists are signal, not noise.
 // Returns { pick, displayGBP, stratLabel } or null.
+// The grade to actually buy, and what that grade costs — the same answer the
+// Hold Strategy panel gives, from the same computeHoldCore, so the home lists
+// cannot recommend one thing while the card page recommends another. A bare
+// market price on a home card says nothing about which grade it refers to.
+function cardRecommendedBuy(card, fx) {
+  if (!card || typeof _getHoldCoreCached !== 'function') return null;
+  const hc = _getHoldCoreCached(card);
+  if (!hc || !hc.ok || !Array.isArray(hc.strategies)) return null;
+  const budget = getMaxBudgetGBP();
+  const capped = budget < BUDGET_DEFAULT;
+
+  let pick = hc.bestLongTermPick || null;
+  let kind = 'best';
+  const pricedOut = pick && !pick.isOwnedSlab && capped && (pick.today * fx) > budget;
+  if (!pick || pricedOut) {
+    pick = _pickCollectorEntry(hc.strategies, budget, fx);
+    kind = 'collector';
+  }
+  if (!pick) return null;
+
+  const label = /^psa\d+$/.test(pick.key) ? pick.key.replace('psa', 'PSA ')
+              : pick.key === 'raw' ? 'Raw'
+              : pick.key === 'ace' ? 'ACE slab'
+              : pick.label;
+  return { label, gbp: pick.today * fx, roi: pick.roi, kind, key: pick.key };
+}
+
 function _bestInBudgetPick(card, maxBudget, fx) {
   if (!card || typeof computeHoldCore !== 'function') return null;
   const hc = _getHoldCoreCached(card);
@@ -24474,6 +24626,60 @@ function setupPageNav() {
     _renderHomeReco(true);
     _homeVintageHash = ''; try { _renderHomeVintage(); } catch(e) {}
   });
+
+  // Gem-rate override. Entering a number must not reload the page — the field
+  // sits inside the card panel and a submit would throw the view away, which is
+  // what the pop inputs got wrong before.
+  (() => {
+    const editBtn = document.getElementById('cdGemEdit');
+    const editor  = document.getElementById('cdGemEditor');
+    const input   = document.getElementById('cdGemInput');
+    const saveBtn = document.getElementById('cdGemSave');
+    const clrBtn  = document.getElementById('cdGemClear');
+    if (!editBtn || !editor || !input || !saveBtn) return;
+
+    const variantNow = () => (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited';
+    const repaint = () => {
+      // Gem rate feeds the signal, the star rating and the grading EV, so the
+      // whole card has to be redrawn, not just the tile it was typed into.
+      try { _paintGemTile(selectedCard); } catch {}
+      try { renderLivePrice(selectedCard); } catch {}
+      try { renderStarRating(selectedCard, getDesirability ? getDesirability(selectedCard) : 5); } catch {}
+      try { renderHoldStrategy(selectedCard); } catch {}
+      try { updateSignal(selectedCard, 0, 0); } catch {}
+    };
+    const toggle = show => {
+      editor.style.display = show ? 'flex' : 'none';
+      if (show) { input.focus(); input.select(); }
+    };
+    const isOpen = () => getComputedStyle(editor).display !== 'none';
+    editBtn.addEventListener('click', e => { e.preventDefault(); toggle(!isOpen()); });
+    document.getElementById('cdPopGem')?.addEventListener('click', e => { e.preventDefault(); toggle(true); });
+
+    const commit = () => {
+      if (!selectedCard) return;
+      const raw = parseFloat(input.value);
+      // A gem rate is a percentage of submissions; anything outside 0–100 is a
+      // typo, and silently storing it would poison every score that reads it.
+      if (!isFinite(raw) || raw <= 0 || raw > 100) { setGemOverride(selectedCard.i, variantNow(), null); }
+      else { setGemOverride(selectedCard.i, variantNow(), raw); }
+      toggle(false);
+      repaint();
+    };
+    saveBtn.addEventListener('click', e => { e.preventDefault(); commit(); });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { e.preventDefault(); toggle(false); }
+    });
+    clrBtn?.addEventListener('click', e => {
+      e.preventDefault();
+      if (!selectedCard) return;
+      setGemOverride(selectedCard.i, variantNow(), null);
+      input.value = '';
+      toggle(false);
+      repaint();
+    });
+  })();
 
   // Budget slider + manual input
   (() => {
@@ -26230,6 +26436,7 @@ const SYNC_KEYS = [
   'pkm-card-overrides-v1',          // Card metadata overrides
   'pkm-acquisitions-v1',            // How each card was obtained (pack / single + cost)
   'pkm-hold-overrides',             // Per-card grade-specific market price overrides
+  'pkm-gem-overrides-v1',           // Per-card (and per-print) gem rate, entered by hand
   'pkm-tcg-overrides-v1',          // TCGPlayer URL overrides (auto-enriched or manual)
   'pkm-tcg-price-overrides-v1',   // TCGPlayer market price overrides (manual USD entry)
   'pkm-jp-psa10-overrides-v1',     // Manually entered JP PSA 10 prices for EN↔JP comparison

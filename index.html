@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260722j">
+  <link rel="stylesheet" href="style.css?v=20260722p">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1402,8 +1402,13 @@
           </div>
           <div class="cd-pop-grid" id="cdPopGrid" style="display:none">
             <div class="cd-pop-cell">
-              <span class="cd-pop-val" id="cdPopGem">—</span>
-              <span class="cd-pop-lbl">Gem Rate</span>
+              <span class="cd-pop-val cd-pop-editable" id="cdPopGem" title="Click to enter the gem rate by hand">—</span>
+              <span class="cd-pop-lbl">Gem Rate <button type="button" class="cd-gem-edit" id="cdGemEdit" title="Edit gem rate">edit</button></span>
+              <span class="cd-gem-editor" id="cdGemEditor" style="display:none">
+                <input type="number" id="cdGemInput" class="cd-gem-input" min="0" max="100" step="0.01" inputmode="decimal" placeholder="%">
+                <button type="button" class="cd-gem-save" id="cdGemSave">Save</button>
+                <button type="button" class="cd-gem-clear" id="cdGemClear" title="Remove override">×</button>
+              </span>
             </div>
             <div class="cd-pop-cell">
               <span class="cd-pop-val" id="cdPopPsa10">—</span>
@@ -3250,7 +3255,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260722j"></script>
+  <script src="app.js?v=20260722p"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

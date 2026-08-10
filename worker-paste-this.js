@@ -2614,7 +2614,18 @@ function parseCollectrResponse(body) {
     })
     .filter(h => h.price > 0 && h.grade && h.date);
 
+  // Card art, when Collectr carries it. Many JP and promo cards have no
+  // pokemontcg.io image, so the app falls back to a card-back placeholder —
+  // Collectr has already resolved the exact product, so its image is the right
+  // one for the print in view. The key has moved before, so accept the usual
+  // spellings and report what was found rather than assuming one.
+  const _img = [d.image_url, d.imageUrl, d.image, d.product_image, d.product_image_url,
+                d.image_url_large, d.large_image_url, d.thumbnail_url]
+    .find(v => typeof v === 'string' && /^https?:\/\//i.test(v) && !/youtu\.?be|youtube/i.test(v)) || '';
+
   return {
+    image: _img,
+    image_keys_seen: Object.keys(d).filter(k => /image|img|thumb|art/i.test(k)),
     card_name: d.product_name ?? '',
     set_name:  d.catalog_group ?? '',        // not `set_name` — Collectr calls it this
     card_number: d.card_number ?? null,

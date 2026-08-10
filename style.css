@@ -18125,3 +18125,36 @@ h1, h2, h3 {
   opacity: 0.8; margin-left: 6px; }
 [data-theme="light"] .collectr-btn { background: #f9fafb; border-color: #d1d5db; color: #6b7280; }
 [data-theme="light"] .collectr-edit input { background: #fff; border-color: #d1d5db; }
+
+/* Manual gem-rate entry — the auto sources cover a fraction of the catalogue,
+   so the figure has to be correctable by hand from a pop report or Collectr. */
+.cd-gem-edit {
+  margin-left: 6px; padding: 0 5px;
+  border: 1px solid var(--border, #3a3a3a); border-radius: 4px;
+  background: transparent; color: inherit; cursor: pointer;
+  font-family: var(--font-mono, monospace); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.04em; opacity: 0.6; line-height: 1.6;
+}
+.cd-gem-edit:hover { opacity: 1; border-color: #e8b634; color: #e8b634; }
+.cd-gem-editor { display: flex; gap: 4px; align-items: center; margin-top: 5px; }
+.cd-gem-input {
+  width: 68px; padding: 3px 6px;
+  border: 1px solid var(--border, #3a3a3a); border-radius: 4px;
+  background: var(--bg-input, rgba(0,0,0,0.15)); color: inherit;
+  font-family: var(--font-mono, monospace); font-size: 12px;
+}
+.cd-gem-input:focus { outline: none; border-color: #e8b634; }
+.cd-gem-save, .cd-gem-clear {
+  padding: 3px 8px; border-radius: 4px; cursor: pointer;
+  border: 1px solid #e8b634; background: #e8b634; color: #2a1f00;
+  font-family: var(--font, sans-serif); font-size: 11px; font-weight: 700;
+}
+.cd-gem-clear { background: transparent; color: inherit; border-color: var(--border, #3a3a3a); font-weight: 600; }
+.cd-gem-clear:hover { border-color: #f87171; color: #f87171; }
+/* An overridden figure must be visibly yours, not mistaken for a fetched one. */
+.cd-pop-val.is-gem-override { color: #e8b634; }
+.cd-pop-val.is-gem-override::after {
+  content: 'yours'; margin-left: 5px; vertical-align: middle;
+  font-family: var(--font-mono, monospace); font-size: 8px; text-transform: uppercase;
+  letter-spacing: 0.05em; opacity: 0.75;
+}
