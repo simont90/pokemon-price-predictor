@@ -145,33 +145,39 @@ function resolvePackEconomics(card) {
 // Charizard GX SV49: ~7% CAGR 2019-2026; Moonbreon Alt Art: ~12% CAGR 2021-2026;
 // modern SIRs (SV era): 8-12% range; sealed / gameplay cards: effectively 0-4%.
 // Character multiplier (getCharacterMultiplier) layers on top for popular Pokémon.
+// Growth rate per rarity. Ordering follows the official hierarchy; the two
+// judgement calls are noted where they depart from it.
 const RARITY_RATES = {
+  MHR:  { base: 0.12, label: 'Mega Hyper Rare',
+           reason: 'Pull rate as low as 1 in 1,260 packs — scarcer than anything else in print, so it sits clear at the top' },
+  MA:   { base: 0.11, label: 'Mega Attack Rare',
+           reason: 'Secret-rare tier introduced with Ascended Heroes; full-art Megas with the XY-era Japanese attack styling' },
   SIR:  { base: 0.10, label: 'Special Illustration Rare',
-           reason: 'SV-era SIRs average 8-12% annually post-bubble; new set supply limits the ceiling vs older alt-arts' },
-  SAR:  { base: 0.09, label: 'Special Art Rare',
-           reason: 'SWSh-era SARs (e.g. Moonbreon ~12% CAGR 2021-2026) set the benchmark; art quality sustains long-term demand' },
+           reason: 'Alt-art ex and Supporters. Kept above Hyper Rare because the market pays more for alt art than for gold, even though the official guide ranks Hyper Rare as the top standard rarity' },
+  SSR:  { base: 0.10, label: 'Shiny Ultra Rare',
+           reason: 'JP SSR. Shiny full-arts, a rarity of their own since Paldean Fates rather than a Shiny Vault insert' },
+  HR:   { base: 0.09, label: 'Hyper Rare',
+           reason: 'Three gold stars, gilded borders — formerly called secret rare. Raised above Ultra Rare, which it had been sitting below. JP UR maps here, not to the UR code' },
+  S:    { base: 0.09, label: 'Shiny Rare',
+           reason: 'JP S. Single sparkling star, introduced as its own rarity in Paldean Fates' },
   UR:   { base: 0.08, label: 'Ultra Rare',
-           reason: 'Ultra Rares pull more frequently than SIRs, capping appreciation at ~6-10% even for top characters' },
-  HR:   { base: 0.07, label: 'Hyper Rare',
-           reason: 'Gold/Hyper Rares dropped 40-60% in the 2022 correction; slow ~5-8% recovery rate since' },
-  SR:   { base: 0.07, label: 'Secret Rare',
-           reason: 'Secret Rares like Charizard GX SV49 averaged ~7% CAGR from 2019-2026 — age and scarcity are the main drivers' },
-  RR:   { base: 0.04, label: 'Double Rare',
-           reason: 'Double Rares are primarily gameplay cards; collector appreciation is thin at ~3-5% annually' },
+           reason: 'Two silver stars — full-art ex, V, GX, EX and some Supporters. JP calls this SR' },
   IR:   { base: 0.08, label: 'Illustration Rare',
-           reason: 'Illustration Rares track similarly to SARs but print at higher rates; realistic range is 6-10% annually' },
-  AR:   { base: 0.06, label: 'Art Rare',
-           reason: 'Art Rares sit just above standard; ~4-7% annually with heavy character-demand dependency' },
-  CSR:  { base: 0.08, label: 'Character SR',
-           reason: 'Character SRs (JP premium tier) track similarly to SARs; character desirability drives most variance' },
-  CHR:  { base: 0.05, label: 'Character Rare',
-           reason: 'Character Rares have modest collector demand; ~3-6% annually, largely tied to gameplay popularity' },
-  SHR:  { base: 0.09, label: 'Shiny Hyper Rare',
-           reason: 'Shiny Hyper Rares are among the scarcest pulls; trajectory similar to SIRs at ~8-12% annually' },
-  MHR:  { base: 0.11, label: 'Master Hyper Rare',
-           reason: 'Master Hyper Rares are extremely scarce — highest base rate but also highest volatility' },
-  SHUR: { base: 0.10, label: 'Shiny Ultra Rare',
-           reason: 'Shiny Ultra Rares combine shininess scarcity with artwork premium; ~8-12% CAGR range' },
+           reason: 'One gold star. Alt-art commons, uncommons and rares. JP calls this AR' },
+  SPR:  { base: 0.07, label: 'Short-print special',
+           reason: 'Shining, Prime, Prism Star, BREAK, Radiant, Amazing and the like — one- or two-set rarities with short print runs, which is what makes them scarce rather than the symbol' },
+  AS:   { base: 0.06, label: 'ACE SPEC Rare',
+           reason: 'One per deck by rule, which holds a floor under playable copies' },
+  HOLO: { base: 0.05, label: 'Holo Rare',
+           reason: 'A Rare with a holo treatment, not a tier of its own — split off Hyper Rare, which it had been sharing a code with. Vintage premium comes from the age multiplier, not from here' },
+  RR:   { base: 0.04, label: 'Double Rare',
+           reason: 'Two black stars — non-full-art ex. Common in modern packs' },
+  PR:   { base: 0.04, label: 'Promo',
+           reason: 'Not pack-pulled, which is a scarcity signal, but the band spans Wizards Black Star to cereal-box inserts. Mid rate; the age multiplier separates the eras' },
+  R:    { base: 0.02, label: 'Rare',
+           reason: 'Black star. One per pack' },
+  U:    { base: 0.02, label: 'Uncommon' },
+  C:    { base: 0.02, label: 'Common' },
   '':   { base: 0.02, label: 'Standard',
            reason: 'Standard cards rarely beat inflation over 5 years; most value is tied to short-term gameplay rotation' },
 };
@@ -880,12 +886,66 @@ const EXPECTED_PRICE_BY_RARITY = {
 // ---- Investment Star Rating (1–5) ----
 // Derived from the STAR framework (Star power, Title, Art, Rarity) synthesised
 // from market analysis: Seafood=5, Sweets=4, Meat=3, Veg=2, Carbs=1.
-const PREMIUM_RARITIES  = new Set(['SIR','SHR','MHR','SHUR','SAR','HR']);
-const HIGH_ART_RARITIES = new Set(['SIR','IR','SHR','MHR','SHUR','SAR','HR','AR','UR']);
+// The tiers that carry a genuine chase premium.
+const PREMIUM_RARITIES  = new Set(['MHR','MA','SIR','SSR','HR','S']);
+// Full-art / alt-art tiers. SPR is here because short-print specials (Shining,
+// Prime, Prism Star, Radiant, Amazing) carry the same collector premium.
+const HIGH_ART_RARITIES = new Set(['MHR','MA','SIR','SSR','HR','S','UR','IR','SPR']);
+
+// Canonical rarity vocabulary, EN and JP resolved to one code each.
+//
+// Sourced from the official product guide, CGC's symbol guide and the JP
+// Scarlet & Violet rarity guide. The crossover is the trap: Japanese **UR**
+// ("ultra rare", gold, gilded) is English **Hyper Rare**, and Japanese **SR**
+// ("super rare", full-art ex) is English **Ultra Rare**. Reading the letters
+// literally maps each to the wrong tier.
+//
+// Secret Rare is deliberately absent — all three sources agree it is not a
+// rarity but a property of the collector number exceeding the set size.
+const RARITY_ALIASES = (() => {
+  const m = {};
+  const put = (code, ...names) => names.forEach(n => { m[n.toLowerCase().replace(/[^a-z0-9]/g, '')] = code; });
+
+  put('C',    'Common', 'C');
+  put('U',    'Uncommon', 'U');
+  put('R',    'Rare', 'R', 'Trainer Rare', 'Trainer Rare (TR)', 'TR');
+  put('HOLO', 'Rare Holo', 'Holo Rare', 'Rare Holo Star', 'Rare Holo ☆', 'Rare Holo LV.X', 'Rare Holo Lv.X');
+  put('RR',   'Double Rare', 'Double rare', 'RR', 'Double Rare (RR)');
+  put('AS',   'ACE SPEC Rare', 'ACE SPEC rare', 'Rare ACE', 'Ace Spec Rare', 'ACE', 'ACE SPEC Rare (ACE)');
+  put('IR',   'Illustration Rare', 'Illustration rare', 'Art Rare', 'Art Rare (AR)', 'AR');
+  put('UR',   'Ultra Rare', 'Rare Ultra', 'Rare Holo EX', 'Rare Holo GX', 'Rare Holo ex',
+              'Super Rare', 'Super Rare (SR)', 'SR', 'LEGEND', 'Pokémon LEGEND');
+  put('S',    'Shiny Rare', 'Rare Shiny', 'Rare Shiny GX', 'Shiny (S)', 'Shiny Rare (S)');
+  put('SIR',  'Special Illustration Rare', 'Special illustration rare',
+              'Special Art Rare', 'Special Art Rare (SAR)', 'SAR');
+  put('SSR',  'Shiny Ultra Rare', 'Shiny Super Rare', 'Shiny Super Rare (SSR)', 'SSR', 'Shiny Rare VMAX');
+  put('HR',   'Hyper Rare', 'Hyper Rare (HR)', 'Rare Rainbow', 'Rare Secret',
+              'Ultra Rare (UR)', 'UR');                    // JP UR == EN Hyper Rare
+  put('MA',   'Mega Attack Rare', 'MEGA_ATTACK_RARE', 'Mega Attack Rare (MA)', 'MA');
+  put('MHR',  'Mega Hyper Rare', 'Mega Ultra Rare', 'Mega Ultra Rare (MUR)', 'MUR');
+  put('SPR',  'Rare Shining', 'Rare Prime', 'Rare Prism Star', 'Rare BREAK', 'Radiant Rare',
+              'Radiant Rare (K)', 'Amazing Rare', 'Amazing', 'Black White Rare', 'Black White rare',
+              'Prism Rare (PR)', 'Triple Rare (RRR)', 'RRR', 'Futuristic Rare (FUR)',
+              'Character Rare (CHR)', 'Character Super Rare (CSR)');
+  put('PR',   'Promo', 'Black Star Promo', 'PROMO');
+  return m;
+})();
+
+function rarityCodeFromString(raw) {
+  if (!raw) return '';
+  const k = String(raw).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!k || k === 'none' || k === 'unknown') return '';
+  return RARITY_ALIASES[k] || '';
+}
 
 function _inferJPRarityRc(card) {
   // Most JP cards in the DB have no rarity code — infer an effective EN-equivalent
   // code from the static price so scoring isn't always stuck at the lowest tier.
+  // Never guess when the card states a rarity — parsing it is always better
+  // than reading a price. This is what made Radiant Charizard (JP), clearly
+  // labelled "Radiant Rare (K)", come out as Common: the string was unparsed,
+  // so a cheap card inferred the bottom tier.
+  if (card && rarityCodeFromString(card.r)) return rarityCodeFromString(card.r);
   if (!card || card.lang !== 'JP' || card.rc || !card.p || card.p <= 0) return card?.rc || '';
   const pg = usdToGbp(card.p);
   if (pg >= 150) return 'SIR';
@@ -933,11 +993,15 @@ function getInvestmentStars(card, desTot) {
     hint: 'Negligible growth expected · sub-£20 target zone' };
 }
 
+// One label per canonical code. The old table carried both halves of each
+// duplicate pair (SIR/SAR, IR/AR, RR/DR) and named MHR "Master Hyper Rare",
+// which is not what the card says.
 const _RARITY_LABELS = {
-  SIR:'Special Illustration Rare', SAR:'Special Art Rare', IR:'Illustration Rare',
-  AR:'Art Rare', UR:'Ultra Rare', SHR:'Shiny Hyper Rare', MHR:'Master Hyper Rare',
-  SHUR:'Shiny Ultra Rare', HR:'Hyper Rare', SR:'Secret Rare', RR:'Double Rare',
-  DR:'Double Rare', PR:'Promo', AS:'ACE SPEC', R:'Rare', U:'Uncommon', C:'Common',
+  MHR:'Mega Hyper Rare', MA:'Mega Attack Rare', SIR:'Special Illustration Rare',
+  SSR:'Shiny Ultra Rare', HR:'Hyper Rare', S:'Shiny Rare', UR:'Ultra Rare',
+  IR:'Illustration Rare', SPR:'Short-print special', AS:'ACE SPEC Rare',
+  HOLO:'Holo Rare', RR:'Double Rare', PR:'Promo',
+  R:'Rare', U:'Uncommon', C:'Common',
 };
 
 function _buildStarRationale(card, desTot) {
@@ -4561,7 +4625,12 @@ function _cardBasis(card) {
   if (!card) return { rc: '', ageMonths: 12 };
   const key = card.i;
   if (key && _cardBasisMemo.has(key)) return _cardBasisMemo.get(key);
-  let rc = card.rc || '';
+  // The printed rarity wins over the stored code. `rc` is a derived field and it
+  // is what carries the HR collision — a 1999 "Rare Holo" was stored as HR, the
+  // same code as a 2024 three-gold-star Hyper Rare. Parsing the string the card
+  // actually carries separates them; `rc` stays as the fallback for cards whose
+  // rarity string is blank.
+  let rc = rarityCodeFromString(card.r) || card.rc || '';
   let sc = card.sc || '';
   if ((!rc || !sc) && typeof findCounterparts === 'function') {
     let twin = null;
