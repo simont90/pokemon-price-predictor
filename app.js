@@ -3400,14 +3400,23 @@ function recalcWithLivePrice(card) {
       : (livePrice.market || livePrice.mid || livePrice.cmTrend || 0);
   if (lp <= 0) return;
 
-  // Update displayed market prices to live
-  $('marketRawUSD').textContent = fmtUSD(lp);
-  $('marketRawGBP').textContent = fmtGBP(lp);
+  // These two tiles have to agree with the headline above them, so they resolve
+  // through the same path rather than reading PriceCharting straight. They used
+  // to show a PriceCharting raw beneath a Collectr headline — £2.94 under
+  // £63.04 on JP Charizard VSTAR, because PriceCharting had matched the English
+  // Crown Zenith card.
+  const _rawUSD = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : lp;
+  $('marketRawUSD').textContent = fmtUSD(_rawUSD > 0 ? _rawUSD : lp);
+  $('marketRawGBP').textContent = fmtGBP(_rawUSD > 0 ? _rawUSD : lp);
 
-  // Update PSA 10 from PriceCharting if available and static data is missing
-  if (livePrice.pcPsa10 > 0 && (!card.p10 || card.p10 <= 0)) {
-    $('psa10USD').textContent = fmtUSD(livePrice.pcPsa10);
-    $('psa10GBP').textContent = fmtGBP(livePrice.pcPsa10);
+  // PSA 10 through the anchor, which is Collectr-first for the same reason.
+  {
+    const _a = (typeof getPsa10Anchor === 'function') ? getPsa10Anchor(card) : null;
+    const _p10 = _a && _a.usd > 0 ? _a.usd : (livePrice.pcPsa10 > 0 ? livePrice.pcPsa10 : 0);
+    if (_p10 > 0) {
+      $('psa10USD').textContent = fmtUSD(_p10);
+      $('psa10GBP').textContent = fmtGBP(_p10);
+    }
   }
 
   // Grading Population section
@@ -20666,7 +20675,21 @@ function getPsa10Anchor(card, opts) {
       && _livePriceVariant && selectedCard && card.i === selectedCard.i && _livePriceVariant.pcPsa10 > 0) {
     return { usd: _livePriceVariant.pcPsa10, source: 'live-variant' };
   }
-  // Live PriceCharting PSA 10 takes priority for the currently-selected card
+  // Collectr leads on every grade it carries — the documented order is your own
+  // override, then Collectr, then PriceCharting. The headline already followed
+  // it; this did not, so a card could show a Collectr raw price above a
+  // PriceCharting PSA 10 and report a negative grading multiplier.
+  //
+  // It also protects against a mismatched PriceCharting row. On JP Charizard
+  // VSTAR (VSTAR Universe SAR) PriceCharting matched the English Crown Zenith
+  // card — $3.97 raw, $49.50 PSA 10 — against a real market of $85 raw and $218
+  // PSA 10, and every grade, ROI and projection was built on that.
+  {
+    const _crPrint = (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited';
+    const cr10 = (typeof _collectrGradeUSD === 'function') ? _collectrGradeUSD(card, 10, _crPrint) : 0;
+    if (cr10 > 0) return { usd: cr10, source: 'collectr' };
+  }
+  // Live PriceCharting PSA 10 for the currently-selected card
   if (typeof livePrice !== 'undefined' && livePrice
       && selectedCard && card.i === selectedCard.i
       && livePrice.pcPsa10 > 0) {
