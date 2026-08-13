@@ -25478,6 +25478,10 @@ function setupPageNav() {
         _renderHomeWishlist();
         _renderHomeWatchlist();
         _homeVintageHash = ''; try { _renderHomeVintage(); } catch(e) {}
+        // Standouts filters on the same budget but was never told when it
+        // changed, so it kept listing cards the new limit excludes.
+        try { renderStandouts(); } catch {}
+        try { renderHomePortfolioValue(); } catch {}
       }
     }
 
@@ -30010,7 +30014,30 @@ function _vgRefresh(el, changedId) {
 // ── Standouts page ────────────────────────────────────────────────────────────
 
 let _soGrade = 'raw'; // current grade filter for standouts carousel
-let _soSubGrade = 'raw'; // Raw | PSA 9 | PSA 10 sub-filter for Vintage/Spike tabs
+let _soSubGrade = 'raw'; // Raw | PSA 4-10 sub-filter for Vintage/Spike tabs
+
+// Label for whatever the sub-filter is currently set to.
+function _soSubGradeLabel() {
+  const m = /^psa(\d+)$/.exec(_soSubGrade);
+  return m ? `PSA ${m[1]}` : 'Raw';
+}
+
+// Entry price in USD for the selected sub-grade. The grade ladder from Hold
+// Strategy covers every rung; the price cache only ever held 9 and 10, which is
+// why the sub-filter used to stop there.
+function _soSubGradeUSD(card, pd) {
+  const m = /^psa(\d+)$/.exec(_soSubGrade);
+  if (!m) return getCurrentPrice(card) || card.p || 0;
+  const n = m[1];
+  try {
+    const hc = _getHoldCoreCached(card);
+    const st = hc?.ok && hc.strategies?.find(x => x.key === _soSubGrade && !x.na);
+    if (st && st.today > 0) return st.today;
+  } catch (_) {}
+  if (n === '10') return getPsa10Anchor(card).usd || (pd?.pcPsa10 > 0 ? pd.pcPsa10 : 0);
+  if (n === '9')  return pd?.pcPsa9 || pd?.pcGrade9 || 0;
+  return 0;
+}
 let _soVintage1stEd = false; // true = show only 1st-Edition-eligible WOTC sets
 
 // WOTC EN sets that had a 1st Edition print run, by the set codes the card
@@ -30194,7 +30221,10 @@ function _soShowSubFilter(showEdToggle) {
   const sfEl = document.getElementById('soSubFilter');
   if (!sfEl) return;
   sfEl.style.display = '';
-  const grades = [['raw','Raw'],['psa9','PSA 9'],['psa10','PSA 10']];
+  // Same ladder as the main tabs — the mid grades are where the value picks sit
+  // on vintage, so leaving the sub-filter at Raw/9/10 hid most of the board.
+  const grades = [['raw','Raw'],['psa4','PSA 4'],['psa5','PSA 5'],['psa6','PSA 6'],
+                  ['psa7','PSA 7'],['psa8','PSA 8'],['psa9','PSA 9'],['psa10','PSA 10']];
   let html = grades.map(([k, lbl]) =>
     `<button class="so-sf-btn${_soSubGrade === k ? ' active' : ''}" data-sf-grade="${k}">${lbl}</button>`
   ).join('');
@@ -30549,7 +30579,7 @@ function renderStandouts() {
   if (_soGrade === 'spike') {
     _soShowSubFilter(false);
 
-    const swGradeLabel = _soSubGrade === 'psa9' ? 'PSA 9' : _soSubGrade === 'psa10' ? 'PSA 10' : 'Raw';
+    const swGradeLabel = _soSubGradeLabel();
     const swSubEl = document.getElementById('soSubtitle');
     if (swSubEl) swSubEl.textContent = hasLimit
       ? `Vintage WOTC-era holos with S/A-tier characters — ${swGradeLabel} entry within your £${maxBudgetGBP} budget, ranked by spike potential.`
@@ -30582,12 +30612,12 @@ function renderStandouts() {
         const psa9GBP  = psa9USD > 0 ? psa9USD * fx : 0;
 
         // Budget / cap check based on selected sub-grade
-        if (_soSubGrade === 'psa9') {
-          if (psa9GBP <= 0) continue;
-          if (hasLimit && psa9GBP > maxBudgetGBP) continue;
-        } else if (_soSubGrade === 'psa10') {
-          if (psa10GBP <= 0) continue;
-          if (hasLimit && psa10GBP > maxBudgetGBP) continue;
+        let entryGBP = rawGBP;
+        if (_soSubGrade !== 'raw') {
+          const gUSD = _soSubGradeUSD(card, pd);
+          entryGBP = gUSD > 0 ? gUSD * fx : 0;
+          if (entryGBP <= 0) continue;
+          if (hasLimit && entryGBP > maxBudgetGBP) continue;
         } else {
           if (rawGBP > SW_RAW_CAP_GBP) continue;
           if (hasLimit && rawGBP > maxBudgetGBP) continue;
@@ -30598,7 +30628,7 @@ function renderStandouts() {
         const spikeScore = charInfo.score * rarityMult * (multiplier > 0 ? Math.min(multiplier, 50) : (50 / Math.max(rawGBP, 10)));
 
         swCandidates.push({
-          card, rawGBP, psa9GBP, psa10GBP, multiplier,
+          card, rawGBP, psa9GBP, psa10GBP, entryGBP, multiplier,
           charTier: charInfo.tier,
           charScore: charInfo.score,
           charDisplayName: charInfo.displayName,
@@ -30626,10 +30656,8 @@ function renderStandouts() {
         const multStr = multiplier > 0 ? `${multiplier.toFixed(1)}×` : '—';
         const psa10Str = psa10GBP > 0 ? fmtGBPDirect(psa10GBP) : 'Refresh for data';
         // Entry label / value based on sub-grade selection
-        const entryLbl = _soSubGrade === 'psa9' ? 'PSA 9 entry' : _soSubGrade === 'psa10' ? 'PSA 10 entry' : 'Raw now';
-        const entryVal = _soSubGrade === 'psa9' ? (psa9GBP > 0 ? fmtGBPDirect(psa9GBP) : '—')
-                       : _soSubGrade === 'psa10' ? psa10Str
-                       : fmtGBPDirect(rawGBP);
+        const entryLbl = _soSubGrade === 'raw' ? 'Raw now' : `${swGradeLabel} entry`;
+        const entryVal = item.entryGBP > 0 ? fmtGBPDirect(item.entryGBP) : '—';
         return `<div class="so-card" data-so-i="${i}">
           <div class="so-img-wrap">
             ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
@@ -30830,7 +30858,7 @@ function renderStandouts() {
   if (_soGrade === 'vintage') {
     _soShowSubFilter(true);
 
-    const vGradeLabel = _soSubGrade === 'psa9' ? 'PSA 9' : _soSubGrade === 'psa10' ? 'PSA 10' : 'Raw';
+    const vGradeLabel = _soSubGradeLabel();
     const vEdLabel    = _soVintage1stEd ? '1st Edition ' : '';
     const vSubEl = document.getElementById('soSubtitle');
     if (vSubEl) vSubEl.textContent = hasLimit
@@ -30967,8 +30995,11 @@ function renderStandouts() {
   }
   // — end Vintage tab —
 
-  const stratKey     = _soGrade === 'psa10' ? 'psa10' : _soGrade === 'psa9' ? 'psa9' : 'raw';
-  const gradeLabel   = _soGrade === 'psa10' ? 'PSA 10' : _soGrade === 'psa9' ? 'PSA 9' : 'Raw';
+  // Any PSA grade the strategy grid produces, not just 9 and 10 — the mid grades
+  // are where the value picks usually sit, per the ladder walk.
+  const _gradeMatch  = /^psa(\d+)$/.exec(_soGrade);
+  const stratKey     = _gradeMatch ? _soGrade : 'raw';
+  const gradeLabel   = _gradeMatch ? `PSA ${_gradeMatch[1]}` : 'Raw';
 
   // Update subtitle
   const subtitleEl = document.getElementById('soSubtitle');

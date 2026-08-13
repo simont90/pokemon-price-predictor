@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260723t">
+  <link rel="stylesheet" href="style.css?v=20260723v">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2923,6 +2923,11 @@
           <h2 class="page-intro-title">Standouts</h2>
           <div class="so-grade-toggle" id="soGradeToggle">
             <button class="sgt-btn active" data-grade="raw" type="button">Raw</button>
+            <button class="sgt-btn" data-grade="psa4" type="button">PSA 4</button>
+            <button class="sgt-btn" data-grade="psa5" type="button">PSA 5</button>
+            <button class="sgt-btn" data-grade="psa6" type="button">PSA 6</button>
+            <button class="sgt-btn" data-grade="psa7" type="button">PSA 7</button>
+            <button class="sgt-btn" data-grade="psa8" type="button">PSA 8</button>
             <button class="sgt-btn" data-grade="psa9" type="button">PSA 9</button>
             <button class="sgt-btn" data-grade="psa10" type="button">PSA 10</button>
             <button class="sgt-btn sgt-btn--vintage" data-grade="vintage" type="button">Vintage</button>
@@ -3268,7 +3273,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260723t"></script>
+  <script src="app.js?v=20260723v"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
