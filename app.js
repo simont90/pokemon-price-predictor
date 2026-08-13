@@ -16832,14 +16832,22 @@ function computeHoldCore(card) {
     : ((typeof getCachedPrice === 'function') ? (getCachedPrice(card.i) || {}) : {});
   const gradedStrategies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => {
     const liveUSD = _liveGradeUSD(_hcLp, g);
-    const baseUSD = liveUSD > 0 ? liveUSD : estimateGradePrice(card, g, psa10Price);
+    // Same source order as the card page: Collectr, then PriceCharting, then
+    // the ratio. This path skipped Collectr entirely, so on any card Collectr
+    // covers and PriceCharting does not — most of the modern catalogue — every
+    // rung Standouts ranked was the estimate.
+    const collectrUSD = (typeof _collectrGradeUSD === 'function') ? _collectrGradeUSD(card, g, 'unlimited') : 0;
+    const baseUSD = collectrUSD > 0 ? collectrUSD
+                  : liveUSD > 0 ? liveUSD
+                  : estimateGradePrice(card, g, psa10Price);
+    const estimated = !(collectrUSD > 0) && !(liveUSD > 0);
     const slabShipUSD = estimateUkSlabShipping(baseUSD * fx) / fx;
     const today = baseUSD + slabShipUSD;
     const yr5 = projectGradePrice(card, g, baseUSD, 5);
     const sell = yr5 * (1 - HOLD_PROJECTION_FRICTION);
     const profit = sell - today;
     const roi = today > 0 ? (profit / today) * 100 : 0;
-    return { label: `Buy PSA ${g}`, key: `psa${g}`, grade: g, today, yr5: sell, profit, roi };
+    return { label: `Buy PSA ${g}`, key: `psa${g}`, grade: g, today, yr5: sell, profit, roi, estimated };
   });
 
   // No ownership context in this path, so it is scored as a purchase.
@@ -16886,12 +16894,12 @@ function computeHoldCore(card) {
     }
   }
 
-  const positives = strategies.filter(s => !s.na && s.roi > 0);
+  const positives = strategies.filter(s => !s.na && !s.estimated && s.roi > 0);
   const winner = positives.length
     ? positives.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
     : null;
-  const rawSide = strategies.filter(s => !s.na && (s.key === 'raw' || s.key === 'gamble') && s.roi > 0);
-  const gradedSide = strategies.filter(s => !s.na && s.key.startsWith('psa') && s.roi > 0);
+  const rawSide = strategies.filter(s => !s.na && !s.estimated && (s.key === 'raw' || s.key === 'gamble') && s.roi > 0);
+  const gradedSide = strategies.filter(s => !s.na && !s.estimated && s.key.startsWith('psa') && s.roi > 0);
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
   const bestGraded = gradedSide.length ? gradedSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
 
@@ -16903,7 +16911,7 @@ function computeHoldCore(card) {
   // it. The question for a held position is keep or sell, and the bar for
   // keeping is simply that holding beats netting out today.
   const ltpCandidates = strategies.filter(s =>
-    !s.na && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
+    !s.na && !s.estimated && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
   const bestLongTermPick = _pickBestLTP(ltpCandidates, strategies);
 
   // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
@@ -17030,7 +17038,7 @@ function varianceRiskLabel(v) {
 // vanishing.
 function _ladderValueRung(gradeStrategies, accept) {
   const rungs = (gradeStrategies || [])
-    .filter(s => s && !s.na && /^psa\d+$/.test(s.key) && s.today > 0)
+    .filter(s => s && !s.na && !s.estimated && /^psa\d+$/.test(s.key) && s.today > 0)
     .sort((a, b) => parseInt(a.key.slice(3), 10) - parseInt(b.key.slice(3), 10));
   if (!rungs.length) return null;
   if (rungs.length === 1) return accept(rungs[0]) ? rungs[0] : null;
@@ -17106,7 +17114,7 @@ function _pickCollectorEntry(strategies, maxBudgetGBP, fx) {
 
   // Nothing graded fits — fall back to the cheapest non-gamble route, which is
   // usually raw. Still an honest way to own the card, just without the slab.
-  const base = (strategies || []).filter(s => !s.na && s.key !== 'gamble' && !s.isOwnedSlab);
+  const base = (strategies || []).filter(s => !s.na && !s.estimated && s.key !== 'gamble' && !s.isOwnedSlab);
   for (const pool of [base.filter(s => s.roi >= 0 && affordable(s)), base.filter(affordable), base]) {
     if (pool.length) return pool.reduce((a, b) =>
       b.today !== a.today ? (b.today < a.today ? b : a) : (b.roi > a.roi ? b : a));
@@ -17874,6 +17882,10 @@ function renderHoldStrategy(card) {
                   : liveUSD_r > 0 ? liveUSD_r
                   : estimateGradePrice(card, g, psa10Price);
     const _fromCollectr = !(_ovrGBP > 0) && _collectrUSD > 0;
+    // Nothing priced this rung — it is psa10 x a fixed ratio, a model output
+    // with no sale behind it. Worth showing on the card page next to the ones
+    // that are real, never worth recommending as a buy.
+    const _estimated = !(_ovrGBP > 0) && !(_collectrUSD > 0) && !(liveUSD_r > 0);
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
     // For owned slabs: cost basis is what was paid; projections still anchor to current market.
     const today = isOwnedSlab ? slabAcq.costGBP / fx : baseUSD + slabShipGBP / fx;
@@ -17885,7 +17897,7 @@ function renderHoldStrategy(card) {
     const label = isOwnedSlab ? `Keep PSA ${g}` : `Buy PSA ${g}`;
     const slabMarketGBP = isOwnedSlab ? usdToGbp(baseUSD) : null;
     const slabGainGBP = isOwnedSlab ? (slabMarketGBP - slabAcq.costGBP) : null;
-    return { label, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi, annualRate, isOwnedSlab, slabMarketGBP, slabGainGBP, fromCollectr: _fromCollectr };
+    return { label, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi, annualRate, isOwnedSlab, slabMarketGBP, slabGainGBP, fromCollectr: _fromCollectr, estimated: _estimated };
   });
 
   // Labels and descs for each strategy tile
@@ -18057,14 +18069,14 @@ function renderHoldStrategy(card) {
   //   1. Raw vs Graded — which broad approach wins? Compare best raw-side
   //      option (Raw, Raw+Grade) vs best already-graded option (PSA 7-10).
   //   2. Which graded tier (PSA 7/8/9/10) is the best long-term hold?
-  const positives = strategies.filter(s => !s.na && s.roi > 0);
+  const positives = strategies.filter(s => !s.na && !s.estimated && s.roi > 0);
   const overallWinner = positives.length
     ? positives.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a)
     : null;
 
-  const rawSide = strategies.filter(s => !s.na && (s.key === 'raw' || s.key === 'gamble' || s.key === 'ace') && s.roi > 0);
-  const gradedSide = strategies.filter(s => !s.na && s.key.startsWith('psa') && s.roi > 0);
-  const allGradedSide = strategies.filter(s => !s.na && s.key.startsWith('psa'));
+  const rawSide = strategies.filter(s => !s.na && !s.estimated && (s.key === 'raw' || s.key === 'gamble' || s.key === 'ace') && s.roi > 0);
+  const gradedSide = strategies.filter(s => !s.na && !s.estimated && s.key.startsWith('psa') && s.roi > 0);
+  const allGradedSide = strategies.filter(s => !s.na && !s.estimated && s.key.startsWith('psa'));
   const bestRaw = rawSide.length ? rawSide.reduce((a, b) => b.riskAdjusted > a.riskAdjusted ? b : a) : null;
   // Always pick a slab recommendation — fall back to best by riskAdjusted even if ROI is negative
   const _bgPool = gradedSide.length ? gradedSide : allGradedSide;
@@ -18077,7 +18089,7 @@ function renderHoldStrategy(card) {
   // it. The question for a held position is keep or sell, and the bar for
   // keeping is simply that holding beats netting out today.
   const ltpCandidates = strategies.filter(s =>
-    !s.na && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
+    !s.na && !s.estimated && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
   const bestLongTermPick = _pickBestLTP(ltpCandidates, strategies);
 
   // Failing the investment test is not the same as "don't buy". When nothing
@@ -18459,6 +18471,11 @@ function renderHoldStrategy(card) {
       }
     } else if (s.marketNowGBP != null) {
       entryCtx = `${fmtGBPDirect(todayGBP_tile)} · now ${fmtGBPDirect(s.marketNowGBP)}`;
+    } else if (s.estimated) {
+      // Nothing has priced this grade. The old number here was the PSA 10
+      // price times a fixed ratio, which reads exactly like a real one — so
+      // the rung stays on the board and says nothing instead of guessing.
+      entryCtx = '<span class="hold-row-nodata" title="No sold price at this grade from Collectr or PriceCharting. Either no copy has graded here, or none has sold. Set a market override if you know what it clears at.">N/A</span>';
     } else {
       entryCtx = `${fmtGBPDirect(todayGBP_tile)} all-in`;
     }
@@ -18484,7 +18501,7 @@ function renderHoldStrategy(card) {
     // figure is what the card itself is worth; buying it costs that plus the
     // buyer fee and postage, so the ceiling sits above the all-in, not below.
     let maxBuyStr = '';
-    if (!s.isOwnedSlab && !s.acqCost && s.buyAllInGBP > 0) {
+    if (!s.isOwnedSlab && !s.acqCost && !s.estimated && s.buyAllInGBP > 0) {
       const feeGBP  = ebayBuyerFee(todayGBP_tile);
       maxBuyStr = `<span class="hold-row-maxbuy"
         title="${fmtGBPDirect(todayGBP_tile)} all-in + ${fmtGBPDirect(feeGBP)} Buyer Protection${
@@ -18492,7 +18509,7 @@ function renderHoldStrategy(card) {
     }
 
     // Per-grade annual growth rate label (always shown for PSA grade tiles)
-    const annualRateStr = (gradeNum && s.annualRate != null)
+    const annualRateStr = (gradeNum && s.annualRate != null && !s.estimated)
       ? `<span class="hold-row-annual-rate" title="Projected annual growth rate for this grade">${s.annualRate.toFixed(1)}%/yr</span>`
       : '';
 
@@ -18524,16 +18541,19 @@ function renderHoldStrategy(card) {
           <span class="hold-row-label">${s.label}</span>
           <span class="hold-row-cost">${entryCtx}${waitStr}</span>
           ${maxBuyStr}
-          <span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>
+          ${s.estimated ? '' : `<span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>`}
           ${annualRateStr}${liqBadge}${gradeProbStr}${lossStr}${_holdPopBadge(_holdCachedPop, s.grade)}${
-            s.fromCollectr ? '<span class="hold-row-src" title="PriceCharting has no price at this grade — this one is Collectr\'s">via Collectr</span>' : ''}
+            s.fromCollectr ? '<span class="hold-row-src" title="PriceCharting has no price at this grade — this one is Collectr\'s">via Collectr</span>'
+            : ''}
         </div>
-        <div class="hold-row-right">
+        <div class="hold-row-right">${s.estimated ? `
+          <div class="hold-row-roi hold-flat hold-row-nodata">N/A</div>
+          <div class="hold-row-nodata-note">No sales at this grade</div>` : `
           <div class="hold-row-roi ${_roiArrCls(s.roi)}">${_roiArrow(s.roi)} ${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</div>
           <div class="hold-row-profit ${s.profit >= 0 ? 'hold-pos' : 'hold-neg'}"
                title="Gross of any selling costs, measured against ${s.isOwnedSlab ? 'the price paid' : 'the all-in cost'}.">Profit ${profitSign}${fmtGBP(Math.abs(s.profit))}</div>
           <div class="hold-row-target">5yr ${fmtGBP(s.yr5)}${
-            s.netSaleGBP > 0 ? ` <span class="hold-row-maxbuy-note">· nets ${fmtGBPDirect(s.netSaleGBP)}</span>` : ''}</div>
+            s.netSaleGBP > 0 ? ` <span class="hold-row-maxbuy-note">· nets ${fmtGBPDirect(s.netSaleGBP)}</span>` : ''}</div>`}
         </div>
       </div>
     </div>`;
@@ -26609,6 +26629,7 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD, addOnUSD) {
       s.currentGrowthPct  = acqCostGBP > 0 ? (gbp - acqCostGBP) / acqCostGBP * 100 : 0;
       s.overridden = true;
       s.overrideGBP = gbp;
+      s.estimated = false;   // a price you entered is a price, not a guess
       return;
     }
     // No acq cost recorded: override replaces the buy-in price and recomputes ROI.
@@ -26620,6 +26641,7 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD, addOnUSD) {
     s.roi = s.today > 0 ? (s.profit / s.today) * 100 : 0;
     s.overridden = true;
     s.overrideGBP = gbp;
+    s.estimated = false;   // a price you entered is a price, not a guess
   });
 }
 
@@ -30085,7 +30107,7 @@ function _soRefreshIds() {
       const hc = _getHoldCoreCached(card);
       if (!hc.ok) continue;
       const strat = hc.strategies?.find(s => s.key === stratKey);
-      if (!strat || strat.roi <= 0) continue;
+      if (!strat || strat.roi <= 0 || strat.estimated) continue;
       scored.push({ id: card.i, roi: strat.roi });
     }
     scored.sort((a, b) => b.roi - a.roi);
@@ -30892,7 +30914,7 @@ function renderStandouts() {
         } else {
           bestStrat = eligible.find(s => s.key === _soSubGrade);
         }
-        if (!bestStrat) continue;
+        if (!bestStrat || bestStrat.estimated) continue;
         const todayGBP = bestStrat.today * fx;
         if (todayGBP <= 0) continue;
         if (hasLimit && todayGBP > maxBudgetGBP) continue;
@@ -31025,6 +31047,11 @@ function renderStandouts() {
 
       const strat = hc.strategies.find(s => s.key === stratKey);
       if (!strat || strat.roi <= 0) continue;
+      // A rung nobody has sold has no entry price to quote. Its figure is the
+      // PSA 10 price times a fixed ratio, so the whole board ends up ranked by
+      // that ratio rather than by the market — every top row reading the same
+      // return within a few points was the giveaway.
+      if (strat.estimated) continue;
 
       const todayGBP = strat.today * fx;
       if (todayGBP <= 0) continue;
@@ -31049,7 +31076,7 @@ function renderStandouts() {
 
   if (top.length === 0) {
     const budgetMsg = hasLimit ? ` within your £${maxBudgetGBP} budget` : '';
-    carousel.innerHTML = `<div class="so-empty">No ${gradeLabel} strategy data available${budgetMsg}. Cards need a PSA 10 price basis — sync prices for cards you track to expand results.</div>`;
+    carousel.innerHTML = `<div class="so-empty">No card has a sold ${gradeLabel} price${budgetMsg}.<br><br>Only grades with a real price from Collectr or PriceCharting appear here — a rung nobody has sold has no entry price to rank. Refresh prices on the cards you track to fill the mid grades in.</div>`;
     dotsEl.innerHTML = '';
     return;
   }

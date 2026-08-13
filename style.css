@@ -18123,6 +18123,7 @@ h1, h2, h3 {
 .collectr-none { font-size: 11px; color: var(--text-muted); }
 .hold-row-src { font-size: 9.5px; font-family: var(--mono); color: var(--text-faint, var(--text-muted));
   opacity: 0.8; margin-left: 6px; }
+
 [data-theme="light"] .collectr-btn { background: #f9fafb; border-color: #d1d5db; color: #6b7280; }
 [data-theme="light"] .collectr-edit input { background: #fff; border-color: #d1d5db; }
 
@@ -18639,3 +18640,147 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
   font-family: var(--mono, monospace); font-size: 10px; line-height: 1.4;
 }
 .hpv-count { text-align: right; line-height: 1.5; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Touch layer — the app is used with a thumb first and a mouse second.
+   Every control here measured under 44px on an iPhone, which is the point
+   where a finger starts missing. Two ways to fix that: grow the control, or
+   leave it the size the design wants and grow only the area that reacts to a
+   touch. Dense rows get the second treatment so the layout stays put.
+   ══════════════════════════════════════════════════════════════════════ */
+@media (pointer: coarse), (max-width: 768px) {
+
+  /* No 300ms wait for a second tap, and no accidental double-tap zoom. */
+  button, a, input, select, textarea,
+  [role="button"], [onclick], .so-sf-btn, .mkt-chip, .ptab {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* iOS zooms the whole page in when a focused field is under 16px. */
+  input, select, textarea { font-size: max(16px, 1em); }
+  .sf-select, .home-budget-input, .ur-range-input { font-size: 16px; }
+
+  /* ── Controls that can simply grow ── */
+  .currency-select,
+  .btn-snapshot-trigger,
+  .live-price-refresh,
+  .pc-override-btn,
+  .mkt-deal-open, .mkt-deal-reassign, .mkt-deal-dismiss,
+  .psa-link-open,
+  .so-refresh-btn,
+  .theme-btn,
+  .ur-range-input,
+  .pkn-page textarea {
+    min-height: 44px;
+  }
+  .theme-btn { min-width: 44px; }
+  .card-collapse-btn { min-width: 44px; }
+
+  /* The deal row's three actions sit side by side — let them share the width
+     evenly rather than each keeping a fixed 72px and crowding the edge. */
+  .mkt-deal-open, .mkt-deal-reassign, .mkt-deal-dismiss {
+    flex: 1 1 0; min-width: 0;
+  }
+
+  /* A 15px checkbox is smaller than a fingertip. The tick stays legible at
+     22px and the label it already sits inside does the catching — a tap
+     anywhere in the 44px wrap toggles it. */
+  .mkt-deal-select { width: 22px; height: 22px; }
+  .mkt-deal-check-wrap {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 44px; min-height: 44px; margin: -11px;
+    cursor: pointer;
+  }
+
+  /* The budget bar packs eight controls into one row — on a phone that left
+     the slider 28px wide, narrower than the thumb dragging it. The slider
+     takes a line of its own and everything else shares the line above. */
+  .home-budget-bar { flex-wrap: wrap; row-gap: 4px; }
+  .home-budget-bar .budget-divider { display: none; }
+  .home-budget-slider { flex: 1 0 100%; order: 10; min-width: 0; }
+  /* The label was dropped for room on the old single row. The slider has its
+     own line now, so the number it controls can say what it is again. */
+  .home-budget-label { display: inline; order: 1; }
+
+  /* ── Controls that must stay small, so only the hit area grows ── */
+  .mkt-chip,
+  .live-source-link,
+  .so-sf-btn {
+    position: relative;
+  }
+  .mkt-chip::after,
+  .live-source-link::after {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: max(100%, 44px); height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  /* Chips wrap in tight rows — the invisible pads must not stack over each
+     other, so the row spaces them out instead of overlapping. */
+  .mkt-chips, .mkt-links { gap: 10px 8px; }
+
+  /* ── Sliders: a 4px track is a mouse target, not a thumb target ── */
+  .home-budget-slider,
+  input[type="range"] {
+    height: 44px;                 /* reachable band */
+    background: transparent;
+    -webkit-appearance: none; appearance: none;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 3px;
+    background: var(--border);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 28px; height: 28px; margin-top: -11px;
+    border-radius: 50%; border: 2px solid var(--bg);
+    background: var(--accent);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 6px; border-radius: 3px; background: var(--border);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 2px solid var(--bg); background: var(--accent);
+  }
+
+  /* ── Horizontal rows: flick with a thumb, land on a card ── */
+  .so-sub-filter,
+  .home-scroll-row,
+  .predict-tab-bar,
+  .so-carousel {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .so-sub-filter::-webkit-scrollbar,
+  .home-scroll-row::-webkit-scrollbar,
+  .predict-tab-bar::-webkit-scrollbar { display: none; }
+  .so-sub-filter { flex-wrap: nowrap; scroll-snap-type: none; }
+  .so-sub-filter .so-sf-btn { flex: 0 0 auto; }
+  .home-scroll-row { scroll-snap-type: x proximity; }
+  .home-scroll-row > * { scroll-snap-align: start; }
+
+  /* ── The home indicator eats the bottom of the screen ── */
+  .page-nav {
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+  }
+  .app {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+}
+
+/* A grade nobody has sold has no price to show. The dash has to read as an
+   absence — a gap the market override is there to fill — not as a zero. */
+.hold-row-nodata {
+  font-family: var(--mono); font-weight: 700;
+  color: var(--text-muted); opacity: 0.65; cursor: help;
+  letter-spacing: 0.08em;
+}
+.hold-row-nodata-note {
+  font-size: 10px; font-family: var(--mono);
+  color: var(--text-muted); opacity: 0.6; margin-top: 2px;
+  white-space: nowrap;
+}
