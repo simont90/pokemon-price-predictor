@@ -161,11 +161,34 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
   - Prices are USD, not GBP. There is no currency field; the exact cent match
     with PriceCharting settles it.
   - `product_sub_type` is the print ("1st Edition Holofoil"), not the grade.
-  - Resolution is free and does not touch the metered API: a category index
-    page gives set name → groupId, and the set page carries the embedded
-    catalogue keyed by card number. Both cached in KV for 30 days. The set page
-    server-renders only its first 15 cards, which in a WOTC set is the holo
-    run; anything past that needs a pasted product link.
+  - **There are two Collectr paths and only one of them is metered.** The free
+    one is the worker reading Collectr's own server-rendered pages: a category
+    index gives set name → groupId, and the set page carries the embedded
+    catalogue. Both cached in KV for 30 days. The metered one is parse.bot
+    (`COLLECTR_TOKEN` is a parse.bot key, not a Collectr one), which runs a
+    headless browser because the product page is a client-rendered shell with
+    no prices in the HTML at all.
+  - The free set page yields more than the product id: per card **per print**
+    it embeds `latest_price` (ungraded), the 30-day move, and
+    `unique_sub_type_groups` — the list of grade ids that exist for that card.
+    `parseCollectrSetPage` reads all of it. This is what lets a tile say
+    "not graded at this level" rather than inventing a price, at zero cost.
+    A product id is per *card*, not per print: both prints of Fossil Gengar are
+    product 106521 and the sub-type separates them.
+  - **The set page renders only its first 15 cards, and there is no way past
+    it.** page / offset / limit / pageSize / sortBy / sortOrder were all tried
+    and every one returns the same fifteen; the rest of the set loads from an
+    API the client bundle calls. In a WOTC set those fifteen are the holo run.
+    Past card 15 the free facts are unavailable and a pasted product link only
+    supplies the id — the prices still need the metered call.
+  - `?meter=0` returns only the free facts and spends nothing. When the metered
+    call fails for credit or rate-limit reasons, the route falls back to the
+    cached body if there is one, then to the free facts, and only errors if it
+    has neither. Free-only replies come back as `priced: false` and the client
+    re-asks after 30 minutes rather than a day, so a topped-up balance is
+    picked up quickly.
+  - A 402 is `credits_exhausted`, not a 502 — the allowance is spent, which is
+    recoverable and says so. Top-ups happen on the parse.bot account.
   - Collectr splits Base Set into two groups — "Base Set (Unlimited)" (604) and
     "Base Set (1st Edition & Shadowless)" (1663) — so the selected print picks
     the group.

@@ -2709,26 +2709,85 @@ function _collectrNorm(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-// card number -> { productId, subType } for one set
+// The set page is server-rendered, so reading it costs nothing — no parse.bot
+// credit, no key, no account. It carries more than the product id the resolver
+// was taking from it: for each print of each card it also embeds the ungraded
+// market price, the 30-day move, and the list of grade ids that exist at all.
+//
+// Two hard limits. It renders only the first fifteen cards of a set (there is
+// no pagination — page/offset/limit/pageSize all return the same fifteen), and
+// it carries no per-grade prices. The PSA ladder still needs the metered call.
+//
+// card number -> { name, rarity, prints: { [subType]: {...} } }
+function parseCollectrSetPage(html) {
+  const text = String(html).replace(/\\"/g, '"').replace(/\\u0026/g, '&');
+  const out = {};
+  // Records are delimited by product_id; slice between them so one card's
+  // fields can never be read off the next card's record.
+  const starts = [];
+  const idRe = /"product_id":"(\d+)"/g;
+  let m;
+  while ((m = idRe.exec(text))) starts.push({ id: m[1], at: m.index });
+  for (let i = 0; i < starts.length; i++) {
+    const rec = text.slice(starts[i].at, i + 1 < starts.length ? starts[i + 1].at : starts[i].at + 6000);
+    const f = re => { const x = rec.match(re); return x ? x[1] : ''; };
+    const numRaw = f(/"card_number":"([^"]{1,12})"/);
+    if (!numRaw) continue;
+    const num = numRaw.trim().split('/')[0].replace(/^0+(?=\d)/, '');
+    if (!num) continue;
+    const subType = f(/"product_sub_type":"([^"]{1,60})"/) || 'Holofoil';
+    const gradeIds = [];
+    const grpBlock = rec.match(/"unique_sub_type_groups":\[(.*?)\]/);
+    if (grpBlock) {
+      const gRe = /"grade_id":"(\d+)"/g;
+      let g;
+      while ((g = gRe.exec(grpBlock[1]))) gradeIds.push(Number(g[1]));
+    }
+    const price = parseFloat(f(/"latest_price":"([\d.]+)"/));
+    const pct   = parseFloat(f(/"market_price_percentage_diff":"(-?[\d.]+)"/));
+    const entry = out[num] || (out[num] = {
+      name: (f(/"product_name":"([^"]{1,60})"/) || '').trim(),
+      rarity: f(/"rarity":"([^"]{1,40})"/),
+      prints: {},
+    });
+    if (!entry.prints[subType]) {
+      entry.prints[subType] = {
+        productId: starts[i].id,
+        rawPrice: isFinite(price) && price > 0 ? price : null,
+        pct30d:   isFinite(pct) ? pct : null,
+        gradeIds,
+      };
+    }
+  }
+  return out;
+}
+
 async function collectrSetCards(env, groupId) {
-  const key = `collectr:set:${groupId}`;
+  const key = `collectr:set:v2:${groupId}`;   // v2: prints, prices and grade ids
   if (env.SYNC_KV) {
     try { const hit = await env.SYNC_KV.get(key); if (hit) return JSON.parse(hit); } catch (e) {}
   }
   const html = await _collectrFetchText(
     `${COLLECTR_SITE}/sets/category/${COLLECTR_POKEMON_CATEGORY}/x?groupId=${encodeURIComponent(groupId)}&cardType=cards`);
-  const out = {};
-  const re = /product_id..:..(\d+).{0,400}?product_name..:..([^\\"]{1,40}).{0,200}?card_number..:..([^\\"]{1,12}).{0,160}?product_sub_type..:..([^\\"]{1,40})/g;
-  let m;
-  while ((m = re.exec(html))) {
-    const num = String(m[3]).trim().split('/')[0].replace(/^0+(?=\d)/, '');
-    if (!num || out[num]) continue;                 // first occurrence wins
-    out[num] = { productId: m[1], name: m[2].trim(), subType: m[4] };
-  }
+  const out = parseCollectrSetPage(html);
   if (env.SYNC_KV && Object.keys(out).length) {
     try { await env.SYNC_KV.put(key, JSON.stringify(out), { expirationTtl: COLLECTR_MAP_TTL }); } catch (e) {}
   }
   return out;
+}
+
+// Which print of a card the caller means. Collectr labels them per set
+// ("1st Edition Holofoil", "Unlimited Holofoil", plain "Holofoil"), so the
+// match is on the wording rather than an exact key.
+function _collectrPickPrint(prints, variant) {
+  const keys = Object.keys(prints || {});
+  if (!keys.length) return null;
+  const early = variant === '1sted' || variant === 'shadowless';
+  const want  = variant === '1sted' ? /1st edition/i : variant === 'shadowless' ? /shadowless/i : /unlimited/i;
+  const hit = keys.find(k => want.test(k))
+    || (early ? null : keys.find(k => !/1st edition|shadowless/i.test(k)))
+    || keys[0];
+  return hit ? { subType: hit, ...prints[hit] } : null;
 }
 
 // Collectr splits Base Set into an Unlimited group and a combined 1st
@@ -2748,7 +2807,29 @@ async function collectrResolve(env, setName, cardNumber, variant) {
   const cards = await collectrSetCards(env, groupId);
   const num = String(cardNumber).trim().split('/')[0].replace(/^0+(?=\d)/, '');
   const hit = cards[num];
-  return hit ? { ...hit, groupId, collectrSet: pick } : null;
+  if (!hit) return null;
+  const print = _collectrPickPrint(hit.prints, variant);
+  if (!print) return null;
+  return {
+    productId: print.productId, subType: print.subType,
+    name: hit.name, rarity: hit.rarity,
+    // Free facts, straight off the server-rendered page.
+    rawPrice: print.rawPrice, pct30d: print.pct30d, gradeIds: print.gradeIds,
+    groupId, collectrSet: pick,
+  };
+}
+
+// The grade ids the set page says exist, translated into the app's PSA keys.
+// Ids outside the PSA table belong to other grading companies and are dropped,
+// exactly as the priced path drops them.
+function collectrPsaGradesPresent(gradeIds) {
+  if (!Array.isArray(gradeIds) || !gradeIds.length) return null;
+  const out = [];
+  for (const id of gradeIds) {
+    const key = COLLECTR_PSA_GRADE[id];
+    if (key) out.push(key);
+  }
+  return out.length ? out : null;
 }
 
 // A spent allowance and a rate limit are both "come back later", and neither is
@@ -2818,10 +2899,15 @@ async function handleCollectr(request, env, url) {
   const setName = (url.searchParams.get('set') || '').trim();
   const cardNo  = (url.searchParams.get('number') || '').trim();
   const variant = (url.searchParams.get('variant') || 'unlimited').trim();
-  if (!productId && setName && cardNo) {
+  // Runs whenever the set and number are known, not only when the product id is
+  // still missing. The set page is free and KV-cached for a month, and it is
+  // the only source of the grade list — gated behind "no id yet", a card whose
+  // id was resolved once could never get its free facts again, which took the
+  // credit-exhausted fallback below with it.
+  if (setName && cardNo) {
     try {
       resolved = await collectrResolve(env, setName, cardNo, variant);
-      if (resolved) {
+      if (resolved && !productId) {
         productId = resolved.productId;
         if (idKey && env.SYNC_KV) { try { await env.SYNC_KV.put(idKey, productId); } catch (e) {} }
       }
@@ -2830,6 +2916,23 @@ async function handleCollectr(request, env, url) {
   if (!productId && setName && cardNo) {
     return _jsonResp(200, { found: false, reason: 'not_in_collectr_set_page',
       note: 'Collectr only renders the first fifteen cards of a set; paste the product link for anything past that.' }, ch);
+  }
+
+  // What the free set page told us, if it was the thing that resolved the card.
+  // Costs nothing, so it is worth returning whether or not the priced call runs.
+  const freeFacts = resolved ? {
+    print:        resolved.subType || null,
+    raw_usd:      resolved.rawPrice ?? null,
+    raw_pct_30d:  resolved.pct30d ?? null,
+    psa_grades:   collectrPsaGradesPresent(resolved.gradeIds),
+    source:       'set_page',
+  } : null;
+
+  // meter=0 asks for only what the free page gives — no credit is spent.
+  if (url.searchParams.get('meter') === '0') {
+    return _jsonResp(200, freeFacts
+      ? { found: true, product_id: productId, free: freeFacts, priced: false, credits_used: 0 }
+      : { found: false, reason: 'no_free_data', note: 'The free set page did not resolve this card.' }, ch);
   }
 
   let searched = false;
@@ -2872,6 +2975,17 @@ async function handleCollectr(request, env, url) {
         ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'no-store',
         'X-Cache': 'stale', 'X-Collectr-Refresh': e.status === 402 ? 'credits_exhausted' : 'rate_limited' } });
     }
+    // No cache to fall back on, but the free page already answered the ungraded
+    // price and which grades exist. Handing that back beats an error: it is the
+    // difference between "PSA 3 was never graded for this card" and "we could
+    // not afford to ask", which the card view has to tell apart.
+    if (freeFacts && (e.status === 402 || e.status === 429)) {
+      return _jsonResp(200, {
+        found: true, product_id: productId, free: freeFacts, priced: false,
+        priced_error: e.status === 402 ? 'credits_exhausted' : 'rate_limited',
+        credits_used: 0,
+      }, ch);
+    }
     return _collectrErrResp(e, ch);
   }
 
@@ -2904,6 +3018,7 @@ async function handleCollectr(request, env, url) {
     price_history: trimmed,
     history_total: parsed.price_history.length,
     trend, credits_used: searched ? 3 : 2,
+    free: freeFacts, priced: true,
   };
   const body = JSON.stringify(out);
   if (env.SYNC_KV) {

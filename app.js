@@ -10726,6 +10726,9 @@ const COLLECTR_IDS_KEY  = 'pkm-collectr-ids-v1';  // cardId -> product id, synce
 const COLLECTR_DATA_KEY = 'collectr-cache-v2';
 const COLLECTR_STALE_KEYS = ['collectr-cache-v1', 'pkm-collectr-cache-v1'];
 const COLLECTR_TTL_MS   = 86400000;                 // matches the worker's day
+// A free-only reply (the metered call could not be paid for) is re-asked far
+// sooner, so a topped-up balance is picked up in minutes rather than a day.
+const COLLECTR_FREE_TTL_MS = 1800000;               // 30 min
 // 400 rows within 400 days, matching what the worker returns, so the 1M/3M/6M/1Y
 // toggles all have real density. This was 120 while the only consumer was a
 // price lookup; the charts need the tail. Still far short of the 4,659 rows that
@@ -10804,7 +10807,14 @@ async function fetchCollectrData(card, { force = false, variant = 'unlimited' } 
   const cacheKey = pid || `card:${card.i}`;
   const cache = _collectrCache();
   const hit = cache[cacheKey];
-  if (!force && hit && Date.now() - (hit.ts || 0) < COLLECTR_TTL_MS) return hit.data;
+  const age = Date.now() - (hit?.ts || 0);
+  // A response that carries only the free facts is worth keeping — it answers
+  // which grades exist — but it must not stand in for prices for a whole day.
+  // Cached like a priced one, it would keep serving the priceless copy long
+  // after the credit balance was topped up. Short window, just enough to stop
+  // every render re-asking.
+  const ttl = hit?.data && hit.data.priced === false ? COLLECTR_FREE_TTL_MS : COLLECTR_TTL_MS;
+  if (!force && hit && age < ttl) return hit.data;
 
   const base = typeof getMktWorkerUrl === 'function'
     ? getMktWorkerUrl() : 'https://pokemon-marketplace.simontariq.workers.dev';
@@ -13847,6 +13857,25 @@ function _liveGradeUSD(lp, g) {
 // below both its neighbours), so the whole ladder is usable rather than the
 // top being distrusted wholesale.
 const COLLECTR_TRUSTED_MAX_GRADE = 10;
+// Whether Collectr lists grade `g` as existing at all for this print. Returns
+// null when we have not been told either way, which is not the same as false:
+// "no PSA 3 was ever graded" and "we never asked" read identically on a tile
+// unless they are kept apart here.
+function collectrGradeExists(card, g, variant) {
+  if (!card || !card.i) return null;
+  const data = (typeof getCollectrData === 'function') ? getCollectrData(card.i) : null;
+  const free = data && data.free;
+  if (!free || !Array.isArray(free.psa_grades) || !free.psa_grades.length) return null;
+  // The list is per print, so it only speaks for the print it was read from.
+  const want = (variant || 'unlimited');
+  const printName = String(free.print || '');
+  const isEarly = /1st edition|shadowless/i.test(printName);
+  if (want === '1sted' && !/1st edition/i.test(printName)) return null;
+  if (want === 'shadowless' && !/shadowless/i.test(printName)) return null;
+  if (want === 'unlimited' && isEarly) return null;
+  return free.psa_grades.includes('psa' + g);
+}
+
 function _collectrGradeUSD(card, g, variant) {
   if (!card || !(g >= 1 && g <= COLLECTR_TRUSTED_MAX_GRADE)) return 0;
   const data = (typeof getCollectrData === 'function') ? getCollectrData(card.i) : null;
@@ -17886,6 +17915,7 @@ function renderHoldStrategy(card) {
     // with no sale behind it. Worth showing on the card page next to the ones
     // that are real, never worth recommending as a buy.
     const _estimated = !(_ovrGBP > 0) && !(_collectrUSD > 0) && !(liveUSD_r > 0);
+    const _gradeExists = _estimated ? collectrGradeExists(card, g, _shownPrint) : null;
     const slabShipGBP = isOwnedSlab ? 0 : estimateUkSlabShipping(baseUSD * fx);
     // For owned slabs: cost basis is what was paid; projections still anchor to current market.
     const today = isOwnedSlab ? slabAcq.costGBP / fx : baseUSD + slabShipGBP / fx;
@@ -17897,7 +17927,7 @@ function renderHoldStrategy(card) {
     const label = isOwnedSlab ? `Keep PSA ${g}` : `Buy PSA ${g}`;
     const slabMarketGBP = isOwnedSlab ? usdToGbp(baseUSD) : null;
     const slabGainGBP = isOwnedSlab ? (slabMarketGBP - slabAcq.costGBP) : null;
-    return { label, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi, annualRate, isOwnedSlab, slabMarketGBP, slabGainGBP, fromCollectr: _fromCollectr, estimated: _estimated };
+    return { label, key: `psa${g}`, grade: g, today, slabShipGBP, yr5, profit, roi, annualRate, isOwnedSlab, slabMarketGBP, slabGainGBP, fromCollectr: _fromCollectr, estimated: _estimated, gradeExists: _gradeExists };
   });
 
   // Labels and descs for each strategy tile
@@ -18475,7 +18505,9 @@ function renderHoldStrategy(card) {
       // Nothing has priced this grade. The old number here was the PSA 10
       // price times a fixed ratio, which reads exactly like a real one — so
       // the rung stays on the board and says nothing instead of guessing.
-      entryCtx = '<span class="hold-row-nodata" title="No sold price at this grade from Collectr or PriceCharting. Either no copy has graded here, or none has sold. Set a market override if you know what it clears at.">N/A</span>';
+      entryCtx = s.gradeExists === false
+        ? '<span class="hold-row-nodata" title="Collectr lists every grade this card exists in, and this is not one of them — no copy has been graded here. Free to check: it comes off the set page, not the metered price call.">N/A</span>'
+        : '<span class="hold-row-nodata" title="No sold price at this grade from Collectr or PriceCharting. Set a market override if you know what it clears at.">N/A</span>';
     } else {
       entryCtx = `${fmtGBPDirect(todayGBP_tile)} all-in`;
     }
@@ -18548,7 +18580,7 @@ function renderHoldStrategy(card) {
         </div>
         <div class="hold-row-right">${s.estimated ? `
           <div class="hold-row-roi hold-flat hold-row-nodata">N/A</div>
-          <div class="hold-row-nodata-note">No sales at this grade</div>` : `
+          <div class="hold-row-nodata-note">${s.gradeExists === false ? 'Not graded at this level' : 'No sales at this grade'}</div>` : `
           <div class="hold-row-roi ${_roiArrCls(s.roi)}">${_roiArrow(s.roi)} ${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(0)}%</div>
           <div class="hold-row-profit ${s.profit >= 0 ? 'hold-pos' : 'hold-neg'}"
                title="Gross of any selling costs, measured against ${s.isOwnedSlab ? 'the price paid' : 'the all-in cost'}.">Profit ${profitSign}${fmtGBP(Math.abs(s.profit))}</div>
