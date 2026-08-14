@@ -2751,6 +2751,26 @@ async function collectrResolve(env, setName, cardNumber, variant) {
   return hit ? { ...hit, groupId, collectrSet: pick } : null;
 }
 
+// A spent allowance and a rate limit are both "come back later", and neither is
+// an upstream fault — reporting them as 502 Bad Gateway sent the client looking
+// for a broken worker. The raw upstream string leaked too: the card view showed
+// "Collectr API returned 402", which says nothing about what to do next.
+function _collectrErrResp(e, ch) {
+  if (e.status === 402) {
+    return _jsonResp(402, {
+      error: 'Collectr credits are used up for this billing period. Top up the parse.bot key or wait for the monthly reset — prices already fetched keep working from cache.',
+      reason: 'credits_exhausted', detail: e.detail || null,
+    }, ch);
+  }
+  if (e.status === 429) {
+    return _jsonResp(429, {
+      error: 'Collectr is rate limiting — try again shortly.',
+      reason: 'rate_limited', detail: e.detail || null,
+    }, ch);
+  }
+  return _jsonResp(502, { error: e.message, reason: 'upstream_error', detail: e.detail || null }, ch);
+}
+
 async function _collectrCall(env, path, params) {
   const base = (env.COLLECTR_API_URL || COLLECTR_API_DEFAULT).replace(/\/+$/, '');
   const u = new URL(base + path);
@@ -2819,8 +2839,7 @@ async function handleCollectr(request, env, url) {
     try {
       hits = await _collectrCall(env, '/search_products', { query: q, limit: '5' });
     } catch (e) {
-      return _jsonResp(e.status === 429 ? 429 : 502,
-        { error: e.status === 429 ? 'Collectr credit limit or rate limit reached.' : e.message, detail: e.detail || null }, ch);
+      return _collectrErrResp(e, ch);
     }
     searched = true;
     const items = hits?.items || hits?.data?.items || [];
@@ -2832,20 +2851,28 @@ async function handleCollectr(request, env, url) {
 
   const priceKey = `collectr:data:v2:${productId}`;   // v2: grade ids remapped, 8.5 added
   const refresh = url.searchParams.get('refresh') === '1';
-  if (env.SYNC_KV && !searched && !refresh) {
-    try {
-      const hit = await env.SYNC_KV.get(priceKey);
-      if (hit) return new Response(hit, { headers: {
+  let cached = null;
+  if (env.SYNC_KV && !searched) {
+    try { cached = await env.SYNC_KV.get(priceKey); } catch (e) {}
+    if (cached && !refresh) {
+      return new Response(cached, { headers: {
         ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Cache': 'hit' } });
-    } catch (e) {}
+    }
   }
 
   let detail;
   try {
     detail = await _collectrCall(env, '/get_product_details', { product_id: productId });
   } catch (e) {
-    return _jsonResp(e.status === 429 ? 429 : 502,
-      { error: e.status === 429 ? 'Collectr credit limit or rate limit reached.' : e.message, detail: e.detail || null }, ch);
+    // A refresh that cannot be paid for should leave what is already known
+    // standing. Erroring here threw away a good cached body and blanked the
+    // card's whole grade ladder over a spent allowance.
+    if (cached && (e.status === 402 || e.status === 429)) {
+      return new Response(cached, { headers: {
+        ...ch, 'Content-Type': 'application/json', 'Cache-Control': 'no-store',
+        'X-Cache': 'stale', 'X-Collectr-Refresh': e.status === 402 ? 'credits_exhausted' : 'rate_limited' } });
+    }
+    return _collectrErrResp(e, ch);
   }
 
   const parsed = parseCollectrResponse(detail);
