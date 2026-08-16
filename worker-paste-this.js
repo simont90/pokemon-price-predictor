@@ -871,6 +871,17 @@ async function handle(request, env, ctx) {
   const url = new URL(request.url);
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(request) });
   if (url.pathname === '/health') return new Response('ok', { headers: corsHeaders(request) });
+  // The root has no job, but it is the URL a person pastes into a browser or
+  // into the sync panel's Worker URL field. Answering "Not found" there reads
+  // like the worker is down when every route beside it is fine.
+  if (url.pathname === '/' || url.pathname === '') {
+    return _jsonResp(200, {
+      ok: true,
+      worker: 'pokemon-marketplace',
+      note: 'Alive. This URL is the base — paste it into the app\'s sync panel as-is; the app appends its own path.',
+      routes: ['/health', '/search', '/collectr', '/sync', '/pop', '/pop-history', '/cert', '/sales', '/prices', '/mcp'],
+    }, { ...corsHeaders(request), 'Content-Type': 'application/json' });
+  }
   if (url.pathname === '/market-intel' || url.pathname === '/vintage-intel') return handleMarketIntel(request, env, ctx);
 
   if (url.pathname === '/sync') return handleSync(request, env, url);

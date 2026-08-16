@@ -28181,7 +28181,19 @@ function _wireQsGroup(pfx) {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const j = await res.json();
-      if (!j || !j.data) throw new Error('No data found — check the code and try again');
+      if (!j || !j.data) {
+        // Your own persistent code and a one-time transfer code look identical
+        // — same eight characters, and the personal one is displayed directly
+        // above this box. Typing it here is the obvious move and it can never
+        // work: nothing writes to that key until "Sync now" runs. Saying
+        // "check the code" sends you hunting for a typo that isn't there.
+        let stored = '';
+        try { stored = localStorage.getItem(PERSONAL_SYNC_KEY) || ''; } catch {}
+        if (stored && stored.toUpperCase() === code.toUpperCase()) {
+          throw new Error('That is this device\'s own sync code. This box is for a one-time code from another device — to sync with your own code, press "Sync now" above.');
+        }
+        throw new Error('No data found. On the sending device, press "Generate code" first — the code it shows is the one to enter here.');
+      }
       const result = syncApplyPayload(j, 'merge');
       _log(receiveLog, `Got ${result.applied} keys — collection updated.`, 'ok');
       codeInput.value = '';
