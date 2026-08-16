@@ -10819,15 +10819,20 @@ async function fetchCollectrData(card, { force = false, variant = 'unlimited' } 
   const base = typeof getMktWorkerUrl === 'function'
     ? getMktWorkerUrl() : 'https://pokemon-marketplace.simontariq.workers.dev';
   const qs = new URLSearchParams({ cardId: card.i });
-  if (pid) {
-    qs.set('productId', pid);
-  } else {
-    const setName = (typeof setsData !== 'undefined' && setsData?.[card.sc]?.name) || '';
-    if (!setName || !card.cn) return null;
+  if (pid) qs.set('productId', pid);
+  // Send the set and number even when the product id is already known. They
+  // cost nothing — the worker reads them off Collectr's free set page — and
+  // they are the only way it can answer which grades exist, or say anything at
+  // all when the metered call cannot be paid for. Sent only as a fallback for
+  // an unknown id, a card that had been resolved once could never get either.
+  const setName = (typeof setsData !== 'undefined' && setsData?.[card.sc]?.name) || '';
+  if (setName && card.cn) {
     qs.set('set', setName);
     qs.set('number', String(card.cn));
-    qs.set('variant', variant);
+  } else if (!pid) {
+    return null;
   }
+  qs.set('variant', variant);
   const r = await fetch(`${base}/collectr?${qs}`);
   const d = await r.json().catch(() => null);
   if (!r.ok || !d) throw new Error((d && d.error) || 'Collectr lookup failed.');
