@@ -18784,3 +18784,41 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
   color: var(--text-muted); opacity: 0.6; margin-top: 2px;
   white-space: nowrap;
 }
+
+/* Graded-history legend entries are switches, not labels — PSA 10 sits an
+   order of magnitude above the rest and flattens everything else until it is
+   turned off, so they have to look pressable and read as on/off. */
+.ph-leg {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid transparent; border-radius: 7px;
+  padding: 5px 8px; margin: 0 4px 4px 0;
+  background: none; font: inherit; color: inherit;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: opacity .12s, border-color .12s;
+}
+.ph-leg:hover { border-color: var(--border); }
+.ph-leg-off { opacity: 0.4; }
+.ph-leg-off i { filter: grayscale(1); }
+.ph-leg-off em { text-decoration: line-through; }
+@media (pointer: coarse), (max-width: 768px) {
+  .ph-leg { min-height: 44px; }
+}
+
+/* Print picker in the card head. One control for which print the whole page is
+   describing — the star, the prices and the history all follow it. */
+.cd-ph-prints { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.cd-print-btn {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
+  padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg-raised);
+  color: var(--text-muted); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.cd-print-btn.is-on {
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(232,182,52,0.12);
+}
+.hold-variant-badge-roi { opacity: 0.75; }
+@media (pointer: coarse), (max-width: 768px) {
+  .cd-print-btn { min-height: 44px; }
+}

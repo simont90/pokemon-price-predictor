@@ -1015,11 +1015,23 @@ function _isEraChaseRarity(card, rc) {
   return rank >= ceiling;
 }
 
-function getInvestmentStars(card, desTot) {
+// Scarcity premium of the print being viewed, in desirability points. 1st
+// Edition carries the edition stamp and by far the smallest run, Shadowless is
+// the early unstamped print, Unlimited ran until the set was retired. Modest on
+// purpose: it should be able to lift a card across a band, not manufacture one.
+const PRINT_DESIRABILITY_BONUS = { '1sted': 1.0, shadowless: 0.5, unlimited: 0 };
+
+function getInvestmentStars(card, desTot, variant) {
   if (!card) return { stars: 0, tier: '', hint: '', color: '' };
   const charScore = getCharacterScore(card.n);
   const rc = cardRarityCode(card) || _inferJPRarityRc(card);
-  const des = typeof desTot === 'number' ? desTot : 5;
+  const baseDes = typeof desTot === 'number' ? desTot : 5;
+  // Only for cards that actually have the print. Asking for a 1st Edition
+  // bonus on a card that never had one would rate a print that does not exist.
+  const _prints = (typeof popVariantsFor === 'function') ? popVariantsFor(card) : [];
+  const _v = variant || (typeof _activePrintVariant !== 'undefined' ? _activePrintVariant : 'unlimited');
+  const _hasPrint = _prints.some(p => p.key === _v);
+  const des = _hasPrint ? baseDes + (PRINT_DESIRABILITY_BONUS[_v] || 0) : baseDes;
   const isS   = charScore >= 9.0;
   const isA   = charScore >= 7.5 && !isS;
   const isB   = charScore >= 5.5 && !isS && !isA;
@@ -1072,10 +1084,17 @@ const _RARITY_LABELS = {
 
 function _buildStarRationale(card, desTot) {
   const rc        = cardRarityCode(card) || _inferJPRarityRc(card);
-  const des       = typeof desTot === 'number' ? desTot : 5;
+  const _baseDes  = typeof desTot === 'number' ? desTot : 5;
+  const _prints   = (typeof popVariantsFor === 'function') ? popVariantsFor(card) : [];
+  const _v        = typeof _activePrintVariant !== 'undefined' ? _activePrintVariant : 'unlimited';
+  const _printLbl = (_prints.find(p => p.key === _v) || {}).label || '';
+  const _bonus    = _prints.some(p => p.key === _v) ? (PRINT_DESIRABILITY_BONUS[_v] || 0) : 0;
+  const des       = _baseDes + _bonus;
   const charScore = getCharacterScore(card.n);
   const displayName = card.n; // full card name as shown in the UI
-  const { stars } = getInvestmentStars(card, des);
+  const { stars } = getInvestmentStars(card, _baseDes);
+  // Say which print is being rated whenever the print moved the score.
+  const printNote = _bonus > 0 ? ` Rated as the ${_printLbl} print, which carries a scarcity premium over Unlimited.` : '';
   const charTier  = charScore >= 9.0 ? 'S' : charScore >= 7.5 ? 'A' : charScore >= 5.5 ? 'B' : null;
   const rarityLbl = _RARITY_LABELS[rc] || (rc ? rc : 'standard rarity');
   const isEraChase      = _isEraChaseRarity(card, rc);
@@ -1091,13 +1110,13 @@ function _buildStarRationale(card, desTot) {
                   : 'character with limited collector draw';
 
   if (stars === 5)
-    return `${displayName} is an ${tierLabel} on a ${rarityPhrase} — the rarest print tier with peak desirability (${des.toFixed(1)}/10). This combination drives the strongest long-term graded hold.`;
+    return `${displayName} is an ${tierLabel} on a ${rarityPhrase} — the rarest print tier with peak desirability (${des.toFixed(1)}/10). This combination drives the strongest long-term graded hold.${printNote}`;
 
   if (stars === 4)
-    return `${displayName} is an ${tierLabel} on a ${rarityPhrase} with strong desirability (${des.toFixed(1)}/10). High-art prints at this character tier hold graded premiums well — watch entry timing at hype peaks.`;
+    return `${displayName} is an ${tierLabel} on a ${rarityPhrase} with strong desirability (${des.toFixed(1)}/10). High-art prints at this character tier hold graded premiums well — watch entry timing at hype peaks.${printNote}`;
 
   if (stars === 3)
-    return `${displayName} is a ${tierLabel} on a ${rarityPhrase} (desirability ${des.toFixed(1)}/10). Solid fundamentals for a long-term hold, but not a fast mover — priority is buying near the floor.`;
+    return `${displayName} is a ${tierLabel} on a ${rarityPhrase} (desirability ${des.toFixed(1)}/10). Solid fundamentals for a long-term hold, but not a fast mover — priority is buying near the floor.${printNote}`;
 
   if (stars === 2) {
     const rarityNote = isHighArtRarity ? rarityPhrase : (rc === 'RR' ? 'Double Rare' : rarityLbl);
@@ -3143,6 +3162,8 @@ function _updatePCVariantButtons(card) {
 window.switchMarketPCVariant = async function(variant) {
   if (!selectedCard) return;
   _marketPCVariant = variant;
+  // The Market tab's print picker moves the history charts too.
+  try { setActivePrintVariant(variant, selectedCard); } catch {}
   _updatePCVariantButtons(selectedCard);
 
   if (variant === 'unlimited') {
@@ -3920,6 +3941,7 @@ function selectCard(id) {
 
   $('forecastSection').style.display = 'block';
   renderForecast(card, pullCost, des.total);
+  _lastDesTot = des;
   renderStarRating(card, des);
   // Runs on every card open, unlike the block inside renderLivePrice, which is
   // skipped entirely when the card has no live price yet.
@@ -4772,6 +4794,7 @@ function renderCardPageHead(card) {
   const num = card.cn ? `${card.cn}${card.sr ? '/' + card.sr : ''}` : '';
   const metaEl = document.getElementById('cdPhMeta');
   if (metaEl) metaEl.textContent = [rarity, num].filter(Boolean).join('  •  ');
+  try { _renderPrintPicker(card); } catch {}
 
   // Same source the Live Market Price headline uses.
   const usd = (typeof getCurrentPrice === 'function') ? getCurrentPrice(card) : 0;
@@ -4785,7 +4808,7 @@ function renderCardPageHead(card) {
     let pct = null;
     try {
       const d = getCollectrData(card.i);
-      const print = collectrPrintFor(d, (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited');
+      const print = collectrPrintFor(d, _activePrintVariant || 'unlimited');
       const tr = d && d.trend && print ? d.trend[print] : null;
       const raw = tr && (tr.raw || tr.ungraded || tr['30d'] || tr.d30);
       if (raw && isFinite(raw.pct)) pct = raw.pct;
@@ -10717,12 +10740,24 @@ function popIdFor(cardId, variant) {
 
 // The prints worth tracking separately for a given card. Modern cards have
 // none — there is just the card.
+// Print hierarchy for vintage, best first. 1st Edition carries the edition
+// stamp and the smallest print run, Shadowless is the early unstamped run, and
+// Unlimited ran until the set was retired. This order is a property of the
+// print, not of what the model currently projects — a cheap Unlimited can show
+// the higher modelled ROI and is still the lesser card.
+const PRINT_RANK = { '1sted': 0, shadowless: 1, unlimited: 2 };
+function printRank(key) {
+  const r = PRINT_RANK[key];
+  return r === undefined ? 99 : r;
+}
+
 function popVariantsFor(card) {
   if (!card || card.lang === 'JP') return [];
-  const out = [];
+  const out = [{ key: 'unlimited', label: 'Unlimited' }];
   if (typeof _SO_FIRST_ED_SETS !== 'undefined' && _SO_FIRST_ED_SETS.has(card.sc)) out.push({ key: '1sted', label: '1st Edition' });
   if (typeof _HVG_SHADOWLESS_SETS !== 'undefined' && _HVG_SHADOWLESS_SETS.has(card.sc)) out.push({ key: 'shadowless', label: 'Shadowless' });
-  return out.length ? [{ key: 'unlimited', label: 'Unlimited' }, ...out] : [];
+  if (out.length === 1) return [];
+  return out.sort((a, b) => printRank(a.key) - printRank(b.key));
 }
 
 // Set one grade's population without disturbing the others. A bulk import
@@ -11330,13 +11365,74 @@ function _phSvg(series, { height = 200, fill = false, fx = 1, currency = '\u00a3
   return `<svg class="ph-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${grid}${paths}${xlab}</svg>`;
 }
 
+// Grades hidden from the graded chart. PSA 10 routinely sits an order of
+// magnitude above the rest — Dark Dragonite is £7,267 against £62 at PSA 2 —
+// so with everything plotted the lower nine grades are a single flat line at
+// the axis. Turning one off rescales the chart around what is left.
+const _phHidden = new Set();
+
 function _phLegend(series, fx, currency) {
   const order = ['psa10','psa9','psa8','psa7','psa6','psa5','psa4','psa3','psa2','psa1'];
   return order.filter(k => series[k]).map(k => {
     const s = series[k], last = s[s.length - 1].v * fx;
-    return `<span class="ph-leg"><i style="background:${PH_GRADE_COLOURS[k]}"></i>` +
-           `${k.replace('psa', 'PSA ')} <em>${currency}${last >= 1000 ? Math.round(last).toLocaleString() : last.toFixed(2)}</em></span>`;
+    const off = _phHidden.has(k);
+    return `<button type="button" class="ph-leg${off ? ' ph-leg-off' : ''}" data-ph-grade="${k}"` +
+           ` title="${off ? 'Show' : 'Hide'} ${k.replace('psa', 'PSA ')} on the chart">` +
+           `<i style="background:${PH_GRADE_COLOURS[k]}"></i>` +
+           `${k.replace('psa', 'PSA ')} <em>${currency}${last >= 1000 ? Math.round(last).toLocaleString() : last.toFixed(2)}</em></button>`;
   }).join('');
+}
+
+// The print the card page is currently showing. The two variant selectors —
+// the Market tab's and the Strategy tab's — each used to keep their own idea of
+// it, and the charts followed only the Market one. Switching print in the
+// Strategy tab left the history plotting Unlimited under a 1st Edition heading.
+let _activePrintVariant = 'unlimited';
+let _lastDesTot = null;   // desirability of the open card, for redraws on print switch
+function setActivePrintVariant(v, card) {
+  if (!v || v === _activePrintVariant) return;
+  _activePrintVariant = v;
+  try { renderPriceHistory(card); } catch {}
+}
+
+// The print picker in the card head. Every panel below reads the print from
+// somewhere, and each selector used to move only its own — so the star rating
+// could describe Unlimited while the prices beside it described 1st Edition.
+// This one moves all of them together.
+function applyPrintVariant(v, card) {
+  card = card || (typeof selectedCard !== 'undefined' ? selectedCard : null);
+  if (!v || !card) return;
+  _activePrintVariant = v;
+  if (typeof _marketPCVariant  !== 'undefined') _marketPCVariant  = v;
+  if (typeof _holdStratVariant !== 'undefined') _holdStratVariant = v;
+  if (typeof _hoPrint !== 'undefined') _hoPrint = v;
+  try { renderCardPageHead(card); } catch {}
+  try { renderStarRating(card, _lastDesTot != null ? _lastDesTot : 5); } catch {}
+  try { renderPriceHistory(card); } catch {}
+  try { renderHoldStrategy(card); } catch {}
+  try { if (typeof renderMarketPC === 'function') renderMarketPC(card); } catch {}
+  try { if (typeof renderCollectrRow === 'function') renderCollectrRow(); } catch {}
+  try { if (typeof _paintGemTile === 'function') _paintGemTile(card); } catch {}
+}
+
+function _renderPrintPicker(card) {
+  const host = document.getElementById('cdPhPrints');
+  if (!host) return;
+  const prints = (typeof popVariantsFor === 'function') ? popVariantsFor(card) : [];
+  if (!prints.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
+  host.style.display = '';
+  host.innerHTML = prints.map(p =>
+    `<button type="button" class="cd-print-btn${p.key === _activePrintVariant ? ' is-on' : ''}" data-cd-print="${p.key}">${p.label}</button>`
+  ).join('');
+  if (!host._bound) {
+    host._bound = true;
+    host.addEventListener('click', e => {
+      const b = e.target.closest('[data-cd-print]');
+      if (!b) return;
+      e.preventDefault();
+      applyPrintVariant(b.dataset.cdPrint, typeof selectedCard !== 'undefined' ? selectedCard : null);
+    });
+  }
 }
 
 let _phRange = '1Y';
@@ -11347,12 +11443,16 @@ function renderPriceHistory(card) {
   if (!card) { host.style.display = 'none'; return; }
   const days = PH_RANGES[_phRange] || 365;
   const print = (typeof collectrPrintFor === 'function' && typeof getCollectrData === 'function')
-    ? collectrPrintFor(getCollectrData(card.i), (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited')
+    ? collectrPrintFor(getCollectrData(card.i), _activePrintVariant || 'unlimited')
     : null;
   const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 1;   // Collectr quotes USD
 
   const rawS    = _phSeries(card, { print, days, grades: ['raw'] });
-  const gradedS = _phSeries(card, { print, days, grades: Object.keys(PH_GRADE_COLOURS).filter(k => k !== 'raw') });
+  const gradedAll = _phSeries(card, { print, days, grades: Object.keys(PH_GRADE_COLOURS).filter(k => k !== 'raw') });
+  // The legend lists every grade that has data; the plot only draws the ones
+  // left switched on, so the y-axis rescales to them.
+  const gradedS = {};
+  for (const k of Object.keys(gradedAll)) if (!_phHidden.has(k)) gradedS[k] = gradedAll[k];
 
   if (!Object.keys(rawS).length && !Object.keys(gradedS).length) {
     host.style.display = 'none';
@@ -11375,8 +11475,11 @@ function renderPriceHistory(card) {
   host.innerHTML =
     panel('Ungraded Price History', _phSvg(rawS, { fill: true, fx }), '',
           `No ungraded history in this ${_phRange} window.`) +
-    panel('Graded Price History', _phSvg(gradedS, { height: 220, fx }), _phLegend(gradedS, fx, '\u00a3'),
-          `No graded history in this ${_phRange} window.`);
+    panel('Graded Price History',
+          Object.keys(gradedS).length ? _phSvg(gradedS, { height: 220, fx }) : '',
+          _phLegend(gradedAll, fx, '\u00a3'),
+          Object.keys(gradedAll).length ? 'Every grade is hidden — tap one below to show it.'
+                                        : `No graded history in this ${_phRange} window.`);
 }
 
 // Renders the Collectr row and its price line under the PriceCharting grid.
@@ -18523,18 +18626,28 @@ function renderHoldStrategy(card) {
         return { ...v, gbp: Math.round(g), yr5: Math.round(yr5 * fx),
                  roi: Math.round((yr5 - usd) / usd * 100), overridden: true, avail: true };
       })
-      .filter(v => v.avail);
-    const bestVariant = vcands.reduce((b, v) => (v.roi != null && (b.roi == null || v.roi > b.roi)) ? v : b, vcands[0]);
+      .filter(v => v.avail)
+      // Best print first, always. The list used to open on Unlimited because
+      // that is the order the candidates were written in.
+      .sort((a, b) => printRank(a.key) - printRank(b.key));
+    // Two different questions, and they were being answered with one badge.
+    // "Which print is the better card" is fixed by the hierarchy; "which is
+    // projected to return most" is whatever the model says, and on vintage that
+    // is often the cheapest print rather than the best one.
+    const bestPrint = vcands[0] || null;
+    const bestRoi   = vcands.reduce((b, v) => (v.roi != null && (b.roi == null || v.roi > b.roi)) ? v : b, vcands[0]);
     const _va = roi => roi >= 5 ? '↗' : roi >= -5 ? '→' : '↘';
     const _vc = roi => roi >= 5 ? 'hold-pos' : roi >= -5 ? 'hold-flat' : 'hold-neg';
     variantBlock = `<div class="hold-opps-label hold-variant-label">VARIANT · PSA 10 <span class="hold-variant-hint">tap to switch</span></div>
 <div class="hold-variant-cmp">${vcands.map(v => {
-  const isActive = v.key === _holdStratVariant;
-  const isBest   = v === bestVariant;
+  const isActive   = v.key === _holdStratVariant;
+  const isBest     = v === bestPrint;
+  const leadsOnRoi = v === bestRoi && bestRoi !== bestPrint;
   return `<button class="hold-variant-row${isActive ? ' hold-variant-active' : ''}${isBest ? ' hold-variant-best' : ''}" data-hold-variant="${v.key}">
     <div class="hold-variant-left">
       <span class="hold-variant-name">${v.name}</span>
-      ${isBest && !isActive ? '<span class="hold-variant-badge">★ Best ROI</span>' : ''}
+      ${isBest ? '<span class="hold-variant-badge" title="The best print of this card. 1st Edition, then Shadowless, then Unlimited — a property of the print run, not of the projection.">★ Best print</span>' : ''}
+      ${leadsOnRoi ? '<span class="hold-variant-badge hold-variant-badge-roi" title="Highest modelled 5-year return of the prints priced here. That is usually the cheapest print, not the best one.">Top ROI</span>' : ''}
       ${isActive ? '<span class="hold-variant-badge hold-variant-badge-active">✓ Viewing</span>' : ''}
       ${v.overridden ? '<span class="hold-variant-badge hold-variant-badge-ovr">your price</span>' : ''}
     </div>
@@ -18677,7 +18790,11 @@ function renderHoldStrategy(card) {
   grid.querySelectorAll('[data-hold-variant]').forEach(btn => {
     btn.addEventListener('click', () => {
       const v = btn.dataset.holdVariant;
-      if (v !== _holdStratVariant) { _holdStratVariant = v; renderHoldStrategy(card); }
+      if (v !== _holdStratVariant) {
+        _holdStratVariant = v;
+        renderHoldStrategy(card);
+        setActivePrintVariant(v, card);   // keep the history charts on the same print
+      }
     });
   });
 
@@ -25534,6 +25651,15 @@ function setupPageNav() {
     if (!btn) return;
     e.preventDefault();
     _phRange = btn.dataset.phRange;
+    try { renderPriceHistory(); } catch {}
+  });
+
+  document.addEventListener('click', e => {
+    const leg = e.target.closest('[data-ph-grade]');
+    if (!leg) return;
+    e.preventDefault();
+    const g = leg.dataset.phGrade;
+    if (_phHidden.has(g)) _phHidden.delete(g); else _phHidden.add(g);
     try { renderPriceHistory(); } catch {}
   });
 

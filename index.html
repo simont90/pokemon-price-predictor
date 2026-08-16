@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260724j">
+  <link rel="stylesheet" href="style.css?v=20260724n">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1253,6 +1253,7 @@
               <h1 class="cd-ph-name" id="cdPhName"></h1>
               <button type="button" class="cd-ph-set" id="cdPhSet"></button>
               <div class="cd-ph-meta" id="cdPhMeta"></div>
+              <div class="cd-ph-prints" id="cdPhPrints"></div>
             </div>
             <div class="cd-ph-right">
               <div class="cd-ph-price" id="cdPhPrice">—</div>
@@ -3273,7 +3274,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260724j"></script>
+  <script src="app.js?v=20260724n"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing
