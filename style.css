@@ -18856,3 +18856,13 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
 @media (pointer: coarse), (max-width: 768px) {
   .collectr-btn--find { min-height: 44px; }
 }
+
+/* A chase card marked down over 90 days. Green when the fall has flattened,
+   amber while it is still going — a slide is not a discount yet. */
+.reco-dip {
+  display: inline-block; font-family: var(--mono); font-size: 10px;
+  font-weight: 800; border-radius: 5px; padding: 1px 5px; margin-left: 5px;
+  cursor: help;
+}
+.reco-dip-good  { color: #34d399; background: rgba(52,211,153,0.14); }
+.reco-dip-watch { color: #f59e0b; background: rgba(245,158,11,0.14); }

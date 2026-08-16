@@ -22858,6 +22858,52 @@ function _gemScore(card, marketUSD) {
 
 // Conviction tier: five-level classification layered on top of the BUY/STRONG BUY filter.
 // Returns one of: 'must-buy' | 'buy' | 'worth-holding' | 'buy-if-pc' | 'skip'
+// A quality card that has come off over three months is the case worth
+// surfacing: the card has not changed, the price has. A cheap card falling is
+// just a cheap card falling, so the discount only counts on something that was
+// a chase to begin with — the top rarity its own set printed, or a strong
+// character on a high-art tier.
+//
+// Reads Collectr's 90-day series, which only exists for cards that have been
+// opened at least once. No data means no claim: this returns null rather than
+// inferring a trend from the static price.
+const DIP_MIN_PCT   = 12;   // below this it is noise, not a pullback
+const DIP_DEEP_PCT  = 25;   // a real markdown
+function _chaseDip(card) {
+  if (!card || !card.i) return null;
+  let t = null;
+  try {
+    const d = getCollectrData(card.i);
+    const print = collectrPrintFor(d, 'unlimited');
+    t = d && d.trend && print ? d.trend[print] : null;
+  } catch { return null; }
+  const p90 = t && t.raw_90d && isFinite(t.raw_90d.pct) ? t.raw_90d.pct : null;
+  const p30 = t && t.raw_30d && isFinite(t.raw_30d.pct) ? t.raw_30d.pct : null;
+  if (p90 == null || p90 > -DIP_MIN_PCT) return null;
+
+  // Is it worth catching? Either the chase of its own set, or a strong
+  // character on a high-art print.
+  let isChase = false;
+  try {
+    const rc = cardRarityCode(card) || _inferJPRarityRc(card);
+    isChase = _isEraChaseRarity(card, rc)
+      || (HIGH_ART_RARITIES.has(rc) && getCharacterScore(card.n) >= 7.5);
+  } catch {}
+  if (!isChase) return null;
+
+  const deep = p90 <= -DIP_DEEP_PCT;
+  // Still sliding, or flattening out? Section 3: a fall that has not stopped is
+  // the market catching down, not a discount you can act on.
+  const steadying = p30 != null && p30 > -8;
+  return {
+    pct90: p90, pct30: p30, deep, steadying,
+    boost: (deep ? 12 : 6) + (steadying ? 4 : 0),
+    label: steadying ? (deep ? 'Chase card, 25%+ off and steadying' : 'Chase card on a pullback')
+                     : 'Chase card falling — not yet steady',
+    tone: steadying ? 'good' : 'watch',
+  };
+}
+
 function _convictionTier(signal, score, upsidePct, gemScore) {
   if (signal === 'STRONG BUY' && upsidePct >= 20 && (gemScore >= 1.5 || score >= 4))
     return 'must-buy';
@@ -23086,6 +23132,7 @@ function buildAllHomeRecos() {
     const onWatchlist = watchIds.has(c.i);
 
     const convictionTier = _convictionTier(sig.signal, sig.score, upsidePct, gemScore);
+    const dip = _chaseDip(c);
 
     // Generative score: taste match (what you typically own) blended with the
     // model's own view (what the system rates as good).
@@ -23112,6 +23159,7 @@ function buildAllHomeRecos() {
       tasteScore,
       tasteReasons,
       tasteAdded,
+      dip,
     };
     general.push(base);
 
@@ -23144,8 +23192,8 @@ function buildAllHomeRecos() {
     if (a.tasteAdded && b.tasteAdded) return (b.tasteScore || 0) - (a.tasteScore || 0);
     const tDiff = (_TIER_RANK[b.convictionTier] || 0) - (_TIER_RANK[a.convictionTier] || 0);
     if (tDiff !== 0) return tDiff;
-    const cA = a.score + a.gemScore * 1.5 + (a.tasteScore || 0) / 20;
-    const cB = b.score + b.gemScore * 1.5 + (b.tasteScore || 0) / 20;
+    const cA = a.score + a.gemScore * 1.5 + (a.tasteScore || 0) / 20 + (a.dip ? a.dip.boost : 0);
+    const cB = b.score + b.gemScore * 1.5 + (b.tasteScore || 0) / 20 + (b.dip ? b.dip.boost : 0);
     return cB - cA || b.upsidePct - a.upsidePct;
   });
 
@@ -23210,6 +23258,11 @@ function _recoTileHtml(r) {
     ? `<span class="taste-badge ${r.tasteScore >= TASTE_AUTO_ADD ? 'taste-hi' : r.tasteScore >= 45 ? 'taste-mid' : 'taste-lo'}" title="Likelihood you'd want this${r.tasteReasons?.length ? ' — ' + r.tasteReasons.join(', ') : ''}">◆ ${r.tasteScore}%</span>`
     : '';
   const forYou = r.tasteAdded ? `<span class="reco-foryou-tag">For you</span>` : '';
+  // Why it climbed the list. A rank nudge with no visible reason is the thing
+  // the estimate work was about — say what moved it.
+  const dipChip = r.dip
+    ? `<span class="reco-dip reco-dip-${r.dip.tone}" title="${esc(r.dip.label)}. Down ${Math.abs(r.dip.pct90).toFixed(0)}% over 90 days${r.dip.pct30 != null ? `, ${r.dip.pct30 >= 0 ? '+' : ''}${r.dip.pct30.toFixed(0)}% over 30` : ''} on Collectr's series. The card has not changed; the price has.">↓${Math.abs(r.dip.pct90).toFixed(0)}% 90d</span>`
+    : '';
   const sigTags = _recoSigTags(r);
   return `<div class="home-card-tile reco-tile${r.tasteAdded ? ' reco-tile-foryou' : ''}" data-id="${esc(id)}">
     ${img}
@@ -23224,7 +23277,7 @@ function _recoTileHtml(r) {
     <div class="home-card-info">
       <div class="home-card-name">${esc(r.card.n)}</div>
       <div class="home-card-price">${fmtGBPDirect(r.marketGBP)}${manual}${gem}</div>
-      <div class="home-card-sub">${upside}${tasteChip}${forYou}</div>
+      <div class="home-card-sub">${upside}${dipChip}${tasteChip}${forYou}</div>
       ${sigTags ? `<div class="reco-tags">${sigTags}</div>` : ''}
       <div class="reco-conviction-row"><span class="reco-conv-label">CONVICTION</span><span class="reco-conv-pct">${conv}%</span></div>
       ${_cardScoreBadgeHtml(r.card)}
