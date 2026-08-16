@@ -358,6 +358,36 @@ rest have no English twin. For those, say so rather than guessing: rarity with
 no source returns the `Unrated` star state, and an undatable print run gets
 `RAW_VARIANCE_UNKNOWN` (0.40, medium) rather than the safe end of the scale.
 
+## Rarity is relative to the set, not to one absolute scale
+
+A set can only be judged against what it printed. WOTC-era sets stop at Holo
+Rare, so the holo run **is** the chase — 1st Edition Team Rocket Dark Dragonite
+is a top pull of its set and was scoring one star, "negligible growth expected",
+because Holo Rare sits low against Special Illustration Rares that would not
+exist for twenty years.
+
+`_setRarityCeiling()` reads each set's top tier out of the catalogue and
+`_isEraChaseRarity()` promotes any card sitting at it, so a Holo Rare is premium
+in Base and ordinary in a modern set with no date cutoff to maintain. Two things
+that make it work, both easy to break:
+
+- The ceiling ignores tiers with fewer than three cards. Team Rocket printed
+  exactly one card above its holos — Dark Raichu 83/82, the first secret rare —
+  and a raw maximum let that single card define the ceiling and demote all
+  sixteen holos.
+- It must be computed from `cardRarityCode()`, never raw `card.rc`. `HR` is a
+  genuine collision: a 1999 "Rare Holo" and a 2024 gold Hyper Rare are both
+  stored `HR`, and `_cardBasis` separates them by parsing the printed rarity
+  string. Reading `rc` directly puts every WOTC set's ceiling at Hyper Rare.
+
+The star bands ranked S-tier below A-tier for the same reason it took this long
+to notice: the 3-star band accepted only `isA || isB`, so an S-tier character on
+moderate desirability fell past the one band that excluded it and landed on 2
+stars. Dark Charizard scored under Dark Dragonite in its own set.
+
+Do not describe anything as failing to qualify as a "Secret Rare" — the official
+product guide does not list it as a rarity tier.
+
 ## Common pitfalls (do not repeat)
 
 - **Worker secrets** (`EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`) are set in the

@@ -956,6 +956,65 @@ function _inferJPRarityRc(card) {
   return 'C';
 }
 
+// Rarity tiers in ascending order of scarcity within their own era.
+const _RARITY_RANK = ['C','U','R','PR','RR','HOLO','SPR','AS','IR','UR','S','HR','SSR','SIR','MA','MHR'];
+
+// The highest rarity a set actually printed, resolved per set and memoised.
+// Read from the catalogue rather than a date cutoff, so it stays right for the
+// e-Card and EX eras, for JP sets, and for anything added later.
+// A tier has to have a few cards in it before it counts as the set's top tier.
+// Team Rocket printed exactly one card above its holos — Dark Raichu 83/82, the
+// first secret rare ever — and taking the raw maximum let that single card
+// define the ceiling, demoting all sixteen holos that are the actual chase.
+const _CEILING_MIN_CARDS = 3;
+let _setCeilingMemo = null;
+function _setRarityCeiling(sc) {
+  if (!sc) return -1;
+  if (!_setCeilingMemo) {
+    _setCeilingMemo = new Map();
+    const counts = new Map();   // sc -> rank -> n
+    try {
+      for (const c of (cardData?.cards || [])) {
+        if (!c.sc) continue;
+        const r = _RARITY_RANK.indexOf(cardRarityCode(c));
+        if (r < 0) continue;
+        let m = counts.get(c.sc);
+        if (!m) counts.set(c.sc, m = new Map());
+        m.set(r, (m.get(r) || 0) + 1);
+      }
+      for (const [setCode, m] of counts) {
+        const ranks = [...m.keys()].sort((a, b) => b - a);
+        // Highest tier with real presence; if a set is too small for any tier
+        // to clear the bar, fall back to its plain maximum.
+        const solid = ranks.find(r => m.get(r) >= _CEILING_MIN_CARDS);
+        _setCeilingMemo.set(setCode, solid !== undefined ? solid : ranks[0]);
+      }
+    } catch {}
+  }
+  const hit = _setCeilingMemo.get(sc);
+  return hit === undefined ? -1 : hit;
+}
+
+// Whether a card sits at the top of what its own set ever printed.
+//
+// Rarity was being judged on one absolute modern scale, which reads the past
+// wrong: a WOTC set printed nothing above Holo Rare, so the Holo *was* the
+// chase — 1st Edition Team Rocket Dark Dragonite is the top pull of its set and
+// was scoring one star, "negligible growth expected", because Holo Rare sits
+// low against Special Illustration Rares that would not exist for twenty years.
+//
+// The ceiling has to be Holo Rare or better before this promotes anything, so a
+// promo-only set whose best card is a plain Rare does not turn every card in it
+// into a chase.
+function _isEraChaseRarity(card, rc) {
+  const rank = _RARITY_RANK.indexOf(rc);
+  if (rank < 0) return false;
+  const sc = _cardBasis(card).sc;
+  const ceiling = _setRarityCeiling(sc);
+  if (ceiling < _RARITY_RANK.indexOf('HOLO')) return false;
+  return rank >= ceiling;
+}
+
 function getInvestmentStars(card, desTot) {
   if (!card) return { stars: 0, tier: '', hint: '', color: '' };
   const charScore = getCharacterScore(card.n);
@@ -964,8 +1023,11 @@ function getInvestmentStars(card, desTot) {
   const isS   = charScore >= 9.0;
   const isA   = charScore >= 7.5 && !isS;
   const isB   = charScore >= 5.5 && !isS && !isA;
-  const isPremiumRarity  = PREMIUM_RARITIES.has(rc);
-  const isHighArtRarity  = HIGH_ART_RARITIES.has(rc);
+  // A card at the ceiling of its own set is that set's chase, whatever the
+  // modern scale calls its rarity code.
+  const isEraChase       = _isEraChaseRarity(card, rc);
+  const isPremiumRarity  = PREMIUM_RARITIES.has(rc)  || isEraChase;
+  const isHighArtRarity  = HIGH_ART_RARITIES.has(rc) || isEraChase;
 
   if (isS && isPremiumRarity && des >= 8.0)
     return { stars: 5, tier: 'Seafood', color: '#e8b634',
@@ -973,7 +1035,11 @@ function getInvestmentStars(card, desTot) {
   if ((isS || isA) && isHighArtRarity && des >= 6.5)
     return { stars: 4, tier: 'Sweets', color: '#c084fc',
       hint: 'High demand · strong art · watch for overpay at peak hype' };
-  if ((isA || isB) && isHighArtRarity && des >= 5.0)
+  // isS belongs here too. The bands above it both require high desirability, so
+  // an S-tier character on a moderate desirability score fell past this one —
+  // the only band that excluded it — and landed on 2 stars, below the A-tier
+  // card beside it. Dark Charizard scored under Dark Dragonite in its own set.
+  if ((isS || isA || isB) && isHighArtRarity && des >= 5.0)
     return { stars: 3, tier: 'Meat', color: '#60a5fa',
       hint: 'Solid fundamentals · where most collector money should sit' };
   if (des >= 3.0 && (isHighArtRarity || rc === 'SR' || rc === 'RR'))
@@ -1012,31 +1078,38 @@ function _buildStarRationale(card, desTot) {
   const { stars } = getInvestmentStars(card, des);
   const charTier  = charScore >= 9.0 ? 'S' : charScore >= 7.5 ? 'A' : charScore >= 5.5 ? 'B' : null;
   const rarityLbl = _RARITY_LABELS[rc] || (rc ? rc : 'standard rarity');
-  const isPremiumRarity = PREMIUM_RARITIES.has(rc);
-  const isHighArtRarity = HIGH_ART_RARITIES.has(rc);
+  const isEraChase      = _isEraChaseRarity(card, rc);
+  const isPremiumRarity = PREMIUM_RARITIES.has(rc)  || isEraChase;
+  const isHighArtRarity = HIGH_ART_RARITIES.has(rc) || isEraChase;
+  // "Holo Rare" understates the card when its set printed nothing above it.
+  const rarityPhrase    = isEraChase && !PREMIUM_RARITIES.has(rc)
+    ? `${rarityLbl} — the top rarity ${card.s || 'this set'} printed`
+    : rarityLbl;
   const tierLabel = charTier === 'S' ? 'S-tier (peak collector) character'
                   : charTier === 'A' ? 'A-tier (high-demand) character'
                   : charTier === 'B' ? 'B-tier (solid) character'
                   : 'character with limited collector draw';
 
   if (stars === 5)
-    return `${displayName} is an ${tierLabel} on a ${rarityLbl} — the rarest print tier with peak desirability (${des.toFixed(1)}/10). This combination drives the strongest long-term graded hold.`;
+    return `${displayName} is an ${tierLabel} on a ${rarityPhrase} — the rarest print tier with peak desirability (${des.toFixed(1)}/10). This combination drives the strongest long-term graded hold.`;
 
   if (stars === 4)
-    return `${displayName} is an ${tierLabel} on a ${rarityLbl} with strong desirability (${des.toFixed(1)}/10). High-art prints at this character tier hold graded premiums well — watch entry timing at hype peaks.`;
+    return `${displayName} is an ${tierLabel} on a ${rarityPhrase} with strong desirability (${des.toFixed(1)}/10). High-art prints at this character tier hold graded premiums well — watch entry timing at hype peaks.`;
 
   if (stars === 3)
-    return `${displayName} is a ${tierLabel} on a ${rarityLbl} (desirability ${des.toFixed(1)}/10). Solid fundamentals for a long-term hold, but not a fast mover — priority is buying near the floor.`;
+    return `${displayName} is a ${tierLabel} on a ${rarityPhrase} (desirability ${des.toFixed(1)}/10). Solid fundamentals for a long-term hold, but not a fast mover — priority is buying near the floor.`;
 
   if (stars === 2) {
-    const rarityNote = isHighArtRarity ? rarityLbl : (rc === 'SR' ? 'Secret Rare' : 'Double Rare');
+    const rarityNote = isHighArtRarity ? rarityPhrase : (rc === 'RR' ? 'Double Rare' : rarityLbl);
     return `Qualifies on rarity (${rarityNote}) with a desirability of ${des.toFixed(1)}/10, but character and art tier limit the ceiling. Some collector interest — buy with a clear thesis rather than on momentum.`;
   }
 
   // 1★ — explain specifically what failed
   const blocks = [];
-  if (!isHighArtRarity && rc !== 'SR' && rc !== 'RR') {
-    blocks.push(`${rarityLbl} (${rc || '?'}) doesn't qualify as high-art or Secret Rare`);
+  if (!isHighArtRarity && rc !== 'RR') {
+    // Say what it is measured against. The old wording named "Secret Rare",
+    // which the product guide does not list as a rarity tier at all.
+    blocks.push(`${rarityLbl} (${rc || '?'}) is not a full-art or higher tier, and ${card.s || 'this set'} printed rarer cards above it`);
   }
   if (!charTier) {
     blocks.push(`limited collector draw on this character`);
