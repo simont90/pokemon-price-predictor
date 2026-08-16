@@ -17121,7 +17121,7 @@ function computeHoldCore(card) {
   // it. The question for a held position is keep or sell, and the bar for
   // keeping is simply that holding beats netting out today.
   const ltpCandidates = _slabOnlyCandidates(strategies.filter(s =>
-    !s.na && !s.estimated && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0))), card);
+    !s.na && !s.estimated && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0))), card, strategies);
   const bestLongTermPick = _pickBestLTP(ltpCandidates, strategies);
 
   // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
@@ -17312,9 +17312,38 @@ function _prefersSlab(card) {
   } catch { return false; }
 }
 
-function _slabOnlyCandidates(candidates, card) {
+// Grading your own copy earns its place when the arithmetic works, not because
+// the card is vintage. The test is the one a person actually applies: the grade
+// you would more likely than not come out with, priced against what buying that
+// same grade costs today. Submit at £439 all-in and land the PSA 8 that sells
+// for £541 and you are ahead; land the PSA 7 that sells for £418 and you paid
+// more than the slab to take the risk yourself.
+//
+// A blanket vintage exclusion got this wrong in the other direction — it threw
+// the route away even where a decent gem rate made it the cheaper way in.
+function _gradingBeatsBuying(strategies, gradeOutcomes) {
+  const gamble = (strategies || []).find(s => s.key === 'gamble');
+  if (!gamble || !(gamble.today > 0) || !Array.isArray(gradeOutcomes) || !gradeOutcomes.length) return false;
+  // Median outcome: walk down from PSA 10 until the odds pass even.
+  const ranked = [...gradeOutcomes].filter(o => o.grade > 0).sort((a, b) => b.grade - a.grade);
+  let cum = 0, median = null;
+  for (const o of ranked) {
+    cum += (o.prob || 0);
+    if (cum >= 0.5) { median = o.grade; break; }
+  }
+  if (median == null) return false;
+  const target = (strategies || []).find(s => s.key === 'psa' + median && !s.na && !s.estimated && s.today > 0);
+  if (!target) return false;
+  // Needs a real margin, not a rounding difference — the submission also costs
+  // weeks of waiting and carries the risk of coming back worse than the median.
+  return gamble.today < target.today * 0.9;
+}
+
+function _slabOnlyCandidates(candidates, card, strategies, gradeOutcomes) {
   if (!_prefersSlab(card)) return candidates;
-  const kept = (candidates || []).filter(s => /^psa\d+$/.test(s.key) || s.isOwnedSlab || s.acqCost);
+  const keepGamble = _gradingBeatsBuying(strategies || candidates, gradeOutcomes);
+  const kept = (candidates || []).filter(s =>
+    /^psa\d+$/.test(s.key) || s.isOwnedSlab || s.acqCost || (keepGamble && s.key === 'gamble'));
   return kept.length ? kept : candidates;   // never leave the panel with nothing
 }
 
@@ -17362,6 +17391,16 @@ function _pickCollectorEntry(strategies, maxBudgetGBP, fx) {
     s => affordable(s) && s.roi >= 0,
     { lowest: true }
   );
+
+  // Submitting your own copy is a way of owning the card too, and on a card
+  // where the odds are decent it is the cheaper one. It only reaches here when
+  // _gradingBeatsBuying already cleared it against the grade you would most
+  // likely come out with, so the remaining question is simply whether it
+  // undercuts the rung by enough to be worth the wait and the risk.
+  const gamble = (strategies || []).find(s => s.key === 'gamble');
+  if (gamble && affordable(gamble) && gamble.roi >= 0 &&
+      (!rung || gamble.today < rung.today * 0.9)) return gamble;
+
   if (rung) return rung;
 
   // Nothing graded fits — fall back to the cheapest non-gamble route, which is
@@ -18362,7 +18401,7 @@ function renderHoldStrategy(card) {
     _ltpBudget < BUDGET_DEFAULT && (bestLongTermPick.today * fx) > _ltpBudget;
   const collectorPick = (bestLongTermPick && !bestPickOverBudget)
     ? null
-    : _pickCollectorEntry(_slabOnlyCandidates(strategies, card), _ltpBudget, fx);
+    : _pickCollectorEntry(_slabOnlyCandidates(strategies, card, strategies, gradeOutcomes), _ltpBudget, fx);
 
   const winner = overallWinner; // used for recommendation copy below
   // Store winner key so updateSignal can stay in sync regardless of call order.

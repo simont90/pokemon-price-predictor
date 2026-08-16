@@ -517,7 +517,17 @@ way to own it" and must not pay to cross a wall it has no reason to cross. On
 1st Ed Dark Dragonite the walls are PSA 8→9 at +115% and PSA 9→10 at +783%;
 taking the top one for both recommended PSA 9 at £1,161 over PSA 8 at £541.
 
-**Vintage buys a slab, not a submission.** `_prefersSlab()` marks WOTC-era sets
+**Grading your own copy competes on arithmetic, not era.** `_gradingBeatsBuying()`
+takes the median outcome — walk down from PSA 10 until the cumulative odds pass
+even — and prices it against what buying that same grade costs today. Submitting
+only survives if it undercuts that grade by 10%+, which also has to cover the
+wait and the risk of landing below the median. The result is print-sensitive and
+should be: on 1st Ed Dark Dragonite a PSA 8 costs £541 against a £439
+submission, so grading wins; on Unlimited the same PSA 8 is £254, so buying it
+does. Do not re-add a blanket "vintage never grades" rule — it threw the route
+away exactly where a decent gem rate made it the cheaper way in.
+
+**Otherwise, vintage buys a slab, not a submission.** `_prefersSlab()` marks WOTC-era sets
 and `_slabOnlyCandidates()` keeps raw and buy-raw-and-grade out of both picks
 there. Buying raw to chase a grade carries the condition risk twice over on a
 twenty-year-old card, and on a harsh-grading set where most raw copies land
