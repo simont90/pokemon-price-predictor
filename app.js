@@ -3162,8 +3162,8 @@ function _updatePCVariantButtons(card) {
 window.switchMarketPCVariant = async function(variant) {
   if (!selectedCard) return;
   _marketPCVariant = variant;
-  // The Market tab's print picker moves the history charts too.
-  try { setActivePrintVariant(variant, selectedCard); } catch {}
+  // Whichever picker was tapped, the rest of the page follows this one.
+  try { _syncPrintUI(variant, selectedCard); } catch {}
   _updatePCVariantButtons(selectedCard);
 
   if (variant === 'unlimited') {
@@ -11395,24 +11395,31 @@ function setActivePrintVariant(v, card) {
   try { renderPriceHistory(card); } catch {}
 }
 
-// The print picker in the card head. Every panel below reads the print from
-// somewhere, and each selector used to move only its own — so the star rating
-// could describe Unlimited while the prices beside it described 1st Edition.
-// This one moves all of them together.
-function applyPrintVariant(v, card) {
+// Everything on the card page that is not the PriceCharting panel itself.
+// Called from switchMarketPCVariant, which owns the print state and does the
+// fetching, so whichever picker is tapped the other follows.
+function _syncPrintUI(v, card) {
   card = card || (typeof selectedCard !== 'undefined' ? selectedCard : null);
   if (!v || !card) return;
   _activePrintVariant = v;
-  if (typeof _marketPCVariant  !== 'undefined') _marketPCVariant  = v;
   if (typeof _holdStratVariant !== 'undefined') _holdStratVariant = v;
   if (typeof _hoPrint !== 'undefined') _hoPrint = v;
-  try { renderCardPageHead(card); } catch {}
+  try { renderCardPageHead(card); } catch {}          // redraws the head picker
   try { renderStarRating(card, _lastDesTot != null ? _lastDesTot : 5); } catch {}
   try { renderPriceHistory(card); } catch {}
-  try { renderHoldStrategy(card); } catch {}
-  try { if (typeof renderMarketPC === 'function') renderMarketPC(card); } catch {}
-  try { if (typeof renderCollectrRow === 'function') renderCollectrRow(); } catch {}
   try { if (typeof _paintGemTile === 'function') _paintGemTile(card); } catch {}
+}
+
+// The card head's print picker. It delegates rather than duplicating: the
+// Market panel's switch already owns _marketPCVariant, redraws its own buttons,
+// fetches that print's PriceCharting prices and re-renders the strategy grid.
+// Setting the variables here instead left the two pickers disagreeing on screen
+// — the head reading 1st Edition while the panel below it still said Unlimited.
+function applyPrintVariant(v, card) {
+  card = card || (typeof selectedCard !== 'undefined' ? selectedCard : null);
+  if (!v || !card) return;
+  if (typeof switchMarketPCVariant === 'function') switchMarketPCVariant(v);
+  else _syncPrintUI(v, card);
 }
 
 function _renderPrintPicker(card) {
