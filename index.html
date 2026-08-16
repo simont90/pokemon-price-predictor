@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260724z">
+  <link rel="stylesheet" href="style.css?v=20260725a">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1643,6 +1643,7 @@
                 <span class="collectr-label">Collectr</span>
                 <a id="collectrOpen" class="collectr-open" href="#" target="_blank" rel="noopener noreferrer" style="display:none">Open ↗</a>
                 <span class="collectr-status" id="collectrStatus">not linked</span>
+                <a id="collectrFindBtn" class="collectr-btn collectr-btn--find" href="#" target="_blank" rel="noopener noreferrer" style="display:none">Find on Collectr ↗</a>
                 <button type="button" class="collectr-btn" id="collectrLinkBtn">Link Collectr</button>
                 <button type="button" class="collectr-btn" id="collectrRefreshBtn" style="display:none">Refresh</button>
               </div>
@@ -3274,7 +3275,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260724z"></script>
+  <script src="app.js?v=20260725a"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

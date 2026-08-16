@@ -189,6 +189,14 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
     picked up quickly.
   - A 402 is `credits_exhausted`, not a 502 — the allowance is spent, which is
     recoverable and says so. Top-ups happen on the parse.bot account.
+  - **Collectr names the whole EX era with an "EX " prefix** — our "Legend Maker"
+    is their "EX Legend Maker". `collectrResolve` matched forward prefixes only,
+    so every set in that era failed to resolve and its cards fell back to the
+    ratio estimate. Comparison now strips the era word from either side.
+  - When a card is past the fifteen the set page renders, the reply carries
+    `set_url` for the set it *did* resolve, and the card view offers "Find on
+    Collectr". The id still has to come from a pasted link; this only removes
+    the hunt for the right set, which is the tedious half.
   - Collectr splits Base Set into two groups — "Base Set (Unlimited)" (604) and
     "Base Set (1st Edition & Shadowless)" (1663) — so the selected print picks
     the group.

@@ -10995,6 +10995,17 @@ function getCollectrData(cardId) {
   return hit && hit.data ? hit.data : null;
 }
 
+// Where to send someone whose card Collectr does not render on its set page.
+// Past card 15 the id has to come from a pasted link, and hunting for the right
+// set by hand is the tedious half of that — Collectr also names the whole EX
+// era differently from us, so the obvious search is the wrong one.
+function getCollectrSetHint(cardId) {
+  const c = _collectrCache();
+  const pid = getCollectrId(cardId);
+  const hit = (pid && c[pid]) || c[`card:${cardId}`];
+  return hit && hit.setUrl ? { url: hit.setUrl, label: hit.setLabel || '' } : null;
+}
+
 // Resolution is automatic: the worker matches the card by set and number
 // against Collectr's own set pages, which costs nothing. A pasted link is only
 // needed for cards Collectr does not render on the set page. Every price fetch
@@ -11038,7 +11049,8 @@ async function fetchCollectrData(card, { force = false, variant = 'unlimited' } 
   if (d.found === false) {
     // Cache the miss briefly so a card Collectr does not carry is not retried
     // on every render.
-    cache[cacheKey] = { ts: Date.now(), data: null, miss: d.reason || 'not_found' };
+    cache[cacheKey] = { ts: Date.now(), data: null, miss: d.reason || 'not_found',
+                       setUrl: d.set_url || null, setLabel: d.set_label || null };
     _collectrCacheWrite(cache);
     return null;
   }
@@ -11653,9 +11665,27 @@ function renderCollectrRow() {
   if (refB)  refB.style.display = pid ? '' : 'none';
   if (rmB)   rmB.style.display  = pid ? '' : 'none';
 
+  // Shortcut to the right Collectr set page when the card itself could not be
+  // resolved. Only shown when there is no id yet — with one linked there is
+  // nothing left to find.
+  const findB = document.getElementById('collectrFindBtn');
+  if (findB) {
+    const hint = !pid ? getCollectrSetHint(card.i) : null;
+    findB.style.display = hint ? '' : 'none';
+    if (hint) {
+      findB.href = hint.url;
+      findB.title = `Collectr does not list this card on its set page — it only renders the first fifteen. This opens ${hint.label || 'the set'} on Collectr; find the card there and paste its link with "Link Collectr".`;
+    }
+  }
+
   const data = getCollectrData(card.i);
   if (!data) {
-    if (status) status.textContent = _collectrInFlight.has(card.i) ? 'looking up…' : 'no Collectr match';
+    if (status) {
+      const hint = getCollectrSetHint(card.i);
+      status.textContent = _collectrInFlight.has(card.i) ? 'looking up…'
+        : hint ? 'not on the set page — open the set to find it'
+        : 'no Collectr match';
+    }
     out.style.display = 'none';
     return;
   }

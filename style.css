@@ -18845,3 +18845,14 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
 }
 .cd-pm-warn { color: #f59e0b; background: rgba(245,158,11,0.14); }
 .cd-pm-ok   { color: #34d399; background: rgba(52,211,153,0.12); }
+
+/* "Find on Collectr" — a shortcut to the right set page for cards Collectr
+   does not render, so the pasted link is one click away rather than a hunt. */
+.collectr-btn--find {
+  text-decoration: none; display: inline-flex; align-items: center;
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(232,182,52,0.10);
+}
+@media (pointer: coarse), (max-width: 768px) {
+  .collectr-btn--find { min-height: 44px; }
+}

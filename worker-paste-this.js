@@ -2808,7 +2808,16 @@ async function collectrResolve(env, setName, cardNumber, variant) {
   if (!setName || !cardNumber) return null;
   const index = await collectrSetIndex(env);
   const want = _collectrNorm(setName);
-  const candidates = Object.keys(index).filter(n => n === want || n.startsWith(want + ' ') || n === want + ' unlimited');
+  // Collectr prefixes the whole EX era: our "Legend Maker" is their "EX Legend
+  // Maker", and matching only forward prefixes missed every set in it. Compare
+  // with the era word stripped from either side.
+  const bare = t => t.replace(/^ex\s+/, '');
+  const wantBare = bare(want);
+  const candidates = Object.keys(index).filter(n => {
+    const nb = bare(n);
+    return n === want || n.startsWith(want + ' ') || n === want + ' unlimited'
+        || nb === wantBare || nb.startsWith(wantBare + ' ') || nb === wantBare + ' unlimited';
+  });
   if (!candidates.length) return null;
 
   const wantsEarly = variant === '1sted' || variant === 'shadowless';
@@ -2962,8 +2971,26 @@ async function handleCollectr(request, env, url) {
     } catch (e) { /* fall through to the search / paste paths */ }
   }
   if (!productId && setName && cardNo) {
+    // The card is past the fifteen the set page renders, but the set itself
+    // resolved — so hand back its Collectr page. Finding the card from there is
+    // one click, against hunting for the right set by hand.
+    let setUrl = null, setLabel = null;
+    try {
+      const index = await collectrSetIndex(env);
+      const bare = t => t.replace(/^ex\s+/, '');
+      const want = _collectrNorm(setName), wantBare = bare(want);
+      const hit = Object.keys(index).find(n => {
+        const nb = bare(n);
+        return n === want || n.startsWith(want + ' ') || nb === wantBare || nb.startsWith(wantBare + ' ');
+      });
+      if (hit) {
+        setLabel = hit;
+        setUrl = `${COLLECTR_SITE}/sets/category/${COLLECTR_POKEMON_CATEGORY}/x?groupId=${encodeURIComponent(index[hit])}&cardType=cards`;
+      }
+    } catch (e) {}
     return _jsonResp(200, { found: false, reason: 'not_in_collectr_set_page',
-      note: 'Collectr only renders the first fifteen cards of a set; paste the product link for anything past that.' }, ch);
+      set_url: setUrl, set_label: setLabel,
+      note: 'Collectr only renders the first fifteen cards of a set; open the set and paste the product link.' }, ch);
   }
 
   // What the free set page told us, if it was the thing that resolved the card.
