@@ -18882,11 +18882,6 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
 .pb-main { flex: 1; min-width: 0; }
 .pb-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pb-star { color: var(--accent); margin-right: 5px; cursor: help; }
-.pb-owned {
-  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-  color: var(--text-muted); border: 1px solid var(--border);
-  border-radius: 4px; padding: 0 4px; margin-left: 6px;
-}
 .pb-set { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pb-right { text-align: right; flex-shrink: 0; }
 .pb-price { font-size: 13px; font-weight: 700; font-family: var(--mono); }

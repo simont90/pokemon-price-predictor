@@ -22974,12 +22974,14 @@ function _homePullbacks(limit = 8) {
     const p90 = t && t.raw_90d && isFinite(t.raw_90d.pct) ? t.raw_90d.pct : null;
     const p30 = t && t.raw_30d && isFinite(t.raw_30d.pct) ? t.raw_30d.pct : null;
     if (p90 == null || p90 > -PULLBACK_MIN_PCT) continue;
+    // Owned cards are not buying opportunities — a holding that has fallen
+    // belongs in the collection view, not on a list of things to pick up.
+    if (portfolioIds.has(c.i)) continue;
     seen.add(c.i);
     const dip = _chaseDip(c);                    // null unless it is a quality card
     const steadying = p30 != null && p30 > -8;
     out.push({
       card: c, p90, p30, steadying,
-      owned: portfolioIds.has(c.i),
       // Buy now needs both: worth owning, and no longer falling.
       buyNow: !!dip && steadying,
       priceGBP: usdToGbp(getCurrentPrice(c) || c.p || 0),
@@ -23009,7 +23011,7 @@ function renderHomePullbacks() {
       ${img ? `<img class="pb-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">`
             : '<div class="pb-img"></div>'}
       <div class="pb-main">
-        <div class="pb-name">${r.buyNow ? '<span class="pb-star" title="The fall has flattened and this was a card worth owning — it reads as a discount rather than a slide still running.">★</span>' : ''}${esc(r.card.n)}${r.owned ? '<span class="pb-owned">owned</span>' : ''}</div>
+        <div class="pb-name">${r.buyNow ? '<span class="pb-star" title="The fall has flattened and this was a card worth owning — it reads as a discount rather than a slide still running.">★</span>' : ''}${esc(r.card.n)}</div>
         <div class="pb-set">${esc(r.card.s || '')}</div>
       </div>
       <div class="pb-right">
