@@ -18822,3 +18822,12 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
 @media (pointer: coarse), (max-width: 768px) {
   .cd-print-btn { min-height: 44px; }
 }
+
+/* Break-even grade on the grade-it-yourself row. Green when the odds clear the
+   bar, amber when the route needs a grade it probably will not reach. */
+.hold-row-breakeven {
+  font-size: 10px; font-family: var(--mono); font-weight: 700;
+  border-radius: 5px; padding: 2px 6px; margin-left: 6px; cursor: help;
+}
+.hold-be-ok   { color: #34d399; background: rgba(52,211,153,0.12); }
+.hold-be-risk { color: #f59e0b; background: rgba(245,158,11,0.14); }

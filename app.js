@@ -17328,22 +17328,38 @@ function _prefersSlab(card) {
 //
 // A blanket vintage exclusion got this wrong in the other direction — it threw
 // the route away even where a decent gem rate made it the cheaper way in.
-function _gradingBeatsBuying(strategies, gradeOutcomes) {
+// The grade at which submitting stops losing money: the lowest rung whose slab
+// is worth at least what the submission cost. Below it you paid more than the
+// card you ended up with.
+function _gradingBreakEven(strategies) {
   const gamble = (strategies || []).find(s => s.key === 'gamble');
-  if (!gamble || !(gamble.today > 0) || !Array.isArray(gradeOutcomes) || !gradeOutcomes.length) return false;
-  // Median outcome: walk down from PSA 10 until the odds pass even.
-  const ranked = [...gradeOutcomes].filter(o => o.grade > 0).sort((a, b) => b.grade - a.grade);
-  let cum = 0, median = null;
-  for (const o of ranked) {
-    cum += (o.prob || 0);
-    if (cum >= 0.5) { median = o.grade; break; }
-  }
-  if (median == null) return false;
-  const target = (strategies || []).find(s => s.key === 'psa' + median && !s.na && !s.estimated && s.today > 0);
-  if (!target) return false;
-  // Needs a real margin, not a rounding difference — the submission also costs
-  // weeks of waiting and carries the risk of coming back worse than the median.
-  return gamble.today < target.today * 0.9;
+  if (!gamble || !(gamble.today > 0)) return null;
+  const rungs = (strategies || [])
+    .filter(s => /^psa\d+$/.test(s.key) && !s.na && !s.estimated && s.today > 0)
+    .sort((a, b) => parseInt(a.key.slice(3), 10) - parseInt(b.key.slice(3), 10));
+  const hit = rungs.find(s => s.today >= gamble.today);
+  return hit ? { grade: parseInt(hit.key.slice(3), 10), slab: hit, cost: gamble.today } : null;
+}
+
+// Whether submitting your own copy is a sensible way to end up owning the card.
+//
+// Tested against the break-even grade, not the median one. The median only says
+// you are more likely to win than lose, which is the wrong bar for a badge that
+// means "this is the sensible way to own it" — on 1st Ed Dark Dragonite it let
+// through a route that needs PSA 8 to avoid a loss, with a 14% chance of coming
+// back below that, a four-to-six week wait and no refund if it does.
+const GRADING_CONFIDENCE_MIN = 0.90;
+function _gradingBeatsBuying(strategies, gradeOutcomes) {
+  const be = _gradingBreakEven(strategies);
+  if (!be || !Array.isArray(gradeOutcomes) || !gradeOutcomes.length) return false;
+  // Odds of landing at or above the grade that gets the money back.
+  const pSafe = gradeOutcomes
+    .filter(o => o.grade >= be.grade)
+    .reduce((a, o) => a + (o.prob || 0), 0);
+  if (pSafe < GRADING_CONFIDENCE_MIN) return false;
+  // And it still has to be meaningfully cheaper than simply buying that grade,
+  // or the wait and the risk buy nothing.
+  return be.cost < be.slab.today * 0.9;
 }
 
 function _slabOnlyCandidates(candidates, card, strategies, gradeOutcomes) {
@@ -18824,6 +18840,20 @@ function renderHoldStrategy(card) {
       ? `<span class="hold-row-annual-rate" title="Projected annual growth rate for this grade">${s.annualRate.toFixed(1)}%/yr</span>`
       : '';
 
+    // The grade the submission has to reach to get the money back. Reading
+    // "£438 all-in" next to a PSA 7 slab at £418 does not tell you that landing
+    // a 7 is a loss — the tile has to say where the line is.
+    let breakEvenStr = '';
+    if (s.key === 'gamble') {
+      const _be = _gradingBreakEven(strategies);
+      if (_be) {
+        const _p = (gradeOutcomes || []).filter(o => o.grade >= _be.grade)
+          .reduce((a, o) => a + (o.prob || 0), 0);
+        const _cls = _p >= GRADING_CONFIDENCE_MIN ? 'hold-be-ok' : 'hold-be-risk';
+        breakEvenStr = `<span class="hold-row-breakeven ${_cls}" title="Submitting costs ${fmtGBPDirect(_be.cost * fx)} all-in. A PSA ${_be.grade} slab sells for ${fmtGBPDirect(_be.slab.today * fx)}, so anything below PSA ${_be.grade} comes back worth less than you paid. Modelled odds of PSA ${_be.grade} or better: ${(_p * 100).toFixed(0)}%.">Break-even PSA ${_be.grade} · ${(_p * 100).toFixed(0)}% odds</span>`;
+      }
+    }
+
     // Grade-it-yourself: P(PSA 8+) — use real pop data when available, gem-rate model otherwise
     let gradeProbStr = '';
     if (s.key === 'gamble') {
@@ -18853,7 +18883,7 @@ function renderHoldStrategy(card) {
           <span class="hold-row-cost">${entryCtx}${waitStr}</span>
           ${maxBuyStr}
           ${s.estimated ? '' : `<span class="hold-risk hold-risk-${s.risk}">${riskLabel}</span>`}
-          ${annualRateStr}${liqBadge}${gradeProbStr}${lossStr}${_holdPopBadge(_holdCachedPop, s.grade)}${
+          ${annualRateStr}${liqBadge}${breakEvenStr}${gradeProbStr}${lossStr}${_holdPopBadge(_holdCachedPop, s.grade)}${
             s.fromCollectr ? '<span class="hold-row-src" title="PriceCharting has no price at this grade — this one is Collectr\'s">via Collectr</span>'
             : ''}
         </div>

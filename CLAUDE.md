@@ -517,15 +517,23 @@ way to own it" and must not pay to cross a wall it has no reason to cross. On
 1st Ed Dark Dragonite the walls are PSA 8→9 at +115% and PSA 9→10 at +783%;
 taking the top one for both recommended PSA 9 at £1,161 over PSA 8 at £541.
 
-**Grading your own copy competes on arithmetic, not era.** `_gradingBeatsBuying()`
-takes the median outcome — walk down from PSA 10 until the cumulative odds pass
-even — and prices it against what buying that same grade costs today. Submitting
-only survives if it undercuts that grade by 10%+, which also has to cover the
-wait and the risk of landing below the median. The result is print-sensitive and
-should be: on 1st Ed Dark Dragonite a PSA 8 costs £541 against a £439
-submission, so grading wins; on Unlimited the same PSA 8 is £254, so buying it
-does. Do not re-add a blanket "vintage never grades" rule — it threw the route
-away exactly where a decent gem rate made it the cheaper way in.
+**Grading your own copy competes on arithmetic, not era.**
+`_gradingBreakEven()` finds the lowest grade whose slab is worth at least what
+the submission cost — below it you paid more than the card you ended up with.
+`_gradingBeatsBuying()` then requires **90%+ odds of reaching that grade**, plus
+a 10% margin against simply buying it.
+
+Test the break-even grade, not the median. The median only says you are more
+likely to win than lose, which is the wrong bar for a badge that means "this is
+the sensible way to own it": on 1st Ed Dark Dragonite it passed a route needing
+PSA 8 to avoid a loss, with a 14% chance of landing below that, a four-to-six
+week wait and no refund. The tile now prints "Break-even PSA 8 · 87% odds" so
+the line is visible rather than implied, amber when the odds miss the bar.
+
+The result is print-sensitive and should be: a 1st Ed PSA 8 costs £541 against
+a £439 submission, an Unlimited one £254. Do not re-add a blanket "vintage never
+grades" rule — it threw the route away where a good gem rate made it the cheaper
+way in.
 
 **Otherwise, vintage buys a slab, not a submission.** `_prefersSlab()` marks WOTC-era sets
 and `_slabOnlyCandidates()` keeps raw and buy-raw-and-grade out of both picks
