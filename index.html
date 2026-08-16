@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260725e">
+  <link rel="stylesheet" href="style.css?v=20260725g">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -927,6 +927,18 @@
           <div class="home-htab-panel" data-htab-panel="tp-avoid" style="display:none">
             <div id="homeTopPicksAvoid"><div class="home-empty">Scanning…</div></div>
           </div>
+        </div>
+
+        <!-- GROUP: Pullbacks — cards marked down over 90 days -->
+        <div class="home-tab-group" id="hTabPullbacks" style="display:none">
+          <div class="home-group-hd">
+            <div class="home-section-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+              Pullbacks
+            </div>
+            <span class="home-pb-sub" id="homePullbacksSub"></span>
+          </div>
+          <div id="homePullbacks"></div>
         </div>
 
         </div><!-- /home-main-col -->
@@ -3275,7 +3287,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260725e"></script>
+  <script src="app.js?v=20260725g"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

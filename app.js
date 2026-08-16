@@ -22954,6 +22954,83 @@ function _chaseDip(card) {
   };
 }
 
+// Cards marked down 15%+ over three months. The star is the narrower claim:
+// the fall has flattened out and the card was worth having to begin with, so it
+// reads as a discount rather than a slide still in progress. Everything else is
+// on the list to watch, not to act on.
+const PULLBACK_MIN_PCT = 15;
+function _homePullbacks(limit = 8) {
+  const out = [];
+  const seen = new Set();
+  const portfolioIds = new Set((portfolio || []).map(x => x.id || x.i).filter(Boolean));
+  for (const c of (cardData?.cards || [])) {
+    if (!c.i || seen.has(c.i)) continue;
+    let t = null;
+    try {
+      const d = getCollectrData(c.i);
+      const print = collectrPrintFor(d, 'unlimited');
+      t = d && d.trend && print ? d.trend[print] : null;
+    } catch { continue; }
+    const p90 = t && t.raw_90d && isFinite(t.raw_90d.pct) ? t.raw_90d.pct : null;
+    const p30 = t && t.raw_30d && isFinite(t.raw_30d.pct) ? t.raw_30d.pct : null;
+    if (p90 == null || p90 > -PULLBACK_MIN_PCT) continue;
+    seen.add(c.i);
+    const dip = _chaseDip(c);                    // null unless it is a quality card
+    const steadying = p30 != null && p30 > -8;
+    out.push({
+      card: c, p90, p30, steadying,
+      owned: portfolioIds.has(c.i),
+      // Buy now needs both: worth owning, and no longer falling.
+      buyNow: !!dip && steadying,
+      priceGBP: usdToGbp(getCurrentPrice(c) || c.p || 0),
+    });
+  }
+  out.sort((a, b) => (b.buyNow - a.buyNow) || (a.p90 - b.p90));
+  return out.slice(0, limit);
+}
+
+function renderHomePullbacks() {
+  const host = document.getElementById('homePullbacks');
+  const group = document.getElementById('hTabPullbacks');
+  const sub = document.getElementById('homePullbacksSub');
+  if (!host || !group) return;
+  let rows = [];
+  try { rows = _homePullbacks(); } catch { rows = []; }
+  if (!rows.length) { group.style.display = 'none'; return; }
+  group.style.display = '';
+  const nBuy = rows.filter(r => r.buyNow).length;
+  if (sub) sub.textContent = `down ${PULLBACK_MIN_PCT}%+ over 90 days${nBuy ? ` · ★ ${nBuy} worth buying now` : ''}`;
+
+  host.innerHTML = rows.map(r => {
+    const img = _hiresUrl(getCardImg(r.card));
+    const t30 = r.p30 == null ? '' :
+      `<span class="pb-30 ${r.steadying ? 'pb-steady' : 'pb-falling'}">${r.p30 >= 0 ? '+' : ''}${r.p30.toFixed(0)}% 30d</span>`;
+    return `<div class="pb-row" data-id="${esc(r.card.i)}">
+      ${img ? `<img class="pb-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">`
+            : '<div class="pb-img"></div>'}
+      <div class="pb-main">
+        <div class="pb-name">${r.buyNow ? '<span class="pb-star" title="The fall has flattened and this was a card worth owning — it reads as a discount rather than a slide still running.">★</span>' : ''}${esc(r.card.n)}${r.owned ? '<span class="pb-owned">owned</span>' : ''}</div>
+        <div class="pb-set">${esc(r.card.s || '')}</div>
+      </div>
+      <div class="pb-right">
+        <div class="pb-price">${fmtGBPDirect(r.priceGBP)}</div>
+        <div class="pb-moves"><span class="pb-90">${r.p90.toFixed(0)}% 90d</span>${t30}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  if (!host._bound) {
+    host._bound = true;
+    host.addEventListener('click', e => {
+      const row = e.target.closest('[data-id]');
+      if (!row) return;
+      const b = document.querySelector('.page-nav-btn[data-page="predict"]');
+      if (b) b.click();
+      try { selectCard(row.dataset.id); } catch {}
+    });
+  }
+}
+
 function _convictionTier(signal, score, upsidePct, gemScore) {
   if (signal === 'STRONG BUY' && upsidePct >= 20 && (gemScore >= 1.5 || score >= 4))
     return 'must-buy';
@@ -24165,6 +24242,7 @@ function renderHomeDashboard() {
   try { pvRecordToday(); } catch {}
   try { pvBackfillFromCollectr(); } catch {}
   try { renderHomePortfolioValue(); } catch {}
+  try { renderHomePullbacks(); } catch {}
   try { renderHomeHoldings(); } catch {}
   _renderHomeCollection();
   _renderHomeCombinedWishlist();
@@ -25969,6 +26047,8 @@ function setupPageNav() {
     const btn = document.getElementById('homeRefreshAll');
     if (btn) { btn.classList.add('spinning'); setTimeout(() => btn.classList.remove('spinning'), 600); }
     try { renderHomePortfolioValue(); } catch {}
+    try { renderHomePullbacks(); } catch {}
+  try { renderHomePullbacks(); } catch {}
     try { renderHomeHoldings(); } catch {}
     _renderHomeCollection();
     _renderHomeWishlist();
@@ -26026,6 +26106,8 @@ function setupPageNav() {
     e.preventDefault();
     _pvHorizon = r.dataset.pvHorizon;
     try { renderHomePortfolioValue(); } catch {}
+    try { renderHomePullbacks(); } catch {}
+  try { renderHomePullbacks(); } catch {}
   });
 
   document.addEventListener('click', e => {
@@ -26155,6 +26237,8 @@ function setupPageNav() {
         // changed, so it kept listing cards the new limit excludes.
         try { renderStandouts(); } catch {}
         try { renderHomePortfolioValue(); } catch {}
+    try { renderHomePullbacks(); } catch {}
+  try { renderHomePullbacks(); } catch {}
       }
     }
 
