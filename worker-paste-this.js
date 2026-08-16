@@ -2863,6 +2863,43 @@ function _collectrErrResp(e, ch) {
   return _jsonResp(502, { error: e.message, reason: 'upstream_error', detail: e.detail || null }, ch);
 }
 
+// Collectr returns a reading per grade per print per day — 4,830 rows on Dark
+// Dragonite across 24 series. A flat "newest 400 rows" cap sounds like a year
+// and is not: 400 rows over 24 series is 31 days, so the 1Y range on the charts
+// could never show more than a month however far back the data went.
+//
+// Trim per series instead, and by resolution rather than by count: daily for
+// the last 5 weeks so the 1M view stays sharp, weekly beyond that out to a
+// year. Roughly 87 points per series against 365, which keeps the payload near
+// where the old cap had it while actually covering the range it claims.
+const COLLECTR_HIST_DAILY_DAYS = 35;
+const COLLECTR_HIST_MAX_DAYS   = 400;
+function trimCollectrHistory(rows) {
+  const now = Date.now();
+  const bySeries = new Map();
+  for (const h of (rows || [])) {
+    const t = Date.parse(h.date);
+    if (!isFinite(t)) continue;
+    const ageDays = (now - t) / 86400000;
+    if (ageDays > COLLECTR_HIST_MAX_DAYS || ageDays < 0) continue;
+    const key = `${h.print || ''}|${h.grade || ''}`;
+    let arr = bySeries.get(key);
+    if (!arr) bySeries.set(key, arr = []);
+    arr.push({ h, t, ageDays });
+  }
+  const out = [];
+  for (const arr of bySeries.values()) {
+    arr.sort((a, b) => b.t - a.t);           // newest first
+    let lastKeptWeek = null;
+    for (const row of arr) {
+      if (row.ageDays <= COLLECTR_HIST_DAILY_DAYS) { out.push(row.h); continue; }
+      const week = Math.floor(row.ageDays / 7);
+      if (week !== lastKeptWeek) { out.push(row.h); lastKeptWeek = week; }
+    }
+  }
+  return out.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+}
+
 async function _collectrCall(env, path, params) {
   const base = (env.COLLECTR_API_URL || COLLECTR_API_DEFAULT).replace(/\/+$/, '');
   const u = new URL(base + path);
@@ -3018,11 +3055,7 @@ async function handleCollectr(request, env, url) {
   // grade per print per day — 4,659 rows on Fossil Gengar — and the client was
   // holding all of it in localStorage, 441KB for one card, re-parsed on every
   // price lookup. Callers only ever draw the recent shape, so a year is kept.
-  const CUTOFF = Date.now() - 400 * 86400000;
-  const trimmed = parsed.price_history
-    .filter(h => { const t = Date.parse(h.date); return isFinite(t) && t >= CUTOFF; })
-    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
-    .slice(0, 400);
+  const trimmed = trimCollectrHistory(parsed.price_history);
 
   const out = {
     found: true, product_id: productId, ...parsed,

@@ -10841,7 +10841,11 @@ const COLLECTR_FREE_TTL_MS = 1800000;               // 30 min
 // toggles all have real density. This was 120 while the only consumer was a
 // price lookup; the charts need the tail. Still far short of the 4,659 rows that
 // caused the original 441KB blob, and the in-memory memo means it is parsed once.
-const COLLECTR_HISTORY_CAP = 400;
+// The worker already trims per series (daily for 5 weeks, weekly to a year), so
+// this is a backstop against an oversized payload, not the shaping step. Set to
+// 400 it re-truncated a correctly-trimmed year back down to about a month —
+// the same off-by-series mistake twice over.
+const COLLECTR_HISTORY_CAP = 4000;
 
 // Entries written before the history was trimmed carry thousands of rows —
 // 441KB for a single card, re-parsed on every price lookup, and counted against

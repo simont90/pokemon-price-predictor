@@ -203,6 +203,14 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
     Testing against both sides matters — a ladder that merely falls is often
     real at the bottom, where the same card has PSA 1 at $372 against PSA 2 at
     $157. Dropped values are listed in the response's `suspect` array.
+  - **History is trimmed per series, never by a flat row count.** Collectr returns
+    a reading per grade per print per day — 4,830 rows on Dark Dragonite across
+    24 series — so capping at "the newest 400 rows" yields 31 days, and the 1Y
+    range on the charts could never show more than a month. `trimCollectrHistory`
+    keeps daily readings for 5 weeks and weekly out to a year, per series: ~1,585
+    rows and 155KB for a real year. `COLLECTR_HISTORY_CAP` in `app.js` is only a
+    backstop against an oversized payload; at 400 it made the same mistake a
+    second time and re-truncated the year back to a month.
   - `?refresh=1` bypasses the 24h price cache. Costs 2 credits.
   - Responses carry `Cache-Control: no-store`. The worker caches deliberately in
     KV with a TTL it picks; without the header browsers and the Cloudflare edge
