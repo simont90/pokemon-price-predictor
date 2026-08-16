@@ -3,6 +3,12 @@ main = "worker-paste-this.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+# Headless Chrome, used only by /collectr-find. Collectr's set page renders 15
+# cards server-side and loads the rest with JS, so a plain fetch can never see
+# a product id past card 15 — resolving one needs a real browser.
+[browser]
+binding = "BROWSER"
+
 [[kv_namespaces]]
 binding = "SYNC_KV"
 id = "6488eeadb6924bab9e71c36627c1658a"

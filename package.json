@@ -1,0 +1,8 @@
+{
+  "name": "pokemon-marketplace-worker",
+  "private": true,
+  "description": "Worker-only dependencies. The web app stays build-free and is served as static files; nothing here is loaded by the browser.",
+  "dependencies": {
+    "@cloudflare/puppeteer": "^1.0.4"
+  }
+}

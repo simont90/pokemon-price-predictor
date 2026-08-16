@@ -10924,6 +10924,9 @@ const COLLECTR_TTL_MS   = 86400000;                 // matches the worker's day
 // A free-only reply (the metered call could not be paid for) is re-asked far
 // sooner, so a topped-up balance is picked up in minutes rather than a day.
 const COLLECTR_FREE_TTL_MS = 1800000;               // 30 min
+// How long a failed browser resolve is remembered on this device. Matches the
+// worker's own miss window; Refresh overrides both.
+const COLLECTR_FIND_MISS_TTL_MS = 7 * 86400000;     // 7 days
 // 400 rows within 400 days, matching what the worker returns, so the 1M/3M/6M/1Y
 // toggles all have real density. This was 120 while the only consumer was a
 // price lookup; the charts need the tail. Still far short of the 4,659 rows that
@@ -11047,10 +11050,38 @@ async function fetchCollectrData(card, { force = false, variant = 'unlimited' } 
   const d = await r.json().catch(() => null);
   if (!r.ok || !d) throw new Error((d && d.error) || 'Collectr lookup failed.');
   if (d.found === false) {
+    // Collectr renders only the first fifteen cards of a set, so anything past
+    // that used to need the product link pasted by hand. The worker can do what
+    // a person would: open the set, search the name, click the card, take the
+    // id out of the URL. Silent — if it works the card simply has prices.
+    const lastTried = (hit && hit.findTried) || 0;
+    const findStale = force || (Date.now() - lastTried >= COLLECTR_FIND_MISS_TTL_MS);
+    if (d.reason === 'not_in_collectr_set_page' && !pid && findStale && !card._collectrFindTried) {
+      card._collectrFindTried = true;   // never twice in one session
+      try {
+        const fq = new URLSearchParams({ cardId: card.i, name: card.n });
+        const sn = (typeof setsData !== 'undefined' && setsData?.[card.sc]?.name) || '';
+        if (sn) fq.set('set', sn);
+        if (card.cn) fq.set('number', String(card.cn));
+        // Refresh is the only thing that re-opens a browser on a card that has
+        // already failed to resolve.
+        if (force) fq.set('refresh', '1');
+        const fr = await fetch(`${base}/collectr-find?${fq}`);
+        const fd = await fr.json().catch(() => null);
+        if (fd && fd.found && fd.product_id) {
+          setCollectrId(card.i, fd.product_id);
+          return await fetchCollectrData(card, { force: true, variant });
+        }
+      } catch {}
+    }
     // Cache the miss briefly so a card Collectr does not carry is not retried
     // on every render.
     cache[cacheKey] = { ts: Date.now(), data: null, miss: d.reason || 'not_found',
-                       setUrl: d.set_url || null, setLabel: d.set_label || null };
+                       setUrl: d.set_url || null, setLabel: d.set_label || null,
+                       // Remembered across reloads, not just this session, so a
+                       // card Collectr does not carry cannot open a browser
+                       // every time the page is opened.
+                       findTried: card._collectrFindTried ? Date.now() : lastTried };
     _collectrCacheWrite(cache);
     return null;
   }

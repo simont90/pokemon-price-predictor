@@ -1,3 +1,5 @@
+import puppeteer from "@cloudflare/puppeteer";
+
 /**
  * Pokémon Price Predictor — Marketplace Scanner Worker
  * =====================================================
@@ -902,6 +904,7 @@ async function handle(request, env, ctx) {
   if (url.pathname === '/price-warm') return handlePriceWarm(request, env, url);
   if (url.pathname === '/prices') return handlePricesBatch(request, env, url);
   if (url.pathname === '/collectr') return handleCollectr(request, env, url);
+  if (url.pathname === '/collectr-find') return handleCollectrFind(request, env, url);
   if (url.pathname === '/pop')   return handlePopQuery(request, env, url);
   if (url.pathname === '/pop-history') return handlePopHistory(request, env, url);
   if (url.pathname === '/cert')  return handleCertLookup(request, env, url);
@@ -2907,6 +2910,193 @@ function trimCollectrHistory(rows) {
     }
   }
   return out.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+}
+
+// Resolve a card to its Collectr product id with a real browser.
+//
+// Every fetch-only route was tried and none can reach a card past number 15:
+// the set page server-renders only the first fifteen, Collectr's own search and
+// its product pages are client-rendered, there is no sitemap, and the metered
+// search_products endpoint returns the same fabricated rows for any query.
+// The card list does exist client-side though — the in-set search filters it
+// with no network call at all — so the id is reachable the moment JS runs.
+//
+// The steps mirror what a person does: open the set, type the card name into
+// "Find a Product in <set>", click the match, read the id out of the URL.
+const COLLECTR_FIND_TIMEOUT_MS = 45000;
+// A browser session is the most expensive thing this worker does, so a card
+// that does not resolve must not buy another one on every page view. A hit is
+// cached forever — a product id never changes — and a miss for a week, which
+// Refresh overrides.
+const COLLECTR_FIND_MISS_TTL = 7 * 86400;
+
+async function collectrFindProductId(env, groupId, cardName, cardNumber, dbg) {
+  if (!env.BROWSER) throw Object.assign(new Error('Browser binding not configured'), { status: 503 });
+  let browser;
+  const note = (k, v) => { if (dbg) dbg[k] = v; };
+  try {
+    browser = await puppeteer.launch(env.BROWSER);
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 900 });
+    // Collectr's data layer sits behind CloudFront bot protection, which the
+    // default headless fingerprint trips. A real UA and language header is the
+    // cheap thing to rule out before blaming the IP range.
+    try {
+      await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+      await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-GB,en;q=0.9' });
+    } catch (e) {}
+    const setUrl = `${COLLECTR_SITE}/sets/category/${COLLECTR_POKEMON_CATEGORY}/x?groupId=${encodeURIComponent(groupId)}&cardType=cards`;
+    await page.goto(setUrl, { waitUntil: 'networkidle0', timeout: COLLECTR_FIND_TIMEOUT_MS });
+
+    // The list arrives after load, so wait for it rather than for the network to
+    // fall quiet — typing into an empty list matches nothing, which is what the
+    // first attempt did in 6 seconds flat.
+    const waitFor = async (fn, arg, ms = 20000, step = 500) => {
+      for (let i = 0; i < Math.ceil(ms / step); i++) {
+        try { if (await page.evaluate(fn, arg)) return true; } catch (e) {}
+        await new Promise(r => setTimeout(r, step));
+      }
+      return false;
+    };
+    const listReady = await waitFor(() => {
+      const inp = [...document.querySelectorAll('input')]
+        .find(i => /find a product|search/i.test(i.placeholder || ''));
+      return !!inp && (document.body.innerText || '').length > 3000;
+    });
+    note('listReady', listReady);
+    note('bodyLen', await page.evaluate(() => (document.body.innerText || '').length));
+    note('bodyHead', await page.evaluate(() => (document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 220)));
+    note('cardLinks', await page.evaluate(() => document.querySelectorAll('a[href*="/explore/product/"]').length));
+
+    // The in-set search filters a list already held in memory.
+    const typed = await page.evaluate((name) => {
+      const inp = [...document.querySelectorAll('input')]
+        .find(i => /find a product|search/i.test(i.placeholder || ''));
+      if (!inp) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(inp, name);
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }, cardName);
+    note('typed', typed);
+    note('title', await page.title().catch(() => ''));
+    if (!typed) {
+      note('inputs', await page.evaluate(() => [...document.querySelectorAll('input')].map(i => i.placeholder || '(none)')));
+      return null;
+    }
+    // Wait for the filter to actually produce the row, not a fixed guess.
+    const matched = await waitFor((n) => {
+      const norm = t => String(t || '').trim().toLowerCase();
+      return [...document.querySelectorAll('*')]
+        .some(e => e.children.length === 0 && norm(e.textContent) === norm(n));
+    }, cardName, 15000);
+    note('matched', matched);
+    note('exactMatches', await page.evaluate((n) => {
+      const norm = t => String(t || '').trim().toLowerCase();
+      return [...document.querySelectorAll('*')].filter(e => e.children.length === 0 && norm(e.textContent) === norm(n)).length;
+    }, cardName));
+
+    // Prefer the row that also carries the card number — a set can hold several
+    // cards whose names differ only by a suffix, and "Mew ex" matches "Mew ex"
+    // before it matches nothing.
+    const clicked = await page.evaluate((name, num) => {
+      const norm = t => String(t || '').trim().toLowerCase();
+      const leaves = [...document.querySelectorAll('*')].filter(e => e.children.length === 0);
+      const exact = leaves.filter(e => norm(e.textContent) === norm(name));
+      const pickFrom = (nodes) => {
+        for (const el of nodes) {
+          let t = el;
+          for (let i = 0; i < 6 && t; i++, t = t.parentElement) {
+            if (num && new RegExp(`\\b${num}\\b`).test(t.textContent || '')) {
+              if (t.tagName === 'A' || getComputedStyle(t).cursor === 'pointer') { t.click(); return true; }
+            }
+          }
+        }
+        return false;
+      };
+      if (pickFrom(exact)) return true;
+      for (const el of exact) {
+        let t = el;
+        for (let i = 0; i < 6 && t; i++, t = t.parentElement) {
+          if (t.tagName === 'A' || t.getAttribute?.('role') === 'button' || getComputedStyle(t).cursor === 'pointer') {
+            t.click(); return true;
+          }
+        }
+      }
+      return false;
+    }, cardName, String(cardNumber || ''));
+    note('clicked', clicked);
+    if (!clicked) return null;
+
+    // The click is a client-side route change, so wait on the URL rather than
+    // on navigation — there is no document load to hook.
+    for (let i = 0; i < 30; i++) {
+      const m = (page.url() || '').match(/\/explore\/product\/(\d+)/);
+      if (m) return m[1];
+      await new Promise(r => setTimeout(r, 400));
+    }
+    return null;
+  } finally {
+    if (browser) { try { await browser.close(); } catch (e) {} }
+  }
+}
+
+// GET /collectr-find?set=&number=&name=  — resolve a product id and cache it.
+async function handleCollectrFind(request, env, url) {
+  const ch = { ...corsHeaders(request), 'Content-Type': 'application/json' };
+  const setName = (url.searchParams.get('set') || '').trim();
+  const cardNo  = (url.searchParams.get('number') || '').trim();
+  const cardName= (url.searchParams.get('name') || '').trim();
+  const cardId  = (url.searchParams.get('cardId') || '').trim();
+  if (!setName || !cardName) return _jsonResp(400, { error: 'set and name are required.' }, ch);
+
+  const idKey = cardId ? `collectr:pid:${cardId}` : null;
+  if (idKey && env.SYNC_KV) {
+    try {
+      const hit = await env.SYNC_KV.get(idKey);
+      if (hit) return _jsonResp(200, { found: true, product_id: hit, source: 'cache' }, ch);
+    } catch (e) {}
+  }
+
+  // A failed resolve is remembered for a day so a card Collectr genuinely does
+  // not carry cannot spend a browser session on every page view.
+  // ?refresh=1 ignores it. A miss recorded while the resolver was broken would
+  // otherwise lock the card out for a day after the fix, with nothing to clear
+  // it — which is exactly what happened while this was being built.
+  const missKey = cardId ? `collectr:findmiss:${cardId}` : null;
+  const skipMiss = url.searchParams.get('refresh') === '1';
+  if (missKey && env.SYNC_KV && !skipMiss) {
+    try { if (await env.SYNC_KV.get(missKey)) return _jsonResp(200, { found: false, reason: 'recent_miss' }, ch); } catch (e) {}
+  }
+
+  let groupId = null;
+  try {
+    const index = await collectrSetIndex(env);
+    const bare = t => t.replace(/^ex\s+/, '');
+    const want = _collectrNorm(setName), wantBare = bare(want);
+    const hit = Object.keys(index).find(n => {
+      const nb = bare(n);
+      return n === want || n.startsWith(want + ' ') || nb === wantBare || nb.startsWith(wantBare + ' ');
+    });
+    if (hit) groupId = index[hit];
+  } catch (e) {}
+  if (!groupId) return _jsonResp(200, { found: false, reason: 'set_not_on_collectr' }, ch);
+
+  const dbg = url.searchParams.get('debug') === '1' ? {} : null;
+  let pid = null;
+  try {
+    pid = await collectrFindProductId(env, groupId, cardName, cardNo, dbg);
+  } catch (e) {
+    if (dbg) return _jsonResp(200, { found: false, reason: 'browser_error', error: String(e && e.message), debug: dbg }, ch);
+    return _jsonResp(e.status === 503 ? 503 : 502,
+      { error: e.message || 'Browser lookup failed.', reason: 'browser_error' }, ch);
+  }
+  if (!pid) {
+    if (missKey && env.SYNC_KV) { try { await env.SYNC_KV.put(missKey, '1', { expirationTtl: COLLECTR_FIND_MISS_TTL }); } catch (e) {} }
+    return _jsonResp(200, { found: false, reason: 'not_found_on_set_page', groupId, debug: dbg || undefined }, ch);
+  }
+  if (idKey && env.SYNC_KV) { try { await env.SYNC_KV.put(idKey, pid); } catch (e) {} }
+  return _jsonResp(200, { found: true, product_id: pid, source: 'browser' }, ch);
 }
 
 async function _collectrCall(env, path, params) {

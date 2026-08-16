@@ -193,10 +193,26 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
     is their "EX Legend Maker". `collectrResolve` matched forward prefixes only,
     so every set in that era failed to resolve and its cards fell back to the
     ratio estimate. Comparison now strips the era word from either side.
-  - When a card is past the fifteen the set page renders, the reply carries
-    `set_url` for the set it *did* resolve, and the card view offers "Find on
-    Collectr". The id still has to come from a pasted link; this only removes
-    the hunt for the right set, which is the tedious half.
+  - **Cards past the fifteen resolve through a headless browser.** `GET
+    /collectr-find?set=&number=&name=&cardId=` opens the set page, types the
+    name into "Find a Product in <set>", clicks the row and reads the id out of
+    the URL — what a person does, in about 5 seconds. Bound as `BROWSER` in
+    `wrangler.toml` (Cloudflare Browser Rendering; free tier is 10 min/day).
+    `@cloudflare/puppeteer` is the only npm dependency and is worker-only — the
+    web app stays build-free and no bundler touches `app.js`.
+    - **Set a real user agent.** Collectr's data layer sits behind CloudFront
+      bot protection and the default headless fingerprint trips it: the shell
+      renders, the heading reads "Find a Product in Search" with no set name,
+      and no cards ever load. It reads as a slow page rather than a block.
+    - **Wait for the list, not for the network.** The cards arrive after
+      `networkidle0`, so a fixed sleep types into an empty list and matches
+      nothing — the first build failed in 6 seconds flat looking like a miss.
+    - A hit is cached forever (`collectr:pid:`), a miss for 7 days
+      (`collectr:findmiss:`). `?refresh=1` ignores the miss — without it, a miss
+      recorded while the resolver was broken locks the card out for a week after
+      the fix, with nothing able to clear it.
+  - The reply for an unresolved card also carries `set_url`, and the card view
+    offers "Find on Collectr" as the manual fallback.
   - Collectr splits Base Set into two groups — "Base Set (Unlimited)" (604) and
     "Base Set (1st Edition & Shadowless)" (1663) — so the selected print picks
     the group.
