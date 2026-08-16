@@ -808,16 +808,81 @@ function getAppealScore(cardName) {
   return 4.0;
 }
 
-function getCharacterMultiplier(cardName) {
+// How heavily a species has been printed lately, 0..1, read from the catalogue
+// rather than a hand-kept list so it follows what actually gets released.
+//
+// Popularity is a vote, and the vote is counted: a character we keep buying is
+// a character the Pokemon Company keeps printing. That cuts both ways and the
+// model only ever had one side of it. For a card whose print run closed twenty
+// years ago the premium is unambiguous — no more will be made, and every new
+// Charizard sends collectors back to the original. For a card printed into a
+// live market it is the opposite: the same popularity is what guarantees more
+// supply of that character next set, and the year after.
+//
+// The Japanese 151 reprint is the case in miniature: $180, then $60 when the
+// reprint landed, and two years to recover. Nothing about the card changed.
+const REPRINT_WINDOW_YEARS = 5;
+
+// Collapse a card name onto the species the tier table knows. "Mega Charizard
+// X ex", "Charizard ex" and "Dark Charizard" are all Charizard printings as far
+// as supply of that character goes — keyed on the raw extracted name they were
+// three separate species, and Charizard scored 0.11 pressure while being the
+// most reprinted character in the game.
+function _canonSpecies(rawName) {
+  const name = extractPokemonName(rawName);
+  if (!name) return '';
+  for (const data of Object.values(CHAR_TIERS)) {
+    const hit = data.names.find(n => name.includes(n));
+    if (hit) return hit;
+  }
+  return name;
+}
+
+let _reprintMemo = null;
+function _reprintPressure(species) {
+  if (!species) return 0;
+  if (!_reprintMemo) {
+    _reprintMemo = new Map();
+    const counts = new Map();
+    const cutoff = Date.now() - REPRINT_WINDOW_YEARS * 365.25 * 86400000;
+    try {
+      for (const c of (cardData?.cards || [])) {
+        if (!c.n || !c.sc) continue;
+        const rel = Date.parse((setsData?.[c.sc]?.releaseDate || '').replace(/\//g, '-'));
+        if (!isFinite(rel) || rel < cutoff) continue;
+        const sp = _canonSpecies(c.n);
+        if (!sp) continue;
+        counts.set(sp, (counts.get(sp) || 0) + 1);
+      }
+    } catch {}
+    // Scale against the busiest species rather than a fixed number, so the
+    // measure stays meaningful as the catalogue grows.
+    const peak = Math.max(1, ...counts.values());
+    for (const [sp, n] of counts) _reprintMemo.set(sp, Math.min(1, n / peak));
+  }
+  return _reprintMemo.get(species) || 0;
+}
+
+// Full premium once a print run is long closed; tapering as the card gets
+// nearer to a market still printing that character.
+const REPRINT_SAFE_AGE_MONTHS = 240;   // 20 years — supply settled
+const REPRINT_MAX_DRAG        = 0.70;  // at most 70% of the premium, never the base
+
+function getCharacterMultiplier(cardName, card) {
   const name = extractPokemonName(cardName);
+  let base = 1.0;
   for (const [tier, data] of Object.entries(CHAR_TIERS)) {
     if (data.names.some(n => name.includes(n))) {
-      if (tier === 'S') return 1.6;
-      if (tier === 'A') return 1.3;
-      if (tier === 'B') return 1.1;
+      base = tier === 'S' ? 1.6 : tier === 'A' ? 1.3 : tier === 'B' ? 1.1 : 1.0;
+      break;
     }
   }
-  return 1.0;
+  if (base <= 1.0 || !card) return base;
+  const ageMonths = (typeof cardAgeMonths === 'function') ? cardAgeMonths(card) : REPRINT_SAFE_AGE_MONTHS;
+  if (ageMonths >= REPRINT_SAFE_AGE_MONTHS) return base;   // vintage: supply is fixed
+  const recency = 1 - (ageMonths / REPRINT_SAFE_AGE_MONTHS);  // 0 at 20 yrs, 1 brand new
+  const drag = _reprintPressure(_canonSpecies(cardName)) * recency * REPRINT_MAX_DRAG;
+  return 1 + (base - 1) * (1 - drag);   // discount the premium, never the base
 }
 
 // ---- Get Current Price (live or fallback to static) ----
@@ -4107,7 +4172,7 @@ function computeSignal(card, pullCost, desirability) {
 
   // Compute directly — avoids calling forecast() which builds 15 scenario objects we don't need
   const rarityRate = (RARITY_RATES[cardRarityCode(card)] || RARITY_RATES['']).base;
-  const charMult   = getCharacterMultiplier(card.n);
+  const charMult   = getCharacterMultiplier(card.n, card);
   const ageMonths  = cardAgeMonths(card);
   const ageMult    = getAgeMultiplier(ageMonths, 1);
 
@@ -4926,7 +4991,7 @@ function getAgeMultiplier(monthsOld, yearsForward) {
 
 function forecast(card, pullCost, desirability) {
   const rarityRate = (RARITY_RATES[cardRarityCode(card)] || RARITY_RATES['']).base;
-  const charMult = getCharacterMultiplier(card.n);
+  const charMult = getCharacterMultiplier(card.n, card);
   const ageMonths = cardAgeMonths(card);
 
   const currentPriceUSD = getCurrentPrice(card);
@@ -10035,7 +10100,7 @@ function scanValuePicks(filter) {
     if (filter === 'EN' && c.lang === 'JP') continue;
     if (filter === 'JP' && c.lang !== 'JP') continue;
 
-    const charMult = getCharacterMultiplier(c.n);
+    const charMult = getCharacterMultiplier(c.n, c);
     if (charMult < 1.1) continue;
 
     const rarityInfo = RARITY_RATES[cardRarityCode(c)] || RARITY_RATES[''];
@@ -14156,7 +14221,7 @@ function estimateGradePrice(card, grade, psa10Price) {
 function projectGradePrice(card, grade, currentGradePrice, years, popData) {
   if (!currentGradePrice) return 0;
   const rarityRate = (RARITY_RATES[cardRarityCode(card)] || RARITY_RATES['']).base;
-  const charMult = getCharacterMultiplier(card.n);
+  const charMult = getCharacterMultiplier(card.n, card);
   const ageMonths = cardAgeMonths(card);
   const ageMult = getAgeMultiplier(ageMonths, years);
   const annualRate = rarityRate * charMult * ageMult * (GRADE_GROWTH_PREMIUM[grade] || 1);
@@ -26677,7 +26742,7 @@ function urScanRaw() {
     } catch (e) { continue; }
     if (!isFinite(impliedDes) || impliedDes < 1) continue;
 
-    const charMult = getCharacterMultiplier(c.n);
+    const charMult = getCharacterMultiplier(c.n, c);
     const charBoost = Math.min(0.8, (charMult - 1) * 1.2);
     const modelDes = Math.min(10, impliedDes + charBoost);
     let fairUsd = 0;
@@ -26776,7 +26841,7 @@ function urScanGrade(fmt) {
       // Cap PSA discount at 2.0× — graded markets are more efficient than raw.
       const discount = Math.min(fairUsdRaw / effectiveUsd, 2.0);
       const fairUsd = effectiveUsd * discount;
-      const charMult = getCharacterMultiplier(c.n);
+      const charMult = getCharacterMultiplier(c.n, c);
       const rarityRate = (RARITY_RATES[cardRarityCode(c)] || RARITY_RATES['']).base;
       const ageMonths = cardAgeMonths(c);
       const ageFactor = ageMonths > 48 ? 1.30 : ageMonths > 24 ? 1.12 : ageMonths < 6 ? 0.85 : 1.0;

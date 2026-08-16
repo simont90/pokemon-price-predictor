@@ -396,6 +396,35 @@ stars. Dark Charizard scored under Dark Dragonite in its own set.
 Do not describe anything as failing to qualify as a "Secret Rare" — the official
 product guide does not list it as a rarity tier.
 
+## Popularity is a vote, and the vote is counted
+
+A character collectors keep buying is a character the Pokemon Company keeps
+printing, and the model only ever had one side of that. `getCharacterMultiplier`
+returned 1.6 for Charizard whether the card was printed in 1999 or 2026.
+
+For a closed print run that is right — no more will be made, and every new
+Charizard sends collectors back to the original. For a card printed into a live
+market it is inverted: the same popularity is what guarantees more supply of
+that character next set. Japanese 151 is the case in miniature — $180, then $60
+when the reprint landed, and two years to recover, with nothing about the card
+having changed.
+
+`_reprintPressure()` counts printings of a species in the last 5 years against
+the busiest species, read from the catalogue rather than a hand-kept list.
+`getCharacterMultiplier(name, card)` tapers the premium — never the base — by
+that pressure scaled by how far the card sits inside a 20-year window. Vintage
+is untouched; Charizard ex in 151 goes 1.60 to 1.34.
+
+**Pass the card.** The second argument is what enables the taper; called with
+the name alone it silently returns the old flat premium, which is the bug it
+was written to fix. All six call sites pass it.
+
+**Count the species, not the card name.** `_canonSpecies()` collapses "Mega
+Charizard X ex", "Charizard ex" and "Dark Charizard" onto `charizard` via the
+tier table. Keyed on the raw extracted name they were three separate species and
+Charizard measured 0.11 pressure while being the most reprinted character in the
+game.
+
 ## Common pitfalls (do not repeat)
 
 - **Worker secrets** (`EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`) are set in the
