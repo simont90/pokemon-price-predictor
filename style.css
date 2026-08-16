@@ -18831,3 +18831,17 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
 }
 .hold-be-ok   { color: #34d399; background: rgba(52,211,153,0.12); }
 .hold-be-risk { color: #f59e0b; background: rgba(245,158,11,0.14); }
+
+/* Entry timing under the price-movement grid. A 30-day move on its own reads as
+   a verdict; this says what it means for buying today. */
+.cd-pm-timing {
+  margin-top: 8px; font-size: 12px; line-height: 1.5;
+  color: var(--text-muted);
+}
+.cd-pm-timing-tag {
+  display: inline-block; font-size: 10px; font-weight: 800;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  border-radius: 5px; padding: 2px 7px; margin-right: 6px;
+}
+.cd-pm-warn { color: #f59e0b; background: rgba(245,158,11,0.14); }
+.cd-pm-ok   { color: #34d399; background: rgba(52,211,153,0.12); }

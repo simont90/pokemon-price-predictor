@@ -3577,6 +3577,28 @@ function recalcWithLivePrice(card) {
         el30d.textContent = pm30d !== null ? (pm30d > 0 ? '+' : '') + pm30d.toFixed(1) + '%' : '—';
         el30d.className = 'cd-pm-val' + (pm30d > 2 ? ' cd-val-green' : pm30d !== null && pm30d < -2 ? ' cd-val-red' : '');
       }
+      // Entry timing. A price that has just run is not the same signal as one
+      // that has been flat, and a fall from a peak is not the same as a decline
+      // — Bubble Mew "dropped" from £1,090 to £1,003 while sitting at more than
+      // double its price six months earlier. The panel showed +176.9% over 30
+      // days beside a BUY and left the reader to notice.
+      try {
+        const timing = _entryTimingNote(card);
+        let noteEl = document.getElementById('cdPmTiming');
+        if (!noteEl && movGrid.parentElement) {
+          noteEl = document.createElement('div');
+          noteEl.id = 'cdPmTiming';
+          noteEl.className = 'cd-pm-timing';
+          movGrid.parentElement.insertBefore(noteEl, movGrid.nextSibling);
+        }
+        if (noteEl) {
+          noteEl.innerHTML = timing
+            ? `<span class="cd-pm-timing-tag cd-pm-${timing.tone}">${timing.label}</span> ${timing.text}`
+            : '';
+          noteEl.style.display = timing ? '' : 'none';
+        }
+      } catch (_) {}
+
       if (elConv) {
         try {
           const des = calcDesirability();
@@ -14066,6 +14088,50 @@ function collectrGradeExists(card, g, variant) {
   if (want === 'shadowless' && !/shadowless/i.test(printName)) return null;
   if (want === 'unlimited' && isEarly) return null;
   return free.psa_grades.includes('psa' + g);
+}
+
+// How the recent move should colour a buy, using Collectr's own dated series.
+//
+// Two ideas, and they pull in opposite directions on the same card. A price
+// that has just run hard is its own incentive to buy — which is the moment to
+// ask whether you want the card or the momentum, and the worst moment to be
+// filling a set you intend to keep. But a fall measured from a peak is not a
+// decline: the 30-day window alone cannot tell those apart, and the 90-day one
+// usually can.
+function _entryTimingNote(card) {
+  if (!card || !card.i) return null;
+  let t = null;
+  try {
+    const d = getCollectrData(card.i);
+    const print = collectrPrintFor(d, _activePrintVariant || 'unlimited');
+    t = d && d.trend && print ? d.trend[print] : null;
+  } catch { return null; }
+  const p30 = t && t.raw_30d && isFinite(t.raw_30d.pct) ? t.raw_30d.pct : null;
+  const p90 = t && t.raw_90d && isFinite(t.raw_90d.pct) ? t.raw_90d.pct : null;
+  if (p30 == null) return null;
+  const f = n => `${n >= 0 ? '+' : ''}${n.toFixed(0)}%`;
+
+  if (p30 >= 25) {
+    return { tone: 'warn', label: 'Buying into a rise',
+      text: `Up ${f(p30)} in 30 days${p90 != null ? ` and ${f(p90)} over 90` : ''}. A run like this is its own reason to buy, so the question is whether you want the card or the momentum. If it is for a set you mean to keep, the cheaper entries come in the flat stretches.` };
+  }
+  if (p30 <= -8 && p90 != null && p90 >= 15) {
+    return { tone: 'ok', label: 'Off the peak, not falling',
+      text: `Down ${f(p30)} over 30 days but still ${f(p90)} over 90 — this is a pullback from a high, not a decline. Zoom out before reading it as weakness.` };
+  }
+  if (p30 <= -8 && p90 != null && p90 <= 0) {
+    return { tone: 'warn', label: 'Sustained decline',
+      text: `Down ${f(p30)} over 30 days and ${f(p90)} over 90. Below-market asks are the market catching down, not a discount — wait for it to flatten.` };
+  }
+  if (p30 >= 8) {
+    return { tone: 'warn', label: 'Rising market',
+      text: `Up ${f(p30)} over 30 days${p90 != null ? ` and ${f(p90)} over 90` : ''}. Not a spike, but you are paying into strength — worth a beat of thought before filling a set you mean to keep.` };
+  }
+  if (Math.abs(p30) < 8) {
+    return { tone: 'ok', label: 'Flat market',
+      text: `${f(p30)} over 30 days${p90 != null ? `, ${f(p90)} over 90` : ''}. Nothing is forcing the decision, which is the calmer time to buy something you intend to keep.` };
+  }
+  return null;
 }
 
 function _collectrGradeUSD(card, g, variant) {
