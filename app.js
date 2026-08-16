@@ -1834,7 +1834,56 @@ function buildCounterpartRecommendation(card) {
 }
 
 // Render the EN ↔ JP recommendation panel for the selected card.
+// The EN/JP comparison used to sit at the top of the card page as its own
+// panel, above the card's own name and price. It is a strategy question, not an
+// identity one — it belongs beside the other routes in Hold Strategy, which
+// already renders it, and in the AI's inputs, which never saw it at all. Kept
+// as a function so the verdict stays computed for both of those.
 function renderCounterpartFlag(card) {
+  const wrap = document.getElementById('counterpartFlag');
+  if (!wrap) return;
+  wrap.style.display = 'none';
+  return;
+}
+
+// The same verdict, written for the model rather than the page. A card with an
+// EN and a JP printing is two ways to own the same artwork at different prices,
+// and the analysis was being written as though only one existed.
+function _cpFactLine(card) {
+  let rec = null;
+  try { rec = buildCounterpartRecommendation(card); } catch { return null; }
+  if (!rec) return null;
+  const fx = usdToGbp(1);
+  const g = u => (u > 0 ? `£${Math.round(u * fx)}` : '?');
+  const thisLang  = card.lang === 'JP' ? 'JP' : 'EN';
+  const otherLang = thisLang === 'JP' ? 'EN' : 'JP';
+  const verdict = rec.verdict === 'buy-jp' ? 'the Japanese printing'
+                : rec.verdict === 'buy-en' ? 'the English printing'
+                : rec.verdict === 'tie'    ? 'neither — they are close'
+                : null;
+  const bits = [
+    `Counterpart: this is the ${thisLang} printing at ${g(rec.selfUSD)}; the ${otherLang} printing is ${g(rec.otherUSD)}`,
+  ];
+  if (rec.savingsGBP > 0 && rec.cheaperLang) {
+    bits.push(`the ${rec.cheaperLang} side is £${Number(rec.savingsGBP).toFixed(0)} cheaper`);
+  }
+  if (verdict) {
+    bits.push(rec.verdictByRoi
+      ? `model prefers ${verdict} on projected growth despite the higher entry`
+      : `model prefers ${verdict}`);
+  }
+  // The per-route breakdown, which is the part worth reasoning over: the two
+  // languages can favour opposite sides depending on whether you keep it raw,
+  // grade it yourself, or buy it slabbed.
+  for (const sc of (rec.scenarios || [])) {
+    if (sc && sc.winner && sc.winner !== 'TIE') bits.push(`${sc.label}: ${sc.winner} ahead`);
+  }
+  if (rec.needsJpPsa10) bits.push('no JP PSA 10 price on file, so the slabbed comparison is one-sided');
+  if (getCPOverride(card.i)) bits.push('counterpart pairing set by hand');
+  return bits.join('. ') + '. Weigh this when recommending a route — the cheaper language is often the same artwork.';
+}
+
+function _counterpartFlagLegacy(card) {
   const wrap = document.getElementById('counterpartFlag');
   if (!wrap) return;
   if (!card) { wrap.style.display = 'none'; return; }
@@ -4590,6 +4639,7 @@ Rules: use £ for all prices. Be direct and specific. No markdown, no bullet poi
     data.ed1RawGBP  > 0 ? `1st Edition raw (estimated): £${Math.round(data.ed1RawGBP)}` : null,
     data.slPsa10GBP > 0 ? `Shadowless PSA 10: £${Math.round(data.slPsa10GBP)} entry, 5yr ROI ${data.slPsa10Roi ?? '?'}%${data.slPsa9GBP > 0 ? `; PSA 9: £${Math.round(data.slPsa9GBP)}, ROI ${data.slPsa9Roi ?? '?'}%` : ''}` : null,
     data.slRawGBP   > 0 ? `Shadowless raw (estimated): £${Math.round(data.slRawGBP)}`  : null,
+    _cpFactLine(card),
   ].filter(Boolean).join('\n');
 
   try {
