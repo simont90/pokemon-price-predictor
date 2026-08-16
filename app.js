@@ -17120,8 +17120,8 @@ function computeHoldCore(card) {
   // — which exists to beat leaving the money in the bank — does not apply to
   // it. The question for a held position is keep or sell, and the bar for
   // keeping is simply that holding beats netting out today.
-  const ltpCandidates = strategies.filter(s =>
-    !s.na && !s.estimated && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
+  const ltpCandidates = _slabOnlyCandidates(strategies.filter(s =>
+    !s.na && !s.estimated && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0))), card);
   const bestLongTermPick = _pickBestLTP(ltpCandidates, strategies);
 
   // Capital outlay penalty: a £640 PSA 10 ties up real funds and carries a
@@ -17246,7 +17246,16 @@ function varianceRiskLabel(v) {
 // A rejected rung steps the walk one further down rather than abandoning it,
 // so a pick priced out of budget degrades to the next grade instead of
 // vanishing.
-function _ladderValueRung(gradeStrategies, accept) {
+// opts.lowest picks the cheapest rung that sits below a wall instead of the
+// dearest. Section 7 lists the grade below *each* wall as a candidate, and the
+// two badges want opposite ends of that list: Best pick is an investment call
+// and takes the highest grade before the cliff, while Collector pick answers
+// "I want this card, what is the sensible way to own it" and should not pay to
+// cross a wall it does not have to. On 1st Ed Dark Dragonite the walls are
+// PSA 8→9 at +115% and PSA 9→10 at +783%, and taking the top one recommended
+// PSA 9 at £1,161 over PSA 8 at £541 — twice the money to clear a wall the
+// collector had no reason to cross.
+function _ladderValueRung(gradeStrategies, accept, opts) {
   const rungs = (gradeStrategies || [])
     .filter(s => s && !s.na && !s.estimated && /^psa\d+$/.test(s.key) && s.today > 0)
     .sort((a, b) => parseInt(a.key.slice(3), 10) - parseInt(b.key.slice(3), 10));
@@ -17255,6 +17264,12 @@ function _ladderValueRung(gradeStrategies, accept) {
 
   const step = i => (rungs[i + 1].today - rungs[i].today) / rungs[i].today;
   let below = -1;
+  if (opts && opts.lowest) {
+    // Cheapest rung that still sits under a wall, and that `accept` allows.
+    for (let i = 0; i < rungs.length - 1; i++) {
+      if (step(i) > 0.50 && accept(rungs[i])) return rungs[i];
+    }
+  }
   for (let i = rungs.length - 2; i >= 0; i--) { if (step(i) > 0.50) { below = i; break; } }
   if (below < 0) {
     let biggest = 0;
@@ -17277,6 +17292,32 @@ function _ladderValueRung(gradeStrategies, accept) {
 // said stop at 7 — its wall is at PSA 9, one rung above.
 //
 // The old scoring still settles graded-vs-raw, where there is no ladder to walk.
+// On vintage, the intent is a slab, not a raw card and a submission. Buying raw
+// to chase a grade carries the condition risk twice over — the card is twenty
+// years old and the outcome is unknown until it comes back — and on a set that
+// grades harshly, where most raw copies land PSA 7 or below, hunting a clean
+// copy to reach a grade you could have bought outright is effort spent to
+// arrive where you started. A raw copy already held is different: its condition
+// is known, so "Keep Raw" stays a legitimate answer.
+function _prefersSlab(card) {
+  if (!card) return false;
+  try {
+    const sc = _cardBasis(card).sc;
+    if (!sc) return false;
+    const vin = new Set([
+      ...((typeof _vintageSets   === 'function' ? _vintageSets()   : []).map(x => x.code)),
+      ...((typeof _vintageJPSets === 'function' ? _vintageJPSets() : []).map(x => x.code)),
+    ]);
+    return vin.has(sc);
+  } catch { return false; }
+}
+
+function _slabOnlyCandidates(candidates, card) {
+  if (!_prefersSlab(card)) return candidates;
+  const kept = (candidates || []).filter(s => /^psa\d+$/.test(s.key) || s.isOwnedSlab || s.acqCost);
+  return kept.length ? kept : candidates;   // never leave the panel with nothing
+}
+
 function _pickBestLTP(candidates, allStrategies) {
   if (!candidates || !candidates.length) return null;
   const penaltyOf = s => s.isOwnedSlab ? 0 : ltpCapitalPenalty(gbpFromUSD(s.today));
@@ -17318,7 +17359,8 @@ function _pickCollectorEntry(strategies, maxBudgetGBP, fx) {
 
   const rung = _ladderValueRung(
     (strategies || []).filter(s => !s.isOwnedSlab),
-    s => affordable(s)
+    s => affordable(s) && s.roi >= 0,
+    { lowest: true }
   );
   if (rung) return rung;
 
@@ -18299,8 +18341,8 @@ function renderHoldStrategy(card) {
   // — which exists to beat leaving the money in the bank — does not apply to
   // it. The question for a held position is keep or sell, and the bar for
   // keeping is simply that holding beats netting out today.
-  const ltpCandidates = strategies.filter(s =>
-    !s.na && !s.estimated && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0)));
+  const ltpCandidates = _slabOnlyCandidates(strategies.filter(s =>
+    !s.na && !s.estimated && s.key !== 'gamble' && (s.roi >= 35 || (s.isOwnedSlab && s.roi > 0))), card);
   const bestLongTermPick = _pickBestLTP(ltpCandidates, strategies);
 
   // Failing the investment test is not the same as "don't buy". When nothing
@@ -18320,7 +18362,7 @@ function renderHoldStrategy(card) {
     _ltpBudget < BUDGET_DEFAULT && (bestLongTermPick.today * fx) > _ltpBudget;
   const collectorPick = (bestLongTermPick && !bestPickOverBudget)
     ? null
-    : _pickCollectorEntry(strategies, _ltpBudget, fx);
+    : _pickCollectorEntry(_slabOnlyCandidates(strategies, card), _ltpBudget, fx);
 
   const winner = overallWinner; // used for recommendation copy below
   // Store winner key so updateSignal can stay in sync regardless of call order.

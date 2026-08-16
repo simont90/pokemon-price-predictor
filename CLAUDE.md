@@ -505,9 +505,25 @@ close calls, present both and say why, rather than forcing a single answer.
 
 **Implementation:** `_ladderValueRung()` in `app.js` is the single walk — it
 takes the grade strategies plus an `accept` predicate and returns the rung below
-the highest wall, stepping further down whenever `accept` rejects one (budget,
-ROI hurdle). Both `_pickBestLTP()` (Best pick) and `_pickCollectorEntry()`
-(Collector pick) go through it, so the two badges cannot drift apart. Do not
+a wall, stepping further whenever `accept` rejects one (budget, ROI hurdle).
+Both `_pickBestLTP()` (Best pick) and `_pickCollectorEntry()` (Collector pick)
+go through it, so the two badges cannot drift apart.
+
+The two badges take **opposite ends of the candidate list**, which is why
+`opts.lowest` exists. Section 7 names the grade below *each* wall as a
+candidate: Best pick is an investment call and takes the highest grade before
+the cliff, while Collector pick answers "I want this card, what is the sensible
+way to own it" and must not pay to cross a wall it has no reason to cross. On
+1st Ed Dark Dragonite the walls are PSA 8→9 at +115% and PSA 9→10 at +783%;
+taking the top one for both recommended PSA 9 at £1,161 over PSA 8 at £541.
+
+**Vintage buys a slab, not a submission.** `_prefersSlab()` marks WOTC-era sets
+and `_slabOnlyCandidates()` keeps raw and buy-raw-and-grade out of both picks
+there. Buying raw to chase a grade carries the condition risk twice over on a
+twenty-year-old card, and on a harsh-grading set where most raw copies land
+PSA 7 or below, hunting a clean copy to reach a grade you could have bought
+outright is effort spent to arrive where you started. A raw copy already held
+is exempt — its condition is known, so "Keep Raw" stays a legitimate answer. Do not
 rank grades against each other by any other means: ranking them by
 `riskAdjusted` minus `ltpCapitalPenalty()` decided the pick on where a price
 fell against hardcoded band edges rather than on the card's own curve — on 1st
