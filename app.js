@@ -694,6 +694,7 @@ async function init() {
   setupPsaPop();
   _collectrMigrateCache();
   setupCollectr();
+  try { setupEbayWatch(); } catch {}
   setupCertLookup();
   setupCPOverride();
   setupMLinkPicker();
@@ -3778,6 +3779,9 @@ function recalcWithLivePrice(card) {
 
   // Re-render Acquisition + Grader sections so ROI uses the live raw + PSA 10 prices
   if (typeof renderAcquisition === 'function') renderAcquisition();
+  // Auctions move between visits, so saved listings for this card are
+  // re-priced on open rather than waiting for a manual refresh.
+  try { renderEbayWatch(); ebayWatchRefresh(card.i); } catch {}
   if (typeof renderCardGrader === 'function') renderCardGrader();
   // Re-render ACE section so PC grade prices populate now that livePrice is set
   if (typeof renderAceGradingSection === 'function') renderAceGradingSection();
@@ -3852,6 +3856,9 @@ function selectCard(id) {
   if (typeof psUpdateStats === 'function') psUpdateStats();
   // Refresh Acquisition + Grader section for the new card
   if (typeof renderAcquisition === 'function') renderAcquisition();
+  // Auctions move between visits, so saved listings for this card are
+  // re-priced on open rather than waiting for a manual refresh.
+  try { renderEbayWatch(); ebayWatchRefresh(card.i); } catch {}
   if (typeof renderCardGrader === 'function') renderCardGrader();
   if (typeof renderPsaLinkRow === 'function') renderPsaLinkRow();
 
@@ -14718,6 +14725,368 @@ function setupPsaChartHover() {
 // Schema (localStorage `pkm-watchlist-v1`):
 //   { id, name, set, lang, img, addedAt, addedSignal, addedScore,
 //     lastNotifiedSignal, lastNotifiedAt, addedPriceUSD }
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// eBay listing watch — paste a link, price it against the ladder, hold a bid
+//
+// The marketplace scan already finds listings, but it searches; this is the
+// other direction, where the listing is already chosen and the only question is
+// what it is worth. That matters most on an auction, where the number you need
+// is the most you should bid rather than the price showing right now.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const EBAY_WATCH_KEY = 'pkm-ebay-watch-v1';   // synced: these are decisions, not cache
+const EBAY_WATCH_TTL_MS = 5 * 60 * 1000;      // re-price on open, not on every paint
+const EBAY_AUCTION_SOON_MS = 60 * 60 * 1000;  // "ending soon" — refresh harder
+
+let _ebayWatch = [];
+try { _ebayWatch = JSON.parse(localStorage.getItem(EBAY_WATCH_KEY) || '[]'); } catch { _ebayWatch = []; }
+function _ebayWatchSave() {
+  try { localStorage.setItem(EBAY_WATCH_KEY, JSON.stringify(_ebayWatch)); } catch {}
+}
+
+// What grade the seller says it is. A listing that does not say is raw — a
+// graded card is never sold without saying so, because the grade is the value.
+function ebayGradeFromTitle(title) {
+  const t = String(title || '').toUpperCase();
+  if (/\b(PSA|BGS|CGC|SGC)\s*10\b/.test(t) && /\bPSA\s*10\b/.test(t)) return 'psa10';
+  const m = t.match(/\bPSA\s*(\d{1,2})(?:\.5)?\b/);
+  if (m) {
+    const g = parseInt(m[1], 10);
+    if (g >= 1 && g <= 10) return 'psa' + g;
+  }
+  // Other slabs are priced differently and the ladder does not model them.
+  if (/\b(BGS|CGC|SGC|ACE)\s*\d/.test(t)) return 'other-slab';
+  return 'raw';
+}
+
+// Is this listing even the card on screen?
+//
+// Nothing else here checks. Searching "Dark Dragonite" returns a custom art
+// proxy at £23 and a 22/82 non-holo at £42, and both were priced against the
+// 5/82 holo's ladder and came back "strong buy" — the holo and the non-holo are
+// different cards that happen to share a name, and the proxy is not a card at
+// all. A confident buy verdict on the wrong item is worse than no verdict.
+const EBAY_PROXY_WORDS = [
+  'extended art', 'extended artwork', 'custom', 'proxy', 'orica', 'fan art',
+  'fanart', 'replica', 'not official', 'unofficial', 'reprint copy', 'display card',
+];
+function ebayIdentityCheck(card, title) {
+  const t = String(title || '').toLowerCase();
+  if (!t) return { ok: true, weak: true };
+  for (const w of EBAY_PROXY_WORDS) {
+    if (t.includes(w)) {
+      return { ok: false, reason: `The title says "${w}" — this is a custom or proxy card, not the real print, so the ladder does not apply to it.` };
+    }
+  }
+  // Card number is the reliable discriminator: a set can print the same
+  // Pokemon twice, and the holo and the non-holo are not the same card.
+  const want = String(card?.cn ?? '').trim();
+  if (want) {
+    const nums = [...t.matchAll(/(?:^|[^\d])(\d{1,3})\s*\/\s*(\d{2,3})/g)].map(m => m[1]);
+    const hashes = [...t.matchAll(/#\s*(\d{1,3})\b/g)].map(m => m[1]);
+    const found = [...new Set([...nums, ...hashes])];
+    if (found.length && !found.includes(want)) {
+      return { ok: false,
+        reason: `The listing is card ${found.join(' / ')} and this is ${want}. ${found.length === 1 ? 'That is a different card' : 'None of those match'} — sets often print the same Pokemon more than once, and the prints are not worth the same.` };
+    }
+  }
+  return { ok: true };
+}
+
+// Listing currency into GBP. Returns null when there is no rate, so the panel
+// can say so rather than quietly pricing dollars as pounds.
+function _ebayToGbp(amount, currency) {
+  if (!(amount >= 0)) return null;
+  const c = String(currency || '').toUpperCase();
+  if (c === 'GBP') return amount;
+  if (c === 'USD') return amount * (typeof usdToGbp === 'function' ? usdToGbp(1) : 0.79);
+  if (c === 'EUR' && typeof _currencyRates !== 'undefined' && _currencyRates.EUR > 0) {
+    return amount / _currencyRates.EUR;
+  }
+  return null;
+}
+
+// The ceiling for a grade, rebuilt with the same helper the tiles use so the
+// panel and the tile can never quote different numbers.
+function ebayMaxBuyFor(card, gradeKey) {
+  if (!card) return null;
+  let hc = null;
+  try { hc = _getHoldCoreCached(card); } catch { return null; }
+  if (!hc || !hc.ok || !hc.strategies) return null;
+  const key = gradeKey === 'raw' ? 'raw' : gradeKey;
+  const s = hc.strategies.find(x => x.key === key && !x.na && !x.estimated && x.today > 0);
+  if (!s) return null;
+  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 0.79;
+  const todayGBP = s.today * fx;
+  const ship = key === 'raw' ? UK_RAW_SHIPPING_GBP : estimateUkSlabShipping(todayGBP);
+  const maxBuyGBP = (typeof ebayCheckoutMax === 'function')
+    ? ebayCheckoutMax(todayGBP, ship) : todayGBP + ship;
+  return { todayGBP, maxBuyGBP, roi: s.roi, key };
+}
+
+// Price a listing against that ceiling.
+function ebayDealVerdict(card, listing) {
+  if (!card || !listing || !listing.found) return null;
+  const ident = ebayIdentityCheck(card, listing.title);
+  if (!ident.ok) {
+    return { gradeKey: ebayGradeFromTitle(listing.title), unpriceable: true, mismatch: true, note: ident.reason };
+  }
+  const gradeKey = ebayGradeFromTitle(listing.title);
+  if (gradeKey === 'other-slab') {
+    return { gradeKey, unpriceable: true,
+      note: 'Graded by another company. The ladder only models PSA, so there is no fair comparison to make here.' };
+  }
+  const askGbp  = _ebayToGbp(listing.is_auction ? (listing.current_bid ?? listing.price) : listing.price, listing.currency);
+  const shipGbp = _ebayToGbp(listing.shipping ?? 0, listing.shipping_currency || listing.currency);
+  if (askGbp == null) {
+    return { gradeKey, unpriceable: true,
+      note: `No exchange rate for ${listing.currency} on this device, so this cannot be priced in pounds.` };
+  }
+  const mb = ebayMaxBuyFor(card, gradeKey);
+  if (!mb) {
+    return { gradeKey, unpriceable: true,
+      note: `No market price for ${gradeKey === 'raw' ? 'a raw copy' : gradeKey.toUpperCase().replace('PSA', 'PSA ')} of this card, so there is nothing to measure the listing against.` };
+  }
+  // What leaves your account: the ask, the postage, and eBay's buyer fee.
+  const feeGbp = (typeof ebayBuyerFee === 'function') ? ebayBuyerFee(askGbp) : 0;
+  const allInGbp = askGbp + (shipGbp || 0) + feeGbp;
+  const deltaPct = mb.maxBuyGBP > 0 ? ((allInGbp - mb.maxBuyGBP) / mb.maxBuyGBP) * 100 : 0;
+
+  // The bid ceiling is the all-in ceiling with the costs that ride on top taken
+  // back off — bidding the max buy would overshoot it by postage and the fee.
+  let maxBidGbp = null;
+  if (listing.is_auction) {
+    const room = mb.maxBuyGBP - (shipGbp || 0);
+    maxBidGbp = Math.max(0, room / (1 + ((typeof ebayBuyerFee === 'function' && room > 0) ? ebayBuyerFee(room) / room : 0)));
+  }
+  const verdict = deltaPct <= -15 ? 'strong'
+                : deltaPct <= -2  ? 'good'
+                : deltaPct <= 8   ? 'fair'
+                :                   'over';
+  return {
+    gradeKey, askGbp, shipGbp: shipGbp || 0, feeGbp, allInGbp,
+    maxBuyGBP: mb.maxBuyGBP, todayGBP: mb.todayGBP, roi: mb.roi,
+    deltaPct, verdict, maxBidGbp, unpriceable: false,
+  };
+}
+
+async function ebayFetchListing(urlOrId) {
+  const base = (typeof getMktWorkerUrl === 'function')
+    ? getMktWorkerUrl() : 'https://pokemon-marketplace.simontariq.workers.dev';
+  const r = await fetch(`${base}/ebay-item?url=${encodeURIComponent(urlOrId)}`);
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d) throw new Error((d && d.error) || 'eBay lookup failed.');
+  if (d.found === false) throw new Error('That listing could not be found — it may have ended.');
+  if (d.error) throw new Error(d.error);
+  return d;
+}
+
+function _ebayTimeLeft(endIso) {
+  if (!endIso) return null;
+  const ms = Date.parse(endIso) - Date.now();
+  if (!isFinite(ms)) return null;
+  if (ms <= 0) return { ended: true, text: 'ended' };
+  const d = Math.floor(ms / 86400000), h = Math.floor(ms / 3600000) % 24;
+  const m = Math.floor(ms / 60000) % 60;
+  return { ended: false, ms,
+    soon: ms <= EBAY_AUCTION_SOON_MS,
+    text: d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m` };
+}
+
+
+// ---- eBay watch: rendering + wiring -------------------------------------
+
+const _EBW_VERDICT = {
+  strong: { cls: 'ebw-v-strong', label: 'Strong buy' },
+  good:   { cls: 'ebw-v-good',   label: 'Below the ceiling' },
+  fair:   { cls: 'ebw-v-fair',   label: 'About right' },
+  over:   { cls: 'ebw-v-over',   label: 'Over the ceiling' },
+};
+
+function _ebwVerdictHtml(v, listing) {
+  if (!v) return '';
+  if (v.unpriceable) {
+    return `<div class="ebw-note${v.mismatch ? ' ebw-mismatch' : ''}">${v.mismatch ? '<strong>Not this card.</strong> ' : ''}${esc(v.note)}</div>`;
+  }
+  const m = _EBW_VERDICT[v.verdict] || _EBW_VERDICT.fair;
+  const sign = v.deltaPct >= 0 ? '+' : '';
+  const gradeLbl = v.gradeKey === 'raw' ? 'Raw' : v.gradeKey.replace('psa', 'PSA ');
+  const tl = _ebayTimeLeft(listing.end_time);
+  const bid = (listing.is_auction && v.maxBidGbp > 0)
+    ? `<div class="ebw-maxbid">
+         <span class="ebw-maxbid-lbl">Max bid</span>
+         <span class="ebw-maxbid-val">${fmtGBPDirect(v.maxBidGbp)}</span>
+         <span class="ebw-maxbid-note">hold firm — above this the ${gradeLbl} stops being worth it</span>
+       </div>` : '';
+  return `
+    <div class="ebw-verdict ${m.cls}">
+      <span class="ebw-v-tag">${m.label}</span>
+      <span class="ebw-v-delta">${sign}${v.deltaPct.toFixed(0)}% vs max buy</span>
+      <span class="ebw-v-grade">${gradeLbl}</span>
+      ${listing.is_auction ? `<span class="ebw-v-auction">Auction${tl ? ' · ' + tl.text : ''}${listing.bid_count != null ? ` · ${listing.bid_count} bid${listing.bid_count === 1 ? '' : 's'}` : ''}</span>` : '<span class="ebw-v-bin">Buy it now</span>'}
+    </div>
+    <div class="ebw-maths">
+      ${listing.is_auction ? 'Current bid' : 'Ask'} ${fmtGBPDirect(v.askGbp)}
+      ${v.shipGbp > 0 ? ` + postage ${fmtGBPDirect(v.shipGbp)}` : ' + free postage'}
+      + buyer fee ${fmtGBPDirect(v.feeGbp)}
+      = <strong>${fmtGBPDirect(v.allInGbp)}</strong> all-in
+      · ceiling ${fmtGBPDirect(v.maxBuyGBP)}
+    </div>
+    ${bid}
+    ${listing.variation_note ? `<div class="ebw-note">${esc(listing.variation_note)}</div>` : ''}`;
+}
+
+function _ebwRow(entry) {
+  const l = entry.listing || {};
+  const card = getCardById(entry.cardId);
+  const v = card ? ebayDealVerdict(card, l) : null;
+  const tl = _ebayTimeLeft(l.end_time);
+  const ended = tl && tl.ended;
+  return `<div class="ebw-row${ended ? ' ebw-ended' : ''}${tl && tl.soon && !ended ? ' ebw-soon' : ''}" data-ebw="${esc(entry.id)}">
+    ${l.image ? `<img class="ebw-img" src="${esc(l.image)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="ebw-img"></div>'}
+    <div class="ebw-main">
+      <a class="ebw-name" href="${esc(l.url || '#')}" target="_blank" rel="noopener noreferrer">${esc((l.title || 'Listing').slice(0, 90))}</a>
+      ${_ebwVerdictHtml(v, l)}
+      <div class="ebw-meta">
+        ${l.seller ? `${esc(l.seller)}${l.seller_feedback_pct != null ? ` · ${l.seller_feedback_pct}%` : ''}` : ''}
+        ${l.condition ? ` · ${esc(l.condition)}` : ''}
+        ${entry.checkedAt ? ` · checked ${_timeAgo(Date.now() - entry.checkedAt)}` : ''}
+      </div>
+    </div>
+    <button type="button" class="ebw-del" data-ebw-del="${esc(entry.id)}" title="Stop watching">✕</button>
+  </div>`;
+}
+
+function renderEbayWatch() {
+  const panel = document.getElementById('ebayWatchPanel');
+  const list  = document.getElementById('ebwList');
+  const sub   = document.getElementById('ebwSub');
+  if (!panel || !list) return;
+  const card = (typeof selectedCard !== 'undefined') ? selectedCard : null;
+  if (!card) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  const mine = _ebayWatch.filter(e => e.cardId === card.i);
+  // Auctions first, soonest ending at the top — that is the one with a deadline.
+  mine.sort((a, b) => {
+    const ea = Date.parse(a.listing?.end_time || '') || Infinity;
+    const eb = Date.parse(b.listing?.end_time || '') || Infinity;
+    return ea - eb;
+  });
+  list.innerHTML = mine.map(_ebwRow).join('');
+  if (sub) {
+    const auctions = mine.filter(e => e.listing?.is_auction && !(_ebayTimeLeft(e.listing.end_time) || {}).ended).length;
+    sub.textContent = mine.length
+      ? `${mine.length} watched${auctions ? ` · ${auctions} live auction${auctions === 1 ? '' : 's'}` : ''}`
+      : 'paste a link to price it against the ladder';
+  }
+}
+
+// Re-check saved listings for the open card. Auctions move, so anything with a
+// deadline is refreshed whenever the card is opened; fixed-price listings are
+// left alone until they go stale.
+async function ebayWatchRefresh(cardId, { force = false } = {}) {
+  const mine = _ebayWatch.filter(e => e.cardId === cardId);
+  if (!mine.length) return;
+  const now = Date.now();
+  const due = mine.filter(e => {
+    if (force) return true;
+    const tl = _ebayTimeLeft(e.listing?.end_time);
+    if (tl && tl.ended) return false;                 // nothing left to learn
+    if (e.listing?.is_auction) return true;           // always moving
+    return now - (e.checkedAt || 0) > EBAY_WATCH_TTL_MS;
+  });
+  if (!due.length) return;
+  await Promise.all(due.map(async e => {
+    try {
+      e.listing = await ebayFetchListing(e.url);
+      e.checkedAt = Date.now();
+      e.error = null;
+    } catch (err) { e.error = String(err.message || err); }
+  }));
+  _ebayWatchSave();
+  renderEbayWatch();
+}
+
+function setupEbayWatch() {
+  const input = document.getElementById('ebwInput');
+  const go    = document.getElementById('ebwCheck');
+  const log   = document.getElementById('ebwLog');
+  const out   = document.getElementById('ebwResult');
+  const list  = document.getElementById('ebwList');
+  const ref   = document.getElementById('ebwRefresh');
+  if (!input || !go) return;
+
+  const say = (msg, kind) => {
+    if (!log) return;
+    log.textContent = msg || '';
+    log.className = 'ebw-log' + (kind ? ' ebw-log-' + kind : '');
+  };
+
+  const check = async (save) => {
+    const card = (typeof selectedCard !== 'undefined') ? selectedCard : null;
+    if (!card) return;
+    const raw = (input.value || '').trim();
+    if (!raw) return;
+    go.disabled = true; go.textContent = 'Checking…'; say('');
+    try {
+      const listing = await ebayFetchListing(raw);
+      const v = ebayDealVerdict(card, listing);
+      if (out) {
+        out.style.display = '';
+        out.innerHTML = `<div class="ebw-result-title">${esc((listing.title || '').slice(0, 90))}</div>`
+          + _ebwVerdictHtml(v, listing)
+          + `<div class="ebw-result-actions">
+               <button type="button" class="ebw-btn" id="ebwSave">Watch this listing</button>
+               <a class="ebw-btn ebw-btn-ghost" href="${esc(listing.url)}" target="_blank" rel="noopener noreferrer">Open on eBay ↗</a>
+             </div>`;
+        document.getElementById('ebwSave')?.addEventListener('click', () => {
+          if (_ebayWatch.some(e => e.cardId === card.i && e.item_id === listing.item_id)) {
+            say('Already watching that listing.', 'warn'); return;
+          }
+          _ebayWatch.push({
+            id: `${card.i}:${listing.item_id}`,
+            cardId: card.i, item_id: listing.item_id,
+            url: listing.url || raw, listing, checkedAt: Date.now(), addedAt: Date.now(),
+          });
+          _ebayWatchSave();
+          input.value = '';
+          out.style.display = 'none';
+          say('Added — it will be re-checked whenever you open this card.', 'ok');
+          renderEbayWatch();
+        });
+      }
+    } catch (e) {
+      if (out) out.style.display = 'none';
+      say(String(e.message || e), 'err');
+    } finally {
+      go.disabled = false; go.textContent = 'Check';
+    }
+  };
+
+  go.addEventListener('click', () => check(false));
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); check(false); } });
+
+  ref?.addEventListener('click', async () => {
+    const card = (typeof selectedCard !== 'undefined') ? selectedCard : null;
+    if (!card) return;
+    ref.disabled = true; ref.classList.add('ebw-spin');
+    try { await ebayWatchRefresh(card.i, { force: true }); say('Re-checked.', 'ok'); }
+    catch { say('Re-check failed.', 'err'); }
+    finally { ref.disabled = false; ref.classList.remove('ebw-spin'); }
+  });
+
+  list?.addEventListener('click', e => {
+    const del = e.target.closest('[data-ebw-del]');
+    if (!del) return;
+    e.preventDefault();
+    const id = del.dataset.ebwDel;
+    _ebayWatch = _ebayWatch.filter(x => x.id !== id);
+    _ebayWatchSave();
+    renderEbayWatch();
+  });
+}
 
 const WATCHLIST_KEY = 'pkm-watchlist-v1';
 const WATCHLIST_ALERT_DISMISS_KEY = 'pkm-watchlist-dismissed-v1';
@@ -28001,6 +28370,7 @@ const SYNC_KEYS = [
   'pkm-dupe-dismissed-v1',        // Dismissed duplicate / counterpart pairs
   'pkm-price-seen-v1',           // Ever-fetched card IDs (persists across cache evictions)
   'pkm-collectr-ids-v1',         // Collectr product id per card (resolution is free; keep it)
+  'pkm-ebay-watch-v1',           // eBay listings being watched, with their last priced state
 ];
 
 const SYNC_PAIR_CODE_KEY = 'pkm-sync-pair-code';

@@ -220,6 +220,150 @@ async function getEbayToken(env) {
   return _ebayToken;
 }
 
+// ---- eBay single listing (Browse API) ----
+//
+// searchEbay only ever asked for FIXED_PRICE, so auctions were invisible to the
+// whole app. A pasted link is the one case where the listing is already chosen
+// and the question is what it is worth — including a live auction, where the
+// number that matters is the most you should bid rather than the price on
+// screen right now.
+//
+// eBay item URLs carry the legacy id (ebay.co.uk/itm/123456789012), so the
+// lookup goes through getItemByLegacyId rather than the RESTful item id.
+const EBAY_ITEM_LEGACY_URL = 'https://api.ebay.com/buy/browse/v1/item/get_item_by_legacy_id';
+
+function extractEbayItemId(raw) {
+  const t = String(raw || '').trim();
+  if (/^\d{9,15}$/.test(t)) return t;
+  try {
+    const u = new URL(t);
+    if (!/(^|\.)ebay\./i.test(u.hostname)) return null;
+    const m = u.pathname.match(/\/itm\/(?:.*\/)?(\d{9,15})/);
+    if (m) return m[1];
+    const q = u.searchParams.get('item') || u.searchParams.get('itemId');
+    if (q && /^\d{9,15}$/.test(q)) return q;
+  } catch {}
+  const loose = t.match(/\b(\d{12,15})\b/);
+  return loose ? loose[1] : null;
+}
+
+// Listings with variations (a seller offering several cards under one item)
+// carry ?var= in the URL. Without it eBay rejects the legacy lookup outright
+// rather than picking one, so the id alone is not enough to price the thing.
+function extractEbayVariationId(raw) {
+  try {
+    const u = new URL(String(raw || '').trim());
+    const v = u.searchParams.get('var');
+    return v && /^\d{6,20}$/.test(v) ? v : null;
+  } catch { return null; }
+}
+
+function ebayMarketplaceFor(raw) {
+  const t = String(raw || '');
+  if (/ebay\.co\.uk/i.test(t)) return { id: 'EBAY_GB', cur: 'GBP' };
+  if (/ebay\.de/i.test(t))     return { id: 'EBAY_DE', cur: 'EUR' };
+  if (/ebay\.com\.au/i.test(t)) return { id: 'EBAY_AU', cur: 'AUD' };
+  if (/ebay\.ca/i.test(t))     return { id: 'EBAY_CA', cur: 'CAD' };
+  return { id: 'EBAY_US', cur: 'USD' };
+}
+
+const _num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
+
+// GET /ebay-item?url=<listing url or item id>
+async function handleEbayItem(request, env, url) {
+  const ch = { ...corsHeaders(request), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+  if (!env.EBAY_CLIENT_ID || !env.EBAY_CLIENT_SECRET) {
+    return _jsonResp(503, { error: 'eBay credentials are not configured on the worker.' }, ch);
+  }
+  const raw = (url.searchParams.get('url') || '').trim();
+  if (!raw) return _jsonResp(400, { error: 'Pass ?url= an eBay listing link or item id.' }, ch);
+  const itemId = extractEbayItemId(raw);
+  if (!itemId) return _jsonResp(400, { error: 'That does not look like an eBay listing link.' }, ch);
+  const mk = ebayMarketplaceFor(raw);
+
+  let token;
+  try { token = await getEbayToken(env); }
+  catch (e) { return _jsonResp(502, { error: `eBay auth failed: ${e.message}` }, ch); }
+
+  const hdrs = {
+    Authorization: `Bearer ${token}`,
+    'X-EBAY-C-MARKETPLACE-ID': mk.id,
+    Accept: 'application/json',
+  };
+  const varId = extractEbayVariationId(raw);
+  const api = new URL(EBAY_ITEM_LEGACY_URL);
+  api.searchParams.set('legacy_item_id', itemId);
+  if (varId) api.searchParams.set('legacy_variation_id', varId);
+
+  let r = await fetch(api.toString(), { headers: hdrs });
+  let d = null;
+  if (r.status === 404) return _jsonResp(200, { found: false, reason: 'not_found', item_id: itemId }, ch);
+  if (r.ok) {
+    d = await r.json();
+  } else {
+    const body = await r.text().catch(() => '');
+    // 11006: this id is a group of variations. Without a chosen variation there
+    // is no single price, so take the cheapest and say which one was priced —
+    // guessing silently would price a card the listing may not even be for.
+    if (/11006/.test(body)) {
+      const grp = new URL('https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group');
+      grp.searchParams.set('item_group_id', itemId);
+      const gr = await fetch(grp.toString(), { headers: hdrs });
+      if (gr.ok) {
+        const gj = await gr.json();
+        const items = Array.isArray(gj.items) ? gj.items.filter(Boolean) : [];
+        if (items.length) {
+          items.sort((a, b) => (_num(a.price?.value) ?? 1e12) - (_num(b.price?.value) ?? 1e12));
+          d = items[0];
+          d.__variationOf = items.length;
+        }
+      }
+    }
+    if (!d) {
+      return _jsonResp(502, { error: `eBay item ${r.status}`, detail: body.slice(0, 200), item_id: itemId }, ch);
+    }
+  }
+
+  const opts = d.buyingOptions || [];
+  const isAuction = opts.includes('AUCTION');
+  // On an auction the headline price IS the current bid; on a BIN it is the
+  // asking price. Reading one as the other is how a bid ceiling ends up wrong.
+  const price = _num(d.price?.value);
+  const bid   = _num(d.currentBidPrice?.value);
+  const ship  = _num(d.shippingOptions?.[0]?.shippingCost?.value);
+
+  return _jsonResp(200, {
+    found: true,
+    item_id: itemId,
+    marketplace: mk.id,
+    title: d.title || '',
+    url: d.itemWebUrl || raw,
+    image: d.image?.imageUrl || d.thumbnailImages?.[0]?.imageUrl || null,
+    condition: d.condition || null,
+    seller: d.seller?.username || null,
+    seller_feedback_pct: _num(d.seller?.feedbackPercentage),
+    seller_feedback_score: d.seller?.feedbackScore ?? null,
+    currency: d.price?.currency || mk.cur,
+    price,                                   // BIN ask, or current bid on an auction
+    current_bid: isAuction ? (bid ?? price) : null,
+    bid_count: isAuction ? (d.bidCount ?? 0) : null,
+    is_auction: isAuction,
+    buy_it_now: opts.includes('FIXED_PRICE'),
+    end_time: d.itemEndDate || null,
+    shipping: ship,
+    shipping_currency: d.shippingOptions?.[0]?.shippingCost?.currency || d.price?.currency || mk.cur,
+    item_location: d.itemLocation?.country || null,
+    top_rated: !!d.topRatedBuyingExperience,
+    // Set when the link was a variation group and we priced one of several.
+    variation_count: d.__variationOf || null,
+    variation_note: d.__variationOf
+      ? `This link is a listing with ${d.__variationOf} variations; priced on the cheapest. Open it and pick the exact card to be sure.`
+      : null,
+    returns: d.returnTerms?.returnsAccepted ?? null,
+    fetched_at: Date.now(),
+  }, ch);
+}
+
 // ---- eBay search (Browse API) ----
 // We pull a wide page (up to 100 listings per marketplace) so the client-side
 // risk band has the full catalog to rate — including premium overpriced ones.
@@ -915,6 +1059,7 @@ async function handle(request, env, ctx) {
   if (url.pathname === '/prices') return handlePricesBatch(request, env, url);
   if (url.pathname === '/collectr') return handleCollectr(request, env, url);
   if (url.pathname === '/collectr-find') return handleCollectrFind(request, env, url);
+  if (url.pathname === '/ebay-item') return handleEbayItem(request, env, url);
   if (url.pathname === '/pop')   return handlePopQuery(request, env, url);
   if (url.pathname === '/pop-history') return handlePopHistory(request, env, url);
   if (url.pathname === '/cert')  return handleCertLookup(request, env, url);

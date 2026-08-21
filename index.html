@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260725h">
+  <link rel="stylesheet" href="style.css?v=20260725k">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1766,6 +1766,22 @@
           <div class="hold-recommendation" id="holdRecommendation"></div>
           <div class="hold-market-context" id="holdMarketContext" style="display:none"></div>
           </div><!-- /hold-ai-group -->
+          <!-- eBay listings being watched for this card -->
+          <div class="ebw" id="ebayWatchPanel">
+            <div class="ebw-hd">
+              <span class="ebw-title">eBay listings</span>
+              <span class="ebw-sub" id="ebwSub">paste a link to price it against the ladder</span>
+              <button type="button" class="ebw-refresh" id="ebwRefresh" title="Re-check every saved listing now">↻</button>
+            </div>
+            <div class="ebw-add">
+              <input id="ebwInput" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                     placeholder="Paste an eBay listing link">
+              <button type="button" class="ebw-btn ebw-btn-go" id="ebwCheck">Check</button>
+            </div>
+            <div class="ebw-log" id="ebwLog"></div>
+            <div class="ebw-result" id="ebwResult" style="display:none"></div>
+            <div class="ebw-list" id="ebwList"></div>
+          </div>
           <div class="hold-override" id="holdOverride"></div>
           <div class="hold-cp-compare" id="holdCounterpartCompare" style="display:none"></div>
           <!-- AI Strategy Facts — Card-Facts style narrative -->
@@ -3287,7 +3303,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260725h"></script>
+  <script src="app.js?v=20260725k"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

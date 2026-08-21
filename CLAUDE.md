@@ -241,6 +241,17 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
     applied heuristic caching on top and kept serving a stale body for hours
     after a fix. Anything cached on purpose belongs in KV, not in a second
     invisible cache in front of it.
+- `GET /ebay-item?url=` → one listing via the Browse API, priced or auction.
+  `searchEbay` asks only for `FIXED_PRICE`, so auctions are invisible to the
+  marketplace scan; this is the only path that sees them. eBay item URLs carry
+  the **legacy** id, so the lookup is `get_item_by_legacy_id`, not the RESTful
+  item id. Two traps, both hit in testing:
+  - A listing with variations returns errorId **11006** and no price. Pass
+    `legacy_variation_id` when the URL has `?var=`, and fall back to
+    `get_items_by_item_group` otherwise — that path prices the cheapest variation
+    and says so in `variation_note` (one real listing had 147).
+  - On an auction the headline `price` **is** the current bid; on a BIN it is the
+    ask. Reading one as the other puts the bid ceiling out by the whole spread.
 - `GET /sync?key=` → returns stored snapshot JSON or `{data:null,ts:0}`.
 - `PUT /sync?key=` → stores raw body (must be valid JSON, ≤ 5 MB).
 - `DELETE /sync?key=` → deletes stored snapshot.
@@ -448,6 +459,27 @@ Charizard X ex", "Charizard ex" and "Dark Charizard" onto `charizard` via the
 tier table. Keyed on the raw extracted name they were three separate species and
 Charizard measured 0.11 pressure while being the most reprinted character in the
 game.
+
+## A pasted listing is not necessarily the card on screen
+
+`ebayIdentityCheck()` runs before anything is priced, and it exists because the
+first end-to-end test produced three confident false positives out of four real
+listings:
+
+- **"Dark Dragonite 5/82 Pokemon Extended Artwork"** — a custom proxy, not a
+  card. Priced raw at £23 against a £153 ceiling: "strong buy".
+- **"Dark Dragonite … 22/82 … PSA 1"** and **"DARK DRAGONITE #22"** — Team Rocket
+  printed Dark Dragonite twice, **5/82 holo** and **22/82 non-holo**. The
+  non-holos were priced against the holo's ladder.
+
+So: reject proxy wording (`EBAY_PROXY_WORDS`), and reject any title whose card
+number does not match `card.cn`. The number is the reliable discriminator — a
+set printing the same Pokemon twice is common and the prints are not worth the
+same. A mismatch renders as a red "Not this card" block, never a verdict.
+
+Max bid is not the max buy. The ceiling is all-in; a bid has postage and the
+buyer fee stacked on top of it, so the bid ceiling is the all-in ceiling with
+those taken back off.
 
 ## Common pitfalls (do not repeat)
 

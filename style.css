@@ -18891,3 +18891,76 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
 .pb-steady  { color: #34d399; }
 .pb-falling { color: #f59e0b; }
 @media (pointer: coarse), (max-width: 768px) { .pb-row { min-height: 56px; } }
+
+/* ── eBay listing watch ─────────────────────────────────────────────────
+   The marketplace scan searches; this prices a listing you already chose.
+   The max-bid line is the load-bearing part on an auction, so it is the one
+   thing here that reads like a number to act on. */
+.ebw { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin: 12px 0; }
+.ebw-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ebw-title { font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.ebw-sub { font-size: 11px; color: var(--text-muted); flex: 1; }
+.ebw-refresh {
+  border: 1px solid var(--border); background: var(--bg-raised); color: var(--text-muted);
+  border-radius: 8px; width: 30px; height: 30px; cursor: pointer; font-size: 14px;
+}
+.ebw-spin { animation: ebw-rot .8s linear infinite; }
+@keyframes ebw-rot { to { transform: rotate(360deg); } }
+.ebw-add { display: flex; gap: 6px; }
+.ebw-add input {
+  flex: 1; min-width: 0; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+}
+.ebw-btn {
+  border: 1px solid var(--border); background: var(--bg-raised); color: var(--text);
+  border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 700;
+  cursor: pointer; text-decoration: none; display: inline-flex; align-items: center;
+}
+.ebw-btn-go { border-color: var(--accent); color: var(--accent); background: rgba(232,182,52,.12); }
+.ebw-btn-ghost { color: var(--text-muted); }
+.ebw-log { font-size: 11px; margin-top: 6px; min-height: 14px; }
+.ebw-log-ok { color: #34d399; } .ebw-log-err { color: #f87171; } .ebw-log-warn { color: #f59e0b; }
+.ebw-result { margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.ebw-result-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.ebw-result-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+.ebw-verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+.ebw-v-tag { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  border-radius: 5px; padding: 2px 6px; }
+.ebw-v-strong .ebw-v-tag { color: #34d399; background: rgba(52,211,153,.16); }
+.ebw-v-good   .ebw-v-tag { color: #86efac; background: rgba(134,239,172,.14); }
+.ebw-v-fair   .ebw-v-tag { color: #f59e0b; background: rgba(245,158,11,.14); }
+.ebw-v-over   .ebw-v-tag { color: #f87171; background: rgba(248,113,113,.14); }
+.ebw-v-delta, .ebw-v-grade, .ebw-v-auction, .ebw-v-bin {
+  font-size: 10px; font-family: var(--mono); color: var(--text-muted);
+}
+.ebw-v-auction { color: #f59e0b; }
+.ebw-maths { font-size: 10.5px; font-family: var(--mono); color: var(--text-muted); line-height: 1.5; }
+.ebw-maxbid {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin-top: 6px; padding: 6px 8px; border-radius: 7px;
+  border: 1px dashed var(--accent); background: rgba(232,182,52,.08);
+}
+.ebw-maxbid-lbl { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
+.ebw-maxbid-val { font-size: 16px; font-weight: 800; font-family: var(--mono); color: var(--accent); }
+.ebw-maxbid-note { font-size: 10px; color: var(--text-muted); }
+.ebw-note { font-size: 10.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.45; }
+
+.ebw-list { margin-top: 8px; }
+.ebw-row { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+.ebw-row:first-child { border-top: none; }
+.ebw-soon { background: rgba(245,158,11,.06); }
+.ebw-ended { opacity: .5; }
+.ebw-img { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--bg-raised); }
+.ebw-main { flex: 1; min-width: 0; }
+.ebw-name { font-size: 12px; font-weight: 700; color: var(--text); text-decoration: none; display: block; }
+.ebw-name:hover { text-decoration: underline; }
+.ebw-meta { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+.ebw-del { border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 0 4px; align-self: flex-start; }
+@media (pointer: coarse), (max-width: 768px) {
+  .ebw-btn, .ebw-add input, .ebw-refresh, .ebw-del { min-height: 44px; }
+}
+.ebw-mismatch {
+  color: #f87171; border: 1px solid rgba(248,113,113,.4);
+  background: rgba(248,113,113,.08); border-radius: 7px; padding: 6px 8px;
+}
