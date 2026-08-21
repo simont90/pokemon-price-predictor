@@ -41,6 +41,16 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1:3000',
 ];
 
+// Any port on the dev machine, not just 3000. The static server has no reason
+// to own a fixed port, but the allowlist made it own one: on any other port
+// every call from localhost failed CORS — sync, Collectr, the marketplace scan
+// — which looks like the worker being down rather than an origin mismatch.
+// Production stays an exact match; this only widens loopback.
+const _LOCAL_ORIGIN_RE = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+function _originAllowed(origin) {
+  return ALLOWED_ORIGINS.includes(origin) || _LOCAL_ORIGIN_RE.test(origin);
+}
+
 const EBAY_TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
 const EBAY_BROWSE_URL = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
 const CARDMARKET_SEARCH = 'https://www.cardmarket.com/en/Pokemon/Products/Search';
@@ -48,7 +58,7 @@ const CARDMARKET_SEARCH = 'https://www.cardmarket.com/en/Pokemon/Products/Search
 // ---- CORS helper ----
 function corsHeaders(request) {
   const origin = request.headers.get('Origin') || '';
-  const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allow = _originAllowed(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
     'Access-Control-Allow-Origin': allow,
     'Access-Control-Allow-Methods': 'GET, PUT, DELETE, POST, OPTIONS',
