@@ -14740,6 +14740,10 @@ const EBAY_WATCH_KEY = 'pkm-ebay-watch-v1';   // synced: these are decisions, no
 const EBAY_WATCH_TTL_MS = 5 * 60 * 1000;      // re-price on open, not on every paint
 const EBAY_AUCTION_SOON_MS = 60 * 60 * 1000;  // "ending soon" — refresh harder
 
+// Set by renderHoldStrategy: the strategies actually on screen, for the print
+// actually selected, with buyAllInGBP already computed.
+let _renderedStrategies = null;
+
 let _ebayWatch = [];
 try { _ebayWatch = JSON.parse(localStorage.getItem(EBAY_WATCH_KEY) || '[]'); } catch { _ebayWatch = []; }
 function _ebayWatchSave() {
@@ -14812,18 +14816,32 @@ function _ebayToGbp(amount, currency) {
 // panel and the tile can never quote different numbers.
 function ebayMaxBuyFor(card, gradeKey) {
   if (!card) return null;
+  const key = gradeKey === 'raw' ? 'raw' : gradeKey;
+  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 0.79;
+
+  // Prefer what the tiles are showing, so the panel quotes the same ceiling the
+  // row above it does — including the selected print.
+  if (_renderedStrategies && _renderedStrategies.cardId === card.i) {
+    const s = _renderedStrategies.strategies.find(
+      x => x.key === key && !x.na && !x.estimated && x.buyAllInGBP > 0);
+    if (s) {
+      return { todayGBP: s.today * fx, maxBuyGBP: s.buyAllInGBP, roi: s.roi, key,
+               print: _renderedStrategies.variant };
+    }
+  }
+
+  // Nothing rendered yet. The core path only knows Unlimited, so say so rather
+  // than presenting an Unlimited ceiling as if it were the print in view.
   let hc = null;
   try { hc = _getHoldCoreCached(card); } catch { return null; }
   if (!hc || !hc.ok || !hc.strategies) return null;
-  const key = gradeKey === 'raw' ? 'raw' : gradeKey;
   const s = hc.strategies.find(x => x.key === key && !x.na && !x.estimated && x.today > 0);
   if (!s) return null;
-  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 0.79;
   const todayGBP = s.today * fx;
   const ship = key === 'raw' ? UK_RAW_SHIPPING_GBP : estimateUkSlabShipping(todayGBP);
   const maxBuyGBP = (typeof ebayCheckoutMax === 'function')
     ? ebayCheckoutMax(todayGBP, ship) : todayGBP + ship;
-  return { todayGBP, maxBuyGBP, roi: s.roi, key };
+  return { todayGBP, maxBuyGBP, roi: s.roi, key, print: 'unlimited', fallback: true };
 }
 
 // Price a listing against that ceiling.
@@ -14868,6 +14886,7 @@ function ebayDealVerdict(card, listing) {
   return {
     gradeKey, askGbp, shipGbp: shipGbp || 0, feeGbp, allInGbp,
     maxBuyGBP: mb.maxBuyGBP, todayGBP: mb.todayGBP, roi: mb.roi,
+    print: mb.print, priceFallback: !!mb.fallback,
     deltaPct, verdict, maxBidGbp, unpriceable: false,
   };
 }
@@ -14932,7 +14951,8 @@ function _ebwVerdictHtml(v, listing) {
       ${v.shipGbp > 0 ? ` + postage ${fmtGBPDirect(v.shipGbp)}` : ' + free postage'}
       + buyer fee ${fmtGBPDirect(v.feeGbp)}
       = <strong>${fmtGBPDirect(v.allInGbp)}</strong> all-in
-      · ceiling ${fmtGBPDirect(v.maxBuyGBP)}
+      · ceiling ${fmtGBPDirect(v.maxBuyGBP)}${
+        v.print && v.print !== 'unlimited' ? ` (${v.print === '1sted' ? '1st Edition' : 'Shadowless'})` : ''}
     </div>
     ${bid}
     ${listing.variation_note ? `<div class="ebw-note">${esc(listing.variation_note)}</div>` : ''}`;
@@ -18938,6 +18958,18 @@ function renderHoldStrategy(card) {
     s.profit = (netSaleGBP - buyGBP) / fx;              // display converts back
     s.roi    = buyGBP > 0 ? ((netSaleGBP - buyGBP) / buyGBP) * 100 : 0;
   });
+
+  // The tiles' own numbers, kept for anything that has to agree with them.
+  // computeHoldCore is print-blind — it always prices Unlimited — so rebuilding
+  // a ceiling from it quoted £365 against a 1st Edition tile reading £543 on
+  // the same screen. Reading the rendered figures is the only way the two
+  // cannot drift; recomputing "with the same helper" was not enough.
+  _renderedStrategies = {
+    cardId: card.i,
+    variant: (typeof _activePrintVariant !== 'undefined') ? _activePrintVariant : 'unlimited',
+    strategies,
+  };
+  try { renderEbayWatch(); } catch {}
 
   // When an acquisition cost is recorded but no manual override is set, surface
   // the live/current market price as "Market now" on the raw tile so the user

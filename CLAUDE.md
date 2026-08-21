@@ -477,6 +477,14 @@ number does not match `card.cn`. The number is the reliable discriminator — a
 set printing the same Pokemon twice is common and the prints are not worth the
 same. A mismatch renders as a red "Not this card" block, never a verdict.
 
+**The ceiling must come from the rendered tiles, not be recomputed.**
+`computeHoldCore` is print-blind — it always prices Unlimited — so rebuilding a
+ceiling "with the same helper" quoted £365 against a 1st Edition PSA 8 tile
+reading £543 on the same screen, turning a listing 29% over into one 92% over.
+`ebayMaxBuyFor` reads `_renderedStrategies`, which `renderHoldStrategy` sets
+with `buyAllInGBP` already computed for the selected print. Using the same
+formula is not the same as using the same number.
+
 Max bid is not the max buy. The ceiling is all-in; a bid has postage and the
 buyer fee stacked on top of it, so the bid ceiling is the all-in ceiling with
 those taken back off.
