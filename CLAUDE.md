@@ -216,9 +216,20 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
   - Collectr splits Base Set into two groups — "Base Set (Unlimited)" (604) and
     "Base Set (1st Edition & Shadowless)" (1663) — so the selected print picks
     the group.
-  - **Collectr is the primary price source; PriceCharting is the backup.** It
-    leads on the raw price (the Live Market Price headline and
-    `getCurrentPrice`) and on every PSA grade it carries. Order per grade is:
+  - **Collectr leads on graded; PriceCharting leads on raw.** The split is
+    deliberate. Collectr's ungraded figure is not the number Collectr's own page
+    shows: on Cosmic Eclipse Pikachu 241 the API returns $216.55 while the site
+    displays £107.45. Every PSA grade matched exactly through the same
+    conversion, so it is that one field rather than currency or staleness, and
+    the API series climbs about a percent a day — the shape of an average, not
+    of sales. Collectr still fills in raw when nothing else has a price.
+    Do not restore Collectr as the raw lead on the Fossil Gengar argument
+    ($211 against a blended $353): the direction is not consistent, and there it
+    was the low reading while here it is the high one.
+  - Collectr's raw price must never be applied after the user's own raw
+    override. It was, in `renderHoldStrategy`, so a hand-corrected raw price was
+    silently replaced.
+  - Collectr still leads on every PSA grade it carries. Order per grade is:
     your own override, then Collectr, then PriceCharting, then the ratio
     estimate. Tiles priced from Collectr are marked "via Collectr".
   - Placeholder prices are stripped in the worker before the client sees them:

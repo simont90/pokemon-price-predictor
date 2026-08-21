@@ -888,14 +888,21 @@ function getCharacterMultiplier(cardName, card) {
 
 // ---- Get Current Price (live or fallback to static) ----
 function getCurrentPrice(card) {
-  // Collectr first when it has an ungraded price for the print in view. It
-  // takes its figures from PSA sales directly, which tracks the market closer
-  // than the blend of PriceCharting and TCGPlayer sitting below — on Fossil
-  // Gengar that is $211 against a blended $353. Only the raw price is taken
-  // this way; graded figures are resolved separately.
-  const _crRaw = (typeof collectrRawUSD === 'function')
-    ? collectrRawUSD(card, (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited') : 0;
-  if (_crRaw > 0) return _crRaw;
+  // Collectr leads on graded and PriceCharting leads on raw, and the split is
+  // deliberate. Collectr's ungraded figure is not the number Collectr's own
+  // page shows: on Cosmic Eclipse Pikachu 241 the API returns $216.55 while the
+  // site displays £107.45, and our static price independently says £107.76.
+  // Every PSA grade matched exactly through the same conversion, so it is that
+  // one field, not currency or staleness. The API series also climbs smoothly
+  // about a percent a day, which is the shape of an average rather than of
+  // sales.
+  //
+  // It was the other way round because of Fossil Gengar, where Collectr read
+  // $211 against a blended $353 and looked closer to the market. The direction
+  // is not consistent — there it was the low one, here it is the high one — so
+  // the tie-break goes to the source whose displayed number can be checked.
+  // Collectr still fills in below, which is better than nothing on a card
+  // PriceCharting has never seen.
 
   // If we have live price data for the selected card, use it
   if (livePrice && selectedCard && card.i === selectedCard.i) {
@@ -914,6 +921,11 @@ function getCurrentPrice(card) {
     if (cached.market > 0) return cached.market;
     if (cached.mid > 0) return cached.mid;
   }
+  // Collectr's ungraded price, kept as a fallback rather than the lead.
+  const _crRaw = (typeof collectrRawUSD === 'function')
+    ? collectrRawUSD(card, (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited') : 0;
+  if (_crRaw > 0) return _crRaw;
+
   // Fallback to static
   return card.p;
 }
@@ -18581,8 +18593,10 @@ function renderHoldStrategy(card) {
   // preference holds for Unlimited as well, where that block never runs.
   {
     const _crPrint = _holdVariantEligible ? _holdStratVariant : 'unlimited';
-    const _crRaw = (typeof collectrRawUSD === 'function') ? collectrRawUSD(card, _crPrint) : 0;
-    if (_crRaw > 0) rawUSD = _crRaw;
+    // Raw is no longer taken from Collectr here. rawUSD has already been
+    // resolved by getCurrentPrice, then refined by this print's PriceCharting
+    // figure, then by the user's own override — and this line ran after all
+    // three, so a hand-corrected raw price was being silently replaced.
     const _crP10 = _collectrGradeUSD(card, 10, _crPrint);
     if (_crP10 > 0) psa10Price = _crP10;
   }
