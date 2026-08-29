@@ -18108,7 +18108,39 @@ function _pickBestLTP(candidates, allStrategies) {
 // so: the cheapest route that is not a gamble and is not actively losing money,
 // preferring the better projection when two cost the same. A graded copy that
 // undercuts raw wins on both counts — cheaper and no condition risk.
-function _pickCollectorEntry(strategies, maxBudgetGBP, fx) {
+// Do we actually know how this card grades?
+//
+// computeHoldCore falls back to DEFAULT_GEM_RATE when a card carries no gem
+// figure, so the grading EV is built on an assumed 18% for cards nobody has
+// measured. That assumption is invisible on the tile — the gem-rate box shows a
+// dash — and it is what makes "buy raw and grade" look attractive on exactly
+// the cards we know least about.
+function gemRateIsMeasured(card, variant) {
+  if (!card) return false;
+  try {
+    if (typeof card.g === 'number' && card.g > 0) return true;
+    if (!card.i) return false;
+    // Gem overrides and pop reports are keyed per print, so checking only the
+    // print in view missed a figure entered against another one — a rate typed
+    // on 1st Edition read as "assumed" back on Unlimited.
+    const prints = new Set([variant || 'unlimited', 'unlimited']);
+    try {
+      if (typeof popVariantsFor === 'function') {
+        for (const p of popVariantsFor(card)) prints.add(p.key);
+      }
+    } catch {}
+    for (const p of prints) {
+      if (typeof getGemOverride === 'function' && getGemOverride(card.i, p) > 0) return true;
+      if (typeof _popDataCache !== 'undefined' && typeof popIdFor === 'function') {
+        const pop = _popDataCache.get(popIdFor(card.i, p));
+        if (pop && pop.pop && Object.keys(pop.pop).length) return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+function _pickCollectorEntry(strategies, maxBudgetGBP, fx, opts) {
   const capped = maxBudgetGBP < BUDGET_DEFAULT;
   const affordable = s => !capped || (s.today * fx) <= maxBudgetGBP;
 
@@ -18123,8 +18155,19 @@ function _pickCollectorEntry(strategies, maxBudgetGBP, fx) {
   // _gradingBeatsBuying already cleared it against the grade you would most
   // likely come out with, so the remaining question is simply whether it
   // undercuts the rung by enough to be worth the wait and the risk.
+  //
+  // This used to take the gamble on price alone. The break-even test lived in
+  // _slabOnlyCandidates, which only runs on vintage sets, so on everything else
+  // grading could win the badge with no confidence check whatsoever — Ancient
+  // Mew took it on an assumed gem rate with the gem box reading a dash. Two
+  // conditions now, and both have to hold on every card: we know how the card
+  // grades, and the odds of reaching break-even clear the bar.
   const gamble = (strategies || []).find(s => s.key === 'gamble');
-  if (gamble && affordable(gamble) && gamble.roi >= 0 &&
+  const _card = opts && opts.card;
+  const _measured = _card ? gemRateIsMeasured(_card, opts && opts.variant) : false;
+  const _oddsOk = (opts && opts.gradeOutcomes)
+    ? _gradingBeatsBuying(strategies, opts.gradeOutcomes) : false;
+  if (gamble && _measured && _oddsOk && affordable(gamble) && gamble.roi >= 0 &&
       (!rung || gamble.today < rung.today * 0.9)) return gamble;
 
   if (rung) return rung;
@@ -19141,7 +19184,8 @@ function renderHoldStrategy(card) {
     _ltpBudget < BUDGET_DEFAULT && (bestLongTermPick.today * fx) > _ltpBudget;
   const collectorPick = (bestLongTermPick && !bestPickOverBudget)
     ? null
-    : _pickCollectorEntry(_slabOnlyCandidates(strategies, card, strategies, gradeOutcomes), _ltpBudget, fx);
+    : _pickCollectorEntry(_slabOnlyCandidates(strategies, card, strategies, gradeOutcomes), _ltpBudget, fx,
+                          { card, gradeOutcomes, variant: (_holdVariantEligible ? _holdStratVariant : 'unlimited') });
 
   const winner = overallWinner; // used for recommendation copy below
   // Store winner key so updateSignal can stay in sync regardless of call order.
@@ -19566,8 +19610,10 @@ function renderHoldStrategy(card) {
       if (_be) {
         const _p = (gradeOutcomes || []).filter(o => o.grade >= _be.grade)
           .reduce((a, o) => a + (o.prob || 0), 0);
-        const _cls = _p >= GRADING_CONFIDENCE_MIN ? 'hold-be-ok' : 'hold-be-risk';
-        breakEvenStr = `<span class="hold-row-breakeven ${_cls}" title="Submitting costs ${fmtGBPDirect(_be.cost * fx)} all-in. A PSA ${_be.grade} slab sells for ${fmtGBPDirect(_be.slab.today * fx)}, so anything below PSA ${_be.grade} comes back worth less than you paid. Modelled odds of PSA ${_be.grade} or better: ${(_p * 100).toFixed(0)}%.">Break-even PSA ${_be.grade} · ${(_p * 100).toFixed(0)}% odds</span>`;
+        const _meas = (typeof gemRateIsMeasured === 'function')
+          && gemRateIsMeasured(card, _holdVariantEligible ? _holdStratVariant : 'unlimited');
+        const _cls = (_p >= GRADING_CONFIDENCE_MIN && _meas) ? 'hold-be-ok' : 'hold-be-risk';
+        breakEvenStr = `<span class="hold-row-breakeven ${_cls}" title="Submitting costs ${fmtGBPDirect(_be.cost * fx)} all-in. A PSA ${_be.grade} slab sells for ${fmtGBPDirect(_be.slab.today * fx)}, so anything below PSA ${_be.grade} comes back worth less than you paid. Modelled odds of PSA ${_be.grade} or better: ${(_p * 100).toFixed(0)}%.${_meas ? '' : ' Nobody has measured how this card grades, so that figure rests on a house-average gem rate rather than on this card — which is why grading is not recommended here.'}">Break-even PSA ${_be.grade} · ${(_p * 100).toFixed(0)}% odds${_meas ? '' : ' · gem rate assumed'}</span>`;
       }
     }
 

@@ -644,6 +644,18 @@ the submission cost — below it you paid more than the card you ended up with.
 `_gradingBeatsBuying()` then requires **90%+ odds of reaching that grade**, plus
 a 10% margin against simply buying it.
 
+**The gate has to apply to every card, and it needs a gem rate that was
+actually measured.** `_gradingBeatsBuying` originally ran only inside
+`_slabOnlyCandidates`, which fires on vintage sets alone, so on everything else
+`_pickCollectorEntry` took the grading route on price alone with no confidence
+check at all. `computeHoldCore` also falls back to `DEFAULT_GEM_RATE` (18%) for
+cards carrying no gem figure, so the EV rested on an assumption the tile did not
+show — the gem box reads a dash while the recommendation reads confident.
+`gemRateIsMeasured()` now gates it, and the chip says "gem rate assumed" when it
+is not. Check every print: overrides and pop are keyed by `popIdFor`, so a rate
+typed on 1st Edition reads as assumed back on Unlimited unless all prints are
+searched.
+
 Test the break-even grade, not the median. The median only says you are more
 likely to win than lose, which is the wrong bar for a badge that means "this is
 the sensible way to own it": on 1st Ed Dark Dragonite it passed a route needing
