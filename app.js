@@ -904,8 +904,18 @@ function getCurrentPrice(card) {
   // Collectr still fills in below, which is better than nothing on a card
   // PriceCharting has never seen.
 
+  // Marked as not on PriceCharting: the linked Collectr price is the only one
+  // that describes this card, so it answers first and the PC fields below are
+  // skipped entirely rather than left to fill in.
+  const _pcNA = (typeof pcIsUnavailable === 'function') && card.i && pcIsUnavailable(card.i);
+  if (_pcNA) {
+    const _crOnly = (typeof collectrRawUSD === 'function')
+      ? collectrRawUSD(card, (typeof _marketPCVariant !== 'undefined' && _marketPCVariant) || 'unlimited') : 0;
+    if (_crOnly > 0) return _crOnly;
+  }
+
   // If we have live price data for the selected card, use it
-  if (livePrice && selectedCard && card.i === selectedCard.i) {
+  if (livePrice && selectedCard && card.i === selectedCard.i && !_pcNA) {
     // Midpoint when both PC and TCGPlayer have prices (computed inline so stale cache still benefits)
     if (livePrice.pcUngraded > 0 && livePrice.tcgMarket > 0) return (livePrice.pcUngraded + livePrice.tcgMarket) / 2;
     if (livePrice.pcUngraded > 0) return livePrice.pcUngraded;
@@ -915,7 +925,7 @@ function getCurrentPrice(card) {
   }
   // Check cache — mirror live priority: midpoint when both PC and TCG available
   const cached = getCachedPrice(card.i);
-  if (cached) {
+  if (cached && !_pcNA) {
     if (cached.pcUngraded > 0 && cached.tcgMarket > 0) return cached.market > 0 ? cached.market : (cached.pcUngraded + cached.tcgMarket) / 2;
     if (cached.pcUngraded > 0) return cached.pcUngraded;
     if (cached.market > 0) return cached.market;
@@ -2483,6 +2493,15 @@ function getPCOverride(cardId) {
   return all[cardId] || null;
 }
 
+// You have told us this card is not on PriceCharting. Until now that only
+// stopped the next lookup — the prices already cached kept rendering and kept
+// driving the model, which is why marking it appeared to do nothing. Nothing
+// PriceCharting-derived may be shown or used for a card once this is set.
+function pcIsUnavailable(cardId) {
+  const o = getPCOverride(cardId);
+  return !!(o && o.notAvailable);
+}
+
 // Build the cleanest possible query for PriceCharting.
 // Includes set name first (most discriminating), then card name, then number, then JP flag.
 function buildPCQuery(card) {
@@ -3244,7 +3263,25 @@ function _pcVariantLabel(pcName) {
 
 // Update just the PC price cells (ungraded/psa10/psa9/ace10/ace9/roi/matchName)
 // Used by renderLivePrice and switchMarketPCVariant so they stay in sync.
+// Clear the PriceCharting row. Needed on its own because the row is only
+// painted when there is data to paint: mark a card as not on PriceCharting and
+// the lookup is skipped, so nothing repaints and the previous card's match sits
+// there looking current — which is what "it won't update" was.
+function _blankPCCells(msg) {
+  ['pcUngraded','pcPsa10','pcGrade9','pcAce10','pcAce9','pcGradingRoi'].forEach(id => {
+    const el = $(id);
+    if (el) { el.textContent = '\u2014'; el.className = el.className.replace(/roi-\w+/g, '').trim(); }
+  });
+  const m = $('pcMatchName');
+  if (m) { m.textContent = msg || ''; m.style.display = msg ? '' : 'none'; }
+}
+
 function _applyPCCells(pcData, overrideMatchName) {
+  if (selectedCard && selectedCard.i && typeof pcIsUnavailable === 'function'
+      && pcIsUnavailable(selectedCard.i)) {
+    _blankPCCells('Not on PriceCharting \u2014 using Collectr');
+    return;
+  }
   const fv = (usd) => usd > 0 ? fmtGBP(usd) : '—';
   $('pcUngraded').textContent  = fv(pcData.pcUngraded);
   $('pcPsa10').textContent     = fv(pcData.pcPsa10);
@@ -3794,6 +3831,11 @@ function recalcWithLivePrice(card) {
   // Auctions move between visits, so saved listings for this card are
   // re-priced on open rather than waiting for a manual refresh.
   try { renderEbayWatch(); ebayWatchRefresh(card.i); } catch {}
+  try {
+    if (card.i && typeof pcIsUnavailable === 'function' && pcIsUnavailable(card.i)) {
+      _blankPCCells('Not on PriceCharting \u2014 using Collectr');
+    }
+  } catch {}
   if (typeof renderCardGrader === 'function') renderCardGrader();
   // Re-render ACE section so PC grade prices populate now that livePrice is set
   if (typeof renderAceGradingSection === 'function') renderAceGradingSection();
@@ -3871,6 +3913,11 @@ function selectCard(id) {
   // Auctions move between visits, so saved listings for this card are
   // re-priced on open rather than waiting for a manual refresh.
   try { renderEbayWatch(); ebayWatchRefresh(card.i); } catch {}
+  try {
+    if (card.i && typeof pcIsUnavailable === 'function' && pcIsUnavailable(card.i)) {
+      _blankPCCells('Not on PriceCharting \u2014 using Collectr');
+    }
+  } catch {}
   if (typeof renderCardGrader === 'function') renderCardGrader();
   if (typeof renderPsaLinkRow === 'function') renderPsaLinkRow();
 
@@ -10757,6 +10804,15 @@ function markPCNotAvailable() {
   try {
     const cache = getPriceCache();
     delete cache[cardId];
+  } catch {}
+  // The in-memory blob outlives the cache entry, so clearing one without the
+  // other left the old match on screen.
+  try {
+    if (selectedCard && selectedCard.i === cardId) {
+      if (typeof livePrice !== 'undefined' && livePrice) livePrice = null;
+      if (typeof _lastLiveData !== 'undefined') _lastLiveData = null;
+      if (typeof _livePriceVariant !== 'undefined') _livePriceVariant = null;
+    }
   } catch {}
   closePCOverride();
   if (selectedCard && selectedCard.i === cardId) fetchLivePrice(selectedCard);
@@ -21718,7 +21774,7 @@ function getPsa10Anchor(card, opts) {
   // Live PriceCharting PSA 10 for the currently-selected card
   if (typeof livePrice !== 'undefined' && livePrice
       && selectedCard && card.i === selectedCard.i
-      && livePrice.pcPsa10 > 0) {
+      && livePrice.pcPsa10 > 0 && !(card.i && typeof pcIsUnavailable === 'function' && pcIsUnavailable(card.i))) {
     return { usd: livePrice.pcPsa10, source: 'live' };
   }
   // Live cache for non-selected card

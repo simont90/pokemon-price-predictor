@@ -226,6 +226,15 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
     Do not restore Collectr as the raw lead on the Fossil Gengar argument
     ($211 against a blended $353): the direction is not consistent, and there it
     was the low reading while here it is the high one.
+  - **"Not on PriceCharting" has to hold everywhere, not just at the lookup.**
+    `pcIsUnavailable()` is the single question; `getCurrentPrice`,
+    `getPsa10Anchor` and the PC row all ask it. Setting the flag only blocked
+    the next fetch, so the prices already cached kept rendering and kept driving
+    the model — on JP Ancient Mew that was a "Mewtwo & Mew GX #98" match at £516
+    against the linked Collectr price of £272. The row also needs blanking from
+    the card-open path, because it is only painted when there is data to paint:
+    skip the lookup and nothing repaints, leaving the previous card's match on
+    screen.
   - Collectr's raw price must never be applied after the user's own raw
     override. It was, in `renderHoldStrategy`, so a hand-corrected raw price was
     silently replaced.
