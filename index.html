@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260725v">
+  <link rel="stylesheet" href="style.css?v=20260725x">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -2733,6 +2733,7 @@
               <option value="species">A Pokémon</option>
               <option value="set">A set</option>
               <option value="era">An era</option>
+              <option value="connected">Connected art</option>
             </select>
             <input id="bpThemeValue" class="bp-input" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Gengar">
             <datalist id="bpThemeList"></datalist>
@@ -2755,6 +2756,7 @@
       </div>
 
       <div class="bp-log" id="bpLog"></div>
+      <div class="bp-connected" id="bpConnected" style="display:none"></div>
 
       <div class="bp-result" id="bpResult" style="display:none">
         <div class="bp-result-head">
@@ -3260,7 +3262,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260725v"></script>
+  <script src="app.js?v=20260725x"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

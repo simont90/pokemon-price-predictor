@@ -8866,6 +8866,14 @@ const BP_THEMES = {
     test: (c, t) => c.sc === t.key,
     allowRepeatSpecies: false,
   },
+  connected: {
+    label: 'Connected art',
+    placeholder: 'e.g. 151, Paldean Fates',
+    suggest: () => Object.values(setsData || {}).map(s => s.name).filter(Boolean).sort(),
+    resolve: v => BP_THEMES.set.resolve(v),
+    test: (c, t) => c.sc === t.key,
+    allowRepeatSpecies: false,
+  },
   era: {
     label: 'An era',
     placeholder: 'e.g. WOTC',
@@ -8938,19 +8946,40 @@ function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0 }) {
   // Pool: everything in the theme with a usable price.
   let pool = cardData.cards.filter(c => c.i && BP_ART_TIERS.has(cardRarityCode(c)) && theme.test(c, t) && priceGBP(c) > 0);
   if (!pool.length) return { error: `No Illustration Rares or Special Illustration Rares for ${t.label} in the catalogue.` };
-  pool = pool.map(c => ({ card: c, score: _bpScore(c, ctx), owned: owned.has(c.i), wished: wish.has(c.i),
-                          gbp: priceGBP(c), style: _bpStyle(c) }))
-             .sort((a, b) => b.score - a.score);
+
+  // Owning the Japanese print counts. The theme may be an English set, but a
+  // page is about the picture and the picture is the same card — so a slot
+  // the JP copy fills is not a gap, and the JP copy is what goes in it.
+  const ownedPrintOf = (c) => {
+    if (owned.has(c.i)) return c;
+    try {
+      const cp = findCounterparts(c);
+      const all = [cp?.primary, ...(cp?.counterparts || [])].filter(Boolean);
+      const hit = all.find(x => x && x.i && owned.has(x.i));
+      if (hit) return hit;
+    } catch {}
+    return null;
+  };
+  pool = pool.map(c => {
+    const ownedCopy = ownedPrintOf(c);
+    const shown = ownedCopy || c;
+    const isOwned = !!ownedCopy;
+    // Score against the theme card, so the JP copy inherits the EN card's
+    // standing rather than being scored as a stranger to the theme.
+    const score = _bpScore(c, { ...ctx, owned: isOwned ? new Set([c.i]) : ctx.owned });
+    return { card: shown, themeCard: c, score, owned: isOwned, wished: wish.has(c.i) || wish.has(shown.i),
+             gbp: priceGBP(shown), style: _bpStyle(c), viaJP: isOwned && shown.i !== c.i };
+  }).sort((a, b) => b.score - a.score);
 
   // One of each Pokémon unless the theme is that Pokémon.
   const chosen = [];
   const seenSpecies = new Set();
   const seenIds = new Set();
-  const take = (it) => { chosen.push(it); seenIds.add(it.card.i); seenSpecies.add(extractPokemonName(it.card.n)); };
+  const take = (it) => { chosen.push(it); seenIds.add(it.themeCard.i); seenIds.add(it.card.i); seenSpecies.add(extractPokemonName(it.themeCard.n)); };
   for (const it of pool) {
     if (chosen.length >= size) break;
-    if (seenIds.has(it.card.i)) continue;
-    const sp = extractPokemonName(it.card.n);
+    if (seenIds.has(it.themeCard.i) || seenIds.has(it.card.i)) continue;
+    const sp = extractPokemonName(it.themeCard.n);
     if (!theme.allowRepeatSpecies && sp && seenSpecies.has(sp)) continue;
     if (!it.owned && ctx.budget > 0 && it.gbp > ctx.budget) continue;
     take(it);
@@ -8986,12 +9015,134 @@ function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0 }) {
 
 // ---- Binder Pages: rendering + wiring -------------------------------------
 
+
+// ---- Connected art -----------------------------------------------------------
+//
+// Nothing in the catalogue says which illustrations continue into each other,
+// and no external source we use carries it either. What the data can do is
+// narrow the field: a panorama is always consecutive numbers in one set, drawn
+// as one piece, so consecutive IR/SIR runs are the candidates. The art is then
+// shown side by side and a person decides — the one part of this the data
+// cannot do. Confirmed runs are kept and used to lay out pages.
+const CONNECTED_ART_KEY = 'pkm-connected-art-v1';   // synced: confirmed runs
+let _connectedArt = [];
+try { _connectedArt = JSON.parse(localStorage.getItem(CONNECTED_ART_KEY) || '[]'); } catch { _connectedArt = []; }
+function _connectedSave() { try { localStorage.setItem(CONNECTED_ART_KEY, JSON.stringify(_connectedArt)); } catch {} }
+
+// Candidate runs in a set. Consecutive card numbers alone narrow nothing —
+// every set numbers its whole IR block in a row, so 151 came back as one
+// sixteen-card "run". A panorama is one evolution line drawn as one piece, and
+// the catalogue can see that: the cards are consecutive in the set *and*
+// consecutive in the Pokédex. On 151 that splits the block into
+// Bulbasaur→Ivysaur, Charmander→Charmeleon, Squirtle→Wartortle, which are the
+// pairs that actually connect. Lines that skip dex numbers (Pichu→Pikachu, the
+// Eeveelutions) are missed by this rule and need confirming by hand.
+function connectedArtCandidates(setCode) {
+  const art = cardData.cards
+    .filter(c => c.sc === setCode && BP_ART_TIERS.has(cardRarityCode(c)) && Number.isFinite(parseInt(c.cn, 10)))
+    .map(c => ({ card: c, n: parseInt(c.cn, 10), dex: (typeof dexNumOf === 'function' ? dexNumOf(c.n) : null) || 0 }))
+    .sort((a, b) => a.n - b.n);
+  const runs = [];
+  let cur = [];
+  const continues = (prev, it) =>
+    it.n === prev.n + 1 && prev.dex > 0 && it.dex > 0 && it.dex === prev.dex + 1;
+  for (const it of art) {
+    if (cur.length && continues(cur[cur.length - 1], it)) cur.push(it);
+    else { if (cur.length >= 2) runs.push(cur); cur = [it]; }
+  }
+  if (cur.length >= 2) runs.push(cur);
+  const confirmedIds = new Set(_connectedArt.flatMap(r => r.ids));
+  return runs
+    .map(r => ({
+      ids: r.map(x => x.card.i), cards: r.map(x => x.card),
+      set: setCode, len: r.length,
+      confirmed: r.every(x => confirmedIds.has(x.card.i)),
+    }))
+    .sort((a, b) => (b.confirmed - a.confirmed) || (b.len - a.len));
+}
+
+function _connectedIsConfirmed(ids) {
+  const key = ids.join('|');
+  return _connectedArt.some(r => r.ids.join('|') === key);
+}
+function connectedArtConfirm(ids, setCode, name) {
+  if (_connectedIsConfirmed(ids)) return;
+  _connectedArt.push({ id: `ca_${Date.now().toString(36)}`, set: setCode, ids: [...ids], name: name || '', savedAt: Date.now() });
+  _connectedSave();
+}
+function connectedArtForget(ids) {
+  const key = ids.join('|');
+  _connectedArt = _connectedArt.filter(r => r.ids.join('|') !== key);
+  _connectedSave();
+}
+
+// Lay a run onto the page in reading order, then fill what is left from the
+// set's other art cards through the normal builder so the page is complete.
+function buildConnectedPage({ setCode, run, size = 9, budgetGBP = 0 }) {
+  const setLabel = setsData?.[setCode]?.name || setCode;
+  const base = buildBinderPage({ kind: 'set', value: setLabel, size, budgetGBP });
+  if (base.error) return base;
+  const owned = _bpOwnedIds(), wish = _bpWishIds();
+  const fx = usdToGbp(1);
+  const mk = c => ({ card: c, owned: owned.has(c.i), wished: wish.has(c.i),
+                     gbp: (getCurrentPrice(c) || c.p || 0) * fx, style: _bpStyle(c), score: 0, connected: true });
+  const slots = new Array(size).fill(null);
+  // The run goes across a row. A 3-wide run sits on the middle row of a 3×3
+  // page; a 2-wide run starts at the middle row's left pocket.
+  const cols = base.cols;
+  const rowStart = cols * Math.floor((size / cols) / 2);   // middle row
+  run.slice(0, cols).forEach((c, i) => { slots[rowStart + i] = mk(c); });
+  const used = new Set(run.map(c => c.i));
+  const rest = base.slots.filter(x => x && !used.has(x.card.i));
+  for (let i = 0; i < size && rest.length; i++) if (!slots[i]) slots[i] = rest.shift();
+  const placed = slots.filter(Boolean);
+  const gaps = placed.filter(x => !x.owned);
+  return {
+    ...base, kind: 'connected', theme: { key: setCode, label: `${setLabel} · connected art` },
+    slots, ownedCount: placed.length - gaps.length, gapCount: gaps.length,
+    empty: size - placed.length,
+    gapCostGBP: gaps.reduce((a, x) => a + x.gbp, 0),
+    pageValueGBP: placed.reduce((a, x) => a + x.gbp, 0),
+  };
+}
+
+function renderConnectedCandidates(setCode) {
+  const host = document.getElementById('bpConnected');
+  if (!host) return;
+  const runs = connectedArtCandidates(setCode);
+  const setLabel = setsData?.[setCode]?.name || setCode;
+  if (!runs.length) {
+    host.innerHTML = `<div class="bp-log">No consecutive Illustration Rare runs in ${esc(setLabel)} — nothing here can connect.</div>`;
+    return;
+  }
+  host.innerHTML = `<div class="bp-gaps-hd">Runs in ${esc(setLabel)} that could connect — look at the art, then confirm the ones that do</div>` +
+    runs.map((r, idx) => `
+      <div class="bp-run${r.confirmed ? ' bp-run-confirmed' : ''}" data-run="${idx}">
+        <div class="bp-run-strip">
+          ${r.cards.map(c => { const img = _hiresUrl(getCardImg(c)); return `
+            <div class="bp-run-card" title="${esc(c.n)} #${esc(c.cn)}">
+              ${img ? `<img src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : ''}
+              <span class="bp-run-n">#${esc(c.cn)}</span>
+            </div>`; }).join('')}
+        </div>
+        <div class="bp-run-meta">
+          <span class="bp-run-names">${r.cards.map(c => esc(c.n)).join(' → ')}</span>
+          <span class="bp-run-badge">${r.confirmed ? 'Confirmed' : 'Candidate'}</span>
+          <button type="button" class="bp-btn" data-run-use="${idx}">Use on page</button>
+          ${r.confirmed
+            ? `<button type="button" class="bp-btn bp-btn-ghost" data-run-forget="${idx}">Unconfirm</button>`
+            : `<button type="button" class="bp-btn bp-btn-ghost" data-run-confirm="${idx}">Confirm it connects</button>`}
+        </div>
+      </div>`).join('');
+  host._runs = runs;
+}
+
 function _bpPocketHtml(it, n, cols) {
   if (!it) return `<div class="bp-pocket bp-pocket-empty"><span class="bp-pocket-n">${n}</span><span class="bp-pocket-empty-lbl">empty</span></div>`;
   const c = it.card;
   const img = _hiresUrl(getCardImg(c));
   const cls = it.owned ? 'bp-owned' : it.wished ? 'bp-wished' : 'bp-gap';
-  const tag = it.owned ? 'Owned' : it.wished ? 'Wishlist' : `Buy · ${fmtGBPDirect(it.gbp)}`;
+  const tag = it.owned ? (it.viaJP ? 'Owned · JP' : 'Owned') : it.wished ? 'Wishlist' : `Buy · ${fmtGBPDirect(it.gbp)}`;
   return `<div class="bp-pocket ${cls} bp-style-${it.style}" data-id="${esc(c.i)}" title="${esc(c.n)} · ${esc(c.s || '')}">
     ${img ? `<img class="bp-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="bp-img"></div>'}
     <span class="bp-pocket-n">${n}</span>
@@ -9106,8 +9257,17 @@ function setupBinderPages() {
   kindSel.addEventListener('change', () => { kindSel._bpFilled = false; _bpFillSuggestions(); });
   _bpFillSuggestions();
 
+  const conn = document.getElementById('bpConnected');
   const run = (seed) => {
     _bpSay('');
+    if (kindSel.value === 'connected') {
+      const t = BP_THEMES.set.resolve(input.value);
+      if (!t) { _bpSay(`Could not find a set called "${input.value}".`, 'err'); return; }
+      document.getElementById('bpResult').style.display = 'none';
+      if (conn) { conn.style.display = ''; renderConnectedCandidates(t.key); }
+      return;
+    }
+    if (conn) conn.style.display = 'none';
     const res = buildBinderPage({
       kind: kindSel.value, value: input.value,
       size: parseInt(sizeSel.value, 10) || 9,
@@ -9132,6 +9292,24 @@ function setupBinderPages() {
     _binderPagesSave();
     _bpSay('Saved. It will re-check what you own each time you open it.', 'ok');
     renderBinderSaved();
+  });
+
+  // Connected art: use a run, confirm it, or forget it.
+  conn?.addEventListener('click', e => {
+    const runs = conn._runs || [];
+    const use = e.target.closest('[data-run-use]');
+    const ok  = e.target.closest('[data-run-confirm]');
+    const no  = e.target.closest('[data-run-forget]');
+    const t = BP_THEMES.set.resolve(input.value);
+    if (!t) return;
+    if (ok)  { const r = runs[+ok.dataset.runConfirm]; if (r) { connectedArtConfirm(r.ids, t.key, r.cards.map(c => c.n).join(' → ')); renderConnectedCandidates(t.key); _bpSay('Confirmed — kept for future pages.', 'ok'); } return; }
+    if (no)  { const r = runs[+no.dataset.runForget];  if (r) { connectedArtForget(r.ids); renderConnectedCandidates(t.key); } return; }
+    if (use) {
+      const r = runs[+use.dataset.runUse]; if (!r) return;
+      const res = buildConnectedPage({ setCode: t.key, run: r.cards, size: parseInt(sizeSel.value, 10) || 9, budgetGBP: parseFloat(budget.value) || 0 });
+      renderBinderPageResult(res);
+      document.getElementById('bpResult')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   });
 
   // Tap a pocket or a gap row to open the card.
@@ -28536,6 +28714,7 @@ const SYNC_KEYS = [
   'pkm-grading-service-v1',       // Grading service pref: PSA or ACE
   'pkm-ace-tier-v1',              // ACE grading tier pref
   'pkm-binder-pages-v1',           // Saved themed binder pages (IR/SIR spreads)
+  'pkm-connected-art-v1',          // Confirmed connected-art runs (card ids in reading order)
   'pkm-binder-species-overrides-v1', // Binder species name overrides (rename "Mega" → "Charizard" etc.)
   'pkm-binder-pairings-v1',      // Manual EN/JP card pairings within binder groups
   'pkm-binder-sort-v1',          // Binder page sort order preference

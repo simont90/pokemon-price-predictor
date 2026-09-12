@@ -340,6 +340,7 @@ Known synced keys:
 - `pkm-ace-prices-v1` — per-card ACE Grading sold prices by grade (10/9/8/7), keyed by card ID.
 - `pkm-binder-sort-v1` — binder page sort order (`dex` = National Pokédex, `prio` = priority, `az` = alphabetical).
 - `pkm-vintage-v1` — Vintage page targets: `{ targets: { cardId: { grade, owned } } }` (WOTC-era PSA hunt list).
+- `pkm-connected-art-v1` — confirmed connected-art runs: `{ id, set, ids[] }` in reading order. Person-confirmed only.
 - `pkm-binder-pages-v1` — saved themed binder pages: `{ id, name, kind, value, size, slots[] }`. Slots hold card ids; a page is rebuilt on open rather than replayed, since ownership and prices move.
 - `pkm-taste-recos-v1` — taste engine auto-adds: `{ cardId: { score, ts } }` — searched cards scoring ≥70 that joined the home recommendations.
 - `pkm-psa-links-v1` — pinned PSA reference page per card: `{ cardId: { url, ts } }`.
@@ -502,6 +503,24 @@ first; they slot into the registry without touching the builder.
 
 A species page may repeat its Pokémon nine times; every other theme takes one
 card per species. Saved pages store ids and are rebuilt on open, never replayed.
+
+**Owning the Japanese print counts.** A set page filters by an English set code,
+so without this a JP copy the owner holds left the EN slot showing as a gap.
+`buildBinderPage` looks through `findCounterparts` and puts the owned print in
+the pocket, tagged "Owned · JP"; scoring stays against the theme card so the JP
+copy inherits its standing rather than being scored as a stranger.
+
+**Connected art is confirmed by a person, never asserted by the data.** The
+catalogue does not say which illustrations continue into each other and no
+source we use does. `connectedArtCandidates` narrows the field with the one
+thing the data can see — cards consecutive in the set *and* consecutive in the
+Pokédex, since a panorama is one evolution line drawn as one piece — and shows
+the art edge to edge for the eye to judge. Confirmed runs live in
+`pkm-connected-art-v1`. Consecutive card numbers alone narrow nothing: every
+set numbers its IR block in a row, and 151 came back as one sixteen-card run
+before the dex test was added. Lines that skip dex numbers (Pichu→Pikachu, the
+Eeveelutions) are missed and need confirming by hand. Do not seed this table
+from memory.
 
 ## A pasted listing is not necessarily the card on screen
 
