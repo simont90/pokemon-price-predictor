@@ -27,7 +27,7 @@
   <!-- Preload large data files so they start downloading during head parse -->
   <link rel="preload" href="data/cards-db.js" as="script">
   <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20260725s">
+  <link rel="stylesheet" href="style.css?v=20260725t">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -68,9 +68,6 @@
           <div class="fx-rate"><span class="fx-label">USD/GBP</span><span class="fx-value" id="fxValue">...</span></div>
           <button class="portfolio-toggle" id="wishlistToggle" title="Wishlist">
             <span class="portfolio-count" id="wishlistCount">0</span>
-          </button>
-          <button class="portfolio-toggle" id="binderToggle" title="Full Art Binder Project">
-            <span class="portfolio-count" id="binderCount">0</span>
           </button>
           <button class="portfolio-toggle" id="compareToggle" title="Compare two cards">
             <span class="portfolio-count" id="compareCount">0</span>
@@ -152,11 +149,7 @@
         <span class="hdr-popup-label">Upgrades <span class="hmp-badge" id="hmpUpgradesBadge" style="display:none"></span></span>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e8b634" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
       </button>
-      <button class="hdr-popup-item" id="hmpBinder" type="button">
-        <span class="hdr-popup-label">Full Art Binder <span class="hmp-badge" id="hmpBinderBadge" style="display:none"></span></span>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#55efc4" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 0 3-3h7z"/></svg>
-      </button>
-      <button class="hdr-popup-item" id="hmpSets" type="button">
+            <button class="hdr-popup-item" id="hmpSets" type="button">
         <span class="hdr-popup-label">Sets</span>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fdcb6e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
       </button>
@@ -283,20 +276,7 @@
       </div>
     </section>
 
-    <!-- Full Art Binder Project Panel (slide-in) -->
-    <section class="portfolio-panel binder-panel" id="binderPanel" style="display:none">
-      <div class="portfolio-header">
-        <h2>Full Art Binder <span class="wishlist-sub">Gen 1 &amp; Gen 2 project</span></h2>
-        <div class="portfolio-actions">
-          <span class="portfolio-total" id="binderTotal">0 cards</span>
-          <button class="portfolio-close" id="binderClose">&#x2715;</button>
-        </div>
-      </div>
-      <div class="portfolio-list" id="binderList">
-        <div class="portfolio-empty">No cards yet. Open a card and tap the binder icon to add it.</div>
-      </div>
-    </section>
-
+    
     <!-- Sync Panel (slide-in) — cross-device backup & restore -->
     <section class="portfolio-panel sync-panel" id="syncPanel" style="display:none">
       <div class="portfolio-header">
@@ -1286,9 +1266,6 @@
                 </button>
                 <button class="add-portfolio-btn" id="addPortfolioBtn" title="Add to collection">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                </button>
-                <button class="add-portfolio-btn" id="addBinderBtn" title="Add to Full Art Binder Project Wishlist">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 0 3-3h7z"/></svg>
                 </button>
                 <button class="add-portfolio-btn" id="addMappingBtn" title="Add to Card Mapping queue">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
@@ -2393,11 +2370,6 @@
               <span class="ps-btn-text">Refresh my collection</span>
               <span class="ps-btn-hint" id="psCollectionHint">All cards in your portfolio</span>
             </button>
-            <button class="ps-btn" id="psRefreshBinder" type="button">
-              <span class="ps-btn-ico">⊞</span>
-              <span class="ps-btn-text">Refresh Binder</span>
-              <span class="ps-btn-hint" id="psBinderHint">All cards in your Full Art Binder project</span>
-            </button>
             <button class="ps-btn" id="psRefreshTracked" type="button">
               <span class="ps-btn-ico">★</span>
               <span class="ps-btn-text">Refresh tracked cards</span>
@@ -3303,7 +3275,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260725s"></script>
+  <script src="app.js?v=20260725t"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

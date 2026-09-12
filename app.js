@@ -7887,10 +7887,12 @@ function toggleSidePanel(id) {
 }
 
 function setupFullArtBinder() {
-  // Header icon → go to dedicated binder page
-  $('binderToggle').addEventListener('click', () => go('binder'));
-  $('binderClose').addEventListener('click', () => { $('binderPanel').style.display = 'none'; });
-  $('addBinderBtn').addEventListener('click', () => toggleCardInFullArtBinder());
+  // The Full Art Gen 1 & 2 project is retired — its header icon, slide-in
+  // panel and add button are gone from the page. The species, pairing and
+  // priority plumbing below stays: the themed page builder is built on it.
+  $('binderToggle')?.addEventListener('click', () => go('binder'));
+  $('binderClose')?.addEventListener('click', () => { const p = $('binderPanel'); if (p) p.style.display = 'none'; });
+  $('addBinderBtn')?.addEventListener('click', () => toggleCardInFullArtBinder());
 
   // "Find a card" button on binder page → jump to Predict search
   $('binderPageAddBtn')?.addEventListener('click', () => go('predict'));
@@ -28507,7 +28509,6 @@ const SYNC_KEYS = [
   'pkm-budget-max-gbp',           // Max per card budget slider
   'pkm-grading-service-v1',       // Grading service pref: PSA or ACE
   'pkm-ace-tier-v1',              // ACE grading tier pref
-  'pkm-fullart-binder-v1',        // Full Art Binder Project Wishlist
   'pkm-binder-species-overrides-v1', // Binder species name overrides (rename "Mega" → "Charizard" etc.)
   'pkm-binder-pairings-v1',      // Manual EN/JP card pairings within binder groups
   'pkm-binder-sort-v1',          // Binder page sort order preference
