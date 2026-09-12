@@ -340,6 +340,7 @@ Known synced keys:
 - `pkm-ace-prices-v1` — per-card ACE Grading sold prices by grade (10/9/8/7), keyed by card ID.
 - `pkm-binder-sort-v1` — binder page sort order (`dex` = National Pokédex, `prio` = priority, `az` = alphabetical).
 - `pkm-vintage-v1` — Vintage page targets: `{ targets: { cardId: { grade, owned } } }` (WOTC-era PSA hunt list).
+- `pkm-binder-pages-v1` — saved themed binder pages: `{ id, name, kind, value, size, slots[] }`. Slots hold card ids; a page is rebuilt on open rather than replayed, since ownership and prices move.
 - `pkm-taste-recos-v1` — taste engine auto-adds: `{ cardId: { score, ts } }` — searched cards scoring ≥70 that joined the home recommendations.
 - `pkm-psa-links-v1` — pinned PSA reference page per card: `{ cardId: { url, ts } }`.
 
@@ -479,6 +480,28 @@ Charizard X ex", "Charizard ex" and "Dark Charizard" onto `charizard` via the
 tier table. Keyed on the raw extracted name they were three separate species and
 Charizard measured 0.11 pressure while being the most reprinted character in the
 game.
+
+## Binder pages are art pages, and "balanced" is a stated rule
+
+The Full Art Gen 1 & 2 project is retired. Its replacement is `buildBinderPage`
+— a themed 3×3 or 4×3 spread of **Illustration Rares and Special Illustration
+Rares only**, filled from the collection first, then the wishlist, then the
+cards worth buying to complete it.
+
+"Balanced" means one thing here: SIRs take the centre and corners, IRs take the
+edges, with either tier filling in when the pool runs short. That is a design
+choice written down so it can be argued with, not a property discovered in the
+data. Within a tier, order is ownership, then stars, taste match and a steadied
+pullback.
+
+Themes are a registry (`BP_THEMES`) because the catalogue limits them: it carries
+number, name, set, rarity and price, plus species → dex — **no type, artist or
+evolution data**. A Pokémon, a set and an era work today. Type pages (Fire,
+Water) and evolution-line pages need a species table added under `data/`
+first; they slot into the registry without touching the builder.
+
+A species page may repeat its Pokémon nine times; every other theme takes one
+card per species. Saved pages store ids and are rebuilt on open, never replayed.
 
 ## A pasted listing is not necessarily the card on screen
 

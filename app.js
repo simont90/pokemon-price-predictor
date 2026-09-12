@@ -684,6 +684,7 @@ async function init() {
   setupUpgradesList();
   _setupCardAiOverlay();
   setupFullArtBinder();
+  try { setupBinderPages(); } catch {}
   setupCompare();
   setupScreener();
   setupValuePicks();
@@ -8778,365 +8779,389 @@ function _buildBinderPanelBody(items, setBuckets) {
   return html || '<p class="bdl-empty">No cards in this group.</p>';
 }
 
-function renderBinderPage() {
-  const container = $('binderPageContent');
-  if (!container) return;
 
-  // Update owned count in header
-  const haveCount = fullArtBinder.filter(b => b.owned || b.upgrade).length;
-  const pageOwnedEl = $('binderPageOwned');
-  if (pageOwnedEl) pageOwnedEl.textContent = `${haveCount}/${fullArtBinder.length} have one`;
+// ═══════════════════════════════════════════════════════════════════════════
+// Binder Pages — a themed spread that fills itself
+//
+// Pick a theme; the page is assembled from what is owned first, then the
+// wishlist, then the cards worth buying to finish it. "Balanced" here is a
+// stated arrangement rule, not taste: the strongest card takes the centre,
+// the next four take the corners, and mirrored pockets are matched on print
+// style where the pool allows, so the spread reads as one piece rather than a
+// pile. Every gap is a concrete buy with a price and a reason.
+//
+// Themes are limited by what the catalogue carries. It has number, name, set,
+// rarity and price, plus a species → dex lookup — no type, artist or evolution
+// data. So a Pokémon, a set, an era and a rarity tier work today; type and
+// evolution-line pages need a species table added first. The theme kinds are a
+// registry so those slot in without touching the rest.
+// ═══════════════════════════════════════════════════════════════════════════
 
-  const sortMode = binderGetSort();
-  const sortSel = $('binderSortSel');
-  if (sortSel) sortSel.value = sortMode;
+const BINDER_PAGES_KEY = 'pkm-binder-pages-v1';   // synced: these are decisions
 
-  if (fullArtBinder.length === 0) {
-    container.innerHTML = `<div class="binder-page-empty"><p>Nothing in the binder yet.</p><p class="binder-page-empty-sub">Open any card in Predict and tap "Add to Full Art Binder" to start your Gen 1 &amp; Gen 2 project.</p></div>`;
+// These are art pages. Illustration Rares and Special Illustration Rares only —
+// the theme picks the subject, the print style is not up for grabs. SIRs are
+// the more elaborate print, so they anchor the centre and corners and IRs fill
+// the edges: that is the whole balance rule, stated so it can be argued with.
+const BP_ART_TIERS = new Set(['IR', 'SIR']);
+let _binderPages = [];
+try { _binderPages = JSON.parse(localStorage.getItem(BINDER_PAGES_KEY) || '[]'); } catch { _binderPages = []; }
+function _binderPagesSave() { try { localStorage.setItem(BINDER_PAGES_KEY, JSON.stringify(_binderPages)); } catch {} }
+
+let _bpLast = null;   // the page currently on screen, before it is saved
+
+const BP_ERAS = {
+  wotc: { label: 'WOTC (1999–2003)',          test: y => y >= 1999 && y <= 2003 },
+  ex:   { label: 'EX era (2003–2007)',         test: y => y >= 2003 && y <= 2007 },
+  dppt: { label: 'Diamond & Pearl / Platinum', test: y => y >= 2007 && y <= 2010 },
+  bwxy: { label: 'Black & White / XY',         test: y => y >= 2011 && y <= 2016 },
+  sm:   { label: 'Sun & Moon',                 test: y => y >= 2017 && y <= 2019 },
+  swsh: { label: 'Sword & Shield',             test: y => y >= 2020 && y <= 2022 },
+  sv:   { label: 'Scarlet & Violet on',        test: y => y >= 2023 },
+};
+
+function _bpSetYear(sc) {
+  const y = parseInt((setsData?.[sc]?.releaseDate || '').slice(0, 4), 10);
+  return isFinite(y) ? y : 0;
+}
+
+// Theme registry: label, how to offer suggestions, and how to test a card.
+const BP_THEMES = {
+  species: {
+    label: 'A Pokémon',
+    placeholder: 'e.g. Gengar',
+    suggest: () => {
+      const seen = new Map();
+      for (const c of cardData.cards) {
+        const sp = extractPokemonName(c.n);
+        if (sp && !seen.has(sp)) seen.set(sp, sp.replace(/\b\w/g, m => m.toUpperCase()));
+      }
+      return [...seen.values()].sort().slice(0, 400);
+    },
+    resolve: v => {
+      const want = String(v || '').trim().toLowerCase();
+      if (!want) return null;
+      const dex = (typeof dexNumOf === 'function') ? dexNumOf(want) : null;
+      return { key: want, dex, label: want.replace(/\b\w/g, m => m.toUpperCase()) };
+    },
+    test: (c, t) => {
+      const sp = extractPokemonName(c.n);
+      if (!sp) return false;
+      if (t.dex && typeof dexNumOf === 'function') return dexNumOf(c.n) === t.dex;
+      return sp === t.key || sp.includes(t.key);
+    },
+    // A species page is allowed the same Pokémon nine times — that is the point.
+    allowRepeatSpecies: true,
+  },
+  set: {
+    label: 'A set',
+    placeholder: 'e.g. Team Rocket',
+    suggest: () => Object.values(setsData || {}).map(s => s.name).filter(Boolean).sort(),
+    resolve: v => {
+      const want = String(v || '').trim().toLowerCase();
+      const hit = Object.entries(setsData || {}).find(([, s]) => (s.name || '').toLowerCase() === want)
+        || Object.entries(setsData || {}).find(([, s]) => (s.name || '').toLowerCase().includes(want));
+      return hit ? { key: hit[0], label: hit[1].name } : null;
+    },
+    test: (c, t) => c.sc === t.key,
+    allowRepeatSpecies: false,
+  },
+  era: {
+    label: 'An era',
+    placeholder: 'e.g. WOTC',
+    suggest: () => Object.values(BP_ERAS).map(e => e.label),
+    resolve: v => {
+      const want = String(v || '').trim().toLowerCase();
+      const hit = Object.entries(BP_ERAS).find(([k, e]) => k === want || e.label.toLowerCase().includes(want));
+      return hit ? { key: hit[0], label: hit[1].label } : null;
+    },
+    test: (c, t) => BP_ERAS[t.key].test(_bpSetYear(c.sc)),
+    allowRepeatSpecies: false,
+  },
+};
+
+function _bpOwnedIds() {
+  return new Set((portfolio || []).map(x => x.id || x.i).filter(Boolean));
+}
+function _bpWishIds() {
+  return new Set((wishlist || []).map(x => x.id || x.i || x).filter(Boolean));
+}
+
+// Score a candidate for a page. Ownership dominates, because the page is
+// first a way to arrange what is already here; below that, the same signals
+// the rest of the app trusts.
+function _bpScore(card, ctx) {
+  let s = 0;
+  const owned = ctx.owned.has(card.i), wished = ctx.wish.has(card.i);
+  if (owned) s += 1000;
+  else if (wished) s += 300;
+  let stars = 0;
+  try { stars = getInvestmentStars(card, 5).stars || 0; } catch {}
+  s += stars * 40;
+  try { if (ctx.taste) s += (_tasteMatch(card, ctx.taste).taste || 0) * 60; } catch {}
+  try { const d = _chaseDip(card); if (d && d.steadying) s += 25; } catch {}
+  // Cheap filler is not a feature on a page meant to look like something.
+  const gbp = ctx.priceGBP(card);
+  if (!owned && gbp > 0 && gbp < 3) s -= 30;
+  if (!owned && ctx.budget > 0 && gbp > ctx.budget) s -= 500;   // still listed, never chosen for a gap
+  return s;
+}
+
+// Arrangement. Pockets are numbered left→right, top→bottom, 1-based.
+// 3×3: centre 5; corners 1,3,7,9; edges 2,4,6,8.
+// 4×3: centre 6,7; corners 1,4,9,12; the rest are edges.
+function _bpLayout(size) {
+  if (size === 12) return { cols: 4, centre: [6, 7], corners: [1, 4, 9, 12], edges: [2, 3, 5, 8, 10, 11],
+                            mirrors: [[1, 4], [9, 12], [2, 3], [10, 11], [5, 8], [6, 7]] };
+  return { cols: 3, centre: [5], corners: [1, 3, 7, 9], edges: [2, 4, 6, 8],
+           mirrors: [[1, 3], [7, 9], [4, 6], [2, 8]] };
+}
+
+// Print style for mirror matching. Coarse on purpose: the aim is that the two
+// pockets either side of the centre look like the same *kind* of card.
+function _bpStyle(card) {
+  return cardRarityCode(card) === 'SIR' ? 'sir' : 'ir';
+}
+
+function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0 }) {
+  const theme = BP_THEMES[kind];
+  if (!theme) return { error: 'Unknown theme.' };
+  const t = theme.resolve(value);
+  if (!t) return { error: `Could not find "${value}" as ${theme.label.toLowerCase()}.` };
+
+  const owned = _bpOwnedIds(), wish = _bpWishIds();
+  let taste = null; try { taste = tasteGetProfile(); } catch {}
+  const fx = usdToGbp(1);
+  const priceGBP = c => (getCurrentPrice(c) || c.p || 0) * fx;
+  const ctx = { owned, wish, taste, budget: budgetGBP, priceGBP };
+
+  // Pool: everything in the theme with a usable price.
+  let pool = cardData.cards.filter(c => c.i && BP_ART_TIERS.has(cardRarityCode(c)) && theme.test(c, t) && priceGBP(c) > 0);
+  if (!pool.length) return { error: `No Illustration Rares or Special Illustration Rares for ${t.label} in the catalogue.` };
+  pool = pool.map(c => ({ card: c, score: _bpScore(c, ctx), owned: owned.has(c.i), wished: wish.has(c.i),
+                          gbp: priceGBP(c), style: _bpStyle(c) }))
+             .sort((a, b) => b.score - a.score);
+
+  // One of each Pokémon unless the theme is that Pokémon.
+  const chosen = [];
+  const seenSpecies = new Set();
+  const seenIds = new Set();
+  const take = (it) => { chosen.push(it); seenIds.add(it.card.i); seenSpecies.add(extractPokemonName(it.card.n)); };
+  for (const it of pool) {
+    if (chosen.length >= size) break;
+    if (seenIds.has(it.card.i)) continue;
+    const sp = extractPokemonName(it.card.n);
+    if (!theme.allowRepeatSpecies && sp && seenSpecies.has(sp)) continue;
+    if (!it.owned && ctx.budget > 0 && it.gbp > ctx.budget) continue;
+    take(it);
+  }
+  // Shuffle within score bands so "Shuffle" gives a different but still sane spread.
+  if (seed) {
+    let r = seed;
+    const rnd = () => { r = (r * 9301 + 49297) % 233280; return r / 233280; };
+    chosen.sort((a, b) => (b.score - a.score) + (rnd() - 0.5) * 60);
+  }
+
+  // Place. Anchor pockets (centre, then corners) take SIRs first; edges take
+  // IRs first. Either tier fills in for the other when the pool runs short,
+  // so a page never sits empty for want of the "right" print.
+  const L = _bpLayout(size);
+  const slots = new Array(size + 1).fill(null);
+  const sirs = chosen.filter(x => x.style === 'sir'), irs = chosen.filter(x => x.style === 'ir');
+  const next = (prefer) => (prefer === 'sir' ? (sirs.shift() || irs.shift()) : (irs.shift() || sirs.shift())) || null;
+  for (const n of L.centre)  slots[n] = next('sir');
+  for (const n of L.corners) slots[n] = next('sir');
+  for (const n of L.edges)   slots[n] = next('ir');
+
+  const placed = slots.slice(1).filter(Boolean);
+  const gaps = placed.filter(x => !x.owned);
+  const ownedCount = placed.length - gaps.length;
+  return {
+    kind, value, theme: t, size, cols: L.cols, slots: slots.slice(1),
+    ownedCount, gapCount: gaps.length, empty: size - placed.length,
+    gapCostGBP: gaps.reduce((a, x) => a + x.gbp, 0),
+    pageValueGBP: placed.reduce((a, x) => a + x.gbp, 0),
+  };
+}
+
+// ---- Binder Pages: rendering + wiring -------------------------------------
+
+function _bpPocketHtml(it, n, cols) {
+  if (!it) return `<div class="bp-pocket bp-pocket-empty"><span class="bp-pocket-n">${n}</span><span class="bp-pocket-empty-lbl">empty</span></div>`;
+  const c = it.card;
+  const img = _hiresUrl(getCardImg(c));
+  const cls = it.owned ? 'bp-owned' : it.wished ? 'bp-wished' : 'bp-gap';
+  const tag = it.owned ? 'Owned' : it.wished ? 'Wishlist' : `Buy · ${fmtGBPDirect(it.gbp)}`;
+  return `<div class="bp-pocket ${cls} bp-style-${it.style}" data-id="${esc(c.i)}" title="${esc(c.n)} · ${esc(c.s || '')}">
+    ${img ? `<img class="bp-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="bp-img"></div>'}
+    <span class="bp-pocket-n">${n}</span>
+    <span class="bp-tier">${it.style.toUpperCase()}</span>
+    <span class="bp-tag">${tag}</span>
+    <div class="bp-cap"><span class="bp-cap-name">${esc(c.n)}</span><span class="bp-cap-set">${esc(c.s || '')}</span></div>
+  </div>`;
+}
+
+function renderBinderPageResult(res) {
+  const out = document.getElementById('bpResult');
+  const grid = document.getElementById('bpGrid');
+  const gaps = document.getElementById('bpGaps');
+  const title = document.getElementById('bpResultTitle');
+  const stats = document.getElementById('bpResultStats');
+  if (!out || !grid) return;
+  if (!res || res.error) {
+    out.style.display = 'none';
+    _bpSay(res ? res.error : 'Nothing to show.', 'err');
     return;
   }
-
-  // Group by species (override wins over auto-detect)
-  const groups = {};
-  for (const b of fullArtBinder) {
-    const sp = binderSpeciesOverrides[b.id] || speciesOf(b.name);
-    if (!groups[sp]) groups[sp] = [];
-    groups[sp].push(b);
+  _bpLast = res;
+  out.style.display = '';
+  const kindLbl = BP_THEMES[res.kind]?.label || res.kind;
+  if (title) title.textContent = `${res.theme.label} · ${kindLbl.toLowerCase()} · ${res.size} pockets`;
+  if (stats) {
+    const bits = [`${res.ownedCount} owned`];
+    if (res.gapCount) bits.push(`${res.gapCount} to buy · ${fmtGBPDirect(res.gapCostGBP)}`);
+    if (res.empty) bits.push(`${res.empty} empty — not enough art cards in the catalogue for this theme`);
+    bits.push(`page value ${fmtGBPDirect(res.pageValueGBP)}`);
+    stats.textContent = bits.join(' · ');
   }
+  grid.style.setProperty('--bp-cols', res.cols);
+  grid.innerHTML = res.slots.map((it, i) => _bpPocketHtml(it, i + 1, res.cols)).join('');
 
-  // Pull cross-group manual pairs into the same group (move the partner card, not the whole group)
-  const _movedByPair = new Set();
-  for (const [idA, idB] of Object.entries(binderPairings)) {
-    if (_movedByPair.has(idA) || _movedByPair.has(idB)) continue;
-    const grpA = Object.keys(groups).find(sp => groups[sp].some(b => b.id === idA));
-    const grpB = Object.keys(groups).find(sp => groups[sp].some(b => b.id === idB));
-    if (!grpA || !grpB || grpA === grpB) continue;
-    const bItem = groups[grpB].find(b => b.id === idB);
-    if (bItem) {
-      groups[grpB] = groups[grpB].filter(b => b.id !== idB);
-      if (groups[grpB].length === 0) delete groups[grpB];
-      groups[grpA].push(bItem);
-      _movedByPair.add(idA); _movedByPair.add(idB);
-    }
-  }
-
-  // Set-level multi-buy detection: how many binder cards per set
-  const setBuckets = {};
-  for (const b of fullArtBinder) {
-    if (!setBuckets[b.set]) setBuckets[b.set] = [];
-    setBuckets[b.set].push(b.id);
-  }
-
-  // Render a single card tile (used only for the grid detail cache — not shown in panel anymore)
-  function cardTile(b, gbp) {
-    // Live-resolve image so artwork overrides applied after the card was added
-    // to the binder are immediately visible (b.img is snapshot-at-add-time).
-    const liveCard = cardData?.cards?.find(c => c.i === b.id);
-    const imgSrc = liveCard ? _hiresUrl(getCardImg(liveCard)) : (b.img ? _hiresUrl(b.img) : null);
-    const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
-    const langPill = b.lang === 'JP'
-      ? '<span class="binder-pg-lang jp">JP</span>'
-      : '<span class="binder-pg-lang en">EN</span>';
-    const st = binderStatusOf(b);
-    const upgradeTag = st === 'have'
-      ? '<div class="binder-pg-upgrade-tag">Have one — targeting this for upgrade</div>' : '';
-    const completeBtn = st === 'have'
-      ? `<button class="binder-pg-complete" data-id="${b.id}" title="Got the upgrade — remove from binder project">✓ Got the upgrade</button>` : '';
-    const isSelected = _binderReorgSelected.has(b.id);
-    const reorgCb = `<span class="breorg-cb${isSelected ? ' checked' : ''}" data-id="${b.id}" title="Select card"></span>`;
-    const binderScoreBadge = liveCard ? _cardScoreBadgeHtml(liveCard) : '';
-    return `
-      <div class="binder-pg-card${(b.owned || b.upgrade) ? ' binder-pg-owned-card' : ''}${isSelected ? ' breorg-selected' : ''}" data-id="${b.id}" draggable="true">
-        <div class="binder-pg-img-wrap">
-          ${imgSrc ? `<img class="binder-pg-img" src="${imgSrc}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="binder-pg-img binder-pg-img-ph"></div>'}
-          ${langPill}${reorgCb}
-        </div>
-        <div class="binder-pg-card-info">
-          <div class="binder-pg-card-name">${esc(b.name)}</div>
-          <div class="binder-pg-card-set">${esc(b.set)}</div>
-          <div class="binder-pg-card-price">${priceStr}</div>
-          ${binderScoreBadge}
-          ${upgradeTag}
-          <div class="binder-pg-card-actions">
-            ${binderStatusBtn(b, 'binder-pg-owned')}
-            <button class="binder-pg-remove" data-id="${b.id}" title="Remove from binder">✕</button>
-          </div>
-          ${completeBtn}
-        </div>
+  const toBuy = res.slots.filter(x => x && !x.owned);
+  if (gaps) {
+    gaps.innerHTML = toBuy.length ? `<div class="bp-gaps-hd">To complete this page</div>` + toBuy.map(it => {
+      const c = it.card;
+      let why = [];
+      try { const st = getInvestmentStars(c, 5); if (st.stars >= 4) why.push(`${st.stars}★`); } catch {}
+      try { const d = _chaseDip(c); if (d) why.push(d.steadying ? `down ${Math.abs(d.pct90).toFixed(0)}% and steady` : `down ${Math.abs(d.pct90).toFixed(0)}%, still falling`); } catch {}
+      if (it.wished) why.push('on your wishlist');
+      return `<div class="bp-gap-row" data-id="${esc(c.i)}">
+        <span class="bp-gap-tier bp-style-${it.style}">${it.style.toUpperCase()}</span>
+        <span class="bp-gap-name">${esc(c.n)} <span class="bp-gap-set">${esc(c.s || '')}</span></span>
+        <span class="bp-gap-why">${esc(why.join(' · '))}</span>
+        <span class="bp-gap-price">${fmtGBPDirect(it.gbp)}</span>
       </div>`;
-  }
-
-  let html = '';
-
-  // Lowest dex number among a group's cards decides its Pokédex position;
-  // groups with no species match (trainers etc.) sort after, A–Z.
-  const groupDex = {};
-  for (const sp of Object.keys(groups)) {
-    let min = Infinity;
-    for (const b of groups[sp]) {
-      const d = dexNumOf(b.name);
-      if (d && d < min) min = d;
-    }
-    groupDex[sp] = min;
-  }
-  // Priority tier per group: 0 = at least one card not yet owned (highest priority),
-  // 1 = all cards have an existing copy (lower priority — hunting upgrades).
-  const groupTier = {};
-  for (const sp of Object.keys(groups)) {
-    const hasNeed = groups[sp].some(b => binderStatusOf(b) === 'need');
-    groupTier[sp] = hasNeed ? 0 : 1;
-  }
-  // Pre-compute pairs once per group — reused for price sort and rendering.
-  const groupPairs = {};
-  for (const sp of Object.keys(groups)) groupPairs[sp] = _binderPairItems(groups[sp]);
-
-  // Price per group: smart-pick card price (cheaper side of EN/JP pair, or solo).
-  // Used for "price" sort — groups with no cached price go to the end.
-  const groupPrice = {};
-  for (const sp of Object.keys(groups)) {
-    const pairs = groupPairs[sp];
-    let best = Infinity;
-    for (const { en, jp } of pairs) {
-      const enGBP = en ? _binderItemGBP(en) : 0;
-      const jpGBP = jp ? _binderItemGBP(jp) : 0;
-      let pick = 0;
-      if (en && jp && enGBP > 0 && jpGBP > 0) {
-        // Mirror the verdict logic: JP cheaper by >10% → use JP price, else EN
-        const diff = ((jpGBP - enGBP) / enGBP) * 100;
-        pick = diff < -10 ? jpGBP : diff > 10 ? enGBP : Math.min(enGBP, jpGBP);
-      } else {
-        pick = (en && enGBP > 0) ? enGBP : (jp && jpGBP > 0) ? jpGBP : 0;
-      }
-      if (pick > 0) best = Math.min(best, pick);
-    }
-    groupPrice[sp] = isFinite(best) ? best : Infinity;
-  }
-
-  const byDex = (a, b) => (groupDex[a] - groupDex[b]) || a.localeCompare(b);
-  // prio sort: starred species first, then by need/have tier, then by dex number
-  const prioRank = sp => (isBinderPriority(sp) ? 0 : 1);
-  let sortedSpecies = Object.keys(groups).sort((a, b) =>
-    sortMode === 'az'    ? a.localeCompare(b) :
-    sortMode === 'prio'  ? (prioRank(a) - prioRank(b)) || (groupTier[a] - groupTier[b]) || byDex(a, b) :
-    sortMode === 'price' ? (groupPrice[a] - groupPrice[b]) || byDex(a, b) :
-                           byDex(a, b));
-
-  // Apply generation filter
-  if (_binderGenFilter > 0) {
-    const [genMin, genMax] = BINDER_GEN_RANGES[_binderGenFilter];
-    sortedSpecies = sortedSpecies.filter(sp => {
-      const d = groupDex[sp];
-      return isFinite(d) && d >= genMin && d <= genMax;
-    });
-  }
-
-  for (const species of sortedSpecies) {
-    const items = groups[species];
-    const haveInGroup = items.filter(b => b.owned || b.upgrade).length;
-    const pairs = groupPairs[species];
-    const hasEN = items.some(b => (b.lang || 'EN') !== 'JP');
-    const hasJP = items.some(b => b.lang === 'JP');
-    let bodyHtml = '';
-
-    for (const pair of pairs) {
-      const enB = pair.en, jpB = pair.jp;
-      const enGBP = enB ? _binderItemGBP(enB) : 0;
-      const jpGBP = jpB ? _binderItemGBP(jpB) : 0;
-
-      // Build comparison verdict + identify the smarter buy
-      let verdictHtml = '', smartSide = null;
-      if (enB && jpB && enGBP > 0 && jpGBP > 0) {
-        // diff > 0 → JP costs more than EN; diff < 0 → JP cheaper
-        const diff = ((jpGBP - enGBP) / enGBP) * 100;
-        const abs = Math.abs(diff).toFixed(0);
-        let msg, cls;
-        if (diff < -25) {
-          msg = `JP is ${abs}% cheaper — strong case for the Japanese version`;
-          cls = 'verdict-jp-strong';
-        } else if (diff < -10) {
-          msg = `JP is ${abs}% cheaper — worth considering over EN`;
-          cls = 'verdict-jp-mild';
-        } else if (diff > 25) {
-          msg = `EN is ${abs}% cheaper — English is considerably better value`;
-          cls = 'verdict-en-strong';
-        } else if (diff > 10) {
-          msg = `EN is ${abs}% cheaper — slight advantage to English`;
-          cls = 'verdict-en-mild';
-        } else {
-          msg = `Within ${abs}% of each other — get whichever you prefer`;
-          cls = 'verdict-neutral';
-        }
-        verdictHtml = `<div class="binder-verdict ${cls}"><span class="binder-verdict-dot"></span>${msg}</div>`;
-        smartSide = cls.includes('-jp') ? 'jp' : cls.includes('-en') ? 'en' : null;
-      }
-
-      // Multi-buy hint: does this card's set contain other binder cards?
-      let multiBuyHtml = '';
-      const checkedSets = new Set();
-      for (const b of [enB, jpB].filter(Boolean)) {
-        if (checkedSets.has(b.set)) continue;
-        checkedSets.add(b.set);
-        const bucket = setBuckets[b.set] || [];
-        const others = bucket.filter(id => id !== b.id && id !== (b === enB ? jpB?.id : enB?.id));
-        if (others.length >= 1) {
-          multiBuyHtml = `<div class="binder-multibuy">📦 ${others.length + 1} cards from <strong>${esc(b.set)}</strong> in binder — ask for a multi-buy discount</div>`;
-          break;
-        }
-      }
-
-      if (enB && jpB) {
-        const unpairBtn = pair.manual
-          ? `<button class="binder-pg-unpair" data-id-a="${esc(enB.id)}" data-id-b="${esc(jpB.id)}" title="Remove manual pairing — revert to auto-match">⛓ Unlink</button>`
-          : '';
-        bodyHtml += `
-          <div class="binder-pair">
-            <div class="binder-pair-cards">
-              <div class="binder-pair-side${smartSide === 'en' ? ' binder-smart-pick' : ''}">${cardTile(enB, enGBP)}</div>
-              <div class="binder-pair-divider">${unpairBtn}<span class="binder-pair-vs">vs</span></div>
-              <div class="binder-pair-side${smartSide === 'jp' ? ' binder-smart-pick' : ''}">${cardTile(jpB, jpGBP)}</div>
-            </div>
-            ${verdictHtml}${multiBuyHtml}
-          </div>`;
-      } else {
-        const solo = enB || jpB;
-        const soloGBP = enB ? enGBP : jpGBP;
-        bodyHtml += `<div class="binder-pair binder-pair-solo">${cardTile(solo, soloGBP)}${multiBuyHtml}</div>`;
-      }
-    }
-
-    const tier = groupTier[species];
-    const hasOverride = items.some(b => binderSpeciesOverrides[b.id]);
-
-    // Inline selection actions — appear in the detail panel header when cards are selected
-    const groupSelectedIds = items.map(b => b.id).filter(id => _binderReorgSelected.has(id));
-    const totalSelected = _binderReorgSelected.size;
-    let inlineActions = '';
-    if (groupSelectedIds.length > 0) {
-      const otherGroups = _binderReorgGroups().filter(g => g !== species);
-      const showLink = totalSelected === 2;
-      inlineActions = `
-        <span class="binder-inline-sel">
-          <span class="breorg-sel-count">${groupSelectedIds.length} selected</span>
-          <select class="breorg-inline-select">
-            <option value="">Move to…</option>
-            ${otherGroups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
-            <option value="__new__">+ New group</option>
-          </select>
-          <button class="breorg-inline-move" data-species="${esc(species)}">Move</button>
-          ${showLink ? `<button class="breorg-inline-link">Link</button>` : ''}
-          <button class="breorg-inline-clear">✕</button>
-        </span>`;
-    }
-
-    // Cache per-species data for the detail panel
-    _binderBodyCache[species] = { bodyHtml, inlineActions, dexNum: groupDex[species], tier, haveInGroup, total: items.length, hasEN, hasJP, hasOverride, items, setBuckets };
-
-    const spriteUrl = isFinite(groupDex[species])
-      ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${groupDex[species]}.png`
-      : null;
-
-    html += `<div class="binder-dex-cell${tier === 0 ? ' binder-dex-need' : ' binder-dex-have'}${isBinderPriority(species) ? ' binder-dex-priority' : ''}"
-         data-species="${esc(species)}" role="button" tabindex="0">
-      <span class="binder-dex-num">${isFinite(groupDex[species]) ? '#' + String(groupDex[species]).padStart(4, '0') : '—'}</span>
-      ${spriteUrl ? `<img class="binder-dex-sprite" src="${spriteUrl}" alt="${esc(species)}" loading="lazy" decoding="async">` : '<div class="binder-dex-sprite binder-dex-sprite-ph"></div>'}
-      <span class="binder-dex-name">${esc(species)}${hasOverride ? '<span class="binder-dex-override" title="Name overridden">·</span>' : ''}</span>
-      <div class="binder-dex-langs">
-        ${hasEN ? '<span class="binder-dex-lang en">EN</span>' : ''}
-        ${hasJP ? '<span class="binder-dex-lang jp">JP</span>' : ''}
-      </div>
-      <span class="binder-dex-status ${tier === 0 ? 'need' : 'have'}">${tier === 0 ? 'Need' : 'Have one'}</span>
-    </div>`;
-  }
-
-  // Flat all-cards view: all EN/JP pairs across all species, sorted by price.
-  // Reuses bdl-pair/bdl-row CSS so pairs display identically to the detail panel.
-  if (sortMode === 'all-asc' || sortMode === 'all-desc') {
-    // Collect pairs from every species in the filtered+sorted species list
-    const allPairs = [];
-    for (const species of sortedSpecies) {
-      for (const pair of groupPairs[species]) {
-        const enGBP = pair.en ? _binderItemGBP(pair.en) : 0;
-        const jpGBP = pair.jp ? _binderItemGBP(pair.jp) : 0;
-        // Representative sort price: min of EN/JP if both present, else whichever exists
-        let price = 0;
-        if (enGBP > 0 && jpGBP > 0) price = Math.min(enGBP, jpGBP);
-        else price = enGBP || jpGBP;
-        allPairs.push({ pair, species, price, enGBP, jpGBP });
-      }
-    }
-    allPairs.sort((a, b) => {
-      if ((a.price > 0) !== (b.price > 0)) return a.price > 0 ? -1 : 1; // unpriced last
-      return sortMode === 'all-asc' ? a.price - b.price : b.price - a.price;
-    });
-
-    function flatCardRow(b, gbp, lang) {
-      if (!b) return '';
-      const liveCard = cardData?.cards?.find(c => c.i === b.id);
-      const imgSrc = liveCard ? _hiresUrl(getCardImg(liveCard)) : (b.img ? _hiresUrl(b.img) : null);
-      const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
-      const st = binderStatusOf(b);
-      const completeBtn = st === 'have'
-        ? `<button class="binder-pg-complete bdl-complete-btn" data-id="${b.id}" title="Got the upgrade — remove from binder">✓ Got the upgrade</button>` : '';
-      return `
-        <div class="bdl-row bdl-row-${lang}" data-id="${b.id}">
-          <span class="bdl-lang ${lang}">${lang.toUpperCase()}</span>
-          ${imgSrc ? `<img class="bdl-thumb" src="${imgSrc}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="bdl-thumb bdl-thumb-ph"></div>'}
-          <div class="bdl-info">
-            <div class="bdl-name">${esc(b.name)}</div>
-            <div class="bdl-set">${esc(b.set)}</div>
-          </div>
-          <div class="bdl-price-col">
-            <div class="bdl-price">${priceStr}</div>
-          </div>
-          <div class="bdl-acts">
-            ${binderStatusBtn(b, 'binder-pg-owned bdl-status-btn')}
-            <button class="binder-pg-remove bdl-remove-btn" data-id="${b.id}" title="Remove from binder">✕</button>
-            <button class="bdl-view-btn" data-id="${b.id}" title="View card analysis">↗</button>
-            <button class="bdl-move-btn" data-id="${b.id}" title="Move to a different species group">↪</button>
-          </div>
-          <div class="bdl-move-editor" style="display:none" data-id="${b.id}">
-            <input class="bdl-move-input" list="bdl-move-list-flat-${b.id}" placeholder="Type species name…" autocomplete="off" spellcheck="false">
-            <datalist id="bdl-move-list-flat-${b.id}">${_binderReorgGroups().map(g => `<option value="${esc(g)}">`).join('')}</datalist>
-            <button class="bdl-move-confirm" data-id="${b.id}">Move</button>
-            <button class="bdl-move-cancel" data-id="${b.id}">Cancel</button>
-          </div>
-          ${completeBtn}
-        </div>`;
-    }
-
-    const flatHtml = allPairs.map(({ pair, species, enGBP, jpGBP }) => {
-      const { en: enB, jp: jpB } = pair;
-      const enPriceStr = enGBP > 0 ? `£${enGBP.toFixed(2)}` : '—';
-      const jpPriceStr = jpGBP > 0 ? `£${jpGBP.toFixed(2)}` : '—';
-      const sumPrices = (enB ? `<span class="bdl-sp en">${enPriceStr}</span>` : '') +
-                        (jpB ? `<span class="bdl-sp jp">${jpPriceStr}</span>` : '');
-      return `
-        <details class="bdl-pair" open data-species="${esc(species)}">
-          <summary class="bdl-sum">
-            <svg class="bdl-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-            <span class="bdl-sum-label">${esc(species)}</span>
-            <div class="bdl-sum-prices">${sumPrices}</div>
-          </summary>
-          <div class="bdl-body">
-            ${flatCardRow(enB, enGBP, 'en')}
-            ${flatCardRow(jpB, jpGBP, 'jp')}
-          </div>
-        </details>`;
-    }).join('');
-    container.innerHTML = '<div class="binder-flat-list">' +
-      (flatHtml || '<p class="bdl-empty" style="text-align:center;padding:24px">No cards match this filter.</p>') + '</div>';
-  } else {
-    container.innerHTML = '<div class="binder-dex-grid">' + html + '</div>';
-  }
-  _renderReorgBar();
-
-  // If the detail panel is open, refresh it with the latest rendered data
-  if (_binderDetailSpecies && $('binderDetailPanel')?.classList.contains('open')) {
-    _openBinderDetailRender(_binderDetailSpecies);
+    }).join('') : '';
   }
 }
 
-// ── Binder detail panel ───────────────────────────────────────────────────
+function _bpSay(msg, kind) {
+  const el = document.getElementById('bpLog');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.className = 'bp-log' + (kind ? ' bp-log-' + kind : '');
+}
+
+function renderBinderSaved() {
+  const host = document.getElementById('bpSaved');
+  if (!host) return;
+  if (!_binderPages.length) { host.innerHTML = ''; return; }
+  host.innerHTML = `<div class="bp-saved-hd">Saved pages</div>` + _binderPages.map(p => {
+    const owned = _bpOwnedIds();
+    const n = (p.slots || []).filter(Boolean).length;
+    const have = (p.slots || []).filter(id => id && owned.has(id)).length;
+    return `<div class="bp-saved-row" data-bp="${esc(p.id)}">
+      <span class="bp-saved-name">${esc(p.name)}</span>
+      <span class="bp-saved-meta">${have}/${n} owned · ${p.size} pockets</span>
+      <button type="button" class="bp-btn bp-btn-ghost" data-bp-open="${esc(p.id)}">Open</button>
+      <button type="button" class="bp-btn bp-btn-ghost" data-bp-del="${esc(p.id)}" title="Delete">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function renderBinderPage() {
+  renderBinderSaved();
+  const kindSel = document.getElementById('bpThemeKind');
+  if (kindSel && !kindSel._bpFilled) _bpFillSuggestions();
+}
+
+function _bpFillSuggestions() {
+  const kindSel = document.getElementById('bpThemeKind');
+  const list = document.getElementById('bpThemeList');
+  const input = document.getElementById('bpThemeValue');
+  if (!kindSel || !list) return;
+  const theme = BP_THEMES[kindSel.value];
+  if (!theme) return;
+  let opts = [];
+  try { opts = theme.suggest() || []; } catch {}
+  list.innerHTML = opts.slice(0, 400).map(v => `<option value="${esc(v)}">`).join('');
+  if (input) { input.placeholder = theme.placeholder || ''; input.setAttribute('list', 'bpThemeList'); }
+  kindSel._bpFilled = true;
+}
+
+let _bpSeed = 0;
+function setupBinderPages() {
+  const kindSel = document.getElementById('bpThemeKind');
+  const input   = document.getElementById('bpThemeValue');
+  const sizeSel = document.getElementById('bpSize');
+  const budget  = document.getElementById('bpBudget');
+  const build   = document.getElementById('bpBuild');
+  const save    = document.getElementById('bpSave');
+  const shuffle = document.getElementById('bpRebuild');
+  const grid    = document.getElementById('bpGrid');
+  const gaps    = document.getElementById('bpGaps');
+  const saved   = document.getElementById('bpSaved');
+  if (!kindSel || !build) return;
+
+  kindSel.addEventListener('change', () => { kindSel._bpFilled = false; _bpFillSuggestions(); });
+  _bpFillSuggestions();
+
+  const run = (seed) => {
+    _bpSay('');
+    const res = buildBinderPage({
+      kind: kindSel.value, value: input.value,
+      size: parseInt(sizeSel.value, 10) || 9,
+      budgetGBP: parseFloat(budget.value) || 0,
+      seed,
+    });
+    renderBinderPageResult(res);
+  };
+  build.addEventListener('click', () => { _bpSeed = 0; run(0); });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); _bpSeed = 0; run(0); } });
+  shuffle?.addEventListener('click', () => { _bpSeed = (_bpSeed + 1) % 1000; run(_bpSeed + 1); });
+
+  save?.addEventListener('click', () => {
+    if (!_bpLast) return;
+    const name = `${_bpLast.theme.label} · ${BP_THEMES[_bpLast.kind]?.label || ''}`.trim();
+    _binderPages.push({
+      id: `bp_${Date.now().toString(36)}`, name,
+      kind: _bpLast.kind, value: _bpLast.value, size: _bpLast.size,
+      slots: _bpLast.slots.map(x => x ? x.card.i : null),
+      savedAt: Date.now(),
+    });
+    _binderPagesSave();
+    _bpSay('Saved. It will re-check what you own each time you open it.', 'ok');
+    renderBinderSaved();
+  });
+
+  // Tap a pocket or a gap row to open the card.
+  const openFrom = e => {
+    const el = e.target.closest('[data-id]');
+    if (!el) return;
+    try { go('predict'); selectCard(el.dataset.id); } catch {}
+  };
+  grid?.addEventListener('click', openFrom);
+  gaps?.addEventListener('click', openFrom);
+
+  saved?.addEventListener('click', e => {
+    const del = e.target.closest('[data-bp-del]');
+    if (del) {
+      _binderPages = _binderPages.filter(p => p.id !== del.dataset.bpDel);
+      _binderPagesSave(); renderBinderSaved(); return;
+    }
+    const open = e.target.closest('[data-bp-open]');
+    if (open) {
+      const p = _binderPages.find(x => x.id === open.dataset.bpOpen);
+      if (!p) return;
+      kindSel.value = p.kind; kindSel._bpFilled = false; _bpFillSuggestions();
+      input.value = p.value; sizeSel.value = String(p.size);
+      // Rebuild rather than replay the saved ids: ownership and prices move,
+      // and the page should say what is true now.
+      _bpSeed = 0; run(0);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  });
+}
 
 function openBinderDetail(species) {
   _binderDetailSpecies = species;
@@ -28328,6 +28353,7 @@ function setupHeaderMenu() {
   document.getElementById('hmpWishlist')?.addEventListener('click',   () => { close(); document.getElementById('wishlistToggle')?.click(); });
   document.getElementById('hmpBinder')?.addEventListener('click',     () => { close(); go('binder'); });
   document.getElementById('hmpSets')?.addEventListener('click',       () => { close(); go('sets'); });
+  document.getElementById('hmpBinderPages')?.addEventListener('click', () => { close(); go('binder'); });
   document.getElementById('hmpAlerts')?.addEventListener('click',     () => { close(); document.getElementById('alertsToggle')?.click(); });
   document.getElementById('hmpCompare')?.addEventListener('click',    () => { close(); document.getElementById('compareToggle')?.click(); });
   document.getElementById('hmpLookup')?.addEventListener('click',     () => { close(); document.getElementById('quickLookupToggle')?.click(); });
@@ -28509,6 +28535,7 @@ const SYNC_KEYS = [
   'pkm-budget-max-gbp',           // Max per card budget slider
   'pkm-grading-service-v1',       // Grading service pref: PSA or ACE
   'pkm-ace-tier-v1',              // ACE grading tier pref
+  'pkm-binder-pages-v1',           // Saved themed binder pages (IR/SIR spreads)
   'pkm-binder-species-overrides-v1', // Binder species name overrides (rename "Mega" → "Charizard" etc.)
   'pkm-binder-pairings-v1',      // Manual EN/JP card pairings within binder groups
   'pkm-binder-sort-v1',          // Binder page sort order preference
