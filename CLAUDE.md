@@ -504,6 +504,17 @@ first; they slot into the registry without touching the builder.
 A species page may repeat its Pokémon nine times; every other theme takes one
 card per species. Saved pages store ids and are rebuilt on open, never replayed.
 
+**No empty pockets.** When a theme runs short the page tops up — owned art
+cards first, then the strongest art from sets already on the page so it still
+reads as one thing, then whatever scores best. Fillers are marked on the pocket
+and named in the buy list as "outside theme". A species with two art cards
+still yields a full nine.
+
+**Upgrade options.** For each owned pocket, the better version of the same
+Pokémon that is not owned — an IR's SIR, or a stronger SIR from another set —
+listed with its price so the page can say where a swap would lift it. Owning
+the 151 Pikachu IR offers Pikachu ex SIR from Surging Sparks.
+
 **Owning the Japanese print counts.** A set page filters by an English set code,
 so without this a JP copy the owner holds left the EN slot showing as a gap.
 `buildBinderPage` looks through `findCounterparts` and puts the owned print in

@@ -9002,11 +9002,67 @@ function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0 }) {
   for (const n of L.corners) slots[n] = next('sir');
   for (const n of L.edges)   slots[n] = next('ir');
 
+  // No empty pockets. When the theme runs short, top up — owned art cards
+  // first, since the page is meant to be built around what is here, then the
+  // strongest art cards from sets already on the page so it still reads as one
+  // thing, then whatever scores best. Fillers are marked so the page can say
+  // which pockets stepped outside the theme.
+  {
+    const onPage = new Set(slots.filter(Boolean).flatMap(x => [x.card.i, x.themeCard?.i]).filter(Boolean));
+    const pageSets = new Set(slots.filter(Boolean).map(x => x.themeCard?.sc || x.card.sc));
+    const speciesOnPage = new Set(slots.filter(Boolean).map(x => extractPokemonName(x.themeCard?.n || x.card.n)));
+    const need = () => { let n = 0; for (let i = 1; i <= size; i++) if (!slots[i]) n++; return n; };
+    if (need() > 0) {
+      let fillers = cardData.cards
+        .filter(c => c.i && !onPage.has(c.i) && BP_ART_TIERS.has(cardRarityCode(c)) && priceGBP(c) > 0)
+        .map(c => {
+          const ownedCopy = ownedPrintOf(c);
+          const shown = ownedCopy || c;
+          const sp = extractPokemonName(c.n);
+          let sc = _bpScore(c, { ...ctx, owned: ownedCopy ? new Set([c.i]) : ctx.owned });
+          if (pageSets.has(c.sc)) sc += 150;                       // same set as the page
+          if (!theme.allowRepeatSpecies && sp && speciesOnPage.has(sp)) sc -= 400;
+          return { card: shown, themeCard: c, score: sc, owned: !!ownedCopy, wished: wish.has(c.i),
+                   gbp: priceGBP(shown), style: _bpStyle(c), viaJP: !!ownedCopy && shown.i !== c.i, filler: true };
+        })
+        .filter(x => x.owned || ctx.budget <= 0 || x.gbp <= ctx.budget)
+        .sort((a, b) => b.score - a.score);
+      const fSir = fillers.filter(x => x.style === 'sir'), fIr = fillers.filter(x => x.style === 'ir');
+      const fnext = (prefer) => (prefer === 'sir' ? (fSir.shift() || fIr.shift()) : (fIr.shift() || fSir.shift())) || null;
+      for (const n of L.centre)  if (!slots[n]) slots[n] = fnext('sir');
+      for (const n of L.corners) if (!slots[n]) slots[n] = fnext('sir');
+      for (const n of L.edges)   if (!slots[n]) slots[n] = fnext('ir');
+    }
+  }
+
+  // 3: upgrade options. For each owned pocket, the better version of the same
+  //    Pokémon that is not owned — an IR's SIR, or a stronger SIR from another
+  //    set — so the page can say where a swap would lift it.
+  const _tierRank = st => (st === 'sir' ? 2 : 1);
+  for (let i = 1; i <= size; i++) {
+    const it = slots[i];
+    if (!it || !it.owned) continue;
+    const sp = extractPokemonName(it.themeCard?.n || it.card.n);
+    if (!sp) continue;
+    let curStars = 0; try { curStars = getInvestmentStars(it.themeCard || it.card, 5).stars || 0; } catch {}
+    const best = cardData.cards
+      .filter(c => c.i && c.i !== it.card.i && c.i !== it.themeCard?.i && BP_ART_TIERS.has(cardRarityCode(c))
+                && extractPokemonName(c.n) === sp && !owned.has(c.i) && !ownedPrintOf(c) && priceGBP(c) > 0)
+      .map(c => { let st = 0; try { st = getInvestmentStars(c, 5).stars || 0; } catch {}
+                  return { card: c, gbp: priceGBP(c), style: _bpStyle(c), stars: st }; })
+      .filter(u => _tierRank(u.style) > _tierRank(it.style) || (u.style === it.style && u.stars > curStars))
+      .sort((a, b) => (_tierRank(b.style) - _tierRank(a.style)) || (b.stars - a.stars) || (a.gbp - b.gbp))[0];
+    if (best) it.upgrade = { card: best.card, gbp: best.gbp, style: best.style, stars: best.stars,
+                             reason: _tierRank(best.style) > _tierRank(it.style) ? 'IR → SIR' : `${best.stars}★ over ${curStars}★` };
+  }
+
   const placed = slots.slice(1).filter(Boolean);
   const gaps = placed.filter(x => !x.owned);
   const ownedCount = placed.length - gaps.length;
   return {
     kind, value, theme: t, size, cols: L.cols, slots: slots.slice(1),
+    fillerCount: placed.filter(x => x.filler).length,
+    upgrades: placed.filter(x => x.upgrade).map(x => ({ from: x, to: x.upgrade })),
     ownedCount, gapCount: gaps.length, empty: size - placed.length,
     gapCostGBP: gaps.reduce((a, x) => a + x.gbp, 0),
     pageValueGBP: placed.reduce((a, x) => a + x.gbp, 0),
@@ -9141,7 +9197,7 @@ function _bpPocketHtml(it, n, cols) {
   if (!it) return `<div class="bp-pocket bp-pocket-empty"><span class="bp-pocket-n">${n}</span><span class="bp-pocket-empty-lbl">empty</span></div>`;
   const c = it.card;
   const img = _hiresUrl(getCardImg(c));
-  const cls = it.owned ? 'bp-owned' : it.wished ? 'bp-wished' : 'bp-gap';
+  const cls = (it.owned ? 'bp-owned' : it.wished ? 'bp-wished' : 'bp-gap') + (it.filler ? ' bp-filler' : '') + (it.upgrade ? ' bp-has-upgrade' : '');
   const tag = it.owned ? (it.viaJP ? 'Owned · JP' : 'Owned') : it.wished ? 'Wishlist' : `Buy · ${fmtGBPDirect(it.gbp)}`;
   return `<div class="bp-pocket ${cls} bp-style-${it.style}" data-id="${esc(c.i)}" title="${esc(c.n)} · ${esc(c.s || '')}">
     ${img ? `<img class="bp-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="bp-img"></div>'}
@@ -9171,7 +9227,8 @@ function renderBinderPageResult(res) {
   if (stats) {
     const bits = [`${res.ownedCount} owned`];
     if (res.gapCount) bits.push(`${res.gapCount} to buy · ${fmtGBPDirect(res.gapCostGBP)}`);
-    if (res.empty) bits.push(`${res.empty} empty — not enough art cards in the catalogue for this theme`);
+    if (res.fillerCount) bits.push(`${res.fillerCount} from outside the theme to fill the page`);
+    if (res.empty) bits.push(`${res.empty} empty — no art cards left in the catalogue at all`);
     bits.push(`page value ${fmtGBPDirect(res.pageValueGBP)}`);
     stats.textContent = bits.join(' · ');
   }
@@ -9188,11 +9245,24 @@ function renderBinderPageResult(res) {
       if (it.wished) why.push('on your wishlist');
       return `<div class="bp-gap-row" data-id="${esc(c.i)}">
         <span class="bp-gap-tier bp-style-${it.style}">${it.style.toUpperCase()}</span>
-        <span class="bp-gap-name">${esc(c.n)} <span class="bp-gap-set">${esc(c.s || '')}</span></span>
+        <span class="bp-gap-name">${esc(c.n)} <span class="bp-gap-set">${esc(c.s || '')}</span>${it.filler ? ' <span class="bp-gap-set">· outside theme</span>' : ''}</span>
         <span class="bp-gap-why">${esc(why.join(' · '))}</span>
         <span class="bp-gap-price">${fmtGBPDirect(it.gbp)}</span>
       </div>`;
     }).join('') : '';
+
+    // Upgrades: where a pocket you already own could be lifted.
+    const ups = res.upgrades || [];
+    if (ups.length) {
+      gaps.innerHTML += `<div class="bp-gaps-hd">Upgrade options</div>` + ups.map(({ from, to }) => `
+        <div class="bp-gap-row bp-up-row" data-id="${esc(to.card.i)}">
+          <span class="bp-gap-tier bp-style-${to.style}">${to.style.toUpperCase()}</span>
+          <span class="bp-gap-name">${esc(to.card.n)} <span class="bp-gap-set">${esc(to.card.s || '')}</span>
+            <span class="bp-up-from">replaces your ${esc(from.card.n)} · ${esc(from.card.s || '')}</span></span>
+          <span class="bp-gap-why">${esc(to.reason)}</span>
+          <span class="bp-gap-price">${fmtGBPDirect(to.gbp)}</span>
+        </div>`).join('');
+    }
   }
 }
 
