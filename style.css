@@ -19065,3 +19065,31 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
 .bp-filler { outline: 1px dashed rgba(255,255,255,.25); outline-offset: -3px; }
 .bp-has-upgrade::after { content: '↑'; position: absolute; right: 6px; bottom: 36px; font-size: 11px; font-weight: 800; color: #1a1200; background: var(--accent); border-radius: 4px; padding: 1px 5px; }
 .bp-up-from { display: block; font-size: 10px; font-weight: 400; color: var(--text-muted); }
+
+/* Pocket controls. Hidden until the pocket is hovered or focused on a mouse;
+   always visible on touch, where there is no hover to reveal them. */
+.bp-ctl { position: absolute; left: 0; right: 0; top: 0; display: flex; gap: 3px; padding: 26px 5px 0; opacity: 0; transition: opacity .12s; pointer-events: none; }
+.bp-pocket:hover .bp-ctl, .bp-pocket:focus-within .bp-ctl { opacity: 1; pointer-events: auto; }
+.bp-ctl-btn { flex: 1; font-size: 9px; font-weight: 800; padding: 4px 2px; border-radius: 5px; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.7); color: #fff; cursor: pointer; white-space: nowrap; }
+.bp-ctl-btn.is-on { background: var(--accent); color: #1a1200; border-color: var(--accent); }
+.bp-lock-lbl { position: absolute; top: 24px; right: 6px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; border-radius: 4px; padding: 2px 5px; background: var(--accent); color: #1a1200; }
+.bp-pinned { box-shadow: 0 0 0 2px var(--accent) inset; }
+.bp-kept   { box-shadow: 0 0 0 2px rgba(232,182,52,.55) inset; }
+.bp-pocket-empty .bp-ctl { opacity: 1; pointer-events: auto; padding-top: 0; position: static; justify-content: center; margin-top: 8px; }
+
+.bp-picker { margin-top: 12px; border: 1px solid var(--accent); border-radius: 10px; padding: 10px; background: var(--bg-card, var(--bg-raised)); }
+.bp-picker-hd { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 800; margin-bottom: 8px; }
+.bp-picker-list { max-height: 360px; overflow-y: auto; margin-top: 8px; }
+.bp-pick { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 6px 8px; border: none; border-top: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; font: inherit; }
+.bp-pick:hover { background: var(--bg-raised); }
+.bp-pick img, .bp-pick-noimg { width: 34px; height: 47px; border-radius: 4px; object-fit: cover; background: var(--bg-raised); flex-shrink: 0; }
+.bp-pick-main { flex: 1; min-width: 0; }
+.bp-pick-name { display: block; font-size: 12px; font-weight: 700; }
+.bp-pick-set { display: block; font-size: 10px; color: var(--text-muted); }
+.bp-pick-right { font-size: 12px; font-family: var(--mono); font-weight: 700; }
+.bp-pick-owned { color: #34d399; }
+@media (pointer: coarse), (max-width: 768px) {
+  .bp-ctl { opacity: 1; pointer-events: auto; }
+  .bp-ctl-btn { min-height: 30px; }
+  .bp-pick { min-height: 56px; }
+}

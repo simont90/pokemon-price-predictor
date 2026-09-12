@@ -8931,7 +8931,11 @@ function _bpStyle(card) {
   return cardRarityCode(card) === 'SIR' ? 'sir' : 'ir';
 }
 
-function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0 }) {
+// pins:  { [pocketNumber]: cardId } — that card, in that pocket, always.
+// keeps: [cardId]                    — on the page somewhere; the shuffle may
+//                                      move it but never drop it.
+// A replaced card is a pin: the owner chose it for that pocket.
+function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0, pins = {}, keeps = [] }) {
   const theme = BP_THEMES[kind];
   if (!theme) return { error: 'Unknown theme.' };
   const t = theme.resolve(value);
@@ -8960,6 +8964,20 @@ function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0 }) {
     } catch {}
     return null;
   };
+  const itemFor = (c, extra) => {
+    const ownedCopy = ownedPrintOf(c);
+    const shown = ownedCopy || c;
+    return { card: shown, themeCard: c, score: 0, owned: !!ownedCopy, wished: wish.has(c.i) || wish.has(shown.i),
+             gbp: priceGBP(shown), style: _bpStyle(c), viaJP: !!ownedCopy && shown.i !== c.i, ...extra };
+  };
+  const pinItems = {};
+  for (const [n, id] of Object.entries(pins || {})) {
+    const c = getCardById(id);
+    if (c && n >= 1 && n <= size) pinItems[n] = itemFor(c, { pinned: true });
+  }
+  const pinnedIds = new Set(Object.values(pinItems).map(x => x.themeCard.i));
+  const keepIds = new Set((keeps || []).filter(id => !pinnedIds.has(id)));
+
   pool = pool.map(c => {
     const ownedCopy = ownedPrintOf(c);
     const shown = ownedCopy || c;
@@ -8976,8 +8994,16 @@ function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0 }) {
   const seenSpecies = new Set();
   const seenIds = new Set();
   const take = (it) => { chosen.push(it); seenIds.add(it.themeCard.i); seenIds.add(it.card.i); seenSpecies.add(extractPokemonName(it.themeCard.n)); };
+  for (const it of Object.values(pinItems)) { seenIds.add(it.themeCard.i); seenIds.add(it.card.i); seenSpecies.add(extractPokemonName(it.themeCard.n)); }
+  const freeSlots = size - Object.keys(pinItems).length;
+  for (const id of keepIds) {
+    if (chosen.length >= freeSlots) break;
+    const c = getCardById(id);
+    if (!c || seenIds.has(c.i)) continue;
+    take(itemFor(c, { kept: true }));
+  }
   for (const it of pool) {
-    if (chosen.length >= size) break;
+    if (chosen.length >= freeSlots) break;
     if (seenIds.has(it.themeCard.i) || seenIds.has(it.card.i)) continue;
     const sp = extractPokemonName(it.themeCard.n);
     if (!theme.allowRepeatSpecies && sp && seenSpecies.has(sp)) continue;
@@ -8996,11 +9022,12 @@ function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0 }) {
   // so a page never sits empty for want of the "right" print.
   const L = _bpLayout(size);
   const slots = new Array(size + 1).fill(null);
+  for (const [n, it] of Object.entries(pinItems)) slots[+n] = it;
   const sirs = chosen.filter(x => x.style === 'sir'), irs = chosen.filter(x => x.style === 'ir');
   const next = (prefer) => (prefer === 'sir' ? (sirs.shift() || irs.shift()) : (irs.shift() || sirs.shift())) || null;
-  for (const n of L.centre)  slots[n] = next('sir');
-  for (const n of L.corners) slots[n] = next('sir');
-  for (const n of L.edges)   slots[n] = next('ir');
+  for (const n of L.centre)  if (!slots[n]) slots[n] = next('sir');
+  for (const n of L.corners) if (!slots[n]) slots[n] = next('sir');
+  for (const n of L.edges)   if (!slots[n]) slots[n] = next('ir');
 
   // No empty pockets. When the theme runs short, top up — owned art cards
   // first, since the page is meant to be built around what is here, then the
@@ -9061,6 +9088,7 @@ function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0 }) {
   const ownedCount = placed.length - gaps.length;
   return {
     kind, value, theme: t, size, cols: L.cols, slots: slots.slice(1),
+    pins: { ...(pins || {}) }, keeps: [...(keeps || [])],
     fillerCount: placed.filter(x => x.filler).length,
     upgrades: placed.filter(x => x.upgrade).map(x => ({ from: x, to: x.upgrade })),
     ownedCount, gapCount: gaps.length, empty: size - placed.length,
@@ -9194,17 +9222,26 @@ function renderConnectedCandidates(setCode) {
 }
 
 function _bpPocketHtml(it, n, cols) {
-  if (!it) return `<div class="bp-pocket bp-pocket-empty"><span class="bp-pocket-n">${n}</span><span class="bp-pocket-empty-lbl">empty</span></div>`;
+  if (!it) return `<div class="bp-pocket bp-pocket-empty" data-slot="${n}"><span class="bp-pocket-n">${n}</span><span class="bp-pocket-empty-lbl">empty</span>
+    <div class="bp-ctl"><button type="button" class="bp-ctl-btn" data-bp-replace="${n}">Choose</button></div></div>`;
   const c = it.card;
   const img = _hiresUrl(getCardImg(c));
-  const cls = (it.owned ? 'bp-owned' : it.wished ? 'bp-wished' : 'bp-gap') + (it.filler ? ' bp-filler' : '') + (it.upgrade ? ' bp-has-upgrade' : '');
+  const cls = (it.owned ? 'bp-owned' : it.wished ? 'bp-wished' : 'bp-gap') + (it.filler ? ' bp-filler' : '') + (it.upgrade ? ' bp-has-upgrade' : '')
+            + (it.pinned ? ' bp-pinned' : it.kept ? ' bp-kept' : '');
   const tag = it.owned ? (it.viaJP ? 'Owned · JP' : 'Owned') : it.wished ? 'Wishlist' : `Buy · ${fmtGBPDirect(it.gbp)}`;
-  return `<div class="bp-pocket ${cls} bp-style-${it.style}" data-id="${esc(c.i)}" title="${esc(c.n)} · ${esc(c.s || '')}">
+  const lockLbl = it.pinned ? 'In slot' : it.kept ? 'On page' : '';
+  return `<div class="bp-pocket ${cls} bp-style-${it.style}" data-id="${esc(c.i)}" data-slot="${n}" title="${esc(c.n)} · ${esc(c.s || '')}">
     ${img ? `<img class="bp-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="bp-img"></div>'}
     <span class="bp-pocket-n">${n}</span>
     <span class="bp-tier">${it.style.toUpperCase()}</span>
+    ${lockLbl ? `<span class="bp-lock-lbl">${lockLbl}</span>` : ''}
     <span class="bp-tag">${tag}</span>
     <div class="bp-cap"><span class="bp-cap-name">${esc(c.n)}</span><span class="bp-cap-set">${esc(c.s || '')}</span></div>
+    <div class="bp-ctl">
+      <button type="button" class="bp-ctl-btn" data-bp-replace="${n}" title="Choose the card for this pocket yourself">Replace</button>
+      <button type="button" class="bp-ctl-btn${it.kept ? ' is-on' : ''}" data-bp-keep="${n}" title="Keep this card on the page — the shuffle may move it, never drop it">Lock</button>
+      <button type="button" class="bp-ctl-btn${it.pinned ? ' is-on' : ''}" data-bp-pin="${n}" title="Keep this card in this exact pocket">Lock in slot</button>
+    </div>
   </div>`;
 }
 
@@ -9310,6 +9347,67 @@ function _bpFillSuggestions() {
   kindSel._bpFilled = true;
 }
 
+// Constraints for the page on screen. Reset when a new theme is built, kept
+// across shuffles, saved with the page.
+let _bpPins = {};    // pocket → cardId
+let _bpKeeps = [];   // cardIds
+
+// The replace picker: a search over IR/SIR cards, name or set, that drops the
+// chosen card into one pocket as a pin.
+function _bpOpenPicker(slot) {
+  let host = document.getElementById('bpPicker');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'bpPicker'; host.className = 'bp-picker';
+    document.getElementById('bpResult')?.appendChild(host);
+  }
+  host.style.display = '';
+  host.dataset.slot = slot;
+  host.innerHTML = `
+    <div class="bp-picker-hd">
+      <span>Choose the card for pocket ${slot}</span>
+      <button type="button" class="bp-btn bp-btn-ghost" id="bpPickerClose">Cancel</button>
+    </div>
+    <input id="bpPickerQ" class="bp-input" type="text" autocomplete="off" spellcheck="false" placeholder="Search Illustration Rares by name or set">
+    <div class="bp-picker-list" id="bpPickerList"><div class="bp-log">Type to search.</div></div>`;
+  const q = document.getElementById('bpPickerQ');
+  const list = document.getElementById('bpPickerList');
+  const owned = _bpOwnedIds();
+  const fx = usdToGbp(1);
+  const render = () => {
+    const term = (q.value || '').trim().toLowerCase();
+    if (term.length < 2) { list.innerHTML = '<div class="bp-log">Type to search.</div>'; return; }
+    const hits = cardData.cards
+      .filter(c => c.i && BP_ART_TIERS.has(cardRarityCode(c)) &&
+        ((c.n || '').toLowerCase().includes(term) || (c.s || '').toLowerCase().includes(term)))
+      .sort((a, b) => (owned.has(b.i) - owned.has(a.i)) || (b.p - a.p))
+      .slice(0, 40);
+    list.innerHTML = hits.length ? hits.map(c => {
+      const img = _hiresUrl(getCardImg(c));
+      const gbp = (getCurrentPrice(c) || c.p || 0) * fx;
+      return `<button type="button" class="bp-pick" data-pick="${esc(c.i)}">
+        ${img ? `<img src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<span class="bp-pick-noimg"></span>'}
+        <span class="bp-pick-main"><span class="bp-pick-name">${esc(c.n)}</span><span class="bp-pick-set">${esc(c.s || '')} · ${cardRarityCode(c)}${c.lang === 'JP' ? ' · JP' : ''}</span></span>
+        <span class="bp-pick-right">${owned.has(c.i) ? '<span class="bp-pick-owned">Owned</span>' : fmtGBPDirect(gbp)}</span>
+      </button>`; }).join('') : '<div class="bp-log">Nothing matches.</div>';
+  };
+  q.addEventListener('input', render);
+  setTimeout(() => q.focus(), 30);
+  document.getElementById('bpPickerClose').onclick = () => { host.style.display = 'none'; };
+  list.onclick = e => {
+    const b = e.target.closest('[data-pick]');
+    if (!b) return;
+    _bpPins[slot] = b.dataset.pick;
+    // A card pinned to a pocket cannot also be a floating keep.
+    _bpKeeps = _bpKeeps.filter(id => id !== b.dataset.pick);
+    host.style.display = 'none';
+    _bpRebuildKeepingConstraints();
+  };
+}
+
+let _bpRunFn = null;   // set by setupBinderPages so the picker can rebuild
+function _bpRebuildKeepingConstraints() { if (_bpRunFn) _bpRunFn(_bpSeed ? _bpSeed + 1 : 0); }
+
 let _bpSeed = 0;
 function setupBinderPages() {
   const kindSel = document.getElementById('bpThemeKind');
@@ -9330,6 +9428,7 @@ function setupBinderPages() {
   const conn = document.getElementById('bpConnected');
   const run = (seed) => {
     _bpSay('');
+    document.getElementById('bpPicker')?.style && (document.getElementById('bpPicker').style.display = 'none');
     if (kindSel.value === 'connected') {
       const t = BP_THEMES.set.resolve(input.value);
       if (!t) { _bpSay(`Could not find a set called "${input.value}".`, 'err'); return; }
@@ -9342,12 +9441,15 @@ function setupBinderPages() {
       kind: kindSel.value, value: input.value,
       size: parseInt(sizeSel.value, 10) || 9,
       budgetGBP: parseFloat(budget.value) || 0,
-      seed,
+      seed, pins: _bpPins, keeps: _bpKeeps,
     });
     renderBinderPageResult(res);
   };
-  build.addEventListener('click', () => { _bpSeed = 0; run(0); });
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); _bpSeed = 0; run(0); } });
+  _bpRunFn = run;
+  // A new build is a new page: constraints belong to the page they were set on.
+  const fresh = () => { _bpPins = {}; _bpKeeps = []; _bpSeed = 0; run(0); };
+  build.addEventListener('click', fresh);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); fresh(); } });
   shuffle?.addEventListener('click', () => { _bpSeed = (_bpSeed + 1) % 1000; run(_bpSeed + 1); });
 
   save?.addEventListener('click', () => {
@@ -9357,6 +9459,7 @@ function setupBinderPages() {
       id: `bp_${Date.now().toString(36)}`, name,
       kind: _bpLast.kind, value: _bpLast.value, size: _bpLast.size,
       slots: _bpLast.slots.map(x => x ? x.card.i : null),
+      pins: { ..._bpPins }, keeps: [..._bpKeeps],
       savedAt: Date.now(),
     });
     _binderPagesSave();
@@ -9382,8 +9485,34 @@ function setupBinderPages() {
     }
   });
 
+  // Pocket controls: replace, lock to page, lock in slot. These are handled
+  // before the open-card tap so a control press never navigates away.
+  grid?.addEventListener('click', e => {
+    const rep = e.target.closest('[data-bp-replace]');
+    const keep = e.target.closest('[data-bp-keep]');
+    const pin = e.target.closest('[data-bp-pin]');
+    if (!rep && !keep && !pin) return;
+    e.preventDefault(); e.stopPropagation();
+    const pocket = e.target.closest('.bp-pocket');
+    const id = pocket?.dataset.id;
+    if (rep) { _bpOpenPicker(+rep.dataset.bpReplace); return; }
+    if (!id) return;
+    if (pin) {
+      const n = +pin.dataset.bpPin;
+      if (_bpPins[n] === id) delete _bpPins[n];          // toggle off
+      else { for (const k of Object.keys(_bpPins)) if (_bpPins[k] === id) delete _bpPins[k]; _bpPins[n] = id; _bpKeeps = _bpKeeps.filter(x => x !== id); }
+    } else if (keep) {
+      if (_bpKeeps.includes(id)) _bpKeeps = _bpKeeps.filter(x => x !== id);   // toggle off
+      else { for (const k of Object.keys(_bpPins)) if (_bpPins[k] === id) delete _bpPins[k]; _bpKeeps.push(id); }
+    }
+    // Re-render in place with the same arrangement, so a lock does not shuffle.
+    if (_bpLast) { const res = buildBinderPage({ kind: _bpLast.kind, value: _bpLast.value, size: _bpLast.size,
+      budgetGBP: parseFloat(budget.value) || 0, seed: _bpSeed ? _bpSeed + 1 : 0, pins: _bpPins, keeps: _bpKeeps }); renderBinderPageResult(res); }
+  }, true);
+
   // Tap a pocket or a gap row to open the card.
   const openFrom = e => {
+    if (e.target.closest('.bp-ctl')) return;
     const el = e.target.closest('[data-id]');
     if (!el) return;
     try { go('predict'); selectCard(el.dataset.id); } catch {}
@@ -9404,7 +9533,8 @@ function setupBinderPages() {
       kindSel.value = p.kind; kindSel._bpFilled = false; _bpFillSuggestions();
       input.value = p.value; sizeSel.value = String(p.size);
       // Rebuild rather than replay the saved ids: ownership and prices move,
-      // and the page should say what is true now.
+      // and the page should say what is true now. The locks come back with it.
+      _bpPins = { ...(p.pins || {}) }; _bpKeeps = [...(p.keeps || [])];
       _bpSeed = 0; run(0);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }

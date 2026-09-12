@@ -510,6 +510,15 @@ reads as one thing, then whatever scores best. Fillers are marked on the pocket
 and named in the buy list as "outside theme". A species with two art cards
 still yields a full nine.
 
+**Pocket locks.** `buildBinderPage` takes `pins` (pocket → card, that card in
+that pocket always) and `keeps` (card ids that must be on the page, position
+free). A card chosen through Replace is a pin. Pins are placed before the tier
+rule runs and excluded from the pool so they cannot be chosen twice; keeps go in
+ahead of the pool and skip the species and budget filters, since the owner asked
+for them. A card cannot be both — setting one clears the other. Locks survive
+Shuffle, are saved with the page and restored on open; a fresh Build clears
+them, because they belong to the page they were set on.
+
 **Upgrade options.** For each owned pocket, the better version of the same
 Pokémon that is not owned — an IR's SIR, or a stronger SIR from another set —
 listed with its price so the page can say where a swap would lift it. Owning
