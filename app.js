@@ -574,6 +574,9 @@ let livePriceFetchId = 0;
 // Priority lock: background refresh workers await this before each card fetch.
 // fetchLivePrice holds it while a card is open so background work doesn't compete.
 let _priorityFetchDone = Promise.resolve();
+// Upper bound on a single card's price lookup. The proxy chain can otherwise
+// run for tens of seconds on a card with no PriceCharting entry at all.
+const LIVE_PRICE_TIMEOUT_MS = 15000;
 let _priorityFetchRelease = null;
 let lastModelPriceUSD = 0; // Last result from predictPrice — used by inline deal checks
 let _holdWinnerKey = null;  // Winner key from last renderHoldStrategy run — drives owned-card badge
@@ -3029,8 +3032,15 @@ async function fetchLivePrice(card) {
       return;
     }
 
-    // D1 had no data — full fallback: PriceCharting + TCGPlayer/CM simultaneously
-    const priceData = await fetchFreshPriceData(card);
+    // D1 had no data — full fallback: PriceCharting + TCGPlayer/CM simultaneously.
+    // Bounded: a card PriceCharting has never heard of walks the whole proxy
+    // chain, and every proxy has to time out before the search gives up. That
+    // is tens of seconds with the panel showing nothing, so the wait is capped
+    // and whatever has arrived is rendered instead of spinning indefinitely.
+    const priceData = await Promise.race([
+      fetchFreshPriceData(card),
+      new Promise((_, rj) => setTimeout(() => rj(new Error('price lookup timed out')), LIVE_PRICE_TIMEOUT_MS)),
+    ]);
     if (thisId !== livePriceFetchId) return;
     livePrice = priceData;
     setCachedPrice(card.i, priceData);
@@ -3042,7 +3052,9 @@ async function fetchLivePrice(card) {
     console.warn('Live price fetch failed:', e);
     loading.style.display = 'none';
     content.style.display = 'none';
-    status.textContent = 'Live pricing unavailable — using static data';
+    // Collectr and the PSA controls sit outside this block and keep working,
+    // so say so rather than implying the whole panel is dead.
+    status.textContent = 'No live PriceCharting match — Collectr and PSA below still work';
     status.style.display = 'block';
   } finally {
     if (_priorityFetchRelease === release) {
@@ -3366,6 +3378,16 @@ window.switchMarketPCVariant = async function(variant) {
   const matchEl = $('pcMatchName');
   if (matchEl) matchEl.textContent = variant === '1sted' ? 'Fetching 1st Edition…' : 'Fetching Shadowless…';
 
+  // Apply the print to everything Collectr can already answer, before waiting
+  // on PriceCharting. That fetch walks the proxy chain and can run for tens of
+  // seconds, and until it returned the PSA tiles sat on Unlimited with the new
+  // print shown as selected — the switch looked like it did nothing. Collectr's
+  // per-print prices are already local, so the tiles move now and PriceCharting
+  // only refines them when it arrives.
+  try { renderCollectrRow(); } catch {}
+  try { _refreshLiveHeadline(); } catch {}
+  if (typeof renderHoldStrategy === 'function') try { renderHoldStrategy(selectedCard); } catch {}
+
   let pd = null;
   try {
     if (variant === '1sted') {
@@ -3382,7 +3404,16 @@ window.switchMarketPCVariant = async function(variant) {
     const varLabel = variant === '1sted' ? '1st Edition' : 'Shadowless';
     ['pcUngraded','pcPsa10','pcGrade9','pcAce10','pcAce9'].forEach(id => { const el = $(id); if (el) el.textContent = '—'; });
     $('pcGradingRoi').textContent = '—';
-    if (matchEl) matchEl.textContent = `No ${varLabel} data — try "Wrong card?" to find it manually`;
+    if (matchEl) matchEl.textContent = `No ${varLabel} PriceCharting data — Collectr prices below follow the print`;
+    // PriceCharting having nothing for this print is not the end of the switch.
+    // Collectr prices per print and leads on every grade it carries, so the
+    // rest of the page must still follow the selection. Returning here left
+    // the PSA tiles on Unlimited with 1st Edition showing as selected — the
+    // print appeared to do nothing at all.
+    _livePriceVariant = null;
+    try { renderCollectrRow(); } catch {}
+    try { _refreshLiveHeadline(); } catch {}
+    if (typeof renderHoldStrategy === 'function') try { renderHoldStrategy(selectedCard); } catch {}
     return;
   }
 
@@ -19408,7 +19439,18 @@ function renderHoldStrategy(card) {
       const _rawOvr = (getHoldOverridesForCard(overrideIdFor(card, _holdStratVariant)) || {}).raw;
       if (_rawOvr > 0) rawUSD = _rawOvr / _fxNow;
     }
-    else _holdStratVariant = 'unlimited'; // fallback if no data at all
+    else {
+      // Collectr prices per print on its own, and leads on every PSA grade it
+      // carries, so PriceCharting having no 1st Edition row is not a reason to
+      // drop back to Unlimited. Doing so reset the print *before* the Collectr
+      // block below read it, so a 1st Edition selection silently rendered the
+      // Unlimited ladder — on Dark Dragonite, PSA 8 showed Unlimited's $319
+      // while Collectr had the 1st Edition at $857.
+      const _crHasPrint =
+           (typeof _collectrGradeUSD === 'function' && _collectrGradeUSD(card, 10, _holdStratVariant) > 0)
+        || (typeof collectrRawUSD    === 'function' && collectrRawUSD(card, _holdStratVariant)    > 0);
+      if (!_crHasPrint) _holdStratVariant = 'unlimited'; // no source can price this print
+    }
   }
 
   // Collectr overrides both anchors wherever it has a figure for the print in

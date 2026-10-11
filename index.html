@@ -25,9 +25,9 @@
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
   <!-- Preload large data files so they start downloading during head parse -->
-  <link rel="preload" href="data/cards-db.js?v=20261011f" as="script">
-  <link rel="preload" href="data/sets-db.js?v=20261011f" as="script">
-  <link rel="stylesheet" href="style.css?v=20261011f">
+  <link rel="preload" href="data/cards-db.js?v=20261011j" as="script">
+  <link rel="preload" href="data/sets-db.js?v=20261011j" as="script">
+  <link rel="stylesheet" href="style.css?v=20261011j">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -1629,7 +1629,8 @@
                 <div class="lp-cell"><span class="lp-label">ACE 9</span><span class="lp-val" id="pcAce9">—</span></div>
                 <div class="lp-cell"><span class="lp-label">Grading ROI</span><span class="lp-val pc-grading-roi" id="pcGradingRoi">—</span></div>
               </div>
-              <!-- Collectr: a second opinion per print, and the only source of
+                          </div>
+<!-- Collectr: a second opinion per print, and the only source of
                    dated price history the app has. -->
               <div class="collectr-row" id="collectrRow">
                 <span class="collectr-icon">📉</span>
@@ -1651,7 +1652,6 @@
                 <p class="collectr-hint">Collectr's own search is unreliable, so the product link is pasted rather than looked up. One card costs 2 credits and is cached for a day.</p>
               </div>
               <div class="collectr-data" id="collectrData" style="display:none"></div>
-            </div>
               <!-- PSA reference link: pin the authoritative PSA page for this card -->
               <div class="psa-link-row" id="psaLinkRow">
                 <span class="psa-link-icon">🏆</span>
@@ -3191,9 +3191,9 @@
     </div>
   </div>
 
-  <script src="data/cards-db.js?v=20261011f"></script>
-  <script src="data/sets-db.js?v=20261011f"></script>
-  <script src="data/pokedex-db.js?v=20261011f"></script>
+  <script src="data/cards-db.js?v=20261011j"></script>
+  <script src="data/sets-db.js?v=20261011j"></script>
+  <script src="data/pokedex-db.js?v=20261011j"></script>
   <!-- Homepage PiP card preview (fullscreen bottom-sheet) -->
   <div id="homePip" class="home-pip" style="display:none" role="dialog" aria-modal="true" aria-label="Card preview">
     <div class="home-pip-bg" id="homePipBg"></div>
@@ -3263,7 +3263,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261011f"></script>
+  <script src="app.js?v=20261011j"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

@@ -542,6 +542,45 @@ before the dex test was added. Lines that skip dex numbers (Pichu→Pikachu, the
 Eeveelutions) are missed and need confirming by hand. Do not seed this table
 from memory.
 
+## The print selector has three places to lose the print, and had lost it in all three
+
+Selecting 1st Edition left every PSA tile on Unlimited pricing. Three separate
+causes, each of which alone was enough:
+
+1. **`renderHoldStrategy` dropped the print when PriceCharting had no row for
+   it.** The variant block falls back with `_holdStratVariant = 'unlimited'`,
+   and that ran *before* the Collectr block below read the same variable — so
+   Collectr's per-print prices were never consulted. The fallback now fires
+   only when no source can price the print, Collectr included.
+2. **`switchMarketPCVariant` returned early on a PriceCharting miss**, before
+   reaching `renderHoldStrategy`. A print PriceCharting has never carried is
+   exactly the case where Collectr matters most, and it was the one case where
+   nothing re-rendered.
+3. **The switch awaited PriceCharting before rendering anything.** That fetch
+   walks the whole proxy chain and can run for tens of seconds on a miss, so
+   the tiles sat on Unlimited with the new print shown as selected. The print
+   is now applied from Collectr immediately and PriceCharting refines it when
+   it lands.
+
+On Dark Dragonite the difference is not cosmetic: PSA 10 reads £17,389 as 1st
+Edition against £7,458 Unlimited, and PSA 8 £673 against £259. **Any new
+print-dependent panel must render from Collectr first and treat PriceCharting
+as an enrichment**, never as the gate on whether the print exists.
+
+## Collectr must not live inside the live-price panel's content block
+
+`#collectrRow` sat inside `#livePriceContent`, which is hidden while prices load
+and hidden again on failure. So whenever PriceCharting was slow or had no match,
+Collectr vanished from the page entirely — on exactly the cards it was there to
+price. It now sits beside the PSA block, outside that container, and survives
+any price outcome. The PSA block was already outside, which is why it stayed
+visible while Collectr disappeared.
+
+The lookup is also bounded by `LIVE_PRICE_TIMEOUT_MS` (15s). A card with no
+PriceCharting entry at all — every newly added set — makes the search try every
+proxy in turn, each with its own timeout, so the panel would otherwise spin
+indefinitely with no error and no end.
+
 ## Card art and set logos moved host partway through the catalogue
 
 `images.pokemontcg.io` 404s for every set from **Ascended Heroes (me2pt5)
