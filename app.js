@@ -18895,6 +18895,84 @@ function gemRateIsMeasured(card, variant) {
   return false;
 }
 
+// Gold / Silver / Bronze — three answers to three different questions, so the
+// panel stops making the choice silently and shows the shape of it instead.
+//
+//   Gold   — the best buy. The route that clears the 5-year opportunity-cost
+//            bar when one does; otherwise the strongest rung below the biggest
+//            cliff. Gold is comparative: on a card where nothing clears the bar
+//            it still marks the best way in, and the tooltip says so rather
+//            than letting the medal read as an endorsement of the return.
+//   Silver — the next best on the same lens. A genuine alternative when the
+//            Gold grade is not on the market, not a luxury upgrade: the capital
+//            penalty in the comparator keeps a far dearer slab from taking it.
+//   Bronze — "I just want the card." The cheapest sensible entry, which is the
+//            old Collector pick rule unchanged.
+//
+// A card with two walls has two candidate rungs (§7), and Gold and Bronze take
+// opposite ends of that list — which is the whole reason `opts.lowest` exists.
+// No tile ever carries two medals, and Bronze is dropped when it is not
+// actually cheaper than Gold, since "just get this one" has to mean something.
+function _medalPicks({ pool, allStrategies, bestPick, bestPickOverBudget, maxBudgetGBP, fx, opts }) {
+  const capped = maxBudgetGBP < BUDGET_DEFAULT;
+  const affordable = s => s.isOwnedSlab || !capped || (s.today * fx) <= maxBudgetGBP;
+  const viable = (pool || []).filter(s => s && !s.na && !s.estimated && s.today > 0 && affordable(s));
+
+  const penaltyOf = s => s.isOwnedSlab ? 0 : ltpCapitalPenalty(gbpFromUSD(s.today));
+  const better = (a, b) => {
+    const pa = penaltyOf(a), pb = penaltyOf(b);
+    const aOut = pa >= 99999, bOut = pb >= 99999;
+    if (aOut !== bOut) return bOut ? a : b;
+    const rA = _LTP_RISK_ORD[a.risk ?? 'med'] ?? 1;
+    const rB = _LTP_RISK_ORD[b.risk ?? 'med'] ?? 1;
+    if (rA !== rB) return rA < rB ? a : b;
+    return (b.riskAdjusted - pb) > (a.riskAdjusted - pa) ? b : a;
+  };
+
+  const bronzeRaw = _pickCollectorEntry(pool, maxBudgetGBP, fx, opts);
+
+  let gold = (bestPick && !bestPickOverBudget) ? bestPick : null;
+  const clearsBar = !!gold;
+  if (!gold) {
+    gold = _ladderValueRung(
+      (allStrategies && allStrategies.length ? allStrategies : pool),
+      s => affordable(s) && s.roi >= 0 && s.key !== 'gamble');
+  }
+  if (!gold && viable.length) gold = viable.reduce(better);
+  if (!gold) return { gold: null, silver: null, bronze: null, clearsBar: false };
+
+  // Bronze only earns its place by undercutting Gold.
+  const bronze = (bronzeRaw && bronzeRaw.key !== gold.key && bronzeRaw.today < gold.today)
+    ? bronzeRaw : null;
+
+  // The three medals have to read as one ladder — Bronze the way in, Gold the
+  // best buy, Silver the step between them. Ranked on the plain comparator it
+  // did not: that leads on risk tier, so Silver took PSA 10 at £17,389 as the
+  // "back-up" to a £1,698 Gold, and once that was capped it swung the other way
+  // and took PSA 2 at £79, below Bronze. Either way the ordering was nonsense.
+  //
+  // So Silver sits strictly between Bronze and Gold on outlay. Where Gold is
+  // already the cheapest route there is no "between", and Silver instead takes
+  // the best alternative within reach of Gold's price.
+  const SILVER_MAX_VS_GOLD = 1.5;
+  const taken = new Set([gold.key, bronze && bronze.key].filter(Boolean));
+  const inBand = bronze
+    ? (s => s.today > bronze.today && s.today < gold.today)
+    : (s => s.today <= gold.today * SILVER_MAX_VS_GOLD);
+  // A back-up that costs more than Bronze and returns less than it is strictly
+  // dominated — there is no reason anyone would take it. On Dark Dragonite the
+  // only rung between Bronze and Gold was PSA 7 at £292 against Bronze's PSA 8
+  // at £259 with better ROI, so Silver was recommending the worse card on both
+  // axes. Where nothing in the band beats Bronze, two medals is the honest
+  // answer; the middle option simply does not exist on that card.
+  const beatsBronze = s => !bronze || s.roi > bronze.roi;
+  const rest = viable.filter(s =>
+    !taken.has(s.key) && s.key !== 'gamble' && inBand(s) && beatsBronze(s));
+  const silver = rest.length ? rest.reduce(better) : null;
+
+  return { gold, silver, bronze, clearsBar };
+}
+
 function _pickCollectorEntry(strategies, maxBudgetGBP, fx, opts) {
   const capped = maxBudgetGBP < BUDGET_DEFAULT;
   const affordable = s => !capped || (s.today * fx) <= maxBudgetGBP;
@@ -19953,6 +20031,16 @@ function renderHoldStrategy(card) {
     : _pickCollectorEntry(_slabOnlyCandidates(strategies, card, strategies, gradeOutcomes), _ltpBudget, fx,
                           { card, gradeOutcomes, variant: (_holdVariantEligible ? _holdStratVariant : 'unlimited') });
 
+  // Gold / Silver / Bronze. Computed from the same pool the two old badges
+  // used, so the medals cannot disagree with the picks underneath them.
+  const _medalPool = _slabOnlyCandidates(strategies, card, strategies, gradeOutcomes);
+  const medals = _medalPicks({
+    pool: _medalPool, allStrategies: strategies,
+    bestPick: bestLongTermPick, bestPickOverBudget,
+    maxBudgetGBP: _ltpBudget, fx,
+    opts: { card, gradeOutcomes, variant: (_holdVariantEligible ? _holdStratVariant : 'unlimited') },
+  });
+
   const winner = overallWinner; // used for recommendation copy below
   // Store winner key so updateSignal can stay in sync regardless of call order.
   // 'none' = Hold Strategy ran but no strategy qualifies as BEST LONG-TERM PICK.
@@ -20304,6 +20392,11 @@ function renderHoldStrategy(card) {
     const isOverBudget  = !s.isOwnedSlab && _maxBudgetGBP < BUDGET_DEFAULT && todayGBP_tile > _maxBudgetGBP;
     const isWinner      = bestLongTermPick && s.key === bestLongTermPick.key && !isOverBudget;
     const isCollector   = collectorPick && s.key === collectorPick.key && !isOverBudget;
+    const medal = isOverBudget ? null
+      : (medals.gold   && s.key === medals.gold.key)   ? 'gold'
+      : (medals.silver && s.key === medals.silver.key) ? 'silver'
+      : (medals.bronze && s.key === medals.bronze.key) ? 'bronze'
+      : null;
     const gradeNum      = s.key.startsWith('psa') ? parseInt(s.key.replace('psa', '')) : null;
     const isCollapsed   = gradeNum !== null && _hiddenGradeNums.has(gradeNum);
     const profitSign    = s.profit >= 0 ? '+' : '−';
@@ -20400,10 +20493,17 @@ function renderHoldStrategy(card) {
       }
     }
 
-    return `<div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isCollector ? 'hold-collector' : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${s.overridden ? 'hold-tile-overridden' : ''} ${isCollapsed ? 'hold-tile-collapsed' : ''}"${isCollapsed ? ' style="display:none"' : ''}>
+    const _medalTag = {
+      gold: ['GOLD · Best buy', medals.clearsBar
+        ? 'The best buy on this card. It clears the 5-year opportunity-cost bar, so it stands up as a position as well as a purchase.'
+        : 'The best way into this card. Nothing here clears the 5-year opportunity-cost bar, so this is the best of the options, not an investment case.'],
+      silver: ['SILVER · Good back-up', 'The next best route on the same reasoning — worth taking if the Gold grade is not on the market at a sensible price.'],
+      bronze: ['BRONZE · Just want the card', 'The cheapest sensible way to own it. Everything above this pays to cross a price wall, so only go higher if the better slab is specifically the goal.'],
+    }[medal] || null;
+
+    return `<div class="hold-tile ${isWinner ? 'hold-winner' : ''} ${isCollector ? 'hold-collector' : ''} ${medal ? 'hold-medal hold-' + medal : ''} ${isOverBudget ? 'hold-tile-over-budget' : ''} ${s.overridden ? 'hold-tile-overridden' : ''} ${isCollapsed ? 'hold-tile-collapsed' : ''}"${isCollapsed ? ' style="display:none"' : ''}>
       ${isOverBudget ? '<div class="hold-over-budget-tag">Above budget</div>'
-        : isWinner ? '<div class="hold-winner-tag">★ Best pick</div>'
-        : isCollector ? '<div class="hold-collector-tag" title="Best way to own this card. The return does not clear the 5-year opportunity-cost bar, so buy it because you want it, not as an investment.">♥ Collector pick</div>'
+        : _medalTag ? `<div class="hold-medal-tag hold-medal-tag--${medal}" title="${esc(_medalTag[1])}">${esc(_medalTag[0])}</div>`
         : ''}
       ${s.overridden ? `<div class="hold-tile-override-tag" title="Price override">${s.marketOverrideGBP != null ? 'Mkt' : 'Override'} £${(+s.overrideGBP).toFixed(2)}</div>` : ''}
       <div class="hold-row-inner">

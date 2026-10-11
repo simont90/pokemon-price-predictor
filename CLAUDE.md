@@ -542,6 +542,44 @@ before the dex test was added. Lines that skip dex numbers (Pichu→Pikachu, the
 Eeveelutions) are missed and need confirming by hand. Do not seed this table
 from memory.
 
+## Gold, Silver, Bronze: three answers, not three ranks of the same answer
+
+The hold tiles carry medals instead of the old Best pick / Collector pick pair.
+`_medalPicks()` computes them; `bestLongTermPick` is untouched underneath,
+because Standouts and the home signal still read it.
+
+- **Gold — best buy.** The route clearing the 5-year opportunity-cost bar when
+  one does, otherwise the strongest rung below the biggest cliff. Gold is
+  **comparative**: on a card where nothing clears the bar it still marks the
+  best way in, and the tooltip says so. It must never read as an endorsement of
+  a return that is not there.
+- **Silver — good back-up.** The step between Bronze and Gold.
+- **Bronze — just want the card.** The cheapest sensible entry; the old
+  Collector pick rule unchanged.
+
+The medals must read as one ladder, and getting Silver wrong is easy in both
+directions — each of these shipped and had to be fixed:
+
+- Ranked on `_pickBestLTP`'s comparator, Silver took **PSA 10 at £17,389** as
+  the "back-up" to a £1,698 Gold. That comparator leads on risk tier, and PSA 10
+  is the lowest-risk row on almost every card, so it wins before the capital
+  penalty is ever reached. A tier above Gold is a different purchase, not a
+  fallback.
+- Capped by price instead, it swung the other way and took **PSA 2 at £79**,
+  below Bronze, inverting the ladder.
+- Banded strictly between Bronze and Gold, it took a rung that cost *more* than
+  Bronze and returned *less* — PSA 7 at £292 (+5%) against Bronze's PSA 8 at
+  £259 (+10%). Strictly dominated: nobody would buy it.
+
+So Silver sits between Bronze and Gold on outlay **and** must beat Bronze on
+ROI. Where nothing qualifies, the card gets two medals and that is the honest
+answer — Dark Dragonite has no sensible middle rung. Bronze is likewise dropped
+when it does not undercut Gold, since "just get this one" has to mean something.
+
+A tile never carries two medals. Where Gold is already the cheapest route
+(usually a raw buy), there is no Bronze and Silver takes the best alternative
+within 1.5x Gold's price.
+
 ## The print selector has three places to lose the print, and had lost it in all three
 
 Selecting 1st Edition left every PSA tile on Unlimited pricing. Three separate
