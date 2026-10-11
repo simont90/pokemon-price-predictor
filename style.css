@@ -19039,6 +19039,46 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
 .bp-saved-name { flex: 1; font-size: 13px; font-weight: 700; }
 .bp-saved-meta { font-size: 11px; font-family: var(--mono); color: var(--text-muted); }
 
+/* Rip-or-buy panel. The verdict is usually "open none" — modern sealed sits
+   above its own singles EV — so the three tones have to be legible at a
+   glance: green only when a pack is genuinely worth opening, amber when the
+   pack price looks stale, red when the singles win outright.
+   Amber is literal, not --accent, for the reason noted on the collector pick. */
+.bp-rip { margin-top: 18px; }
+.rip-wrap { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--bg-raised); }
+.rip-controls { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; }
+.rip-need { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); }
+.rip-need > span:first-child { font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.rip-need-in, .rip-cost-in { max-width: 88px; min-height: 44px; }
+.rip-of { font-family: var(--mono); white-space: nowrap; }
+.rip-verdict { font-size: 13px; line-height: 1.55; border-radius: 8px; padding: 10px 12px; border-left: 3px solid var(--border); }
+.rip-verdict strong { font-weight: 800; }
+.rip-good { border-left-color: #35c07a; background: rgba(53,192,122,.08); }
+.rip-bad  { border-left-color: #e4574c; background: rgba(228,87,76,.07); }
+.rip-warn { border-left-color: #e8b634; background: rgba(232,182,52,.07); }
+.rip-ev { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0 2px; font-size: 11px; color: var(--text-muted); }
+.rip-ev strong { font-family: var(--mono); font-size: 12px; color: var(--text); font-weight: 700; }
+.rip-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.rip-table th { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-muted); text-align: right; padding: 6px 6px; border-bottom: 1px solid var(--border); }
+.rip-table th:first-child { text-align: left; }
+.rip-table td { font-size: 12px; font-family: var(--mono); text-align: right; padding: 7px 6px; border-bottom: 1px solid var(--border); }
+.rip-table td:first-child { text-align: left; font-weight: 700; }
+.rip-row-dim td { color: var(--text-muted); }
+.rip-sell { font-size: 9px; font-family: var(--sans, inherit); font-weight: 400; text-transform: uppercase; letter-spacing: .05em; }
+.rip-caveat { font-size: 10px; line-height: 1.5; color: var(--text-muted); margin-top: 10px; }
+.rip-none { font-size: 12px; line-height: 1.55; color: var(--text-muted); padding: 10px 2px; }
+
+@media (max-width: 768px), (pointer: coarse) {
+  /* Thumb use: the two needed-counts and the pack price each get a full row
+     rather than wrapping into an unpredictable grid. */
+  .rip-controls { flex-direction: column; gap: 10px; }
+  .rip-need { justify-content: space-between; width: 100%; }
+  .rip-need-in, .rip-cost-in { max-width: 108px; }
+  .rip-ev { flex-direction: column; gap: 4px; }
+  .rip-table th:nth-child(2), .rip-table td:nth-child(2) { display: none; }  /* "In set" is the least load-bearing */
+}
+
 @media (max-width: 768px), (pointer: coarse) {
   .bp-controls { grid-template-columns: 1fr 1fr; }
   .bp-field-theme, .bp-field-btn { grid-column: 1 / -1; }

@@ -542,6 +542,49 @@ before the dex test was added. Lines that skip dex numbers (Pichu→Pikachu, the
 Eeveelutions) are missed and need confirming by hand. Do not seed this table
 from memory.
 
+## Ripping packs is measured against the singles, and usually loses
+
+`packRipPlan()` answers one question on a set-themed binder page: I still need
+n of this set's art cards, how many packs can I open before the next one is
+worth less than it costs? `renderRipPanel` draws it under the buy list.
+
+The mechanism is the needed/dupe split. A hit you still need is worth what you
+would otherwise have paid; a dupe is worth only what you can sell it for, so it
+carries the §8 net-of-fees rate (`RIP_NET_RATE`, 0.87). Pack value therefore
+*falls* as the holes fill, from `evNow` towards `evFloor` (every pull a dupe),
+and the walk stops where it crosses the pack price.
+
+- **The honest answer is almost always zero packs.** Every one of the 19 sets
+  with recorded odds prices a pack 2–4× above its own singles EV — 151 is £6.82
+  of expected value against £22.87 a pack. That is sealed product carrying a
+  premium, not a bug, and the panel says "open none" and prices the singles
+  instead. Do not tune the model until it produces an encouraging number.
+- **`evPerPack` in `sets-db.js` is Σ `pullRate` × `avgRaw`.** Verified exactly on
+  151: 9.2026 computed against 9.2028 stored. Any rewrite should still reproduce
+  it when nothing is owned and no fee haircut is applied.
+- **When `evFloor` exceeds the pack price there is no maximum.** Resale alone
+  covers the pack forever, so the walk cannot terminate; it reports `unbounded`
+  rather than running to `RIP_WALK_CAP` and printing the cap as if it were an
+  answer. A first cut returned "20000 packs, spend £90,000". In practice this
+  state means the pack price is stale and the panel says so.
+- **`avgRaw` is the tier mean, not the chase.** A set's headline card sits far
+  above it, so the figure is stated as an average in the UI rather than quietly
+  standing in for the specific cards that are missing.
+- **Odds exist only for Scarlet & Violet onwards** (19 of 172 sets). Everything
+  older carries no `pullRate`, and the panel refuses by name instead of
+  substituting `FALLBACK_PACKS_PER_HIT` — a made-up denominator here would read
+  as a measured one. WOTC sets have no IR/SIR at all, so the page errors before
+  the panel is ever reached.
+- **The pack-price box persists to an unprefixed key** (`binder-rip-packcost-v1`),
+  deliberately: it is read from the synced per-set override when one exists, but
+  editing a price while weighing up a page must never write into the collection.
+  A local instance can be sync-paired to the real collection, so an unprefixed
+  key is the only safe place for a value that changes while experimenting.
+- Needed counts prefill from the collection, counting a Japanese copy as owned
+  through `findCounterparts` — which returns `{ primary, counterparts }`, not an
+  array. Treating it as an array throws into a `catch` and silently reports owned
+  JP cards as missing.
+
 ## A pasted listing is not necessarily the card on screen
 
 `ebayIdentityCheck()` runs before anything is priced, and it exists because the

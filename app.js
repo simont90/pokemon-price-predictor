@@ -9245,6 +9245,282 @@ function _bpPocketHtml(it, n, cols) {
   </div>`;
 }
 
+// ─── Ripping packs against buying the singles ──────────────────────────────
+//
+// The question this answers: I still need n of a set's major hits — how many
+// packs can I open before the next pack is worth less than it costs?
+//
+// §8's net-of-fees rate is the hinge. A hit you still need is worth what you
+// would otherwise have paid for it; a dupe is worth only what you can sell it
+// for. So every pack's value falls as the holes fill, and the pack price is a
+// fixed line it eventually drops under. Where it starts under that line, the
+// answer is zero packs and the singles are simply cheaper — which is the usual
+// answer for sealed modern product and is reported as such, not massaged.
+const RIP_NET_RATE = 0.87;            // ~13% marketplace fees, per §8
+const RIP_ART_TIERS = ['IR', 'SIR'];  // the tiers a binder page is made of
+const RIP_WALK_CAP = 20000;           // only a backstop; the walk ends on the floor
+
+// setsData carries, per rarity: count, pullRate, pullOdds, avgRaw, avgPsa10.
+// avgRaw is USD and a tier-wide average — stated in the UI, because the
+// specific cards still missing are rarely the tier's average card.
+function _ripTiers(sc) {
+  const s = (setsData || {})[sc];
+  if (!s || !s.rarities) return [];
+  return Object.entries(s.rarities)
+    .filter(([, r]) => r && r.pullRate > 0 && r.avgRaw > 0)
+    .map(([code, r]) => ({
+      code,
+      count: r.count || 1,
+      pullRate: r.pullRate,
+      pullOdds: r.pullOdds || `1/${Math.round(1 / r.pullRate)}`,
+      usd: r.avgRaw,
+      gbp: usdToGbp(r.avgRaw),
+      art: RIP_ART_TIERS.includes(code),
+    }))
+    .sort((a, b) => b.gbp - a.gbp);
+}
+
+// Expected pack value in GBP given how many of each art tier are still wanted.
+// `need` is { IR: n, SIR: n }; everything else in the pack is resale.
+function _ripPackEV(tiers, need, netRate) {
+  let wanted = 0, resale = 0;
+  for (const t of tiers) {
+    const take = t.pullRate * t.gbp;
+    if (!t.art) { resale += take * netRate; continue; }
+    const p = Math.max(0, Math.min(1, (need[t.code] || 0) / t.count));
+    wanted += take * p;                    // fills a hole: full value
+    resale += take * (1 - p) * netRate;    // a dupe: sell it
+  }
+  return { ev: wanted + resale, wanted, resale };
+}
+
+// Chance a single pack yields one of the cards still wanted.
+function _ripHitChance(tiers, need) {
+  return tiers.reduce((a, t) => a + (t.art
+    ? t.pullRate * Math.max(0, Math.min(1, (need[t.code] || 0) / t.count)) : 0), 0);
+}
+
+function packRipPlan({ setCode, need = {}, packCostGBP = 0, netRate = RIP_NET_RATE }) {
+  const s = (setsData || {})[setCode];
+  if (!s) return { ok: false, why: 'Unknown set.' };
+  const tiers = _ripTiers(setCode);
+  const art = tiers.filter(t => t.art);
+  if (!art.length) {
+    return { ok: false, setName: s.name,
+             why: `No measured pull rates for ${s.name}. Pack odds are only recorded for the Scarlet & Violet sets onwards, so there is nothing here to compute an honest EV from.` };
+  }
+  const cost = packCostGBP > 0 ? packCostGBP
+    : (s.packCost > 0 ? usdToGbp(s.packCost) : getDefaultPackCostGBP(setCode, 'en'));
+
+  // Cap each tier's need at what the set actually prints.
+  const need0 = {};
+  for (const t of art) need0[t.code] = Math.max(0, Math.min(t.count, Math.round(need[t.code] || 0)));
+  const totalNeed = Object.values(need0).reduce((a, b) => a + b, 0);
+
+  const evNow = _ripPackEV(tiers, need0, netRate);
+  const evCeil = _ripPackEV(tiers, Object.fromEntries(art.map(t => [t.code, t.count])), netRate).ev;
+  const evFloor = _ripPackEV(tiers, {}, netRate).ev;
+
+  // Walk packs, retiring holes as they are expected to be filled, and stop the
+  // moment the next pack is worth less than it costs. Pack value decays from
+  // evNow towards evFloor as the holes fill, so the walk only terminates when
+  // the floor is genuinely under the pack price. When it is not, there is no
+  // maximum to report: the packs pay for themselves on resale alone and the
+  // honest answer is "no limit", not the iteration cap.
+  const unbounded = evFloor > cost;
+  const n = { ...need0 };
+  let packs = 0, gained = 0;
+  if (!unbounded) {
+    while (packs < RIP_WALK_CAP && _ripPackEV(tiers, n, netRate).ev > cost) {
+      packs++;
+      for (const t of art) {
+        const g = t.pullRate * ((n[t.code] || 0) / t.count);
+        n[t.code] = Math.max(0, (n[t.code] || 0) - g);
+        gained += g;
+      }
+    }
+  }
+
+  // Cost of a wanted hit by ripping, net of everything else the packs return.
+  const hitChance = _ripHitChance(tiers, need0);
+  const netPerPack = cost - evNow.resale;
+  const costPerHit = hitChance > 0 ? netPerPack / hitChance : Infinity;
+  // What the same hit costs over the counter: the wanted tiers, weighted by
+  // how many of each are missing.
+  const buyPerHit = totalNeed > 0
+    ? art.reduce((a, t) => a + t.gbp * (need0[t.code] || 0), 0) / totalNeed : 0;
+  const singlesCost = art.reduce((a, t) => a + t.gbp * (need0[t.code] || 0), 0);
+
+  return {
+    ok: true, setCode, setName: s.name, tiers, art, need: need0, totalNeed,
+    packCostGBP: cost, evNowGBP: evNow.ev, evWantedGBP: evNow.wanted,
+    evResaleGBP: evNow.resale, evCeilGBP: evCeil, evFloorGBP: evFloor,
+    unbounded, maxPacks: unbounded ? Infinity : packs,
+    spendGBP: unbounded ? 0 : packs * cost, hitsExpected: gained,
+    hitChance, costPerHitGBP: costPerHit, buyPerHitGBP: buyPerHit,
+    singlesCostGBP: singlesCost,
+    breakEvenPackGBP: evNow.ev,   // the pack price at which this stops being a loss
+    netRate,
+  };
+}
+
+// Pack price for the rip panel. Read from the synced per-set override when the
+// owner has set one on the Sets page, otherwise the set's own figure. Edits
+// here are remembered device-locally on purpose: the key is deliberately
+// unprefixed so changing a price while weighing up a page can never write into
+// the synced collection.
+const RIP_PACKCOST_KEY = 'binder-rip-packcost-v1';
+function _ripPackCostStore() {
+  try { return JSON.parse(localStorage.getItem(RIP_PACKCOST_KEY) || '{}') || {}; } catch { return {}; }
+}
+function ripPackCostFor(sc) {
+  const mine = _ripPackCostStore()[sc];
+  if (mine > 0) return mine;
+  const ov = (typeof getPackCostOverride === 'function') ? getPackCostOverride(sc) : null;
+  if (ov > 0) return ov;
+  const s = (setsData || {})[sc];
+  if (s && s.packCost > 0) return usdToGbp(s.packCost);
+  return getDefaultPackCostGBP(sc, 'en');
+}
+function setRipPackCost(sc, gbp) {
+  const all = _ripPackCostStore();
+  if (gbp > 0) all[sc] = gbp; else delete all[sc];
+  try { localStorage.setItem(RIP_PACKCOST_KEY, JSON.stringify(all)); } catch {}
+}
+
+// How many of a set's art cards are still missing, by tier. A Japanese copy
+// counts as owned, the same rule the pockets use.
+function ripNeedFromCollection(sc) {
+  const owned = _bpOwnedIds();
+  const need = {};
+  for (const code of RIP_ART_TIERS) need[code] = 0;
+  for (const c of (cardData.cards || [])) {
+    if (c.sc !== sc) continue;
+    const rc = cardRarityCode(c);
+    if (!RIP_ART_TIERS.includes(rc)) continue;
+    let have = owned.has(c.i);
+    if (!have) {
+      // findCounterparts returns { primary, counterparts }, not an array.
+      try {
+        const cp = findCounterparts(c);
+        have = [cp?.primary, ...(cp?.counterparts || [])]
+          .some(x => x && x.i && owned.has(x.i));
+      } catch {}
+    }
+    if (!have) need[rc]++;
+  }
+  return need;
+}
+
+// Typed needed-counts, per set, for the session. Not persisted: the collection
+// is the real answer and it moves.
+let _ripNeedEdit = {};
+let _ripSC = null;
+// What the owner typed, falling back to the gaps the collection actually has.
+function _ripNeedOf(sc) {
+  return { ...ripNeedFromCollection(sc), ...(_ripNeedEdit[sc] || {}) };
+}
+
+// The set behind the page, for the themes that have one.
+function _ripSetCodeOf(res) {
+  return (res && (res.kind === 'set' || res.kind === 'connected')) ? (res.theme && res.theme.key) : null;
+}
+
+function renderRipPanel(res) {
+  const host = document.getElementById('bpRip');
+  if (!host) return;
+  const sc = _ripSetCodeOf(res);
+  if (!sc) { host.style.display = 'none'; host.innerHTML = ''; _ripSC = null; return; }
+  host.style.display = '';
+  _ripSC = sc;
+
+  const plan0 = packRipPlan({ setCode: sc, need: _ripNeedOf(sc), packCostGBP: ripPackCostFor(sc) });
+  const head = `<div class="bp-gaps-hd">Rip or buy — how many packs before the EV turns</div>`;
+  if (!plan0.ok) { host.innerHTML = head + `<div class="rip-none">${esc(plan0.why)}</div>`; return; }
+
+  const need = _ripNeedOf(sc);
+  // The controls are painted once per set so typing never loses focus; only
+  // the output below them is repainted as the numbers change.
+  const fields = plan0.art.map(t => `
+    <label class="rip-need">
+      <span>${t.code} still needed</span>
+      <input type="number" class="bp-input bp-input-num rip-need-in" data-rip-need="${t.code}"
+             min="0" max="${t.count}" step="1" value="${need[t.code] || 0}">
+      <span class="rip-of">of ${t.count}</span>
+    </label>`).join('');
+
+  host.innerHTML = head + `
+    <div class="rip-wrap">
+      <div class="rip-controls">
+        ${fields}
+        <label class="rip-need">
+          <span>Pack price</span>
+          <input type="number" class="bp-input bp-input-num rip-cost-in" id="bpRipCost"
+                 min="0" step="0.25" value="${ripPackCostFor(sc).toFixed(2)}">
+          <span class="rip-of">each</span>
+        </label>
+      </div>
+      <div class="rip-out" id="bpRipOut"></div>
+    </div>`;
+  _ripPaint();
+}
+
+// Repaint just the verdict, the EV line and the tier table.
+function _ripPaint() {
+  const out = document.getElementById('bpRipOut');
+  const sc = _ripSC;
+  if (!out || !sc) return;
+  const need = _ripNeedOf(sc);
+  const plan = packRipPlan({ setCode: sc, need, packCostGBP: ripPackCostFor(sc) });
+  if (!plan.ok) { out.innerHTML = `<div class="rip-none">${esc(plan.why)}</div>`; return; }
+
+  const rows = plan.tiers.map(t => `
+    <tr${t.art ? '' : ' class="rip-row-dim"'}>
+      <td>${t.code}${t.art ? '' : ' <span class="rip-sell">resale</span>'}</td>
+      <td>${t.count}</td>
+      <td>${esc(t.pullOdds)}</td>
+      <td>${fmtGBPDirect(t.gbp)}</td>
+      <td>${t.art ? (need[t.code] || 0) : '—'}</td>
+    </tr>`).join('');
+
+  let verdict, tone;
+  if (plan.unbounded) {
+    tone = 'warn';
+    verdict = `At ${fmtGBPDirect(plan.packCostGBP)} a pack, resale alone comes to ${fmtGBPDirect(plan.evFloorGBP)}
+      — more than the pack costs even once every hole is filled, so there is no point where this turns negative.
+      That usually means the pack price is out of date rather than that the set is free money.`;
+  } else if (plan.maxPacks === 0) {
+    tone = 'bad';
+    verdict = `<strong>Open none.</strong> A pack is worth ${fmtGBPDirect(plan.evNowGBP)} to you right now against
+      ${fmtGBPDirect(plan.packCostGBP)} to buy one, so the singles are cheaper from the very first pack.
+      ${plan.totalNeed ? `Ripping works out at ${fmtGBPDirect(plan.costPerHitGBP)} per card you actually need,
+      against ${fmtGBPDirect(plan.buyPerHitGBP)} to buy one outright. All ${plan.totalNeed} of them:
+      <strong>${fmtGBPDirect(plan.singlesCostGBP)}</strong>.` : `Nothing is missing, so every hit would be a dupe.`}`;
+  } else {
+    tone = 'good';
+    verdict = `<strong>Open at most ${plan.maxPacks} ${plan.maxPacks === 1 ? 'pack' : 'packs'}</strong>
+      (${fmtGBPDirect(plan.spendGBP)}). That is expected to fill ${plan.hitsExpected.toFixed(1)} of your
+      ${plan.totalNeed} holes; past there a pack is worth less than it costs, because what is left to pull is
+      mostly dupes you would be selling at ${Math.round(plan.netRate * 100)}% rather than holes you are filling.
+      Ripping runs at ${fmtGBPDirect(plan.costPerHitGBP)} per needed card against
+      ${fmtGBPDirect(plan.buyPerHitGBP)} to buy one.`;
+  }
+
+  out.innerHTML = `
+    <div class="rip-verdict rip-${tone}">${verdict}</div>
+    <div class="rip-ev">
+      <span>Pack worth to you now <strong>${fmtGBPDirect(plan.evNowGBP)}</strong></span>
+      <span>Once complete <strong>${fmtGBPDirect(plan.evFloorGBP)}</strong></span>
+      <span>Breaks even at a pack price of <strong>${fmtGBPDirect(plan.breakEvenPackGBP)}</strong></span>
+    </div>
+    <table class="rip-table"><thead><tr>
+      <th>Tier</th><th>In set</th><th>Odds</th><th>Avg raw</th><th>Needed</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div class="rip-caveat">Odds and values are ${esc(plan.setName)}'s own recorded figures. Avg raw is the tier
+      average, so the specific cards you are missing may be worth well more or less than it — a set's headline
+      chase sits far above its tier mean. Raw prices only; grading is not assumed.</div>`;
+}
+
 function renderBinderPageResult(res) {
   const out = document.getElementById('bpResult');
   const grid = document.getElementById('bpGrid');
@@ -9254,6 +9530,7 @@ function renderBinderPageResult(res) {
   if (!out || !grid) return;
   if (!res || res.error) {
     out.style.display = 'none';
+    renderRipPanel(null);   // or the previous set's numbers stay in the DOM
     _bpSay(res ? res.error : 'Nothing to show.', 'err');
     return;
   }
@@ -9301,6 +9578,7 @@ function renderBinderPageResult(res) {
         </div>`).join('');
     }
   }
+  renderRipPanel(res);
 }
 
 function _bpSay(msg, kind) {
@@ -9519,6 +9797,27 @@ function setupBinderPages() {
   };
   grid?.addEventListener('click', openFrom);
   gaps?.addEventListener('click', openFrom);
+
+  // Rip panel: typing a needed count or a pack price repaints the verdict only.
+  const rip = document.getElementById('bpRip');
+  rip?.addEventListener('input', e => {
+    const n = e.target.closest('[data-rip-need]');
+    const c = e.target.closest('#bpRipCost');
+    if (!n && !c && !_ripSC) return;
+    if (n) {
+      const tier = n.dataset.ripNeed;
+      const max = parseInt(n.max, 10) || 0;
+      const raw = parseInt(n.value, 10) || 0;
+      const v = Math.max(0, Math.min(max, raw));
+      // A set cannot owe more cards than it printed. Correct the box as well as
+      // the model, or it shows a number the verdict is not using.
+      if (raw > max) n.value = String(max);
+      _ripNeedEdit[_ripSC] = { ...(_ripNeedEdit[_ripSC] || {}), [tier]: v };
+    } else if (c) {
+      setRipPackCost(_ripSC, parseFloat(c.value) || 0);
+    }
+    _ripPaint();
+  });
 
   saved?.addEventListener('click', e => {
     const del = e.target.closest('[data-bp-del]');
