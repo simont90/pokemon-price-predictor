@@ -18941,34 +18941,38 @@ function _medalPicks({ pool, allStrategies, bestPick, bestPickOverBudget, maxBud
   if (!gold && viable.length) gold = viable.reduce(better);
   if (!gold) return { gold: null, silver: null, bronze: null, clearsBar: false };
 
-  // Bronze only earns its place by undercutting Gold.
-  const bronze = (bronzeRaw && bronzeRaw.key !== gold.key && bronzeRaw.today < gold.today)
-    ? bronzeRaw : null;
+  const cheapestNot = (...skip) => {
+    const ex = new Set(skip.filter(Boolean).map(x => x.key));
+    return viable.filter(x => !ex.has(x.key)).sort((a, b) => a.today - b.today)[0] || null;
+  };
 
-  // The three medals have to read as one ladder — Bronze the way in, Gold the
-  // best buy, Silver the step between them. Ranked on the plain comparator it
-  // did not: that leads on risk tier, so Silver took PSA 10 at £17,389 as the
-  // "back-up" to a £1,698 Gold, and once that was capped it swung the other way
-  // and took PSA 2 at £79, below Bronze. Either way the ordering was nonsense.
-  //
-  // So Silver sits strictly between Bronze and Gold on outlay. Where Gold is
-  // already the cheapest route there is no "between", and Silver instead takes
-  // the best alternative within reach of Gold's price.
-  const SILVER_MAX_VS_GOLD = 1.5;
+  // Bronze is the way in, so it has to be the cheap one. The collector rule
+  // gives the sensible entry; where that is Gold itself, or somehow dearer than
+  // Gold, fall back to the cheapest row so the medal still means "just get
+  // this one".
+  let bronze = (bronzeRaw && bronzeRaw.key !== gold.key) ? bronzeRaw : null;
+  if (!bronze || bronze.today > gold.today) {
+    const cheaper = viable.filter(x => x.key !== gold.key && x.today < gold.today)
+      .sort((a, b) => a.today - b.today)[0];
+    bronze = cheaper || bronze || cheapestNot(gold);
+  }
+
+  // Silver is the third answer, and it is deliberately not boxed in by price.
+  // A dearer row that is still trending or still carries a margin is worth
+  // naming — the medal says "here is the other one", not "here is the safe
+  // one". Rows with a positive return are preferred, but a card with nothing
+  // positive left still gets its third medal rather than going silent.
+  // One floor on it: Silver never undercuts Bronze. Being the cheap way in is
+  // Bronze's whole job, and without this Silver took Base Charizard's PSA 2 at
+  // £194 and 0% — below Bronze on price and under it on return, which is not an
+  // alternative to anything. Above Bronze it is free to go as far up as the
+  // board allows, Gold included.
   const taken = new Set([gold.key, bronze && bronze.key].filter(Boolean));
-  const inBand = bronze
-    ? (s => s.today > bronze.today && s.today < gold.today)
-    : (s => s.today <= gold.today * SILVER_MAX_VS_GOLD);
-  // A back-up that costs more than Bronze and returns less than it is strictly
-  // dominated — there is no reason anyone would take it. On Dark Dragonite the
-  // only rung between Bronze and Gold was PSA 7 at £292 against Bronze's PSA 8
-  // at £259 with better ROI, so Silver was recommending the worse card on both
-  // axes. Where nothing in the band beats Bronze, two medals is the honest
-  // answer; the middle option simply does not exist on that card.
-  const beatsBronze = s => !bronze || s.roi > bronze.roi;
-  const rest = viable.filter(s =>
-    !taken.has(s.key) && s.key !== 'gamble' && inBand(s) && beatsBronze(s));
-  const silver = rest.length ? rest.reduce(better) : null;
+  const rest = viable.filter(x => !taken.has(x.key) && x.key !== 'gamble'
+    && (!bronze || x.today > bronze.today));
+  const positive = rest.filter(x => x.roi > 0);
+  const silverPool = positive.length ? positive : rest;
+  const silver = silverPool.length ? silverPool.reduce(better) : null;
 
   return { gold, silver, bronze, clearsBar };
 }
@@ -20497,7 +20501,9 @@ function renderHoldStrategy(card) {
       gold: ['GOLD · Best buy', medals.clearsBar
         ? 'The best buy on this card. It clears the 5-year opportunity-cost bar, so it stands up as a position as well as a purchase.'
         : 'The best way into this card. Nothing here clears the 5-year opportunity-cost bar, so this is the best of the options, not an investment case.'],
-      silver: ['SILVER · Good back-up', 'The next best route on the same reasoning — worth taking if the Gold grade is not on the market at a sensible price.'],
+      silver: ['SILVER · Good back-up', (medals.silver && medals.gold && medals.silver.today > medals.gold.today)
+        ? 'The step up. Dearer than the best buy and not the sensible play, but it still holds a return worth knowing about — take it only if you want that grade specifically.'
+        : 'The next best route on the same reasoning — worth taking if the Gold grade is not on the market at a sensible price.'],
       bronze: ['BRONZE · Just want the card', 'The cheapest sensible way to own it. Everything above this pays to cross a price wall, so only go higher if the better slab is specifically the goal.'],
     }[medal] || null;
 

@@ -553,32 +553,28 @@ because Standouts and the home signal still read it.
   **comparative**: on a card where nothing clears the bar it still marks the
   best way in, and the tooltip says so. It must never read as an endorsement of
   a return that is not there.
-- **Silver — good back-up.** The step between Bronze and Gold.
 - **Bronze — just want the card.** The cheapest sensible entry; the old
-  Collector pick rule unchanged.
+  Collector pick rule. It is the floor of the board, and falls back to the
+  cheapest row when the collector rule returns Gold itself.
+- **Silver — the other one worth knowing about.** Deliberately **not** boxed in
+  by price. A dearer row that is still trending, or still carries a margin, is
+  worth naming: on Dark Dragonite that is PSA 10 at £7,458 and +30% against a
+  £541 Gold. The tooltip switches to "the step up" when Silver sits above Gold,
+  so a stretch option never reads as the safe one.
 
-The medals must read as one ladder, and getting Silver wrong is easy in both
-directions — each of these shipped and had to be fixed:
+All three are awarded whenever the board has three real rows. The single floor
+is that **Silver never undercuts Bronze** — being the cheap way in is Bronze's
+job, and without it Silver took Base Charizard's PSA 2 at £194 and 0%, below
+Bronze on price and under it on return, which is an alternative to nothing.
 
-- Ranked on `_pickBestLTP`'s comparator, Silver took **PSA 10 at £17,389** as
-  the "back-up" to a £1,698 Gold. That comparator leads on risk tier, and PSA 10
-  is the lowest-risk row on almost every card, so it wins before the capital
-  penalty is ever reached. A tier above Gold is a different purchase, not a
-  fallback.
-- Capped by price instead, it swung the other way and took **PSA 2 at £79**,
-  below Bronze, inverting the ladder.
-- Banded strictly between Bronze and Gold, it took a rung that cost *more* than
-  Bronze and returned *less* — PSA 7 at £292 (+5%) against Bronze's PSA 8 at
-  £259 (+10%). Strictly dominated: nobody would buy it.
+Earlier attempts boxed Silver in and each was wrong in a different direction —
+capped by price it took PSA 2 below Bronze; banded strictly between Bronze and
+Gold it took a rung costing more than Bronze and returning less. The rule that
+holds is a floor, not a band.
 
-So Silver sits between Bronze and Gold on outlay **and** must beat Bronze on
-ROI. Where nothing qualifies, the card gets two medals and that is the honest
-answer — Dark Dragonite has no sensible middle rung. Bronze is likewise dropped
-when it does not undercut Gold, since "just get this one" has to mean something.
-
-A tile never carries two medals. Where Gold is already the cheapest route
-(usually a raw buy), there is no Bronze and Silver takes the best alternative
-within 1.5x Gold's price.
+A tile never carries two medals. A card with fewer than three priced rows gets
+fewer than three medals: estimated prices are never medalled, so a cheap card
+whose grades are mostly unpriced shows two and that is the honest answer.
 
 ## The print selector has three places to lose the print, and had lost it in all three
 
