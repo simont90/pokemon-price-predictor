@@ -319,7 +319,27 @@ function getCardImg(card) {
   // The standard .png (245×342 px) looks blurry at the 440 px display height
   // on 2× screens; _hires avoids upscaling artifacts.
   if (!card.sc || !(card.cn || card.ns)) return _crArt();
+  if (setUsesScrydex(card.sc)) return scrydexCardImg(card, 'large');
   return `https://images.pokemontcg.io/${card.sc}/${card.cn || card.ns || ''}_hires.png`;
+}
+
+// Set logos and card art moved host for the newest sets: images.pokemontcg.io
+// 404s for everything from Ascended Heroes on, and those sets are served from
+// images.scrydex.com instead. sets-db carries a `logo` only where it deviates
+// from the old pattern, so this stays a two-line question rather than a list
+// that has to be maintained.
+function setLogoUrl(setId) {
+  const s = (typeof setsData !== 'undefined' && setsData) ? setsData[setId] : null;
+  return (s && s.logo) || `https://images.pokemontcg.io/${setId}/logo.png`;
+}
+// Card art on the newer host is keyed by the card id, not set + number.
+function scrydexCardImg(card, size) {
+  return card && card.i ? `https://images.scrydex.com/pokemon/${card.i}/${size || 'large'}` : '';
+}
+// Does this set's art live on the newer host? The logo override is the tell.
+function setUsesScrydex(setId) {
+  const s = (typeof setsData !== 'undefined' && setsData) ? setsData[setId] : null;
+  return !!(s && s.logo && s.logo.includes('scrydex'));
 }
 
 // Upgrade a stored pokemontcg.io standard-res URL to the hi-res variant.
@@ -26060,7 +26080,10 @@ function _renderHomeGradeCandidates() {
       const idStr = String(d.cardId || '');
       if (idStr.startsWith('jp-')) return '';
       const dash = idStr.indexOf('-');
-      return dash > 0 ? `https://images.pokemontcg.io/${idStr.slice(0, dash)}/${idStr.slice(dash + 1)}.png` : '';
+      if (dash <= 0) return '';
+      const sc = idStr.slice(0, dash);
+      if (setUsesScrydex(sc)) return `https://images.scrydex.com/pokemon/${idStr}/large`;
+      return `https://images.pokemontcg.io/${sc}/${idStr.slice(dash + 1)}.png`;
     })();
     // Primary: eBay listing photo (for AI grading). Fallback: card DB art.
     const primarySrc = d.listingImg || cardDbImg;
@@ -31336,7 +31359,7 @@ function renderVintagePage() {
     const year = s.releaseDate.slice(0, 4);
     const tg = targetsBySet[s.code];
     const prog = tg ? `<span class="vg-chip-prog">${tg.owned}/${tg.total}</span>` : '';
-    const logo = isJP ? '' : `<img class="vg-chip-logo" src="https://images.pokemontcg.io/${esc(s.code)}/logo.png" alt="" loading="lazy" onerror="this.style.display='none'">`;
+    const logo = isJP ? '' : `<img class="vg-chip-logo" src="${esc(setLogoUrl(s.code))}" alt="" loading="lazy" onerror="this.style.display='none'">`;
     return `<button class="vg-set-chip vg-set-chip-logo ${s.code === activeSet ? 'vg-chip-active' : ''}" data-vg-set="${esc(s.code)}">
       ${logo}
       <span class="vg-chip-txt"><span class="vg-chip-name">${esc(s.name)}</span>
@@ -31709,7 +31732,7 @@ function renderSetsPage() {
     html += `<div class="sets-card${hasEtb?' sets-card--etb':''}${isOpen?' sets-card--open':''}">
       <div class="sets-card-header" data-sets-toggle="${esc(setId)}">
         <div class="sets-logo-wrap">
-          <img class="sets-logo" src="https://images.pokemontcg.io/${esc(setId)}/logo.png"
+          <img class="sets-logo" src="${esc(setLogoUrl(setId))}"
                alt="${esc(setMeta.name)}" loading="lazy"
                onload="if(this.naturalWidth<=this.naturalHeight){this.style.display='none';this.nextElementSibling.style.display='flex'}"
                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -31772,7 +31795,9 @@ function renderSetsPage() {
           const inWish   = !inColl && !inBinder && wishlistIds.has(c.i);
           const dotCls   = inColl ? 'owned' : inBinder ? 'targeted' : 'needed';
           const priceGbp = c.p ? fmtGBP(usdToGbp(c.p)) : '';
-          const thumbUrl = c.sc ? `https://images.pokemontcg.io/${esc(c.sc)}/${esc(c.cn||c.ns||'')}.png` : '';
+          const thumbUrl = !c.sc ? ''
+            : setUsesScrydex(c.sc) ? scrydexCardImg(c, 'small')
+            : `https://images.pokemontcg.io/${esc(c.sc)}/${esc(c.cn||c.ns||'')}.png`;
           html += `<div class="sets-hit-row" data-card-id="${esc(c.i)}">
             ${thumbUrl
               ? `<img class="sets-hit-thumb" src="${thumbUrl}" alt="${esc(c.n)}" loading="lazy" onerror="this.outerHTML='<div class=\\'sets-hit-thumb sets-hit-thumb--ph\\'></div>'">`
@@ -34492,8 +34517,11 @@ function _pdxShowPopout(cardId) {
   const jpName   = card.nj ? `<div class="pdx-pop-jp">${card.nj}</div>` : '';
   const isJP        = lang === 'JP';
   const imgCN       = _pdxImgCN(card);
-  const imgSrc      = isJP ? getCardImg(card) : `https://images.pokemontcg.io/${card.sc}/${imgCN}_hires.png`;
-  const imgFallback = `https://images.pokemontcg.io/${card.sc}/${imgCN}.png`;
+  const imgSrc      = isJP ? getCardImg(card)
+                    : setUsesScrydex(card.sc) ? scrydexCardImg(card, 'large')
+                    : `https://images.pokemontcg.io/${card.sc}/${imgCN}_hires.png`;
+  const imgFallback = setUsesScrydex(card.sc) ? scrydexCardImg(card, 'small')
+                    : `https://images.pokemontcg.io/${card.sc}/${imgCN}.png`;
   const imgEl = isJP
     ? `<img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onerror="this.style.display='none'">`
     : `<img class="pdx-pop-img" src="${imgSrc}" alt="${card.n}" onerror="if(this.src.includes('_hires')){this.onerror=function(){this.style.display='none'};this.src='${imgFallback}';}else{this.style.display='none';}">`;

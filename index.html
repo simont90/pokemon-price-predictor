@@ -25,9 +25,9 @@
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
   <!-- Preload large data files so they start downloading during head parse -->
-  <link rel="preload" href="data/cards-db.js" as="script">
-  <link rel="preload" href="data/sets-db.js" as="script">
-  <link rel="stylesheet" href="style.css?v=20261011d">
+  <link rel="preload" href="data/cards-db.js?v=20261011f" as="script">
+  <link rel="preload" href="data/sets-db.js?v=20261011f" as="script">
+  <link rel="stylesheet" href="style.css?v=20261011f">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -3191,9 +3191,9 @@
     </div>
   </div>
 
-  <script src="data/cards-db.js"></script>
-  <script src="data/sets-db.js"></script>
-  <script src="data/pokedex-db.js"></script>
+  <script src="data/cards-db.js?v=20261011f"></script>
+  <script src="data/sets-db.js?v=20261011f"></script>
+  <script src="data/pokedex-db.js?v=20261011f"></script>
   <!-- Homepage PiP card preview (fullscreen bottom-sheet) -->
   <div id="homePip" class="home-pip" style="display:none" role="dialog" aria-modal="true" aria-label="Card preview">
     <div class="home-pip-bg" id="homePipBg"></div>
@@ -3263,7 +3263,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261011d"></script>
+  <script src="app.js?v=20261011f"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

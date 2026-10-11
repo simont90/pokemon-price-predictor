@@ -542,6 +542,55 @@ before the dex test was added. Lines that skip dex numbers (Pichu→Pikachu, the
 Eeveelutions) are missed and need confirming by hand. Do not seed this table
 from memory.
 
+## Card art and set logos moved host partway through the catalogue
+
+`images.pokemontcg.io` 404s for every set from **Ascended Heroes (me2pt5)
+onwards** — logo, symbol and card art alike. Those sets are served from
+`images.scrydex.com`, keyed by id rather than set + number:
+
+- logo: `https://images.scrydex.com/pokemon/<setId>-logo/logo`
+- card: `https://images.scrydex.com/pokemon/<cardId>/<small|large>`
+
+`sets-db.js` carries a `logo` field **only where it deviates** from the old
+pattern, so the exceptions are visible in one place instead of being a list to
+maintain. `setLogoUrl()` and `setUsesScrydex()` are the only two questions to
+ask; `scrydexCardImg()` builds card art. Six sets deviate today. Do not
+hardcode either host at a new call site — there were six such sites and every
+one of them broke silently, showing a text fallback rather than an error.
+
+**The data files are cache-busted too, as of `20261011e`.** `data/cards-db.js`,
+`data/sets-db.js` and `data/pokedex-db.js` were loaded with no `?v=` at all, so
+adding cards shipped to nobody: GitHub Pages kept serving the old catalogue
+indefinitely. Both the `<script src>` and the `<link rel="preload">` carry the
+buster — they must match, or the preload fetches a second, uncached copy.
+
+## A new set arrives with no prices and no pull odds
+
+pokemontcg.io lists a set's cards within days of release but carries no
+TCGplayer or Cardmarket prices for them for some time — all 433 cards added for
+Chaos Rising, Pitch Black and 30th Celebration came in at `p: 0`. Two things
+follow, both correct rather than bugs to fix:
+
+- `buildBinderPage` filters its pool on `priceGBP(c) > 0`, so a set with no
+  prices yields "No Illustration Rares or Special Illustration Rares", even
+  though the IR/SIR cards are present. The page needs a price to rank on and to
+  state what a gap costs.
+- `packRipPlan` refuses by name, because `rarities` pull odds are a separate
+  dataset that only exists for Scarlet & Violet through Ascended Heroes.
+
+Neither should be papered over with an estimate. When prices appear, both start
+working with no code change.
+
+**Rarity strings are matched case-insensitively.** The importer's map was
+case-sensitive, so `"Illustration rare"` and `"Special illustration rare"` —
+the spelling used on Japanese sets — fell through to the empty code on 158
+Black Bolt and White Flare cards. `cardRarityCode()` parses the printed string
+and so papered over it, which is why it went unnoticed; the stored `rc` was
+still wrong for anything reading it raw. Two genuinely new rarities arrived
+with 30th Celebration and were mapped deliberately, not by pattern: **Pikachu
+Rare** (30 cards, one per pack) to `R`, and **Futuristic Rare** (2 cards) to
+`UR`. Neither is an illustration rare, so neither reaches a binder page.
+
 ## Ripping packs is measured against the singles, and usually loses
 
 `packRipPlan()` answers one question on a set-themed binder page: I still need
