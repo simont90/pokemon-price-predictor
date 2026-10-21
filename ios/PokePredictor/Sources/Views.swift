@@ -218,11 +218,15 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Pair code") {
+                Section {
                     TextField("16–64 characters", text: $model.pairCode)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.body.monospaced())
+                    if let problem = model.pairCodeProblem {
+                        Label(problem, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
                     Button {
                         Task { await model.pull() }
                     } label: {
@@ -231,7 +235,11 @@ struct SettingsView: View {
                             if model.isSyncing { Spacer(); ProgressView() }
                         }
                     }
-                    .disabled(model.pairCode.isEmpty || model.isSyncing)
+                    .disabled(!model.canPull)
+                } header: {
+                    Text("Pair code")
+                } footer: {
+                    Text("Website → Sync panel. The code is 32 characters; copy all of it.")
                 }
 
                 if !model.status.isEmpty {
