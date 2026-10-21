@@ -1,0 +1,31 @@
+name: PokePredictor
+options:
+  bundleIdPrefix: com.simontariq
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+targets:
+  PokePredictor:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      # Compiled straight into the app rather than linked as a SwiftPM package:
+      # xcodebuild hangs indefinitely resolving a local package here (blocked in
+      # IDEContainer with IDESwiftPackageCore loaded). The package is kept so the
+      # same files stay testable with `swift test`.
+      - path: ../PokePredictorKit/Sources/PokePredictorKit
+    resources:
+      - path: Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.simontariq.pokepredictor
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Price Predictor
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"

@@ -1,0 +1,5 @@
+build/
+.build/
+*.xcodeproj/
+# Generated from data/*-db.js by tools/make-resources.py on every build.
+Resources/

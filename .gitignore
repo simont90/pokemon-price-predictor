@@ -3,3 +3,7 @@ deploy/
 .claude/settings.local.json
 
 node_modules/
+
+# Swift / SwiftPM
+ios/**/.build/
+ios/**/.swiftpm/
