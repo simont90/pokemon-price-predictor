@@ -13,6 +13,8 @@ public final class AppModel: ObservableObject {
     @Published public var fxRate: Double = 0.7559      // GBP per USD; refreshed on launch
 
     private let client = WorkerClient()
+    /// The website's model, running on-device. Shared so it loads once.
+    public let bridge = ModelBridge()
     private let pairKey = "pairCode"
 
     public init() {

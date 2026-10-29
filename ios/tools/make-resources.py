@@ -33,4 +33,15 @@ sets = {k: {'name': v.get('name', ''), 'series': v.get('series', ''),
 io.open(os.path.join(out, 'sets.json'), 'w', encoding='utf-8').write(
     json.dumps(sets, ensure_ascii=False, separators=(',', ':')))
 
-print(f"resources: {len(cards['cards'])} cards, {len(sets)} sets")
+# The model itself: app.js verbatim, plus the shims and the single entry point.
+# Copied rather than reimplemented so the phone and the website cannot disagree.
+import shutil
+for src, dst in [('app.js', 'app.js'),
+                 ('data/cards-db.js', 'cards-db.js'),
+                 ('data/sets-db.js', 'sets-db.js'),
+                 ('data/pokedex-db.js', 'pokedex-db.js')]:
+    shutil.copyfile(os.path.join(root, src), os.path.join(out, dst))
+for f in ('prelude.js', 'bridge.js'):
+    shutil.copyfile(os.path.join(os.path.dirname(__file__), '..', f), os.path.join(out, f))
+
+print(f"resources: {len(cards['cards'])} cards, {len(sets)} sets, model copied")

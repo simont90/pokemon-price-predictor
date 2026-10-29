@@ -155,9 +155,7 @@ struct CardDetailView: View {
                 }
                 .font(.subheadline)
 
-                Text("Hold Strategy, the grade ladder and the Gold/Silver/Bronze picks are not here yet — they come from the shared valuation model, not a second copy in Swift.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center).padding(.horizontal)
+                HoldStrategyView(card: card)
             }
             .padding()
         }
@@ -268,5 +266,117 @@ struct SettingsView: View {
             .navigationTitle("Sync")
             .task { healthy = await model.checkHealth() }
         }
+    }
+}
+
+
+// MARK: - Hold Strategy
+
+/// Renders what the model returned. No arithmetic happens here on purpose:
+/// every figure comes from app.js running in JavaScriptCore, so this screen
+/// cannot drift from the website's answer.
+struct HoldStrategyView: View {
+    let card: Card
+    @EnvironmentObject var model: AppModel
+    @State private var valuation: Valuation?
+    @State private var problem: String?
+    @State private var loading = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Hold Strategy").font(.headline)
+                Spacer()
+                if let v = valuation, v.stars > 0 {
+                    Text(String(repeating: "\u{2605}", count: min(v.stars, 5)))
+                        .foregroundStyle(Color.accentYellow)
+                        .font(.subheadline)
+                }
+            }
+
+            if loading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Running the model…").font(.footnote).foregroundStyle(.secondary)
+                }
+            } else if let problem {
+                Text(problem).font(.footnote).foregroundStyle(.secondary)
+            } else if let v = valuation {
+                if !v.clearsBar {
+                    Text("Nothing here clears the 5-year opportunity-cost bar, so Gold marks the best way in rather than an investment case.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(v.rows) { row in StrategyTile(row: row) }
+                Text("Computed by the website's own model running on-device. Prices are the catalogue's until live pricing is wired, so figures can sit below the website's.")
+                    .font(.caption2).foregroundStyle(.tertiary).padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: card.id) {
+            loading = true; problem = nil; valuation = nil
+            await model.bridge.setFX(model.fxRate)
+            do { valuation = try await model.bridge.valuate(cardID: card.id) }
+            catch ModelBridge.Failure.noResult(let why) { problem = why }
+            catch { problem = "The model could not be loaded." }
+            loading = false
+        }
+    }
+}
+
+struct StrategyTile: View {
+    let row: StrategyRow
+    @EnvironmentObject var model: AppModel
+
+    private var medalColour: Color {
+        switch row.medal {
+        case "gold":   return Color.accentYellow
+        case "silver": return Color(red: 0.78, green: 0.80, blue: 0.83)
+        case "bronze": return Color(red: 0.75, green: 0.51, blue: 0.29)
+        default:       return .clear
+        }
+    }
+    private var medalLabel: String {
+        switch row.medal {
+        case "gold":   return "GOLD · Best buy"
+        case "silver": return "SILVER · Good back-up"
+        case "bronze": return "BRONZE · Just want the card"
+        default:       return ""
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if row.medal != nil {
+                Text(medalLabel)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(medalColour)
+                    .foregroundStyle(.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text(row.label).font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(row.roi >= 0 ? "+" : "")\(row.roi, specifier: "%.0f")%")
+                    .font(.subheadline.monospaced().weight(.semibold))
+                    .foregroundStyle(row.roi >= 0 ? .green : .red)
+            }
+            HStack {
+                Text(model.formatGBP(row.allInGBP) + " all-in")
+                    .font(.caption.monospaced()).foregroundStyle(.secondary)
+                Spacer()
+                if row.estimated {
+                    Text("estimated").font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.orange)
+                } else if !row.risk.isEmpty {
+                    Text(row.risk.uppercased() + " RISK")
+                        .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(row.medal != nil ? medalColour : .clear, lineWidth: 1.5))
     }
 }

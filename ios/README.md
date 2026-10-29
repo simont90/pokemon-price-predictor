@@ -52,25 +52,44 @@ name / set / number, card art (both image hosts), GBP-first prices, card detail,
 and the sync tab reading the shared `/sync` blob. `swift test` passes 7 tests
 covering the blob's decoding edge cases.
 
-## Not ported, deliberately
+## The valuation model is not ported — it is the same code
 
-Hold Strategy, the grade ladder, the Gold/Silver/Bronze medals, binder pages,
-the marketplace scan and the pack-EV panel. All of them need the valuation
-model, and that must not be copied into Swift.
+`ModelBridge.swift` runs **app.js verbatim inside JavaScriptCore**. The model is
+never translated to Swift, so the phone cannot disagree with the website about
+what a card is worth. A Swift reimplementation would have been a third copy
+(the worker already carries a divergent second one with FX hardcoded at 0.79).
 
-## The architecture decision this is waiting on
+`Resources/` is generated on every build by `tools/make-resources.py`, which
+copies `app.js` and the three data files straight from the repo root. Nothing
+is hand-maintained, so the two cannot drift.
 
-There are already **two** valuation models that disagree:
+Three things make it work headless, all in `prelude.js`:
 
-- `app.js` — `computeHoldCore`, `_medalPicks`, `_ladderValueRung`,
-  `getInvestmentStars`, reprint pressure, set-rarity ceiling, Collectr per print.
-- `worker-paste-this.js` — `_cardStars()`, a ten-line name/rarity lookup with
-  none of that, and `FX = 0.79` hardcoded in two places against a real rate of
-  ~0.756. MCP already answers with different numbers than the app.
+- **JavaScriptCore has no DOM.** app.js gets a Proxy-based `document`, `window`
+  and `localStorage` — enough to parse and define its functions.
+- **JavaScriptCore has no timers and no `queueMicrotask`.** Without them app.js
+  throws partway through *evaluation*, every `const` after that point stays in
+  the temporal dead zone, and the first call fails with a baffling "cannot
+  access COLLECTR_TRUSTED_MAX_GRADE before initialization". The model is
+  synchronous, so deferred work simply never runs — intended, not a gap.
+- **`init()` still fails, and that is fine.** It wires the whole browser UI.
+  `bridge.js` decodes the catalogue itself with app.js's own `decodeCardDB` and
+  calls only the model. `getCardById` returns null headless for the same reason
+  — its index is built in `init()` — so the bridge falls through to the
+  catalogue rather than treating that null as "no such card".
 
-A Swift port makes it three, on a tool whose whole job is to agree with itself
-about what a card is worth. Because the worker is also JavaScript, the model can
-be *moved* rather than *translated*: lift it out of `app.js` into a shared
-module the worker imports, expose it as an endpoint, and the iOS app renders the
-result without owning any valuation logic. The cost is that valuation needs the
-network; caching the last response per card covers offline browsing.
+### What this means for the numbers
+
+The model is identical; the **inputs** are not yet. The website prices cards
+from PriceCharting and Collectr live, while the app currently has only the
+catalogue price, so the PSA rungs come back `estimated` and the figures sit
+below the website's. Estimated rows are never medalled — that rule is the
+model's, not the app's — which is why Gold currently lands on Buy Raw rather
+than a PSA rung. Wiring the worker's live prices into the bridge is the next
+step and needs no model changes.
+
+## Not ported yet
+
+Binder pages, marketplace scan, eBay watch, Standouts, Vintage, Sets, Budget,
+the grade calculator and the price charts. The bridge makes each of them a
+rendering job rather than a reimplementation.

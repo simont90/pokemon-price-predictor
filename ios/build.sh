@@ -23,7 +23,8 @@ xcrun -sdk iphonesimulator swiftc \
   -emit-executable -o "$APP/PokePredictor" -parse-as-library -O \
   Sources/*.swift ../PokePredictorKit/Sources/PokePredictorKit/*.swift
 
-cp Resources/cards.json Resources/sets.json "$APP/"
+# Everything the app bundles: the catalogue and the model itself.
+cp Resources/*.json Resources/*.js "$APP/"
 cp Info-template.plist "$APP/Info.plist"
 
 # Codesign refuses a bundle carrying extended attributes.
