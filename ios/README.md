@@ -28,8 +28,8 @@ have **not been run** — the toolchain is licence-blocked (below).
 ## Building and running
 
 ```bash
-ios/build.sh                      # defaults to "iPhone 17 Pro Max"
-ios/build.sh "iPhone 17 Pro"
+ios/build.sh                      # defaults to "iPhone 18 Pro Max"
+ios/build.sh "iPhone 17 Pro Max"
 cd ios/PokePredictorKit && swift test
 ```
 
@@ -47,7 +47,7 @@ straight into the app rather than linked as a package.
 
 ## What works
 
-Verified running on the simulator: 27,085 cards load from the bundle, search by
+Verified running on the iPhone 18 Pro Max simulator (iOS 27.1): 27,085 cards load from the bundle, search by
 name / set / number, card art (both image hosts), GBP-first prices, card detail,
 and the sync tab reading the shared `/sync` blob. `swift test` passes 7 tests
 covering the blob's decoding edge cases.

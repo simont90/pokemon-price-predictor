@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/PokePredictor"
 
-DEVICE="${1:-iPhone 17 Pro Max}"
+DEVICE="${1:-iPhone 18 Pro Max}"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 APP=build/PokePredictor.app
 
