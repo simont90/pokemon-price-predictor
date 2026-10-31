@@ -29811,34 +29811,76 @@ function _loadAppleSdk() {
   return _appleSdkPromise;
 }
 
-async function _appleWebToken(hashedNonce) {
-  await _loadAppleSdk();
-  window.AppleID.auth.init({
-    clientId: APPLE_WEB_CLIENT_ID,
-    scope: '',
-    redirectURI: APPLE_WEB_REDIRECT,
-    state: crypto.randomUUID(),
-    nonce: hashedNonce,
-    usePopup: true,
+// Browsers only allow a popup opened directly by the tap. Loading Apple's
+// script and hashing the nonce are async, so doing them in the click handler
+// spent the gesture and Safari answered popup_blocked_by_browser. Everything
+// is prepared ahead instead — as soon as an Apple button scrolls into view —
+// and the click calls AppleID.auth.signIn() before its first await.
+let _appleWebPrep = null;   // { rawNonce, ready, pending }
+
+function appleWebPrepare() {
+  if (appleSignInNative()) return Promise.resolve();
+  if (_appleWebPrep) return _appleWebPrep.pending;
+  const prep = { rawNonce: crypto.randomUUID() + crypto.randomUUID(), ready: false };
+  prep.pending = (async () => {
+    const hashed = await _appleSha256Hex(prep.rawNonce);
+    await _loadAppleSdk();
+    window.AppleID.auth.init({
+      clientId: APPLE_WEB_CLIENT_ID,
+      scope: '',
+      redirectURI: APPLE_WEB_REDIRECT,
+      state: crypto.randomUUID(),
+      nonce: hashed,
+      usePopup: true,
+    });
+    prep.ready = true;
+  })().catch(e => { if (_appleWebPrep === prep) _appleWebPrep = null; throw e; });
+  _appleWebPrep = prep;
+  return prep.pending;
+}
+
+function _appleWatchButtons() {
+  if (appleSignInNative() || typeof IntersectionObserver !== 'function') return;
+  const io = new IntersectionObserver(entries => {
+    if (entries.some(e => e.isIntersecting)) appleWebPrepare().catch(() => {});
   });
-  try {
-    const res = await window.AppleID.auth.signIn();
-    const token = res?.authorization?.id_token;
-    if (!token) throw new Error('Apple returned no identity token.');
-    return token;
-  } catch (e) {
-    if (e?.error === 'popup_closed_by_user' || e?.error === 'user_cancelled_authorize') {
-      throw Object.assign(new Error('cancelled'), { cancelled: true });
-    }
-    throw e instanceof Error ? e : new Error(e?.error || 'Sign in with Apple failed.');
-  }
+  ['authAppleBtn', 'authAppleLinkBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    io.observe(el);
+    el.addEventListener('pointerdown', () => appleWebPrepare().catch(() => {}), { passive: true });
+  });
 }
 
 // link: send the current session so the worker attaches the Apple ID to it.
+// The web branch must reach AppleID.auth.signIn() with no await before it.
 async function authAppleSignIn({ link = false } = {}) {
-  const rawNonce = crypto.randomUUID() + crypto.randomUUID();
-  const hashed = await _appleSha256Hex(rawNonce);
-  const idToken = appleSignInNative() ? await _appleNativeToken(hashed) : await _appleWebToken(hashed);
+  let idToken, rawNonce;
+  if (appleSignInNative()) {
+    rawNonce = crypto.randomUUID() + crypto.randomUUID();
+    idToken = await _appleNativeToken(await _appleSha256Hex(rawNonce));
+  } else {
+    const prep = _appleWebPrep;
+    if (!prep?.ready) {
+      appleWebPrepare().catch(() => {});
+      throw new Error('Sign in with Apple is still loading. Tap the button again in a moment.');
+    }
+    _appleWebPrep = null;             // one nonce per attempt
+    rawNonce = prep.rawNonce;
+    const popup = window.AppleID.auth.signIn();   // inside the tap
+    try {
+      const res = await popup;
+      idToken = res?.authorization?.id_token;
+    } catch (e) {
+      if (e?.error === 'popup_closed_by_user' || e?.error === 'user_cancelled_authorize') {
+        throw Object.assign(new Error('cancelled'), { cancelled: true });
+      }
+      throw e instanceof Error ? e : new Error(e?.error || 'Sign in with Apple failed.');
+    } finally {
+      appleWebPrepare().catch(() => {});   // fresh nonce for the next attempt
+    }
+    if (!idToken) throw new Error('Apple returned no identity token.');
+  }
   const headers = { 'Content-Type': 'application/json' };
   if (link && authIsActive()) headers.Authorization = `Bearer ${authGetToken()}`;
   return authRequest('/auth/apple', { method: 'POST', headers, body: JSON.stringify({ idToken, nonce: rawNonce }) });
@@ -29886,7 +29928,7 @@ async function authSyncPull({ mode } = {}) {
     if (!j || !j.data) { authLogLine('Nothing stored yet', 'info'); return false; }
     const m = mode || syncReadMergeMode() || 'merge';
     const result = syncApplyPayload(j, m);
-    authLogLine(`Pulled (${m}): ${result.merged} keys applied`, 'ok');
+    authLogLine(`Pulled (${m}): ${result.applied} keys applied`, 'ok');
     authUpdateStatus('Last pull: ' + new Date().toLocaleTimeString('en-GB'));
     return true;
   } catch (err) {
@@ -30608,6 +30650,7 @@ function syncBindOnce() {
     }
   }
   document.getElementById('authAppleBtn')?.addEventListener('click', () => authDoApple(false));
+  _appleWatchButtons();
   document.getElementById('authAppleLinkBtn')?.addEventListener('click', () => authDoApple(true));
 
   document.getElementById('authSyncNowBtn')?.addEventListener('click', async () => {
