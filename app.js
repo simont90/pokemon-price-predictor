@@ -20580,10 +20580,17 @@ function _homePullbacks(limit = 8) {
     const p90 = t && t.raw_90d && isFinite(t.raw_90d.pct) ? t.raw_90d.pct : null;
     const p30 = t && t.raw_30d && isFinite(t.raw_30d.pct) ? t.raw_30d.pct : null;
     if (p90 == null || p90 > -PULLBACK_MIN_PCT) continue;
+    // A user-added copy of a catalogue card links to the same Collectr product
+    // and so reports the same fall — one market, listed twice. User cards are
+    // appended after the catalogue, so the catalogue entry is the one kept.
+    const pid = getCollectrId(c.i);
+    const marketKey = pid ? `pid:${pid}` : null;
+    if (marketKey && seen.has(marketKey)) continue;
     // Owned cards are not buying opportunities — a holding that has fallen
     // belongs in the collection view, not on a list of things to pick up.
     if (portfolioIds.has(c.i)) continue;
     seen.add(c.i);
+    if (marketKey) seen.add(marketKey);
     const dip = _chaseDip(c);                    // null unless it is a quality card
     const steadying = p30 != null && p30 > -8;
     out.push({
