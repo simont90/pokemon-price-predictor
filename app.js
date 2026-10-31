@@ -34774,3 +34774,29 @@ function _paintPdxCards(sorted, owned) {
   });
 }
 
+
+// ── Sidebar side on touch screens (iPhone Duo) ───────────────────
+// Apple's iPhone Duo guidance: vertical bars sit under the status bar,
+// beside the camera — the right by default — and "can appear on the left
+// side in landscape and Split View". style.css puts the sidebar on the
+// right for touch screens; this moves it left only when the left safe-area
+// inset (camera side) is the larger one. Re-checked on every resize, which
+// is what folding, unfolding, rotating and Split View all fire.
+(function initNavSide() {
+  const probe = document.createElement('div');
+  probe.setAttribute('aria-hidden', 'true');
+  probe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
+    'padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)';
+  document.body.appendChild(probe);
+  const root = document.documentElement;
+  const sync = () => {
+    const cs = getComputedStyle(probe);
+    const l = parseFloat(cs.paddingLeft) || 0;
+    const r = parseFloat(cs.paddingRight) || 0;
+    if (l > r) root.dataset.navSide = 'left';
+    else delete root.dataset.navSide;
+  };
+  sync();
+  window.addEventListener('resize', sync, { passive: true });
+  window.addEventListener('orientationchange', () => setTimeout(sync, 50));
+})();

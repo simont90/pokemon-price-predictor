@@ -53,6 +53,12 @@ The app is built for the foldable as well as regular iPhones:
   ≈ 626×890pt (pixel specs at 3×), Split View on the inner display down to
   ~296pt. The site's CSS breakpoints handle each one: bottom pill folded and
   in inner portrait, the vertical sidebar in inner landscape (≥821pt).
+- **The sidebar follows the system's vertical-bar side.** Apple's guidance:
+  vertical bars lay out under the status bar, beside the camera (the right
+  by default), "can appear on the left side in landscape and Split View",
+  and apps must handle either side. On touch screens the sidebar is on the
+  right; `initNavSide()` in app.js moves it left when the left safe-area
+  inset is the larger one. Mouse-driven desktop keeps it on the left.
   Folding and unfolding resize the web view in place — no reload, state kept.
 - **Asymmetric safe areas.** The camera puts the inset on one side only.
   `contentInsetAdjustmentBehavior = .never` passes each edge to CSS as its

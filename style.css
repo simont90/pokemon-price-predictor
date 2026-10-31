@@ -19215,3 +19215,40 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
   .page-nav { width: calc(100vw - 16px); }
   .page-nav-btn, .nav-ctx-btn { flex: 1 1 0; min-width: 0; padding-left: 4px; padding-right: 4px; }
 }
+
+/* Sidebar side on touch screens — Apple's iPhone Duo guidance: vertical
+   bars lay out under the status bar, beside the camera (the right by
+   default), "can appear on the left side in landscape and Split View",
+   and apps must handle either side. So the sidebar sits on the right,
+   and app.js sets data-nav-side="left" when the camera / larger inset is
+   on the left. Mouse-driven desktop keeps the original left sidebar. */
+@media (min-width: 821px) and (pointer: coarse) {
+  html:not([data-nav-side="left"]) body {
+    padding-left: 0;
+    padding-right: calc(108px + env(safe-area-inset-right, 0px));
+  }
+  html:not([data-nav-side="left"]) .page-nav {
+    left: auto;
+    right: calc(12px + env(safe-area-inset-right, 0px));
+  }
+  html:not([data-nav-side="left"]) .hdr-popup.hmp-sidebar {
+    left: auto;
+    right: calc(108px + env(safe-area-inset-right, 0px));
+    animation-name: hmpSlideInRight;
+  }
+  html:not([data-nav-side="left"]) .filter-fab,
+  html:not([data-nav-side="left"]) .ai-chat-btn,
+  html:not([data-nav-side="left"]) .deal-toast {
+    right: calc(120px + env(safe-area-inset-right, 0px));
+  }
+}
+@media (min-width: 821px) and (max-width: 1023px) and (pointer: coarse) {
+  html:not([data-nav-side="left"]) .app {
+    padding-left: max(28px, env(safe-area-inset-left, 0px));
+    padding-right: 28px;
+  }
+}
+@keyframes hmpSlideInRight {
+  from { opacity: 0; transform: translateY(-50%) translateX(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(-50%) translateX(0) scale(1); }
+}

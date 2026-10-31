@@ -393,6 +393,9 @@ on a 4 s debounce. New synced keys "just work" as long as they follow the prefix
   there are asymmetric — fixed elements must offset by their own side's
   `env(safe-area-inset-left/right)`, never assume both sides match. Lay out
   by width, never by orientation or user agent.
+  On touch screens the vertical sidebar sits on the right (Apple's Duo
+  guidance: vertical bars go under the status bar, by the camera) and moves
+  left only when the left inset is larger — style.css + `initNavSide()`.
 
 ---
 
