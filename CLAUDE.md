@@ -4,10 +4,18 @@ Read this file in full before making any change. It is the shared contract
 between every environment this project is edited from, so the project stays
 coherent regardless of who edited last.
 
-**Primary environment: Claude Code on the owner's Mac**, working in a local
-clone. Cloud sessions (Claude Code on the web / Codespaces) are secondary —
-useful away from the Mac, but they cannot drive a browser, reach the local
-network, or deploy the worker without re-authenticating.
+**Primary environment: Claude Code on the web (cloud sessions).** There is no
+local clone — the owner works cloud-only, and each session clones fresh from
+GitHub into a container that is reclaimed after inactivity. Consequences:
+
+- Anything not pushed to `origin/main` is lost when the container goes.
+- Browser checks are headless (Playwright/Chromium in the container); card art
+  and live price APIs may be blocked by the environment's network policy.
+- Deploying the worker needs a `CLOUDFLARE_API_TOKEN` in the cloud
+  environment and network access to `api.cloudflare.com` and
+  `*.workers.dev` (see Worker editing rules).
+- The iOS app (`ios/`) can be edited here but **not built or run** — that
+  needs macOS + Xcode.
 
 `origin/main` on GitHub is the single source of truth. Nothing exists until
 it is pushed there — a local checkout has been lost before, and everything
@@ -76,8 +84,8 @@ CLAUDE.md               # This file.
 - Commit messages: imperative mood, scope-prefixed (`Marketplace Scan:
   fix...`, `Hold Strategy: add...`, `Sync: ...`).
 - Push auth:
-  - Mac → owner's GitHub credentials (set up once with `gh auth login`).
-  - Codespaces / cloud → already authenticated via the environment's token.
+  - Cloud sessions → authenticated via the session's GitHub access (repo
+    attached with push access).
 
 ---
 
@@ -105,8 +113,7 @@ CLAUDE.md               # This file.
    when served as static files.
 7. **Static server for local dev:** `python3 -m http.server 3000` from the
    project directory. Visit `http://127.0.0.1:3000/?v=<current-buster>`.
-   On the Mac this drives the live preview and real browser testing; in a
-   cloud container it only serves headless checks — card images
+   In a cloud container it serves headless checks only — card images
    (pokemontcg.io) and live price APIs are blocked there, so art renders
    blank and prices fall back to the static database. Layout, behaviour and
    console errors are still accurate.
@@ -122,14 +129,15 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
 1. Edit `worker-paste-this.js`.
 2. Commit + push to GitHub (so the next session sees the latest).
 3. Deploy: `npx wrangler deploy` from the repo root (wrangler.toml is checked in).
-   - Mac: authenticated via OAuth (`npx wrangler login`), credentials in
-     `~/.wrangler/config/default.toml`. Re-run the login after a fresh clone.
-   - Codespaces: a `CLOUDFLARE_API_TOKEN` env var is already set, so
-     `wrangler login` errors and is unnecessary — just deploy.
+   - Auth: wrangler reads `CLOUDFLARE_API_TOKEN` from the cloud environment's
+     variables/secrets — `wrangler login` (OAuth) does not work in a container
+     and is unnecessary. Token scopes needed: Workers Scripts Edit, Workers
+     KV Storage Edit, D1 Edit, Account Settings Read.
+   - Network: the environment must allow `api.cloudflare.com` and
+     `pokemon-marketplace.simontariq.workers.dev`.
+   - If either is missing, write and push worker code but say plainly it was
+     not deployed or verified — never claim a deploy that didn't happen.
    - The Cloudflare dashboard no longer has an inline editor — wrangler is the only deploy path.
-   - **Only the Mac and Codespaces can deploy.** Claude Code on the web has no
-     Cloudflare credentials and cannot reach `*.workers.dev`; it can write and
-     push worker code but never verify it live.
 4. Verify after deploy: `curl https://pokemon-marketplace.simontariq.workers.dev/health` returns `ok`.
 
 **Worker routes (do not break these):**
@@ -383,15 +391,19 @@ on a 4 s debounce. New synced keys "just work" as long as they follow the prefix
 ## QA before push
 
 For visual changes:
-1. Reload the site in the local browser at the bumped cache buster.
-2. For dashboard / multi-section changes, screenshot at desktop AND mobile.
-3. Check no console errors (Cmd-Opt-J in Chrome).
+1. Serve with `python3 -m http.server 3000` and load
+   `http://127.0.0.1:3000/?v=<buster>` in headless Chromium (Playwright is
+   preinstalled in cloud containers).
+2. For dashboard / multi-section changes, screenshot at desktop AND mobile
+   viewports and share the screenshots with the owner.
+3. Capture console errors via Playwright's `page.on('console')` / `pageerror`.
+4. After the push, the owner confirms on the live Pages URL on a real device.
 
 For worker changes:
 1. Add a node smoke test (see `pokemon-marketplace-worker/test-mcp.mjs` for
    the pattern).
 2. Run it locally with `node test-*.mjs` and ensure all assertions pass.
-3. After dashboard paste, `curl /health` to confirm deploy worked.
+3. After `npx wrangler deploy`, `curl /health` to confirm the deploy worked.
 
 ---
 
