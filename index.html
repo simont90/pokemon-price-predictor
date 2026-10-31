@@ -25,9 +25,9 @@
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
   <!-- Preload large data files so they start downloading during head parse -->
-  <link rel="preload" href="data/cards-db.js?v=20261031c" as="script">
-  <link rel="preload" href="data/sets-db.js?v=20261031c" as="script">
-  <link rel="stylesheet" href="style.css?v=20261031c">
+  <link rel="preload" href="data/cards-db.js?v=20261031d" as="script">
+  <link rel="preload" href="data/sets-db.js?v=20261031d" as="script">
+  <link rel="stylesheet" href="style.css?v=20261031d">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -412,6 +412,8 @@
           <!-- Not signed in -->
           <div id="authNotSignedIn" class="sync-auth-form">
             <p class="sync-intro">Sign in to sync your collection automatically — no pair code needed. Your data is stored under your account on the same Cloudflare Worker.</p>
+            <button class="apple-signin-btn" id="authAppleBtn" type="button"><svg class="apple-signin-logo" viewBox="0 0 17 20" width="15" height="18" aria-hidden="true"><path fill="currentColor" d="M14.06 10.62c-.02-2.1 1.72-3.12 1.8-3.17-.98-1.43-2.5-1.63-3.04-1.65-1.29-.13-2.53.76-3.18.76-.66 0-1.67-.74-2.75-.72-1.41.02-2.72.82-3.44 2.09-1.47 2.55-.38 6.32 1.05 8.39.7 1.01 1.53 2.15 2.62 2.11 1.05-.04 1.45-.68 2.72-.68 1.27 0 1.63.68 2.74.66 1.13-.02 1.85-1.03 2.54-2.05.8-1.17 1.13-2.31 1.15-2.37-.03-.01-2.2-.84-2.21-3.37zM11.98 4.45c.58-.7.97-1.68.86-2.65-.83.03-1.84.55-2.44 1.25-.53.62-1 1.62-.88 2.57.93.07 1.88-.47 2.46-1.17z"/></svg><span>Sign in with Apple</span></button>
+            <div class="sync-auth-or"><span>or use a username</span></div>
             <div class="sync-field">
               <label for="authUsername">Username</label>
               <input id="authUsername" type="text" class="sync-input" placeholder="3–32 chars" autocomplete="username" maxlength="32">
@@ -446,6 +448,7 @@
               <button class="sync-btn" id="authPullBtn" type="button">Pull</button>
             </div>
             <div class="sync-cloud-log" id="authSyncLog"></div>
+            <button class="apple-signin-btn apple-signin-btn--link" id="authAppleLinkBtn" type="button" style="display:none"><svg class="apple-signin-logo" viewBox="0 0 17 20" width="15" height="18" aria-hidden="true"><path fill="currentColor" d="M14.06 10.62c-.02-2.1 1.72-3.12 1.8-3.17-.98-1.43-2.5-1.63-3.04-1.65-1.29-.13-2.53.76-3.18.76-.66 0-1.67-.74-2.75-.72-1.41.02-2.72.82-3.44 2.09-1.47 2.55-.38 6.32 1.05 8.39.7 1.01 1.53 2.15 2.62 2.11 1.05-.04 1.45-.68 2.72-.68 1.27 0 1.63.68 2.74.66 1.13-.02 1.85-1.03 2.54-2.05.8-1.17 1.13-2.31 1.15-2.37-.03-.01-2.2-.84-2.21-3.37zM11.98 4.45c.58-.7.97-1.68.86-2.65-.83.03-1.84.55-2.44 1.25-.53.62-1 1.62-.88 2.57.93.07 1.88-.47 2.46-1.17z"/></svg><span>Link Sign in with Apple</span></button>
             <details class="sync-setup" style="margin-top:16px">
               <summary>Claude AI integration</summary>
               <p style="margin:8px 0 4px;font-size:0.8em;color:var(--text-dim)">Connect the Claude app (iOS / web) to your collection. Add a custom integration in Claude.ai → Settings → Integrations.</p>
@@ -3191,9 +3194,9 @@
     </div>
   </div>
 
-  <script src="data/cards-db.js?v=20261031c"></script>
-  <script src="data/sets-db.js?v=20261031c"></script>
-  <script src="data/pokedex-db.js?v=20261031c"></script>
+  <script src="data/cards-db.js?v=20261031d"></script>
+  <script src="data/sets-db.js?v=20261031d"></script>
+  <script src="data/pokedex-db.js?v=20261031d"></script>
   <!-- Homepage PiP card preview (fullscreen bottom-sheet) -->
   <div id="homePip" class="home-pip" style="display:none" role="dialog" aria-modal="true" aria-label="Card preview">
     <div class="home-pip-bg" id="homePipBg"></div>
@@ -3263,7 +3266,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261031c"></script>
+  <script src="app.js?v=20261031d"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

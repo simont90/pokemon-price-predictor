@@ -46,7 +46,12 @@ final class WebViewModel: NSObject, ObservableObject {
         // Lets the site tell it is running inside the app if it ever needs to.
         config.applicationNameForUserAgent = "PricePredictorApp/1.0 Mobile/15E148 Safari/604.1"
 
+        // window.webkit.messageHandlers.appleSignIn — native Sign in with Apple.
+        let appleSignIn = AppleSignInBridge()
+        config.userContentController.add(appleSignIn, name: AppleSignInBridge.messageName)
+
         webView = ChromeAwareWebView(frame: .zero, configuration: config)
+        appleSignIn.webView = webView
 
         // The web app manages its own history via pushState / popstate.
         webView.allowsBackForwardNavigationGestures = false

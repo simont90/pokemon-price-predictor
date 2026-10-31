@@ -29764,6 +29764,93 @@ async function authLogin(username, password) {
     body: JSON.stringify({ username, password }),
   });
 }
+// ---- Sign in with Apple ---------------------------------------------------
+// Two front doors to the same /auth/apple endpoint. Inside the iOS app the
+// shell exposes a native bridge (Apple's own sheet, Face ID); everywhere else
+// Apple's JS popup is used, which needs the Services ID below registered with
+// simont90.github.io as a domain and APPLE_WEB_REDIRECT as a return URL.
+// Either way the client sends Apple the SHA-256 of a one-time nonce and the
+// worker checks the token against the raw value.
+const APPLE_WEB_CLIENT_ID = 'com.simontariq.pokepredictor.web';
+const APPLE_WEB_REDIRECT  = 'https://simont90.github.io/pokemon-price-predictor/';
+const APPLE_JS_SDK = 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_GB/appleid.auth.js';
+
+function appleSignInNative() { return !!window.webkit?.messageHandlers?.appleSignIn; }
+
+async function _appleSha256Hex(text) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function _appleNativeToken(hashedNonce) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { window.__appleSignInResult = null; reject(new Error('Sign in with Apple timed out.')); }, 180000);
+    window.__appleSignInResult = res => {
+      clearTimeout(timer);
+      window.__appleSignInResult = null;
+      if (res?.idToken) resolve(res.idToken);
+      else if (res?.cancelled) reject(Object.assign(new Error('cancelled'), { cancelled: true }));
+      else reject(new Error(res?.error || 'Sign in with Apple failed.'));
+    };
+    window.webkit.messageHandlers.appleSignIn.postMessage({ nonce: hashedNonce });
+  });
+}
+
+let _appleSdkPromise = null;
+function _loadAppleSdk() {
+  if (window.AppleID?.auth) return Promise.resolve();
+  if (!_appleSdkPromise) {
+    _appleSdkPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = APPLE_JS_SDK; s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => { _appleSdkPromise = null; reject(new Error('Could not load Sign in with Apple.')); };
+      document.head.appendChild(s);
+    });
+  }
+  return _appleSdkPromise;
+}
+
+async function _appleWebToken(hashedNonce) {
+  await _loadAppleSdk();
+  window.AppleID.auth.init({
+    clientId: APPLE_WEB_CLIENT_ID,
+    scope: '',
+    redirectURI: APPLE_WEB_REDIRECT,
+    state: crypto.randomUUID(),
+    nonce: hashedNonce,
+    usePopup: true,
+  });
+  try {
+    const res = await window.AppleID.auth.signIn();
+    const token = res?.authorization?.id_token;
+    if (!token) throw new Error('Apple returned no identity token.');
+    return token;
+  } catch (e) {
+    if (e?.error === 'popup_closed_by_user' || e?.error === 'user_cancelled_authorize') {
+      throw Object.assign(new Error('cancelled'), { cancelled: true });
+    }
+    throw e instanceof Error ? e : new Error(e?.error || 'Sign in with Apple failed.');
+  }
+}
+
+// link: send the current session so the worker attaches the Apple ID to it.
+async function authAppleSignIn({ link = false } = {}) {
+  const rawNonce = crypto.randomUUID() + crypto.randomUUID();
+  const hashed = await _appleSha256Hex(rawNonce);
+  const idToken = appleSignInNative() ? await _appleNativeToken(hashed) : await _appleWebToken(hashed);
+  const headers = { 'Content-Type': 'application/json' };
+  if (link && authIsActive()) headers.Authorization = `Bearer ${authGetToken()}`;
+  return authRequest('/auth/apple', { method: 'POST', headers, body: JSON.stringify({ idToken, nonce: rawNonce }) });
+}
+
+function _authMarkApple() {
+  try {
+    const u = authGetUser();
+    if (u) { u.apple = true; localStorage.setItem(AUTH_USER_KEY, JSON.stringify(u)); }
+  } catch {}
+}
+
 async function authSyncPush({ silent = false } = {}) {
   if (!authIsActive()) return false;
   const token = authGetToken();
@@ -29847,6 +29934,8 @@ function authRenderState() {
     const nm = document.getElementById('authUsernameDisplay');
     const ex = document.getElementById('authExpiry');
     if (av) av.textContent = (user.username || '?')[0].toUpperCase();
+    const linkBtn = document.getElementById('authAppleLinkBtn');
+    if (linkBtn) linkBtn.style.display = user.apple ? 'none' : '';
     if (nm) nm.textContent = user.username || '';
     if (ex && user.expiresAt) {
       const days = Math.round((new Date(user.expiresAt) - Date.now()) / 86400000);
@@ -30498,6 +30587,29 @@ function syncBindOnce() {
     if (!u || !p) { authFormLog('Enter a username and password.', 'err'); return; }
     await authDoLogin(u, p, true);
   });
+  async function authDoApple(link) {
+    const btn = document.getElementById(link ? 'authAppleLinkBtn' : 'authAppleBtn');
+    if (btn) btn.disabled = true;
+    if (!link) authFormLog('Waiting for Apple…', 'info');
+    try {
+      const res = await authAppleSignIn({ link });
+      authSetSession(res.token, res.username, res.expiresAt);
+      _authMarkApple();
+      authRenderState();
+      authLogLine(res.linked ? 'Apple ID linked to ' + res.username
+        : res.created ? 'Account created with Apple ID' : 'Signed in with Apple as ' + res.username, 'ok');
+      await authSyncPull({ mode: 'merge' });
+    } catch (err) {
+      if (err.cancelled) { if (!link) authFormLog('', ''); }
+      else if (link) authLogLine(err.message, 'err');
+      else authFormLog(err.message, 'err');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+  document.getElementById('authAppleBtn')?.addEventListener('click', () => authDoApple(false));
+  document.getElementById('authAppleLinkBtn')?.addEventListener('click', () => authDoApple(true));
+
   document.getElementById('authSyncNowBtn')?.addEventListener('click', async () => {
     await authSyncPull({ mode: 'merge' });
     await authSyncPush({ silent: false });

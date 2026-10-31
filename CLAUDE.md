@@ -286,6 +286,13 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
 - `GET /sync?key=` → returns stored snapshot JSON or `{data:null,ts:0}`.
 - `PUT /sync?key=` → stores raw body (must be valid JSON, ≤ 5 MB).
 - `DELETE /sync?key=` → deletes stored snapshot.
+- `POST /auth/apple` → Sign in with Apple. Body `{ idToken, nonce }` (raw
+  nonce; Apple was given its SHA-256). Verifies the token against Apple's
+  JWKS (iss, aud ∈ app bundle id / web Services ID, exp, nonce), then maps
+  `auth:apple:<appleSub>` → account sub: existing link → sign in; a Bearer
+  session sent along → link to that account; else create `apple:<appleSub>`.
+  Replies like `/auth/login`. ':' can't occur in usernames, so no collisions.
+  Covered by `test-auth-apple.mjs`.
 - `POST /mcp` → JSON-RPC 2.0 MCP server. Requires `Authorization: Bearer <pair-code>`.
 - `GET /mcp` → returns server info JSON (not an SSE stream).
 
@@ -300,6 +307,9 @@ The worker is a single file: `worker-paste-this.js` in this repo. To change it:
   monthly allowance — so `/collectr` caches a card's product id forever and its
   prices for 24h. `COLLECTR_API_URL` optionally overrides the wrapper base URL
   if the endpoint is re-published.
+- `APPLE_AUDIENCES` — optional, comma-separated. Overrides the accepted Sign
+  in with Apple audiences (default: `com.simontariq.pokepredictor`,
+  `com.simontariq.pokepredictor.web`).
 - `POKEMONTCG_API_KEY` — optional. pokemontcg.io rate-limits Cloudflare's
   shared egress IPs hard on the anonymous tier; a free key from
   `dev.pokemontcg.io` removes that. `_pcgFetch` uses it when present.

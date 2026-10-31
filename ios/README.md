@@ -142,7 +142,44 @@ under guideline 4.2 there.
 Manual fallback without Xcode Cloud: Product → Archive → Distribute App →
 TestFlight & App Store, letting Xcode manage the build number.
 
+### Sign in with Apple
+
+Signing in with Apple is a second way into the same worker accounts as the
+username/password sign-in on the Tools → Account tab. In the app it uses
+Apple's native sheet (`AppleSignInBridge.swift`, exposed to the page as
+`window.webkit.messageHandlers.appleSignIn`); on the website it uses Apple's
+JS popup. Both post Apple's identity token to the worker's `POST /auth/apple`,
+which verifies it against Apple's keys. Signed in with a username already?
+"Link Sign in with Apple" attaches the Apple ID to that account, so its data
+stays where it is.
+
+One-time setup, in the paid developer account:
+
+1. **App ID** `com.simontariq.pokepredictor`: Xcode enables the Sign in with
+   Apple capability itself from `PricePredictor.entitlements` with automatic
+   signing. A free Personal Team cannot sign that entitlement — the Xcode
+   build needs the paid team from here on.
+2. **Website — Services ID** (Certificates, Identifiers & Profiles →
+   Identifiers → + → Services IDs): identifier
+   `com.simontariq.pokepredictor.web`, enable Sign in with Apple, Configure:
+   primary App ID as above, domain `simont90.github.io`, return URL
+   `https://simont90.github.io/pokemon-price-predictor/` (exactly, with the
+   trailing slash). If you pick a different identifier, change
+   `APPLE_WEB_CLIENT_ID` in app.js and set the worker's `APPLE_AUDIENCES`.
+3. **Worker:** deploy it (`npx wrangler deploy` from the repo root after
+   `npx wrangler login`). It needs no new secret: `JWT_SECRET` is already
+   used by the username accounts. `APPLE_AUDIENCES` (comma-separated) is only
+   needed if either identifier differs from the defaults.
+
+Until the worker is deployed the button answers "HTTP 404"; until the
+Services ID exists the website popup reports `invalid_client`.
+
 ### Build and run (Mac mini, free Apple ID)
+
+> Since Sign in with Apple was added, a free Personal Team can't sign the
+> app. To build with one anyway, clear *Code Signing Entitlements* in the
+> target's build settings (the Apple button then reports an error in-app).
+
 
 1. Clone fresh: `git clone https://github.com/simont90/pokemon-price-predictor`
 2. Open `ios/PricePredictor.xcodeproj` in **Xcode 27.1 or later**.

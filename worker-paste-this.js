@@ -153,9 +153,11 @@ async function handleAuthLogin(request, env) {
   const uKey = `auth:user:${username.toLowerCase()}`;
   const raw = await env.SYNC_KV.get(uKey);
   // Always hash (constant-time behaviour) before checking existence
-  const salt = raw ? hexToU8(JSON.parse(raw).salt) : crypto.getRandomValues(new Uint8Array(16));
+  const rec = raw ? JSON.parse(raw) : null;
+  // Accounts created by Sign in with Apple have no password at all.
+  const salt = rec?.salt ? hexToU8(rec.salt) : crypto.getRandomValues(new Uint8Array(16));
   const hash = await pwHash(password, salt);
-  if (!raw || hash !== JSON.parse(raw).passwordHash)
+  if (!rec?.passwordHash || hash !== rec.passwordHash)
     return _jsonResp(401, { error: 'Invalid username or password.' }, ch);
   const user = JSON.parse(raw);
   const token = await jwtSign({ sub: username.toLowerCase() }, env.JWT_SECRET);
@@ -191,11 +193,129 @@ async function handleDeleteAccount(request, env) {
   const ch = corsHeaders(request);
   const claims = await authMiddleware(request, env);
   if (!claims) return _jsonResp(401, { error: 'Unauthorised.' }, ch);
+  const rec = JSON.parse((await env.SYNC_KV?.get(`auth:user:${claims.sub}`)) || 'null');
   await Promise.all([
     env.SYNC_KV?.delete(`auth:user:${claims.sub}`),
     env.SYNC_KV?.delete(`user:data:${claims.sub}`),
+    rec?.apple ? env.SYNC_KV?.delete(`auth:apple:${rec.apple}`) : null,
   ]);
   return _jsonResp(200, { ok: true }, ch);
+}
+
+// ---- Sign in with Apple ----
+//
+// A second way into the same accounts as /auth/login: the client (native
+// sheet in the iOS app, Apple's JS popup on the website) gets an identity
+// token from Apple and posts it here with the raw nonce. The token is
+// verified against Apple's published keys, and the Apple user id is mapped
+// to an account:
+//   - already mapped              -> sign in to that account
+//   - Bearer token of a signed-in
+//     username account sent along -> link the Apple ID to it (data stays put)
+//   - neither                      -> create an account keyed "apple:<id>"
+// The reply has the same shape as /auth/login, so the client treats it
+// identically. ':' cannot appear in a username, so the keys never collide.
+//
+// APPLE_AUDIENCES (optional, comma-separated) overrides the accepted token
+// audiences: the app's bundle id and the website's Services ID.
+const APPLE_ISSUER = 'https://appleid.apple.com';
+const APPLE_JWKS_URL = 'https://appleid.apple.com/auth/keys';
+const APPLE_DEFAULT_AUDIENCES = ['com.simontariq.pokepredictor', 'com.simontariq.pokepredictor.web'];
+let _appleJwks = null;
+let _appleJwksAt = 0;
+
+async function _appleKeys(force = false) {
+  if (!force && _appleJwks && Date.now() - _appleJwksAt < 6 * 3600 * 1000) return _appleJwks;
+  const res = await fetch(APPLE_JWKS_URL);
+  if (!res.ok) throw new Error(`Apple keys ${res.status}`);
+  _appleJwks = (await res.json()).keys || [];
+  _appleJwksAt = Date.now();
+  return _appleJwks;
+}
+
+async function _sha256Hex(text) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Returns the verified claims, or { error } saying which check failed.
+async function verifyAppleIdToken(idToken, rawNonce, audiences) {
+  const parts = String(idToken || '').split('.');
+  if (parts.length !== 3) return { error: 'Malformed identity token.' };
+  const [h, b, sig] = parts;
+  let header, claims;
+  try {
+    header = JSON.parse(new TextDecoder().decode(_b64uDec(h)));
+    claims = JSON.parse(new TextDecoder().decode(_b64uDec(b)));
+  } catch { return { error: 'Malformed identity token.' }; }
+  if (header.alg !== 'RS256') return { error: 'Unexpected token algorithm.' };
+
+  let keys = await _appleKeys();
+  let jwk = keys.find(k => k.kid === header.kid);
+  if (!jwk) { keys = await _appleKeys(true); jwk = keys.find(k => k.kid === header.kid); }
+  if (!jwk) return { error: 'Unknown Apple signing key.' };
+  const key = await crypto.subtle.importKey('jwk',
+    { kty: jwk.kty, n: jwk.n, e: jwk.e, alg: 'RS256', ext: true },
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+  const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, _b64uDec(sig),
+    new TextEncoder().encode(`${h}.${b}`));
+  if (!ok) return { error: 'Identity token signature is invalid.' };
+
+  const now = Math.floor(Date.now() / 1000);
+  if (claims.iss !== APPLE_ISSUER) return { error: 'Token was not issued by Apple.' };
+  const auds = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  if (!auds.some(a => audiences.includes(a))) return { error: `Token audience ${auds.join(',')} is not accepted.` };
+  if (!(claims.exp > now - 60)) return { error: 'Identity token has expired.' };
+  if (!claims.sub) return { error: 'Token has no subject.' };
+  // Both clients send Apple the SHA-256 of a one-time nonce and post the raw
+  // value here, so a token lifted from elsewhere cannot be replayed.
+  if (!rawNonce || claims.nonce !== await _sha256Hex(rawNonce)) return { error: 'Nonce mismatch.' };
+  return { claims };
+}
+
+async function handleAuthApple(request, env) {
+  const ch = corsHeaders(request);
+  if (!env.SYNC_KV) return _jsonResp(503, { error: 'Storage not configured.' }, ch);
+  if (!env.JWT_SECRET) return _jsonResp(503, { error: 'JWT_SECRET not set in worker secrets.' }, ch);
+  let body; try { body = await request.json(); } catch { return _jsonResp(400, { error: 'Invalid JSON.' }, ch); }
+  const audiences = (env.APPLE_AUDIENCES || '').split(',').map(x => x.trim()).filter(Boolean);
+
+  let verified;
+  try {
+    verified = await verifyAppleIdToken(body.idToken, body.nonce, audiences.length ? audiences : APPLE_DEFAULT_AUDIENCES);
+  } catch (e) {
+    return _jsonResp(502, { error: `Could not reach Apple to verify the sign-in (${e.message}).` }, ch);
+  }
+  if (verified.error) return _jsonResp(401, { error: verified.error }, ch);
+  const appleId = verified.claims.sub;
+  const linkKey = `auth:apple:${appleId}`;
+
+  let sub = (JSON.parse((await env.SYNC_KV.get(linkKey)) || 'null'))?.sub || null;
+  let linked = false, created = false;
+  if (!sub) {
+    const current = await authMiddleware(request, env);   // signed-in username account?
+    if (current?.sub) {
+      sub = current.sub;
+      linked = true;
+    } else {
+      sub = `apple:${appleId}`;
+      created = true;
+    }
+    await env.SYNC_KV.put(linkKey, JSON.stringify({ sub, linkedAt: new Date().toISOString() }));
+  }
+
+  const uKey = `auth:user:${sub}`;
+  const user = JSON.parse((await env.SYNC_KV.get(uKey)) || 'null')
+    || { username: 'Apple ID', createdAt: new Date().toISOString() };
+  if (user.apple !== appleId) {
+    user.apple = appleId;
+    await env.SYNC_KV.put(uKey, JSON.stringify(user));
+  }
+  const token = await jwtSign({ sub }, env.JWT_SECRET);
+  return _jsonResp(200, {
+    token, username: user.username, apple: true, linked, created,
+    expiresAt: new Date(Date.now() + 120 * 86400000).toISOString(),
+  }, ch);
 }
 
 // ---- eBay OAuth client_credentials token (cached in memory per isolate) ----
@@ -1050,6 +1170,7 @@ async function handle(request, env, ctx) {
   if (url.pathname === '/oauth/token' && request.method === 'POST') return handleOAuthToken(request, env);
   if (url.pathname === '/auth/register' && request.method === 'POST') return handleAuthRegister(request, env);
   if (url.pathname === '/auth/login' && request.method === 'POST') return handleAuthLogin(request, env);
+  if (url.pathname === '/auth/apple' && request.method === 'POST') return handleAuthApple(request, env);
   if (url.pathname === '/user/sync') return handleUserSync(request, env);
   if (url.pathname === '/auth/account' && request.method === 'DELETE') return handleDeleteAccount(request, env);
   if (url.pathname === '/ai/chat' && request.method === 'POST') return handleAiChat(request, env);

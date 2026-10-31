@@ -19346,3 +19346,42 @@ html[data-status-bar="left"] .hdr-popup.hmp-sidebar {
 html[data-status-bar="right"] :is(.filter-fab, .ai-chat-btn, .deal-toast) {
   right: calc(var(--rail-col) + 16px);
 }
+
+/* Sign in with Apple — Apple's HIG: black button on light, white on dark,
+   Apple logo + "Sign in with Apple", at least 44pt tall. */
+.apple-signin-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 46px;
+  margin: 12px 0 4px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: #000;
+  color: #fff;
+  font: 600 15px/1 -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+[data-theme="dark"] .apple-signin-btn { background: #fff; color: #000; }
+.apple-signin-btn:disabled { opacity: 0.55; cursor: progress; }
+.apple-signin-btn--link { margin-top: 14px; }
+.apple-signin-logo { flex-shrink: 0; margin-top: -2px; }
+.sync-auth-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.sync-auth-or::before, .sync-auth-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
