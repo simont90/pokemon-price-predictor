@@ -190,6 +190,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Price Predictor";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSCameraUsageDescription = "The grade calculator photographs the front and back of a card to estimate its grade.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose card photos for the grade calculator.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
@@ -224,6 +226,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Price Predictor";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSCameraUsageDescription = "The grade calculator photographs the front and back of a card to estimate its grade.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose card photos for the grade calculator.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
