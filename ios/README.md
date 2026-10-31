@@ -71,6 +71,10 @@ The app is built for the foldable as well as regular iPhones:
   set). Dialogs present from the web view's own window, so they land on the
   right scene when the app is beside another app or on either display.
 
+![iPhone Duo preview: folded, unfolded portrait, unfolded landscape](docs/iphone-duo-preview.png)
+
+*Headless browser render at Duo sizes (dark mode, buster `20261031b`) — not the iOS simulator; card art blocked in that environment.*
+
 Checked in a cloud session by rendering the site headless at every Duo size
 (outer/inner × portrait/landscape, ½ and ⅓ Split View) with the camera inset
 simulated on each side: no horizontal page overflow, nothing under the camera.
