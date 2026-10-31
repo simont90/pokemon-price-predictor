@@ -1,4 +1,76 @@
-# iOS client — status and setup
+# iOS app
+
+## Price Predictor (the app) — `PricePredictor.xcodeproj`
+
+A native shell around the live website. Every feature is the site's own code,
+loaded from `https://simont90.github.io/pokemon-price-predictor/`, so a push to
+`main` reaches the app on its next launch with **no rebuild**. Rebuild only when
+something under `ios/PricePredictor/` changes.
+
+```
+PricePredictor.xcodeproj      # committed; open this. No xcodegen needed.
+PricePredictor-Info.plist     # WKAppBoundDomains + launch colour (merged with generated keys)
+PricePredictor/               # synchronised folder: any file added here joins the target
+  PricePredictorApp.swift
+  ContentView.swift           # web view, load bar, first-launch offline screen
+  WebViewModel.swift          # everything a browser does that WKWebView doesn't
+  WebViewRepresentable.swift
+  Assets.xcassets             # icon (from icons/icon-512.png), accent, launch colour
+```
+
+What the shell supplies, because WKWebView does not do it on its own:
+
+- **alert / confirm / prompt.** Without a `WKUIDelegate` they silently do
+  nothing — `confirm()` returns false and `prompt()` returns null, so naming a
+  group or confirming a delete would quietly fail.
+- **Downloads.** The JSON backup export (`a.download` on a blob URL) goes to
+  the share sheet: Save to Files, AirDrop, Mail.
+- **External links.** eBay, Collectr, PriceCharting etc. open in Safari, or in
+  their own app via Universal Links. Pages of the site itself stay in-app.
+- **Offline.** `WKAppBoundDomains` = `simont90.github.io` is what lets `sw.js`
+  run inside WKWebView, so after one online launch the app opens offline with
+  the full catalogue, same as the Home Screen web app.
+- **Background kills.** iOS reclaims the web process when the app is
+  backgrounded; `webViewWebContentProcessDidTerminate` reloads instead of
+  leaving a blank screen.
+- Safe areas are the site's own `env(safe-area-inset-*)` padding
+  (`viewport-fit=cover`), so the scroll view's automatic insets are off.
+- The user agent carries `PricePredictorApp/1.0` if the site ever needs to
+  tell it is in the app.
+
+**Storage is the app's own.** WKWebView's localStorage is separate from
+Safari's, so the app starts with an empty collection. Pair it to sync with the
+same pair code (Sync settings) and the collection arrives from `/sync`.
+
+### Build and run (Mac mini, free Apple ID)
+
+1. Clone fresh: `git clone https://github.com/simont90/pokemon-price-predictor`
+2. Open `ios/PricePredictor.xcodeproj` in Xcode.
+3. Target → Signing & Capabilities → Team: pick your Apple ID (Personal Team).
+   If the bundle id `com.simontariq.pokepredictor` is refused, change it to
+   anything unique.
+4. Plug in the iPhone, choose it as the run destination, ⌘R.
+5. First run only: on the iPhone, Settings → General → VPN & Device
+   Management → trust your developer certificate. Developer Mode must be on
+   (Settings → Privacy & Security → Developer Mode).
+
+Free-account signing expires after **7 days**; the app then won't open until
+it is run from Xcode again. The Apple Developer Program (£79/yr) lifts that
+and enables TestFlight.
+
+Debugging: Safari on the Mac → Develop → <iPhone> → Price Predictor gives the
+web inspector on the running app (`isInspectable`).
+
+Not verified from a cloud session: this was written in a Linux container with
+no Xcode, so the first build on the Mac is the first compile. The project file
+parses and every object reference resolves; anything else surfaces there.
+
+---
+
+## Native SwiftUI client — `PokePredictor/` (paused)
+
+Kept for reference; the web shell above is the app. It shares the bundle id,
+so only one of the two can be installed at a time.
 
 A native SwiftUI client for the same backend the web app uses. **Not buildable
 on this Mac yet** — see Blockers.

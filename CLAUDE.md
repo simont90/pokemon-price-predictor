@@ -14,8 +14,10 @@ GitHub into a container that is reclaimed after inactivity. Consequences:
 - Deploying the worker needs a `CLOUDFLARE_API_TOKEN` in the cloud
   environment and network access to `api.cloudflare.com` and
   `*.workers.dev` (see Worker editing rules).
-- The iOS app (`ios/`) can be edited here but **not built or run** — that
-  needs macOS + Xcode.
+- The iOS app (`ios/PricePredictor.xcodeproj`) is a WKWebView shell around
+  the live site, so web changes reach it with no rebuild. Its Swift can be
+  edited here but **not built or run** — the owner builds it in Xcode on the
+  Mac mini from a fresh clone (see `ios/README.md`).
 
 `origin/main` on GitHub is the single source of truth. Nothing exists until
 it is pushed there — a local checkout has been lost before, and everything
@@ -62,6 +64,7 @@ data/sets-db.js         # Set metadata (release date, pack counts, etc.).
 data/pokedex-db.js      # National Pokédex: normalised species name (EN + JP) → dex number.
 worker-paste-this.js    # Latest Cloudflare Worker source — deploy via `npx wrangler deploy`.
 wrangler.toml           # Wrangler config: worker name, KV binding. Do not store secrets here.
+ios/                    # iOS app: PricePredictor.xcodeproj wraps the live site in WKWebView (see ios/README.md).
 CLAUDE.md               # This file.
 ```
 

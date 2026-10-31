@@ -7,3 +7,8 @@ node_modules/
 # Swift / SwiftPM
 ios/**/.build/
 ios/**/.swiftpm/
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/

@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct PokePriceApp: App {
+struct PricePredictorApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
