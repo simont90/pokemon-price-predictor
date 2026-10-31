@@ -160,7 +160,9 @@ One-time setup, in the paid developer account:
    signing. A free Personal Team cannot sign that entitlement — the Xcode
    build needs the paid team from here on.
 2. **Website — Services ID** (Certificates, Identifiers & Profiles →
-   Identifiers → + → Services IDs): identifier
+   **Identifiers**, not the "Services" page; existing ones only show after
+   switching the list's filter from App IDs to Services IDs; new ones via
+   + → Services IDs): identifier
    `com.simontariq.pokepredictor.web`, enable Sign in with Apple, Configure:
    primary App ID as above, domain `simont90.github.io`, return URL
    `https://simont90.github.io/pokemon-price-predictor/` (exactly, with the
@@ -173,6 +175,14 @@ One-time setup, in the paid developer account:
 
 Until the worker is deployed the button answers "HTTP 404"; until the
 Services ID exists the website popup reports `invalid_client`.
+"Sign-Up Not Completed" in Apple's sheet means the portal side is
+unfinished: the App ID lacks Sign in with Apple as a primary App ID, or the
+Services ID configuration wasn't saved (Done, then Continue → Save).
+
+Signing in with Apple while signed out creates a separate account. To attach
+an Apple ID to an existing username account instead: sign in with the
+username, then Link Sign in with Apple. If the Apple ID already made its own
+account, delete that account first (it removes the link), then link.
 
 ### Build and run (Mac mini, free Apple ID)
 
