@@ -19164,3 +19164,54 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
   .bp-ctl-btn { min-height: 30px; }
   .bp-pick { min-height: 56px; }
 }
+
+/* =================================================================
+   iPhone Duo (foldable) — outer 466×678pt, inner 626×890pt,
+   Split View down to ~296pt. Safe areas there are asymmetric: the
+   camera sits on one side, so fixed chrome has to clear left and
+   right independently rather than assuming a symmetric notch.
+   ================================================================= */
+
+/* Closed off-canvas panels were still casting their shadow ~40px into
+   the right edge of every screen, on every device. */
+.screener-panel:not(.open),
+.ai-chat-panel:not(.open) { box-shadow: none; }
+
+/* Floating buttons and toasts: clear whichever side the camera is on. */
+.ai-chat-btn { right: calc(24px + env(safe-area-inset-right, 0px)); }
+.deal-toast  { right: calc(24px + env(safe-area-inset-right, 0px)); }
+.filter-fab  { right: max(20px, calc(12px + env(safe-area-inset-right, 0px))); }
+
+/* Vertical sidebar (inner display in landscape, iPad, desktop): offset
+   by the left inset so it never sits under a left-side camera. The
+   bottom-pill padding rule above adds the inset inside an 84px-wide
+   sidebar, which would squash it, so reset that here. */
+@media (min-width: 821px) {
+  body { padding-left: calc(108px + env(safe-area-inset-left, 0px)); }
+  .page-nav {
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+  .hdr-popup.hmp-sidebar { left: calc(108px + env(safe-area-inset-left, 0px)); }
+}
+/* body already clears the left inset; don't add it a second time
+   (the 744–1023px rule pads .app by max(28px, inset)). */
+@media (min-width: 821px) and (max-width: 1023px) {
+  .app { padding-left: 28px; }
+}
+
+/* Narrow Split View on the inner display (~296–360pt). */
+@media (max-width: 360px) {
+  .search-seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .search-seg::-webkit-scrollbar { display: none; }
+  .search-count { display: none; }
+  #searchInput { min-width: 0; }
+  .pp-card > h2 { padding: 0 64px; }
+  .deal-check-inputs { flex-wrap: wrap; }
+  .deal-check-inputs .input-group:first-child { flex-basis: 100%; }
+  /* Bottom pill: 6 tabs + the context button share the width instead of
+     the last one being clipped by the pill's overflow: hidden. */
+  .page-nav { width: calc(100vw - 16px); }
+  .page-nav-btn, .nav-ctx-btn { flex: 1 1 0; min-width: 0; padding-left: 4px; padding-right: 4px; }
+}

@@ -388,6 +388,11 @@ on a 4 s debounce. New synced keys "just work" as long as they follow the prefix
   Space Grotesk + JetBrains Mono fonts.
 - **Mobile-first:** the owner runs the app on iPhone, iPad, and Mac mini M4.
   Test responsive at 390 × 844 (iPhone) as well as 1440 × 1100 (desktop).
+- **iPhone Duo (foldable) is a target.** Also check 466 × 678 (outer),
+  626 × 890 and 890 × 626 (inner), and 296 wide (⅓ Split View). Safe areas
+  there are asymmetric — fixed elements must offset by their own side's
+  `env(safe-area-inset-left/right)`, never assume both sides match. Lay out
+  by width, never by orientation or user agent.
 
 ---
 

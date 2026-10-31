@@ -53,8 +53,12 @@ final class WebViewModel: NSObject, ObservableObject {
         webView.isOpaque = false
         webView.backgroundColor = Self.background
         webView.scrollView.backgroundColor = Self.background
-        // The site already pads for the notch / home indicator with
+        // The site pads for the camera / home indicator with
         // env(safe-area-inset-*) under viewport-fit=cover; don't double it.
+        // With .never, WKWebView passes each edge's inset to CSS separately,
+        // which matters on iPhone Duo where the camera puts the inset on one
+        // side only. Folding and unfolding resize the view in place, so the
+        // page keeps its state and CSS media queries re-evaluate.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
 
         super.init()
@@ -102,12 +106,16 @@ final class WebViewModel: NSObject, ObservableObject {
 
     // MARK: Presentation helpers
 
+    /// Present from the web view's own window. On iPhone Duo the app can
+    /// have a scene on each display, or sit beside another app in Split
+    /// View, so "the first scene" is not necessarily the one being used.
     private func topViewController() -> UIViewController? {
-        let scene = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive }
-            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        guard let root = scene?.keyWindow?.rootViewController ?? scene?.windows.first?.rootViewController
+        let scene = webView.window?.windowScene
+            ?? UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first { $0.activationState == .foregroundActive }
+        guard let root = webView.window?.rootViewController
+                ?? scene?.keyWindow?.rootViewController
         else { return nil }
         var top = root
         while let presented = top.presentedViewController { top = presented }

@@ -42,10 +42,40 @@ What the shell supplies, because WKWebView does not do it on its own:
 Safari's, so the app starts with an empty collection. Pair it to sync with the
 same pair code (Sync settings) and the collection arrives from `/sync`.
 
+### iPhone Duo
+
+The app is built for the foldable as well as regular iPhones:
+
+- **Build with Xcode 27.1 (iOS 27.1 SDK).** Older SDKs run on the Duo but
+  letterbox: the iOS 27 SDK stops short of the status-bar area on the inner
+  display, and only 27.1 goes edge to edge.
+- **Every pose is just a width to the site.** Outer ≈ 466×678pt, inner
+  ≈ 626×890pt (pixel specs at 3×), Split View on the inner display down to
+  ~296pt. The site's CSS breakpoints handle each one: bottom pill folded and
+  in inner portrait, the vertical sidebar in inner landscape (≥821pt).
+  Folding and unfolding resize the web view in place — no reload, state kept.
+- **Asymmetric safe areas.** The camera puts the inset on one side only.
+  `contentInsetAdjustmentBehavior = .never` passes each edge to CSS as its
+  own `env(safe-area-inset-*)`, and every piece of fixed chrome (sidebar,
+  filter button, AI button, toasts) offsets by its own side.
+- **Inner display ignores supported orientations**, so nothing in the shell
+  or the site branches on orientation or device type — only on width.
+  Portrait upside-down is enabled for the outer display.
+- **Split View is supported** (`UIRequiresFullScreen` is deliberately not
+  set). Dialogs present from the web view's own window, so they land on the
+  right scene when the app is beside another app or on either display.
+
+Checked in a cloud session by rendering the site headless at every Duo size
+(outer/inner × portrait/landscape, ½ and ⅓ Split View) with the camera inset
+simulated on each side: no horizontal page overflow, nothing under the camera.
+**Not yet checked on the Duo simulator or a real Duo** — do that in Xcode:
+Device Hub → iPhone Duo simulator → open, close, rotate, fold; drag the app
+to each side for Split View.
+
 ### Build and run (Mac mini, free Apple ID)
 
 1. Clone fresh: `git clone https://github.com/simont90/pokemon-price-predictor`
-2. Open `ios/PricePredictor.xcodeproj` in Xcode.
+2. Open `ios/PricePredictor.xcodeproj` in **Xcode 27.1 or later**.
 3. Target → Signing & Capabilities → Team: pick your Apple ID (Personal Team).
    If the bundle id `com.simontariq.pokepredictor` is refused, change it to
    anything unique.
