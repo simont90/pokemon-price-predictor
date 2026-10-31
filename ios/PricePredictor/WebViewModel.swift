@@ -134,16 +134,27 @@ final class WebViewModel: NSObject, ObservableObject {
         let bounds = webView.bounds
         guard bounds.width > 0, bounds.height > 0 else { return }
 
+        // The status bar frame is the precise answer when iOS reports it as
+        // a side column. It is not the only signal: the page also detects
+        // the column from the camera-side safe area (initNavSide in app.js),
+        // because iOS does not report every Duo pose as a side frame. So
+        // this only *adds* precision — it never switches the rail off.
         let frame = webView.convert(manager.statusBarFrame, from: nil)
         var side = "top"
         if !manager.isStatusBarHidden, frame.width > 0, frame.height > 0,
            frame.width < bounds.width * 0.5 {
             side = frame.midX > bounds.midX ? "right" : "left"
         }
-        let bottom = Int(max(0, frame.maxY).rounded())
-        let js = "(function(){var d=document.documentElement;"
-            + "d.setAttribute('data-status-bar','\(side)');"
-            + "d.style.setProperty('--status-bar-bottom','\(bottom)px');})();"
+        let insets = webView.safeAreaInsets
+        print("PricePredictor: status bar frame \(frame), safe area \(insets), bounds \(bounds.size) -> \(side)")
+        var js = "(function(){var d=document.documentElement;"
+            + "d.setAttribute('data-native-status-bar','\(side)');"
+        if side != "top" {
+            js += "d.style.setProperty('--status-bar-bottom','\(Int(max(0, frame.maxY).rounded()))px');"
+        } else {
+            js += "d.style.removeProperty('--status-bar-bottom');"
+        }
+        js += "window.dispatchEvent(new Event('resize'));})();"
         guard js != lastGeometryJS else { return }
         lastGeometryJS = js
         webView.evaluateJavaScript(js, completionHandler: nil)

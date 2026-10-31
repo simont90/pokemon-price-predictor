@@ -19268,7 +19268,9 @@ html[data-status-bar="right"] { --rail-col: env(safe-area-inset-right, 0px); }
 html[data-status-bar="left"]  { --rail-col: env(safe-area-inset-left, 0px); }
 html:is([data-status-bar="right"], [data-status-bar="left"]) {
   --rail-w: clamp(52px, calc(var(--rail-col) - 8px), 84px);
-  --rail-top: calc(var(--status-bar-bottom, 64px) + 8px);
+  /* Without a measured status bar, start below where the Duo stacks the
+     camera, clock and Wi-Fi in the column (~140pt from the top). */
+  --rail-top: calc(var(--status-bar-bottom, 140px) + 8px);
 }
 html:is([data-status-bar="right"], [data-status-bar="left"]) body {
   padding-left: 0;

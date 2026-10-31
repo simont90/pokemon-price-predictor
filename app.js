@@ -34969,12 +34969,29 @@ function _paintPdxCards(sorted, owned) {
     const r = parseFloat(cs.paddingRight) || 0;
     if (l > r) root.dataset.navSide = 'left';
     else delete root.dataset.navSide;
+
+    // Status-bar column (iPhone Duo): the nav becomes a rail inside it.
+    // Decided here, not by the shell alone. A camera on one side makes the
+    // horizontal safe areas *asymmetric*; every other iPhone reports them
+    // equal (0/0 upright, matching notch insets in landscape), so asymmetry
+    // is the Duo's signature in every pose and in Safari as well as the app.
+    // The shell's measured status-bar frame (data-native-status-bar) wins
+    // when it reports a side; it also supplies --status-bar-bottom.
+    const native = root.dataset.nativeStatusBar;
+    let side = null;
+    if (native === 'left' || native === 'right') side = native;
+    else if (Math.abs(l - r) > 16) side = l > r ? 'left' : 'right';
+    if (side) {
+      if (root.dataset.statusBar !== side) root.dataset.statusBar = side;
+    } else if (root.hasAttribute('data-status-bar')) {
+      delete root.dataset.statusBar;
+    }
   };
   sync();
   window.addEventListener('resize', sync, { passive: true });
   window.addEventListener('orientationchange', () => setTimeout(sync, 50));
-  // The iOS shell sets data-status-bar when the device folds, unfolds or
-  // rotates; re-place the nav highlight for the rail's new orientation.
+  // Folding, unfolding and rotating change data-status-bar; re-place the
+  // nav highlight for the rail's new orientation.
   new MutationObserver(() => window.dispatchEvent(new Event('resize')))
     .observe(root, { attributes: true, attributeFilter: ['data-status-bar'] });
 })();
