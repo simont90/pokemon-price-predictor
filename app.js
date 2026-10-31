@@ -29893,6 +29893,20 @@ function _authMarkApple() {
   } catch {}
 }
 
+// The worker rejects a session it can no longer verify — most often because
+// JWT_SECRET was set or rotated, which invalidates every token signed before.
+// authIsActive() only checks the local expiry, so without this the dead
+// session stayed put and every pull and push failed with a bare "HTTP 401".
+// Data is stored per account, not per session, so signing in again loses
+// nothing.
+function _authSessionRejected() {
+  authClearSession();
+  authRenderState();
+  authLogLine('Session no longer valid — sign in again. Your synced data is safe.', 'err');
+  const log = document.getElementById('authLog');
+  if (log) log.textContent = 'Your session expired. Sign in again; your synced collection is still there.';
+}
+
 async function authSyncPush({ silent = false } = {}) {
   if (!authIsActive()) return false;
   const token = authGetToken();
@@ -29905,6 +29919,7 @@ async function authSyncPush({ silent = false } = {}) {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(payload),
     });
+    if (resp.status === 401) { _authSessionRejected(); return false; }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     if (!silent) authLogLine('Pushed to account sync', 'ok');
     authUpdateStatus('Last push: ' + new Date().toLocaleTimeString('en-GB'));
@@ -29923,6 +29938,7 @@ async function authSyncPull({ mode } = {}) {
     const resp = await fetch(`${base}/user/sync`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
+    if (resp.status === 401) { _authSessionRejected(); return false; }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const j = await resp.json();
     if (!j || !j.data) { authLogLine('Nothing stored yet', 'info'); return false; }
