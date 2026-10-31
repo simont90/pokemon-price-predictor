@@ -96,6 +96,52 @@ simulated on each side: no horizontal page overflow, nothing under the camera.
 Device Hub → iPhone Duo simulator → open, close, rotate, fold; drag the app
 to each side for Split View.
 
+### TestFlight (Apple Developer Program)
+
+The intended way onto the phone: no 7-day expiry, no cable, and with Xcode
+Cloud no Mac step per change either. Website changes still need no build at
+all — only changes under `ios/` do.
+
+What the repo already carries for it:
+
+- `PricePredictor.xcodeproj/xcshareddata/xcschemes/PricePredictor.xcscheme` —
+  a **shared** scheme. Xcode Cloud only sees shared schemes; Xcode's
+  auto-created ones live in `xcuserdata/` and are git-ignored.
+- `ci_scripts/ci_pre_xcodebuild.sh` — sets the build number to Xcode Cloud's
+  `CI_BUILD_NUMBER` on archive, so every upload is unique. The committed
+  project stays at build 1.
+- `PricePredictor/PrivacyInfo.xcprivacy` — privacy manifest (no tracking, no
+  required-reason APIs).
+- `ITSAppUsesNonExemptEncryption = NO`, so builds don't sit at "Missing
+  Compliance"; a 1024px opaque icon; Release configuration for archives.
+
+One-time setup:
+
+1. Join the Apple Developer Program (£79/yr) with the Apple ID you sign in to
+   Xcode with.
+2. Xcode → the PricePredictor target → Signing & Capabilities → Team: the
+   paid team (not "Personal Team"). Keep or change the bundle id; it must
+   match step 3.
+3. App Store Connect → Apps → + → New App: iOS, name "Price Predictor",
+   the same bundle id, any SKU.
+4. Xcode → Product → Xcode Cloud → Create Workflow, connect GitHub when
+   asked, then edit the workflow:
+   - **Environment:** Xcode 27.1 or later (Duo full-screen needs it).
+   - **Start condition:** branch changes on `main`, *files and folders*
+     limited to `ios/` — website-only pushes then don't spend build hours.
+   - **Action:** Archive, iOS, scheme PricePredictor.
+   - **Post-action:** TestFlight Internal Testing, your own group.
+5. Install the TestFlight app on the iPhone, accept the invite, and turn on
+   Automatic Updates for Price Predictor.
+
+After that a push touching `ios/` builds, uploads and lands on the phone by
+itself. Internal testing (up to 100 people on your team) needs no App
+Review; external testers would, and a web-view shell may be challenged
+under guideline 4.2 there.
+
+Manual fallback without Xcode Cloud: Product → Archive → Distribute App →
+TestFlight & App Store, letting Xcode manage the build number.
+
 ### Build and run (Mac mini, free Apple ID)
 
 1. Clone fresh: `git clone https://github.com/simont90/pokemon-price-predictor`
