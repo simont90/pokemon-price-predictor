@@ -14,7 +14,7 @@ const grab = n => {
 const _jsonResp = (status, body, headers) =>
   ({ status, body, headers, json: () => body });
 const _collectrErrResp = new Function('_jsonResp',
-  grab('function _collectrErrResp') + '\nreturn _collectrErrResp;')(_jsonResp);
+  grab('function _collectrErrResp(') + '\nreturn _collectrErrResp;')(_jsonResp);
 
 let pass = 0, fail = 0;
 const t = (name, got, want) => {
@@ -44,7 +44,9 @@ t('500 is named for the client',     r500.body.reason,   'upstream_error');
 t('500 keeps the upstream detail',   r500.body.detail,   'boom');
 
 // A refresh that cannot be paid for must not discard a good cached body.
-const handler = grab('async function handleCollectr');
+// Anchor on the open paren: a bare prefix also matches handleCollectrFind,
+// which sits earlier in the file, and the checks would then read the wrong body.
+const handler = grab('async function handleCollectr(');
 t('402 on refresh falls back to cache',
   /if \(cached && \(e\.status === 402 \|\| e\.status === 429\)\)/.test(handler), true);
 t('the fallback marks itself stale',

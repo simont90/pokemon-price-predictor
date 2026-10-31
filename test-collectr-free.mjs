@@ -75,7 +75,7 @@ t('grades do not bleed across',      two['1'].prints['Holofoil'].gradeIds.join('
 t('a negative move is kept',         two['2'].prints['Holofoil'].pct30d, -2.5);
 
 // The route must not spend a credit when asked not to.
-const handler = grab('async function handleCollectr');
+const handler = grab('async function handleCollectr(');
 t('meter=0 short-circuits',          /meter'\) === '0'/.test(handler), true);
 t('and reports zero credits',        /credits_used: 0/.test(handler), true);
 t('402 falls back to the free facts', /freeFacts && \(e\.status === 402/.test(handler), true);
