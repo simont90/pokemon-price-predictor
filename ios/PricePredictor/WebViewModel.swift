@@ -24,6 +24,9 @@ final class WebViewModel: NSObject, ObservableObject {
     @Published var isLoading = true
     @Published var loadProgress: Double = 0
     @Published var isOffline = false
+    /// Set when the first load fails for a reason other than connectivity,
+    /// so the screen says what went wrong instead of staying blank.
+    @Published var loadError: String?
 
     private var progressObserver: NSKeyValueObservation?
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
@@ -43,7 +46,7 @@ final class WebViewModel: NSObject, ObservableObject {
         // Lets the site tell it is running inside the app if it ever needs to.
         config.applicationNameForUserAgent = "PricePredictorApp/1.0 Mobile/15E148 Safari/604.1"
 
-        webView = WKWebView(frame: .zero, configuration: config)
+        webView = ChromeAwareWebView(frame: .zero, configuration: config)
 
         // The web app manages its own history via pushState / popstate.
         webView.allowsBackForwardNavigationGestures = false
@@ -65,6 +68,7 @@ final class WebViewModel: NSObject, ObservableObject {
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        (webView as? ChromeAwareWebView)?.onGeometryChange = { [weak self] in self?.pushStatusBarGeometry() }
 
         let refresh = UIRefreshControl()
         refresh.tintColor = Self.accent
@@ -81,6 +85,7 @@ final class WebViewModel: NSObject, ObservableObject {
 
     func load() {
         isOffline = false
+        loadError = nil
         isLoading = true
         if hasLoadedOnce, webView.url != nil {
             webView.reload()
@@ -102,6 +107,41 @@ final class WebViewModel: NSObject, ObservableObject {
         // UIApplication.open lets Universal Links land in the eBay / Collectr
         // apps when installed, and falls back to Safari otherwise.
         UIApplication.shared.open(url)
+    }
+
+    // MARK: Status bar geometry -> CSS
+
+    private var lastGeometryJS = ""
+
+    /// On iPhone Duo the status bar is not a strip across the top: on both
+    /// displays it sits in a column down one side, beside the camera, and
+    /// Apple's guidance is that vertical controls lay out in that column,
+    /// directly under it. CSS can see the column (the side safe-area inset)
+    /// but not where the status bar inside it ends, so the shell measures it
+    /// and hands it to the page:
+    ///   html[data-status-bar="right" | "left" | "top"]
+    ///   --status-bar-bottom  (px from the top of the web view)
+    /// The site's rail layout keys off "left" / "right"; on every other
+    /// iPhone it is "top" and nothing changes.
+    func pushStatusBarGeometry() {
+        guard let window = webView.window,
+              let manager = window.windowScene?.statusBarManager else { return }
+        let bounds = webView.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+
+        let frame = webView.convert(manager.statusBarFrame, from: nil)
+        var side = "top"
+        if !manager.isStatusBarHidden, frame.width > 0, frame.height > 0,
+           frame.width < bounds.width * 0.5 {
+            side = frame.midX > bounds.midX ? "right" : "left"
+        }
+        let bottom = Int(max(0, frame.maxY).rounded())
+        let js = "(function(){var d=document.documentElement;"
+            + "d.setAttribute('data-status-bar','\(side)');"
+            + "d.style.setProperty('--status-bar-bottom','\(bottom)px');})();"
+        guard js != lastGeometryJS else { return }
+        lastGeometryJS = js
+        webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
     // MARK: Presentation helpers
@@ -143,6 +183,12 @@ final class WebViewModel: NSObject, ObservableObject {
 
 extension WebViewModel: WKNavigationDelegate {
 
+    func webView(_ webView: WKWebView, didCommit _: WKNavigation!) {
+        // As early as possible, so the first paint already uses the rail.
+        lastGeometryJS = ""
+        pushStatusBarGeometry()
+    }
+
     func webView(_ webView: WKWebView, didStartProvisionalNavigation _: WKNavigation!) {
         isLoading = true
         isOffline = false
@@ -151,6 +197,8 @@ extension WebViewModel: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
         isLoading = false
         hasLoadedOnce = true
+        lastGeometryJS = ""   // a new document has none of the old attributes
+        pushStatusBarGeometry()
     }
 
     func webView(_ webView: WKWebView, didFail _: WKNavigation!, withError error: Error) {
@@ -180,7 +228,13 @@ extension WebViewModel: WKNavigationDelegate {
                        NSURLErrorDNSLookupFailed]
         // Only replace the page with the offline screen if there is no page
         // to show; once loaded, the service worker serves it offline.
-        if offline.contains(nsError.code) && !hasLoadedOnce { isOffline = true }
+        print("PricePredictor: load failed — \(nsError.domain) \(nsError.code): \(nsError.localizedDescription)")
+        guard !hasLoadedOnce else { return }
+        if offline.contains(nsError.code) {
+            isOffline = true
+        } else {
+            loadError = "\(nsError.localizedDescription)\n\n\(nsError.domain) \(nsError.code)"
+        }
     }
 
     func webView(_ webView: WKWebView,
@@ -313,5 +367,28 @@ extension WebViewModel: WKUIDelegate {
         })
         guard let top = topViewController() else { completionHandler(nil); return }
         top.present(alert, animated: true)
+    }
+}
+
+// MARK: - ChromeAwareWebView
+
+/// Reports every geometry change (fold, unfold, rotate, Split View resize)
+/// so the status-bar position handed to the page is always current.
+final class ChromeAwareWebView: WKWebView {
+    var onGeometryChange: (@MainActor () -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onGeometryChange?()
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        onGeometryChange?()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        onGeometryChange?()
     }
 }

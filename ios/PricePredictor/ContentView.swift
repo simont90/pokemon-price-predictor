@@ -9,7 +9,13 @@ struct ContentView: View {
             Color(red: 14/255, green: 15/255, blue: 19/255).ignoresSafeArea()
 
             if vm.isOffline {
-                OfflineView { vm.load() }
+                MessageView(icon: "wifi.slash",
+                            title: "No connection",
+                            message: "Check your internet and try again.") { vm.load() }
+            } else if let error = vm.loadError {
+                MessageView(icon: "exclamationmark.triangle",
+                            title: "Couldn't load Price Predictor",
+                            message: error) { vm.load() }
             } else {
                 WebViewRepresentable(webView: vm.webView)
                     .ignoresSafeArea()
@@ -33,21 +39,25 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Offline screen
-private struct OfflineView: View {
+// MARK: - Offline / error screen
+private struct MessageView: View {
+    let icon: String
+    let title: String
+    let message: String
     let onRetry: () -> Void
 
     var body: some View {
         VStack(spacing: 24) {
-            Image(systemName: "wifi.slash")
+            Image(systemName: icon)
                 .font(.system(size: 52, weight: .light))
                 .foregroundColor(Color(white: 0.4))
 
             VStack(spacing: 8) {
-                Text("No connection")
+                Text(title)
                     .font(.system(size: 20, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
-                Text("Check your internet and try again.")
+                Text(message)
+                    .textSelection(.enabled)
                     .font(.subheadline)
                     .foregroundColor(Color(white: 0.5))
                     .multilineTextAlignment(.center)

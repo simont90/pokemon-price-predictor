@@ -53,6 +53,20 @@ The app is built for the foldable as well as regular iPhones:
   ≈ 626×890pt (pixel specs at 3×), Split View on the inner display down to
   ~296pt. The site's CSS breakpoints handle each one: bottom pill folded and
   in inner portrait, the vertical sidebar in inner landscape (≥821pt).
+- **Navigation lives in the status-bar column.** On both Duo displays the
+  status bar sits in a column down one side, beside the camera, and Apple's
+  guidance is that vertical controls lay out in that column directly under
+  it. CSS can see the column (the side safe-area inset) but not where the
+  status bar ends, so `ChromeAwareWebView` reports every geometry change and
+  `pushStatusBarGeometry()` sets `html[data-status-bar="right"|"left"|"top"]`
+  and `--status-bar-bottom`. With a side status bar the site turns the bottom
+  pill (folded) and the sidebar (unfolded) into one vertical rail centred in
+  that column, and page content runs right up to it. Other iPhones report
+  `top`; Safari reports nothing; both are unchanged.
+- **First launch is slow; later ones aren't.** The first load fetches ~4.5 MB
+  (~1.1 MB compressed: app.js, the 26k-card catalogue, CSS) and parses it —
+  about 1–3 s of script on a fast CPU before Home renders, on top of a cold
+  simulator. After that sw.js serves the files from cache.
 - **The sidebar follows the system's vertical-bar side.** Apple's guidance:
   vertical bars lay out under the status bar, beside the camera (the right
   by default), "can appear on the left side in landscape and Split View",

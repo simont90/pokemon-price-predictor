@@ -396,6 +396,10 @@ on a 4 s debounce. New synced keys "just work" as long as they follow the prefix
   On touch screens the vertical sidebar sits on the right (Apple's Duo
   guidance: vertical bars go under the status bar, by the camera) and moves
   left only when the left inset is larger — style.css + `initNavSide()`.
+  In the iOS app on a Duo the shell also sets `html[data-status-bar]` and
+  `--status-bar-bottom`; with a side status bar the nav becomes a rail inside
+  the status-bar column, under the status bar, on both displays (end of
+  style.css). Don't put fixed UI in that column other than the rail.
 
 ---
 

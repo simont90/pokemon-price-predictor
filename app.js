@@ -27712,7 +27712,10 @@ function setupPageNav() {
   const nav = document.getElementById('pageNav');
   const pill = document.getElementById('navPill');
 
-  const _isVerticalNav = () => window.matchMedia('(min-width: 821px)').matches;
+  // Vertical at ≥821px (sidebar), and on iPhone Duo whenever the app shell
+  // reports the status bar in a side column (nav rail; see style.css).
+  const _isVerticalNav = () => window.matchMedia('(min-width: 821px)').matches
+    || /^(left|right)$/.test(document.documentElement.dataset.statusBar || '');
 
   function _positionPill(activeBtn) {
     if (!pill || !nav || !activeBtn) return;
@@ -34799,4 +34802,8 @@ function _paintPdxCards(sorted, owned) {
   sync();
   window.addEventListener('resize', sync, { passive: true });
   window.addEventListener('orientationchange', () => setTimeout(sync, 50));
+  // The iOS shell sets data-status-bar when the device folds, unfolds or
+  // rotates; re-place the nav highlight for the rail's new orientation.
+  new MutationObserver(() => window.dispatchEvent(new Event('resize')))
+    .observe(root, { attributes: true, attributeFilter: ['data-status-bar'] });
 })();

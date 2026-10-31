@@ -19252,3 +19252,97 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
   from { opacity: 0; transform: translateY(-50%) translateX(10px) scale(0.97); }
   to   { opacity: 1; transform: translateY(-50%) translateX(0) scale(1); }
 }
+
+/* =================================================================
+   iPhone Duo: navigation rail in the status-bar column.
+   On both Duo displays the status bar sits in a column down one side,
+   beside the camera, and Apple's guidance is that vertical controls lay
+   out in that column directly under it. The app shell measures the
+   status bar and sets html[data-status-bar="right"|"left"] plus
+   --status-bar-bottom; the column's width is the side safe-area inset.
+   Every other device reports "top" (or nothing, in a browser) and is
+   untouched. The rail replaces both the bottom pill (folded) and the
+   sidebar (unfolded), so the content reaches right up to the column.
+   ================================================================= */
+html[data-status-bar="right"] { --rail-col: env(safe-area-inset-right, 0px); }
+html[data-status-bar="left"]  { --rail-col: env(safe-area-inset-left, 0px); }
+html:is([data-status-bar="right"], [data-status-bar="left"]) {
+  --rail-w: clamp(52px, calc(var(--rail-col) - 8px), 84px);
+  --rail-top: calc(var(--status-bar-bottom, 64px) + 8px);
+}
+html:is([data-status-bar="right"], [data-status-bar="left"]) body {
+  padding-left: 0;
+  padding-right: 0;
+}
+html[data-status-bar="right"] .app {
+  padding-right: calc(var(--rail-col) + 8px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 32px);
+}
+html[data-status-bar="left"] .app {
+  padding-left: calc(var(--rail-col) + 8px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 32px);
+}
+html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav {
+  top: var(--rail-top);
+  bottom: auto;
+  transform: none;
+  flex-direction: column;
+  width: var(--rail-w);
+  max-width: none;
+  max-height: calc(100dvh - var(--rail-top) - 8px - env(safe-area-inset-bottom, 0px));
+  padding: 6px 4px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+html[data-status-bar="right"] .page-nav {
+  left: auto;
+  right: calc((var(--rail-col) - var(--rail-w)) / 2);
+}
+html[data-status-bar="left"] .page-nav {
+  right: auto;
+  left: calc((var(--rail-col) - var(--rail-w)) / 2);
+}
+html:is([data-status-bar="right"], [data-status-bar="left"]) .nav-pill,
+html:is([data-status-bar="right"], [data-status-bar="left"]) .nav-hover-bubble {
+  left: 4px;
+  top: 4px;
+  width: calc(100% - 8px);
+  bottom: auto;
+  height: 56px; /* JS sets the real top/height per button */
+}
+html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav-btn,
+html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav.shrunk .page-nav-btn,
+html:is([data-status-bar="right"], [data-status-bar="left"]) .nav-ctx-btn {
+  flex: none !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  padding: 9px 2px;
+  gap: 4px;
+  font-size: 10px;
+}
+html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav-btn > span:not(.page-nav-sub) {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav-sub { display: none !important; }
+html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav.shrunk { padding: 6px 4px; }
+/* My Stuff popup opens beside the rail */
+html[data-status-bar="right"] .hdr-popup.hmp-sidebar {
+  left: auto;
+  right: calc(var(--rail-col) + 8px);
+}
+html[data-status-bar="left"] .hdr-popup.hmp-sidebar {
+  right: auto;
+  left: calc(var(--rail-col) + 8px);
+}
+/* Floating buttons sit just inside the content edge, clear of the rail */
+html[data-status-bar="right"] :is(.filter-fab, .ai-chat-btn, .deal-toast) {
+  right: calc(var(--rail-col) + 16px);
+}
