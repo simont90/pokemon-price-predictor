@@ -417,7 +417,11 @@ on a 4 s debounce. New synced keys "just work" as long as they follow the prefix
   In the iOS app on a Duo the shell also sets `html[data-status-bar]` and
   `--status-bar-bottom`; with a side status bar the nav becomes a rail inside
   the status-bar column, under the status bar, on both displays (end of
-  style.css). Don't put fixed UI in that column other than the rail.
+  style.css). The rail is anchored to the **bottom** of the column, with
+  `--rail-top` (244px) only as the highest it may climb: the column's
+  contents move — a Live Activity stacks above the clock and pushes clock,
+  battery ring and dots down to ~220pt — so a top-anchored rail at a fixed
+  offset overlapped them. Don't put fixed UI in that column other than the rail.
 
 ---
 
