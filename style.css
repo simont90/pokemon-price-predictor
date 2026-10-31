@@ -19268,10 +19268,11 @@ html[data-status-bar="right"] { --rail-col: env(safe-area-inset-right, 0px); }
 html[data-status-bar="left"]  { --rail-col: env(safe-area-inset-left, 0px); }
 html:is([data-status-bar="right"], [data-status-bar="left"]) {
   --rail-w: clamp(52px, calc(var(--rail-col) - 8px), 84px);
-  /* Start below where the Duo stacks the camera, clock and Wi-Fi in the
-     column (~150pt from the top, counting the battery ring and the dots
-     under it), with a clear gap so the rail does not crowd them. */
-  --rail-top: 176px;
+  /* The highest the rail may reach. The column's contents are not fixed:
+     a Live Activity stacks above the clock and pushes clock, battery ring
+     and dots down to ~220pt. The rail is anchored to the bottom (below), so
+     this floor only bites on short screens. */
+  --rail-top: 244px;
 }
 /* Only trust a measured status-bar bottom when the shell actually measured a
    side column. Builds before 56dae86 report the status bar as a top strip and
@@ -19280,7 +19281,7 @@ html:is([data-status-bar="right"], [data-status-bar="left"]) {
 html:is([data-native-status-bar="right"], [data-native-status-bar="left"]) {
   /* The measured frame stops at the clock/Wi-Fi block, not at the dots under
      it, so keep the same floor as the default. */
-  --rail-top: max(calc(var(--status-bar-bottom, 140px) + 28px), 176px);
+  --rail-top: max(calc(var(--status-bar-bottom, 140px) + 28px), 244px);
 }
 html:is([data-status-bar="right"], [data-status-bar="left"]) body {
   padding-left: 0;
@@ -19294,9 +19295,12 @@ html[data-status-bar="left"] .app {
   padding-left: calc(var(--rail-col) + 8px);
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 32px);
 }
+/* Anchored to the bottom of the column: whatever the status bar shows grows
+   down from the top, so hugging the bottom keeps the most room between them.
+   max-height keeps the top at or below --rail-top; past that it scrolls. */
 html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav {
-  top: var(--rail-top);
-  bottom: auto;
+  top: auto;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   transform: none;
   flex-direction: column;
   width: var(--rail-w);
