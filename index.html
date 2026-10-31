@@ -25,9 +25,9 @@
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
   <!-- Preload large data files so they start downloading during head parse -->
-  <link rel="preload" href="data/cards-db.js?v=20261031g" as="script">
-  <link rel="preload" href="data/sets-db.js?v=20261031g" as="script">
-  <link rel="stylesheet" href="style.css?v=20261031g">
+  <link rel="preload" href="data/cards-db.js?v=20261101a" as="script">
+  <link rel="preload" href="data/sets-db.js?v=20261101a" as="script">
+  <link rel="stylesheet" href="style.css?v=20261101a">
 </head>
 <body>
   <!-- PWA navigation bar — only visible when running as installed standalone app.
@@ -72,9 +72,6 @@
           <button class="portfolio-toggle" id="compareToggle" title="Compare two cards">
             <span class="portfolio-count" id="compareCount">0</span>
           </button>
-          <button class="portfolio-toggle" id="portfolioToggle" title="My Collection">
-            <span class="portfolio-count" id="portfolioCount">0</span>
-          </button>
           <button class="portfolio-toggle alerts-toggle" id="alertsToggle" title="Alerts">
             <span class="portfolio-count alerts-count" id="alertsCount">0</span>
           </button>
@@ -93,7 +90,7 @@
       <button class="page-nav-btn" data-page="home" type="button">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         <span>Home</span>
-        <span class="page-nav-sub">Collection · Wishlist · Alerts</span>
+        <span class="page-nav-sub">Wishlist · Alerts</span>
       </button>
       <button class="page-nav-btn" data-page="predict" type="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2.5"/><rect x="6.5" y="4.5" width="11" height="8" rx="1"/><circle cx="12" cy="17" r="2"/></svg>
@@ -137,25 +134,9 @@
     <!-- popup menu — sibling of header so position:fixed resolves to viewport, not backdrop-filter container -->
     <div id="hdrPopup" class="hdr-popup" role="menu" aria-hidden="true">
       <div class="hdr-popup-sec">MY STUFF</div>
-      <button class="hdr-popup-item" id="hmpCollection" type="button">
-        <span class="hdr-popup-label">My Collection <span class="hmp-badge" id="hmpCollectionBadge" style="display:none"></span></span>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#74b9ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
-      </button>
       <button class="hdr-popup-item" id="hmpWishlist" type="button">
         <span class="hdr-popup-label">Wishlist <span class="hmp-badge" id="hmpWishlistBadge" style="display:none"></span></span>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fd79a8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
-      </button>
-      <button class="hdr-popup-item" id="hmpUpgrades" type="button">
-        <span class="hdr-popup-label">Upgrades <span class="hmp-badge" id="hmpUpgradesBadge" style="display:none"></span></span>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e8b634" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
-      </button>
-            <button class="hdr-popup-item" id="hmpSets" type="button">
-        <span class="hdr-popup-label">Sets</span>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fdcb6e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-      </button>
-      <button class="hdr-popup-item" id="hmpBinderPages" type="button">
-        <span class="hdr-popup-label">Binder Pages</span>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#55efc4" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       </button>
       <button class="hdr-popup-item" id="hmpAlerts" type="button">
         <span class="hdr-popup-label">Alerts <span class="hmp-badge hmp-badge-alert" id="hmpAlertsBadge" style="display:none"></span></span>
@@ -196,54 +177,6 @@
     <!-- Backdrop for My Stuff popup on desktop -->
     <div class="hmp-backdrop" id="hmpBackdrop" aria-hidden="true"></div>
 
-    <!-- Portfolio Panel (slide-in) -->
-    <section class="portfolio-panel" id="portfolioPanel" style="display:none">
-      <div class="portfolio-header">
-        <h2>My Collection</h2>
-        <div class="portfolio-actions">
-          <span class="portfolio-total" id="portfolioTotal">Total: £0</span>
-          <button class="portfolio-close" id="portfolioClose">✕</button>
-        </div>
-      </div>
-      <div class="portfolio-subheader">
-        <button class="pi-load-all" id="portfolioLoadAllGraphs" title="Load price history graph &amp; buy-window verdict for every card">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
-          Load all graphs
-        </button>
-        <button class="pi-load-all" id="portfolioRoiBtn" type="button" title="Show ROI chart comparing singles vs pack rips">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          ROI chart
-        </button>
-        <button class="portfolio-refresh-btn" id="portfolioRefreshBtn" type="button" title="Refresh live prices for all cards in your collection">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
-          Refresh prices
-        </button>
-        <button class="portfolio-refresh-btn portfolio-dupes-btn" id="portfolioDupesBtn" type="button" title="Find and merge duplicate card entries" style="display:none">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="4"/><circle cx="15" cy="15" r="4"/></svg>
-          Duplicates <span id="portfolioDupeCount"></span>
-        </button>
-        <span class="pf-viewtoggle" id="portfolioViewToggle"></span>
-        <span class="pi-load-status" id="portfolioLoadAllStatus"></span>
-      </div>
-      <div id="portfolioGrowthSection" class="portfolio-growth-section" style="display:none">
-        <div class="portfolio-growth-header">
-          <span class="portfolio-growth-title">Portfolio Forecast</span>
-          <span class="portfolio-growth-legend">
-            <span class="pgrow-swatch pgrow-exp"></span>Expected
-            <span class="pgrow-swatch pgrow-band"></span>Range
-          </span>
-        </div>
-        <canvas id="portfolioGrowthCanvas" class="portfolio-growth-canvas"></canvas>
-      </div>
-      <div id="portfolioRoiSection" class="portfolio-roi-section" style="display:none">
-        <div class="roi-summary-row" id="roiSummaryRow"></div>
-        <canvas id="roiCanvas" height="220"></canvas>
-        <div class="roi-chart-legend" id="roiLegend"></div>
-      </div>
-      <div class="portfolio-list" id="portfolioList">
-        <div class="portfolio-empty">No cards yet. Search and add cards to track your collection.</div>
-      </div>
-    </section>
 
     <!-- Wishlist Panel (slide-in) -->
     <section class="portfolio-panel wishlist-panel" id="wishlistPanel" style="display:none">
@@ -266,19 +199,6 @@
       </div>
     </section>
 
-    <!-- Upgrades Panel (slide-in) -->
-    <section class="portfolio-panel upgrades-panel" id="upgradesPanel" style="display:none">
-      <div class="portfolio-header">
-        <h2>Upgrades <span class="wishlist-sub">PSA 10 slab targets</span></h2>
-        <div class="portfolio-actions">
-          <span class="portfolio-total" id="upgradesTotal">0 cards</span>
-          <button class="portfolio-close" id="upgradesClose">&#x2715;</button>
-        </div>
-      </div>
-      <div class="portfolio-list" id="upgradesList">
-        <div class="portfolio-empty">No upgrade targets yet. Go to Standouts → Upgrade tab and tap "+ Upgrades" to add cards.</div>
-      </div>
-    </section>
 
     
     <!-- Sync Panel (slide-in) — cross-device backup & restore -->
@@ -857,8 +777,6 @@
       <div class="home-dashboard">
         <div class="home-main-col">
 
-        <!-- Collection value hero: total, move over the window, and the line -->
-        <div class="home-pv" id="homePortfolioValue" style="display:none"></div>
 
         <!-- Market Brief banner (light mode only) -->
         <div class="market-brief" id="marketBrief" onclick="go('know')">
@@ -930,46 +848,10 @@
 
         </div><!-- /home-main-col -->
         <div class="home-side-col">
-          <div class="home-holdings" id="homeHoldings" style="display:none"></div>
           <!-- Trending: moved out of the main column so the value chart leads,
                matching where Collectr puts it. -->
           <div id="homeDailyBrief" class="home-brief home-brief-rail" style="display:none"></div>
 
-        <!-- GROUP: My Collection & Consider Grading -->
-        <div class="home-tab-group" id="hTabColl">
-          <div class="predict-tab-bar home-tab-bar" role="tablist" aria-label="My Collection">
-            <button class="ptab ptab-active" data-htab="my-collection" type="button" role="tab" aria-selected="true">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
-              My Collection
-            </button>
-            <button class="ptab" data-htab="coll-grading" type="button" role="tab" aria-selected="false">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-              Consider Grading
-            </button>
-          </div>
-          <div class="home-htab-panel" data-htab-panel="my-collection">
-            <section class="home-section-wrap">
-              <div class="home-section-hd">
-                <div class="home-section-title">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
-                  My Collection
-                </div>
-                <span class="home-count-badge" id="homeCollCount">0</span>
-                <button class="home-view-all" id="homeOpenCollection">View all</button>
-              </div>
-              <div class="home-total" id="homeCollTotal"></div>
-              <div class="home-scroll-row home-reco-rows" id="homeCollList"><div class="home-empty">No cards in collection yet.<br>Search a card and tap + to add it.</div></div>
-            </section>
-          </div>
-          <div class="home-htab-panel" data-htab-panel="coll-grading" style="display:none">
-            <section class="home-section-wrap">
-              <div class="home-section-hd">
-                <span class="home-count-badge" id="homeCollGradingCount">0</span>
-              </div>
-              <div id="homeGradingListCollection"><div class="home-empty">No collection cards with grading data yet.</div></div>
-            </section>
-          </div>
-        </div>
 
         <!-- GROUP: Wishlist (merged watchlist + wishlist) & Consider Grading -->
         <div class="home-tab-group" id="hTabWW">
@@ -1270,9 +1152,6 @@
                 <h2 id="cardName"></h2>
                 <button class="add-portfolio-btn" id="addCompareBtn" title="Pin for comparison">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
-                </button>
-                <button class="add-portfolio-btn" id="addPortfolioBtn" title="Add to collection">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
                 </button>
                 <button class="add-portfolio-btn" id="addMappingBtn" title="Add to Card Mapping queue">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
@@ -1790,166 +1669,6 @@
           </div>
         </section>
 
-        <!-- Acquisition tracker — logs how the user got the card (pack pull vs single purchase)
-             and shows realised + max ROI based on actual cost basis. -->
-        <section class="card acq-card" id="acqSection" data-tab-group="strategy" data-collapse-mobile="1" style="display:none">
-          <div class="acq-header">
-            <h2><span class="acq-icon">💰</span> Acquisition &amp; Max ROI</h2>
-            <p class="acq-sub">Tell the model how you got this card so it knows your true cost basis. The lower your basis, the higher your ceiling.</p>
-          </div>
-          <div class="acq-copies-row" id="acqCopiesRow">
-            <span class="acq-copies-label">Copies owned</span>
-            <div class="acq-copies-stepper">
-              <button class="acq-copies-btn" id="acqCopiesDec" type="button" aria-label="Remove a copy">−</button>
-              <span class="acq-copies-count" id="acqCopiesCount">1</span>
-              <button class="acq-copies-btn" id="acqCopiesInc" type="button" aria-label="Add a copy">+</button>
-            </div>
-          </div>
-          <div class="acq-dupe-notice" id="acqDupeNotice" style="display:none">
-            <span class="acq-dupe-icon">⚠</span>
-            <span class="acq-dupe-text"></span>
-            <button class="acq-dupe-merge-btn" id="acqDupeMergeBtn" type="button">Merge</button>
-          </div>
-
-          <div class="acq-source-toggle" role="radiogroup" aria-label="How did you get this card?">
-            <button class="acq-src-btn" data-src="pack" role="radio" aria-checked="false" type="button">
-              <span class="acq-src-ico">🎁</span>
-              <span class="acq-src-label">Pulled from pack</span>
-              <span class="acq-src-hint">Cost basis = pack ÷ hits</span>
-            </button>
-            <button class="acq-src-btn" data-src="single" role="radio" aria-checked="false" type="button">
-              <span class="acq-src-ico">🛒</span>
-              <span class="acq-src-label">Bought as single</span>
-              <span class="acq-src-hint">Cost basis = price paid</span>
-            </button>
-            <button class="acq-src-btn" data-src="slab" role="radio" aria-checked="false" type="button">
-              <span class="acq-src-ico">🏆</span>
-              <span class="acq-src-label">Bought as slab</span>
-              <span class="acq-src-hint">Already graded — PSA price paid</span>
-            </button>
-            <button class="acq-src-btn acq-src-clear" data-src="clear" type="button" title="Clear acquisition info" style="display:none">✕ Clear</button>
-          </div>
-
-          <!-- Pack inputs -->
-          <div class="acq-fields acq-fields-pack" id="acqFieldsPack" style="display:none">
-            <div class="acq-field">
-              <label for="acqPackName">Pack / product (optional)</label>
-              <input id="acqPackName" type="text" class="acq-input" placeholder="e.g. Prismatic Evolutions ETB" autocomplete="off">
-            </div>
-            <div class="acq-field acq-field-small">
-              <label for="acqPackCost">Pack / product cost (£)</label>
-              <input id="acqPackCost" type="number" step="0.01" min="0" class="acq-input" placeholder="0.00" inputmode="decimal">
-            </div>
-            <div class="acq-field acq-field-small">
-              <label for="acqPackHits">Hits you kept from it</label>
-              <input id="acqPackHits" type="number" step="1" min="1" class="acq-input" placeholder="1" inputmode="numeric">
-              <span class="acq-help">Cost basis = pack cost ÷ hits</span>
-            </div>
-          </div>
-
-          <!-- Single inputs -->
-          <div class="acq-fields acq-fields-single" id="acqFieldsSingle" style="display:none">
-            <div class="acq-field acq-field-small">
-              <label for="acqSinglePrice">Price paid (£)</label>
-              <input id="acqSinglePrice" type="number" step="0.01" min="0" class="acq-input" placeholder="0.00" inputmode="decimal">
-            </div>
-            <div class="acq-field acq-field-small">
-              <label for="acqSingleDate">Date acquired (optional)</label>
-              <input id="acqSingleDate" type="date" class="acq-input">
-            </div>
-            <div class="acq-field">
-              <label for="acqSingleSrc">Where (optional)</label>
-              <input id="acqSingleSrc" type="text" class="acq-input" placeholder="eBay UK / Cardmarket / shop" autocomplete="off">
-            </div>
-          </div>
-
-          <!-- Slab inputs -->
-          <div class="acq-fields acq-fields-slab" id="acqFieldsSlab" style="display:none">
-            <div class="acq-field acq-field-full" id="acqSlabVariantRow" style="display:none"></div>
-            <div class="acq-field acq-field-small">
-              <label for="acqSlabGrade">PSA grade</label>
-              <select id="acqSlabGrade" class="acq-input acq-select">
-                <option value="">Select grade</option>
-                <option value="10">PSA 10 — Gem Mint</option>
-                <option value="9">PSA 9 — Mint</option>
-                <option value="8">PSA 8 — NM-MT</option>
-                <option value="7">PSA 7 — Near Mint</option>
-                <option value="6">PSA 6 — EX-MT</option>
-                <option value="5">PSA 5 — Excellent</option>
-                <option value="4">PSA 4 — VG-EX</option>
-                <option value="3">PSA 3 — Very Good</option>
-                <option value="2">PSA 2 — Good</option>
-                <option value="1">PSA 1 — Poor to Fair</option>
-              </select>
-            </div>
-            <div class="acq-field acq-field-small">
-              <label for="acqSlabPrice">Price paid (£)</label>
-              <input id="acqSlabPrice" type="number" step="0.01" min="0" class="acq-input" placeholder="0.00" inputmode="decimal">
-            </div>
-            <div class="acq-field acq-field-small">
-              <label for="acqSlabDate">Date acquired (optional)</label>
-              <input id="acqSlabDate" type="date" class="acq-input">
-            </div>
-            <div class="acq-field">
-              <label for="acqSlabWhere">Where (optional)</label>
-              <input id="acqSlabWhere" type="text" class="acq-input" placeholder="eBay UK / Cardmarket / dealer" autocomplete="off">
-            </div>
-          </div>
-
-          <button class="acq-save-btn" id="acqSaveBtn" type="button" style="display:none">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
-            Save &amp; Sync
-          </button>
-
-          <div class="acq-empty" id="acqEmpty">Tap a source above to log how you got this card.</div>
-
-          <!-- ROI readout -->
-          <!-- Storage materials already present — reduces grading submission cost -->
-          <div class="acq-storage" id="acqStorage" style="display:none">
-            <span class="acq-storage-label">Already in:</span>
-            <label class="acq-storage-check">
-              <input type="checkbox" id="acqHasSleeve"> Penny sleeve
-            </label>
-            <label class="acq-storage-check">
-              <input type="checkbox" id="acqHasToploader"> Toploader
-            </label>
-          </div>
-
-          <div class="acq-roi" id="acqRoi" style="display:none">
-            <div class="acq-roi-row">
-              <div class="acq-roi-cell">
-                <span class="acq-roi-lbl">Your cost</span>
-                <span class="acq-roi-val acq-roi-cost" id="acqCost">—</span>
-                <span class="acq-roi-sub" id="acqCostSub"></span>
-              </div>
-              <div class="acq-roi-cell">
-                <span class="acq-roi-lbl" id="acqMarketLbl">Market now (raw)</span>
-                <span class="acq-roi-val" id="acqMarket">—</span>
-                <span class="acq-roi-sub acq-roi-delta" id="acqMarketDelta"></span>
-              </div>
-              <div class="acq-roi-cell">
-                <span class="acq-roi-lbl" id="acqRoiNowLbl">Realised ROI</span>
-                <span class="acq-roi-val acq-roi-roi" id="acqRoiNow">—</span>
-                <span class="acq-roi-sub" id="acqRoiNowSub">if flipped raw today</span>
-              </div>
-            </div>
-            <div class="acq-roi-row acq-roi-row-max">
-              <div class="acq-roi-cell acq-roi-cell-wide">
-                <span class="acq-roi-lbl acq-roi-lbl-max" id="acqRoiMaxLbl">Max ROI · PSA 10 in 5 years</span>
-                <span class="acq-roi-val acq-roi-val-max" id="acqRoiMax">—</span>
-                <span class="acq-roi-sub" id="acqRoiMaxSub"></span>
-              </div>
-              <div class="acq-roi-cell">
-                <span class="acq-roi-lbl" id="acqProfitLbl">Profit if PSA 10</span>
-                <span class="acq-roi-val" id="acqProfitMax">—</span>
-                <span class="acq-roi-sub" id="acqProfitMaxSub">after £40 grading</span>
-              </div>
-            </div>
-            <div class="acq-slab-flip" id="acqSlabFlip" style="display:none"></div>
-            <div class="acq-ladder" id="acqLadder"></div>
-            <div class="acq-meta" id="acqMeta"></div>
-          </div>
-        </section>
 
         <!-- Card Condition Scanner -->
         <section class="card cg-card" id="cardGraderSection" data-tab-group="grade" data-collapse-mobile="1" style="display:none">
@@ -2372,11 +2091,6 @@
               <span class="ps-btn-text">Refresh all prices now</span>
               <span class="ps-btn-hint">Tracked + all previously viewed cards</span>
             </button>
-            <button class="ps-btn" id="psRefreshCollection" type="button">
-              <span class="ps-btn-ico">♦</span>
-              <span class="ps-btn-text">Refresh my collection</span>
-              <span class="ps-btn-hint" id="psCollectionHint">All cards in your portfolio</span>
-            </button>
             <button class="ps-btn" id="psRefreshTracked" type="button">
               <span class="ps-btn-ico">★</span>
               <span class="ps-btn-text">Refresh tracked cards</span>
@@ -2618,7 +2332,6 @@
       </section>
       <div class="predict-tab-bar tools-inner-tab-bar" role="tablist" aria-label="Tools sections">
         <button class="ptab ptab-active" data-toolstab="sync" role="tab" aria-selected="true">Price Sync</button>
-        <button class="ptab" data-toolstab="dupes" role="tab" aria-selected="false">Duplicates&nbsp;<span class="tools-dupe-badge" id="toolsDupeBadge" style="display:none">0</span></button>
         <button class="ptab" data-toolstab="account" role="tab" aria-selected="false">Account</button>
         <button class="ptab" data-toolstab="quicksync" role="tab" aria-selected="false">Quick Sync</button>
         <button class="ptab" data-toolstab="mapping" role="tab" aria-selected="false">Card Mapping&nbsp;<span class="tools-map-badge" id="toolsMapBadge" style="display:none">0</span></button>
@@ -2626,9 +2339,6 @@
       <div id="toolsSyncPanel">
         <!-- (priceSyncSection and how-card get moved here on init) -->
         <div id="toolsMount"></div>
-      </div>
-      <div id="toolsDupesPanel" style="display:none">
-        <div id="toolsDupesMount"></div>
       </div>
       <div id="toolsAccountPanel" style="display:none">
         <!-- auth content moved here on init -->
@@ -2718,65 +2428,6 @@
     </div><!-- /#pageTools -->
 
     <!-- Full Art Binder dedicated page -->
-    <!-- Binder Pages — themed 3×3 spreads built from what you own, with gaps
-         filled by recommended buys. -->
-    <div class="page" id="pageBinder" data-page="binder" style="display:none">
-      <div class="bp-head">
-        <div>
-          <h2 class="bp-title">Binder Pages</h2>
-          <div class="bp-sub">Illustration Rares and Special Illustration Rares only. Pick a theme and the page fills itself — what you own first, then the cards worth buying to complete it.</div>
-        </div>
-      </div>
-
-      <div class="bp-controls">
-        <div class="bp-field bp-field-theme">
-          <label for="bpThemeKind">Theme</label>
-          <div class="bp-theme-row">
-            <select id="bpThemeKind" class="bp-select">
-              <option value="species">A Pokémon</option>
-              <option value="set">A set</option>
-              <option value="era">An era</option>
-              <option value="connected">Connected art</option>
-            </select>
-            <input id="bpThemeValue" class="bp-input" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Gengar">
-            <datalist id="bpThemeList"></datalist>
-          </div>
-        </div>
-        <div class="bp-field">
-          <label for="bpSize">Page</label>
-          <select id="bpSize" class="bp-select">
-            <option value="9">3 × 3 · 9 pockets</option>
-            <option value="12">4 × 3 · 12 pockets</option>
-          </select>
-        </div>
-        <div class="bp-field">
-          <label for="bpBudget">Budget for gaps</label>
-          <input id="bpBudget" class="bp-input bp-input-num" type="number" min="0" step="10" placeholder="No limit">
-        </div>
-        <div class="bp-field bp-field-btn">
-          <button type="button" class="bp-btn bp-btn-go" id="bpBuild">Build page</button>
-        </div>
-      </div>
-
-      <div class="bp-log" id="bpLog"></div>
-      <div class="bp-connected" id="bpConnected" style="display:none"></div>
-
-      <div class="bp-result" id="bpResult" style="display:none">
-        <div class="bp-result-head">
-          <div class="bp-result-title" id="bpResultTitle"></div>
-          <div class="bp-result-stats" id="bpResultStats"></div>
-          <div class="bp-result-actions">
-            <button type="button" class="bp-btn" id="bpSave">Save page</button>
-            <button type="button" class="bp-btn bp-btn-ghost" id="bpRebuild" title="Build again with a different arrangement">Shuffle</button>
-          </div>
-        </div>
-        <div class="bp-grid" id="bpGrid"></div>
-        <div class="bp-gaps" id="bpGaps"></div>
-        <div class="bp-rip" id="bpRip" style="display:none"></div>
-      </div>
-
-      <div class="bp-saved" id="bpSaved"></div>
-    </div>
     <div class="page" id="pageBudget" data-page="budget" style="display:none">
       <!-- Budget page rendered entirely by JS -->
     </div><!-- /#pageBudget -->
@@ -2785,9 +2436,7 @@
       <!-- Vintage page rendered entirely by JS -->
     </div><!-- /#pageVintage -->
 
-    <div class="page" id="pageSets" data-page="sets" style="display:none">
-      <!-- Sets / ETB Hit Binder page rendered entirely by JS -->
-    </div><!-- /#pageSets -->
+<!-- /#pageSets -->
 
 
 
@@ -2924,7 +2573,6 @@
             <button class="sgt-btn" data-grade="psa9" type="button">PSA 9</button>
             <button class="sgt-btn" data-grade="psa10" type="button">PSA 10</button>
             <button class="sgt-btn sgt-btn--vintage" data-grade="vintage" type="button">Vintage</button>
-            <button class="sgt-btn sgt-btn--upgrade" data-grade="upgrade" type="button">Upgrade</button>
             <button class="sgt-btn sgt-btn--mass" data-grade="mass" type="button">Mass Grade</button>
             <button class="sgt-btn sgt-btn--spike" data-grade="spike" type="button">Spike Watch</button>
             <button class="sgt-btn sgt-btn--grade" data-grade="grade" type="button">Buy Raw + Grade</button>
@@ -3194,9 +2842,9 @@
     </div>
   </div>
 
-  <script src="data/cards-db.js?v=20261031g"></script>
-  <script src="data/sets-db.js?v=20261031g"></script>
-  <script src="data/pokedex-db.js?v=20261031g"></script>
+  <script src="data/cards-db.js?v=20261101a"></script>
+  <script src="data/sets-db.js?v=20261101a"></script>
+  <script src="data/pokedex-db.js?v=20261101a"></script>
   <!-- Homepage PiP card preview (fullscreen bottom-sheet) -->
   <div id="homePip" class="home-pip" style="display:none" role="dialog" aria-modal="true" aria-label="Card preview">
     <div class="home-pip-bg" id="homePipBg"></div>
@@ -3266,7 +2914,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261031g"></script>
+  <script src="app.js?v=20261101a"></script>
   <script>
     if ('serviceWorker' in navigator) {
       // Defer SW registration until page is fully loaded to avoid competing

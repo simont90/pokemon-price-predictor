@@ -28,6 +28,18 @@ wins for that turn — but propose updating this file so the convention sticks.
 
 ---
 
+## Product focus: when to buy, driven by the watchlist
+
+As of Nov 2026 the app is a **buy-signal tool**, not a collection manager.
+My Collection, Upgrades, the Sets page and Binder pages (with connected art
+and pack-ripping) were removed — code and data. On load `REMOVED_FEATURE_KEYS`
+in app.js wipes their localStorage keys, they are out of `SYNC_KEYS` (so a
+pull can't bring them back and the next push drops them server-side), and
+the worker's `get_collection` / `get_collection_stats` MCP tools are gone.
+`portfolio` survives as a permanently empty `const` because ~200 read sites
+ask "do I own this?"; "no" is the right answer everywhere now. Don't
+reintroduce ownership features without the owner asking.
+
 ## Project overview
 
 A single-page Pokémon TCG card valuation and collection app, GBP-first, with
@@ -329,9 +341,10 @@ cross-device sync. Tool definitions live in the `MCP_TOOLS` constant in
 `worker-paste-this.js` — when adding or renaming a tool, update both the
 definition and the `dispatchTool` switch.
 
-Current tools: `get_collection`, `get_wishlist`, `get_watchlist`,
-`get_collection_stats`, `find_card_in_collection`, `get_hold_overrides`,
-`search_marketplace_deals`.
+Current tools: `get_wishlist`, `get_watchlist`, `find_card_in_collection`
+(searches wishlist + watchlist only), `get_hold_overrides`,
+`search_card_database`, `get_card_analysis`, `search_marketplace_deals`.
+`test-mcp-tools.mjs` checks every tool has a dispatch case.
 
 When adding tools that need write access to the synced blob, do a
 read-modify-write through `loadSnapshot()` and `env.SYNC_KV.put(...)`. Keep
@@ -347,7 +360,6 @@ prefix. Anything device-local (caches, last-seen timestamps) should NOT
 use the prefix.
 
 Known synced keys:
-- `pkm-portfolio` — owned cards.
 - `pkm-wishlist` — wishlist.
 - `pkm-watchlist-v1` — live-tracked listings.
 - `pkm-compare` — comparison shelf.
@@ -356,13 +368,9 @@ Known synced keys:
 - `pkm-pc-overrides-v1` — PriceCharting URL overrides per card.
 - `pkm-user-cards-v1` / `pkm-card-overrides-v1` — user-edited card metadata.
 - `pkm-hold-overrides` — per-card grade-specific market price overrides.
-- `pkm-acquisitions-v1` — how each card was obtained (pack pull vs single buy, cost basis).
 - `pkm-budget-max-gbp` — max per card budget slider value (GBP, or 99999 = no limit).
 - `pkm-ace-prices-v1` — per-card ACE Grading sold prices by grade (10/9/8/7), keyed by card ID.
-- `pkm-binder-sort-v1` — binder page sort order (`dex` = National Pokédex, `prio` = priority, `az` = alphabetical).
 - `pkm-vintage-v1` — Vintage page targets: `{ targets: { cardId: { grade, owned } } }` (WOTC-era PSA hunt list).
-- `pkm-connected-art-v1` — confirmed connected-art runs: `{ id, set, ids[] }` in reading order. Person-confirmed only.
-- `pkm-binder-pages-v1` — saved themed binder pages: `{ id, name, kind, value, size, slots[] }`. Slots hold card ids; a page is rebuilt on open rather than replayed, since ownership and prices move.
 - `pkm-taste-recos-v1` — taste engine auto-adds: `{ cardId: { score, ts } }` — searched cards scoring ≥70 that joined the home recommendations.
 - `pkm-psa-links-v1` — pinned PSA reference page per card: `{ cardId: { url, ts } }`.
 
@@ -519,66 +527,6 @@ tier table. Keyed on the raw extracted name they were three separate species and
 Charizard measured 0.11 pressure while being the most reprinted character in the
 game.
 
-## Binder pages are art pages, and "balanced" is a stated rule
-
-The Full Art Gen 1 & 2 project is retired. Its replacement is `buildBinderPage`
-— a themed 3×3 or 4×3 spread of **Illustration Rares and Special Illustration
-Rares only**, filled from the collection first, then the wishlist, then the
-cards worth buying to complete it.
-
-"Balanced" means one thing here: SIRs take the centre and corners, IRs take the
-edges, with either tier filling in when the pool runs short. That is a design
-choice written down so it can be argued with, not a property discovered in the
-data. Within a tier, order is ownership, then stars, taste match and a steadied
-pullback.
-
-Themes are a registry (`BP_THEMES`) because the catalogue limits them: it carries
-number, name, set, rarity and price, plus species → dex — **no type, artist or
-evolution data**. A Pokémon, a set and an era work today. Type pages (Fire,
-Water) and evolution-line pages need a species table added under `data/`
-first; they slot into the registry without touching the builder.
-
-A species page may repeat its Pokémon nine times; every other theme takes one
-card per species. Saved pages store ids and are rebuilt on open, never replayed.
-
-**No empty pockets.** When a theme runs short the page tops up — owned art
-cards first, then the strongest art from sets already on the page so it still
-reads as one thing, then whatever scores best. Fillers are marked on the pocket
-and named in the buy list as "outside theme". A species with two art cards
-still yields a full nine.
-
-**Pocket locks.** `buildBinderPage` takes `pins` (pocket → card, that card in
-that pocket always) and `keeps` (card ids that must be on the page, position
-free). A card chosen through Replace is a pin. Pins are placed before the tier
-rule runs and excluded from the pool so they cannot be chosen twice; keeps go in
-ahead of the pool and skip the species and budget filters, since the owner asked
-for them. A card cannot be both — setting one clears the other. Locks survive
-Shuffle, are saved with the page and restored on open; a fresh Build clears
-them, because they belong to the page they were set on.
-
-**Upgrade options.** For each owned pocket, the better version of the same
-Pokémon that is not owned — an IR's SIR, or a stronger SIR from another set —
-listed with its price so the page can say where a swap would lift it. Owning
-the 151 Pikachu IR offers Pikachu ex SIR from Surging Sparks.
-
-**Owning the Japanese print counts.** A set page filters by an English set code,
-so without this a JP copy the owner holds left the EN slot showing as a gap.
-`buildBinderPage` looks through `findCounterparts` and puts the owned print in
-the pocket, tagged "Owned · JP"; scoring stays against the theme card so the JP
-copy inherits its standing rather than being scored as a stranger.
-
-**Connected art is confirmed by a person, never asserted by the data.** The
-catalogue does not say which illustrations continue into each other and no
-source we use does. `connectedArtCandidates` narrows the field with the one
-thing the data can see — cards consecutive in the set *and* consecutive in the
-Pokédex, since a panorama is one evolution line drawn as one piece — and shows
-the art edge to edge for the eye to judge. Confirmed runs live in
-`pkm-connected-art-v1`. Consecutive card numbers alone narrow nothing: every
-set numbers its IR block in a row, and 151 came back as one sixteen-card run
-before the dex test was added. Lines that skip dex numbers (Pichu→Pikachu, the
-Eeveelutions) are missed and need confirming by hand. Do not seed this table
-from memory.
-
 ## Gold, Silver, Bronze: three answers, not three ranks of the same answer
 
 The hold tiles carry medals instead of the old Best pick / Collector pick pair.
@@ -678,18 +626,9 @@ buster — they must match, or the preload fetches a second, uncached copy.
 
 pokemontcg.io lists a set's cards within days of release but carries no
 TCGplayer or Cardmarket prices for them for some time — all 433 cards added for
-Chaos Rising, Pitch Black and 30th Celebration came in at `p: 0`. Two things
-follow, both correct rather than bugs to fix:
-
-- `buildBinderPage` filters its pool on `priceGBP(c) > 0`, so a set with no
-  prices yields "No Illustration Rares or Special Illustration Rares", even
-  though the IR/SIR cards are present. The page needs a price to rank on and to
-  state what a gap costs.
-- `packRipPlan` refuses by name, because `rarities` pull odds are a separate
-  dataset that only exists for Scarlet & Violet through Ascended Heroes.
-
-Neither should be papered over with an estimate. When prices appear, both start
-working with no code change.
+Chaos Rising, Pitch Black and 30th Celebration came in at `p: 0`. Anything
+ranking by price simply skips them until prices appear; don't paper over the
+gap with an estimate.
 
 **Rarity strings are matched case-insensitively.** The importer's map was
 case-sensitive, so `"Illustration rare"` and `"Special illustration rare"` —
@@ -699,50 +638,7 @@ and so papered over it, which is why it went unnoticed; the stored `rc` was
 still wrong for anything reading it raw. Two genuinely new rarities arrived
 with 30th Celebration and were mapped deliberately, not by pattern: **Pikachu
 Rare** (30 cards, one per pack) to `R`, and **Futuristic Rare** (2 cards) to
-`UR`. Neither is an illustration rare, so neither reaches a binder page.
-
-## Ripping packs is measured against the singles, and usually loses
-
-`packRipPlan()` answers one question on a set-themed binder page: I still need
-n of this set's art cards, how many packs can I open before the next one is
-worth less than it costs? `renderRipPanel` draws it under the buy list.
-
-The mechanism is the needed/dupe split. A hit you still need is worth what you
-would otherwise have paid; a dupe is worth only what you can sell it for, so it
-carries the §8 net-of-fees rate (`RIP_NET_RATE`, 0.87). Pack value therefore
-*falls* as the holes fill, from `evNow` towards `evFloor` (every pull a dupe),
-and the walk stops where it crosses the pack price.
-
-- **The honest answer is almost always zero packs.** Every one of the 19 sets
-  with recorded odds prices a pack 2–4× above its own singles EV — 151 is £6.82
-  of expected value against £22.87 a pack. That is sealed product carrying a
-  premium, not a bug, and the panel says "open none" and prices the singles
-  instead. Do not tune the model until it produces an encouraging number.
-- **`evPerPack` in `sets-db.js` is Σ `pullRate` × `avgRaw`.** Verified exactly on
-  151: 9.2026 computed against 9.2028 stored. Any rewrite should still reproduce
-  it when nothing is owned and no fee haircut is applied.
-- **When `evFloor` exceeds the pack price there is no maximum.** Resale alone
-  covers the pack forever, so the walk cannot terminate; it reports `unbounded`
-  rather than running to `RIP_WALK_CAP` and printing the cap as if it were an
-  answer. A first cut returned "20000 packs, spend £90,000". In practice this
-  state means the pack price is stale and the panel says so.
-- **`avgRaw` is the tier mean, not the chase.** A set's headline card sits far
-  above it, so the figure is stated as an average in the UI rather than quietly
-  standing in for the specific cards that are missing.
-- **Odds exist only for Scarlet & Violet onwards** (19 of 172 sets). Everything
-  older carries no `pullRate`, and the panel refuses by name instead of
-  substituting `FALLBACK_PACKS_PER_HIT` — a made-up denominator here would read
-  as a measured one. WOTC sets have no IR/SIR at all, so the page errors before
-  the panel is ever reached.
-- **The pack-price box persists to an unprefixed key** (`binder-rip-packcost-v1`),
-  deliberately: it is read from the synced per-set override when one exists, but
-  editing a price while weighing up a page must never write into the collection.
-  A local instance can be sync-paired to the real collection, so an unprefixed
-  key is the only safe place for a value that changes while experimenting.
-- Needed counts prefill from the collection, counting a Japanese copy as owned
-  through `findCounterparts` — which returns `{ primary, counterparts }`, not an
-  array. Treating it as an array throws into a `catch` and silently reports owned
-  JP cards as missing.
+`UR`. Neither is an illustration rare.
 
 ## A pasted listing is not necessarily the card on screen
 

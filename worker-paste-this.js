@@ -1314,17 +1314,6 @@ const PAIR_CODE_REGEX = /^[A-Za-z0-9_-]{16,64}$/;
 
 const MCP_TOOLS = [
   {
-    name: 'get_collection',
-    description: 'Return every card currently in the user\'s Pokémon portfolio (the "My Collection" list in the app). Each entry includes the card id, name, set, number, language, quantity, condition/grade, acquisition price (GBP), and any per-card notes. Use this when the user asks what they own, how big their collection is, or to look up specific holdings.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        limit: { type: 'integer', minimum: 1, maximum: 5000, description: 'Cap the number of entries returned. Default: all.' },
-      },
-      additionalProperties: false,
-    },
-  },
-  {
     name: 'get_wishlist',
     description: 'Return the cards the user has wishlisted (cards they want to buy but don\'t own yet). Use when the user asks about wishlist, watch-buys, or what they\'re hunting for.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -1335,18 +1324,13 @@ const MCP_TOOLS = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
-    name: 'get_collection_stats',
-    description: 'Return aggregate statistics for the user\'s collection: total unique cards, total quantity, total amount invested in GBP, count by language (EN vs JP), count by grade (raw vs PSA), and last-sync timestamp. Use for portfolio-level summaries.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-  },
-  {
     name: 'find_card_in_collection',
-    description: 'Search the user\'s portfolio + wishlist + watchlist for cards matching a name, set, or card-number fragment. Case-insensitive substring match. Returns up to 50 entries showing which list each match is in. Use when the user asks "do I own X?" or "have I wishlisted Y?".',
+    description: 'Search the user\'s wishlist + watchlist for cards matching a name, set, or card-number fragment. Case-insensitive substring match. Returns up to 50 entries showing which list each match is in. Use when the user asks "am I watching X?" or "have I wishlisted Y?". (The app no longer tracks a collection.)',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Name fragment, set code, or card number to match (e.g. "Charizard", "sv4", "212/172").' },
-        lists: { type: 'array', items: { type: 'string', enum: ['portfolio', 'wishlist', 'watchlist'] }, description: 'Which lists to search. Default: all three.' },
+        lists: { type: 'array', items: { type: 'string', enum: ['wishlist', 'watchlist'] }, description: 'Which lists to search. Default: both.' },
       },
       required: ['query'],
       additionalProperties: false,
@@ -1483,13 +1467,6 @@ async function dispatchTool(name, args, env, kvKey) {
   }
 
   switch (name) {
-    case 'get_collection': {
-      const portfolio = snapKey(snap, 'pkm-portfolio', []);
-      const list = Array.isArray(portfolio) ? portfolio : [];
-      const limit = args && Number.isInteger(args.limit) ? args.limit : list.length;
-      const items = list.slice(0, limit).map(c => _enrichWithStars(c));
-      return asTextContent({ count: list.length, items });
-    }
     case 'get_wishlist': {
       const wishlist = snapKey(snap, 'pkm-wishlist', []);
       const list = Array.isArray(wishlist) ? wishlist : [];
@@ -1500,41 +1477,13 @@ async function dispatchTool(name, args, env, kvKey) {
       const list = Array.isArray(watchlist) ? watchlist : [];
       return asTextContent({ count: list.length, items: list.map(c => _enrichWithStars(c)) });
     }
-    case 'get_collection_stats': {
-      const portfolio = snapKey(snap, 'pkm-portfolio', []);
-      const list = Array.isArray(portfolio) ? portfolio : [];
-      let totalQty = 0, totalSpentGBP = 0, en = 0, jp = 0, raw = 0, graded = 0;
-      for (const c of list) {
-        const qty = Number(c.qty || c.quantity || 1) || 1;
-        const spent = Number(c.paidGBP ?? c.priceGBP ?? c.acquiredGBP ?? 0) || 0;
-        totalQty += qty;
-        totalSpentGBP += spent * qty;
-        const lang = (c.lang || c.language || '').toString().toLowerCase();
-        if (lang.startsWith('jp') || lang === 'japanese') jp += qty;
-        else en += qty;
-        const grade = (c.grade || c.condition || 'raw').toString().toLowerCase();
-        if (grade === 'raw' || grade === 'ungraded' || grade === '') raw += qty;
-        else graded += qty;
-      }
-      return asTextContent({
-        unique_cards: list.length,
-        total_quantity: totalQty,
-        total_spent_gbp: +totalSpentGBP.toFixed(2),
-        by_language: { english: en, japanese: jp },
-        by_grade: { raw, graded },
-        last_sync_ts: snap?.ts || 0,
-        last_sync_iso: snap?.ts ? new Date(snap.ts).toISOString() : null,
-        device_label: snap?.device || null,
-      });
-    }
     case 'find_card_in_collection': {
       const query = (args && args.query ? String(args.query) : '').trim().toLowerCase();
       if (!query) return asError('query is required.');
       const lists = (args && Array.isArray(args.lists) && args.lists.length)
         ? args.lists
-        : ['portfolio', 'wishlist', 'watchlist'];
+        : ['wishlist', 'watchlist'];
       const buckets = {
-        portfolio: snapKey(snap, 'pkm-portfolio', []),
         wishlist: snapKey(snap, 'pkm-wishlist', []),
         watchlist: snapKey(snap, 'pkm-watchlist-v1', []),
       };

@@ -585,7 +585,21 @@ let _holdWinnerDesc = '';   // One-line summary of the winner — shown in signa
 let _mktGradeRows  = null;  // Last computed grade rows from renderMarketplaceScan — used by insight refresh
 
 // ---- Portfolio (persisted to localStorage) ----
-let portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
+// My Collection, Upgrades, Sets and Binder pages were removed (Nov 2026): the
+// app is a buy-signal and watchlist tool, not a collection manager. Their
+// stored data is wiped on every device and no longer synced. `portfolio`
+// stays as a permanently empty list because ~200 read sites ask "do I own
+// this?" and answering "no" everywhere is the correct behaviour now.
+const REMOVED_FEATURE_KEYS = [
+  'pkm-portfolio', 'pkm-acquisitions-v1', 'pkm-portfolio-history-v1',
+  'pkm-upgrades-v1', 'pkm-fullart-binder-v1', 'pkm-binder-pages-v1',
+  'pkm-connected-art-v1', 'pkm-binder-species-overrides-v1',
+  'pkm-binder-pairings-v1', 'pkm-binder-sort-v1', 'pkm-binder-priority-v1',
+  'pkm-etb-sets-v1', 'pkm-dupe-dismissed-v1', 'binder-rip-packcost-v1',
+  'pkm-binder-refresh-ts', 'pkm-pf-view-v1',
+];
+try { REMOVED_FEATURE_KEYS.forEach(k => localStorage.removeItem(k)); } catch {}
+const portfolio = [];
 
 // ---- Init ----
 async function fetchGzipJson(url) {
@@ -702,12 +716,8 @@ async function init() {
 
   setupSearch();
   setupInputs();
-  setupPortfolio();
   setupWishlist();
-  setupUpgradesList();
   _setupCardAiOverlay();
-  setupFullArtBinder();
-  try { setupBinderPages(); } catch {}
   setupCompare();
   setupScreener();
   setupValuePicks();
@@ -728,7 +738,6 @@ async function init() {
   setupWatchlist();
   setupTop50();
   setupPriceSync();
-  setupAcquisition();
   setupCardGrader();
   initForecastInteractivity();
   setupPriceInsight();
@@ -3878,8 +3887,6 @@ function recalcWithLivePrice(card) {
   // Refresh EN ↔ JP recommendation with live price data
   renderCounterpartFlag(card);
 
-  // Re-render Acquisition + Grader sections so ROI uses the live raw + PSA 10 prices
-  if (typeof renderAcquisition === 'function') renderAcquisition();
   // Auctions move between visits, so saved listings for this card are
   // re-priced on open rather than waiting for a manual refresh.
   try { renderEbayWatch(); ebayWatchRefresh(card.i); } catch {}
@@ -3896,8 +3903,6 @@ function recalcWithLivePrice(card) {
   if (typeof renderHoldStrategy === 'function') {
     try { renderHoldStrategy(card); } catch {}
   }
-  // Redraw portfolio growth chart so the current card's live price is reflected
-  try { drawPortfolioGrowthChart(); } catch {}
 }
 
 // ================================================================
@@ -3944,8 +3949,7 @@ function selectCard(id) {
   // its own "Keep" verdict rather than on a buy recommendation for a print you
   // don't own. Falls back to Unlimited if that print has no price data yet.
   {
-    const _acqSlab = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(card.i) : null;
-    _holdStratVariant = (_acqSlab && _acqSlab.variant) ? _acqSlab.variant : 'unlimited';
+    _holdStratVariant = 'unlimited';
     _hoPrint = _holdStratVariant;   // the override panel opens on the same print
     _hoKeepOpen = false;                 // a new card starts with the panel closed
   }
@@ -3960,8 +3964,6 @@ function selectCard(id) {
 
   // Refresh Price Sync stats so "Refresh selected card" button enables
   if (typeof psUpdateStats === 'function') psUpdateStats();
-  // Refresh Acquisition + Grader section for the new card
-  if (typeof renderAcquisition === 'function') renderAcquisition();
   // Auctions move between visits, so saved listings for this card are
   // re-priced on open rather than waiting for a manual refresh.
   try { renderEbayWatch(); ebayWatchRefresh(card.i); } catch {}
@@ -4204,9 +4206,7 @@ function selectCard(id) {
   try { renderPriceHistory(card); } catch {}
   updateRipOrBuy(card, pullCost);
   updateSignal(card, pullCost, des.total);
-  updatePortfolioButton();
   updateWishlistButton();
-  updateFullArtBinderButton();
   updateCompareButton();
   _loadMapQ(); _syncMappingBtnState();
   renderCounterpartFlag(card);
@@ -6313,8 +6313,7 @@ function renderGradingROI(apiData) {
   const gradingFee = getUkGradingFeeGBP(psa10Price) / _eBayFx;
 
   // Use scan expected grade if available — no sight-unseen penalty for cards in hand
-  const scanAcq = (typeof getAcq === 'function') ? getAcq(card.i) : null;
-  const expectedGrade = scanAcq?.expectedGrade ?? null;
+  const expectedGrade = null;
   const _gemResolved = cardGemRate(card);
   const baseGemRate = (typeof _gemResolved === 'number' && _gemResolved > 0) ? _gemResolved : DEFAULT_GEM_RATE;
   const gemPct = expectedGrade ? baseGemRate : (_gemResolved || null);
@@ -6709,133 +6708,6 @@ function getMarketMomentum() {
   return { mult, label };
 }
 
-// ---- Portfolio ----
-function setupPortfolio() {
-  $('portfolioToggle').addEventListener('click', togglePortfolio);
-  // Collapse, not dismiss. Hiding the whole panel meant a stray click on the
-  // ✕ wiped the collection off the screen with no hint of how to get it back;
-  // folding it leaves the header, the total and the way to reopen in place.
-  // Navigation still hides it outright via _pfHidePanel.
-  const PF_COLLAPSE_KEY = 'portfolio-collapsed-v1';
-  const _pfApplyCollapse = on => {
-    const panel = $('portfolioPanel'), btn = $('portfolioClose');
-    if (!panel) return;
-    panel.classList.toggle('is-collapsed', on);
-    if (btn) {
-      btn.textContent = on ? '⌄' : '⌃';
-      btn.title = on ? 'Expand collection' : 'Collapse collection';
-      btn.setAttribute('aria-expanded', on ? 'false' : 'true');
-    }
-  };
-  let _pfCollapsed = false;
-  try { _pfCollapsed = localStorage.getItem(PF_COLLAPSE_KEY) === '1'; } catch {}
-  _pfApplyCollapse(_pfCollapsed);
-  $('portfolioClose').addEventListener('click', () => {
-    _pfCollapsed = !$('portfolioPanel').classList.contains('is-collapsed');
-    _pfApplyCollapse(_pfCollapsed);
-    try { localStorage.setItem(PF_COLLAPSE_KEY, _pfCollapsed ? '1' : '0'); } catch {}
-  });
-  $('addPortfolioBtn').addEventListener('click', toggleCardInPortfolio);
-
-  const refreshBtn = $('portfolioRefreshBtn');
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', async () => {
-      const ids = portfolio.map(p => p.id).filter(Boolean);
-      if (!ids.length || _psState.running) return;
-      refreshBtn.disabled = true;
-      const orig = refreshBtn.innerHTML;
-      refreshBtn.textContent = '⟳ Refreshing…';
-      try {
-        await psBatchRefresh(ids, 'Refresh collection prices');
-        renderPortfolio();
-      } finally {
-        refreshBtn.disabled = false;
-        refreshBtn.innerHTML = orig;
-      }
-    });
-  }
-
-  const dupesBtn = $('portfolioDupesBtn');
-  if (dupesBtn) {
-    dupesBtn.addEventListener('click', () => {
-      _pfHidePanel();
-      go('tools');
-      setTimeout(() => {
-        document.querySelector('[data-toolstab="dupes"]')?.click();
-      }, 80);
-    });
-  }
-
-  // Delegated listeners — wired once so renderPortfolio() can skip re-attaching.
-  const list = $('portfolioList');
-  if (list) {
-    list.addEventListener('click', e => {
-      if (e.target.closest('.pi-toggle')) return;
-      const removeBtn = e.target.closest('.portfolio-item-remove');
-      if (removeBtn) {
-        e.stopPropagation();
-        portfolio = portfolio.filter(p => p.id !== removeBtn.dataset.id);
-        savePortfolio(); renderPortfolio(); updatePortfolioButton();
-        return;
-      }
-      const item = e.target.closest('.portfolio-item');
-      if (item) selectCard(item.dataset.id);
-    });
-  }
-
-  renderPortfolio();
-}
-
-function togglePortfolio() {
-  const panel = $('portfolioPanel');
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-}
-
-function toggleCardInPortfolio() {
-  if (!selectedCard) return;
-  const btn = $('addPortfolioBtn');
-  // Guard: a second tap within 700ms would toggle the card right back off.
-  // Users tap again thinking the first tap didn't register because
-  // updatePortfolioButton() used to run after the slow renderPortfolio() call.
-  if (btn) {
-    if (btn._toggling) return;
-    btn._toggling = true;
-    setTimeout(() => { if (btn) btn._toggling = false; }, 700);
-  }
-  const idx = portfolio.findIndex(p => p.id === selectedCard.i);
-  if (idx >= 0) {
-    portfolio.splice(idx, 1);
-  } else {
-    portfolio.push({
-      id: selectedCard.i,
-      name: selectedCard.n,
-      set: selectedCard.s,
-      img: getCardImg(selectedCard),
-      price: getCurrentPrice(selectedCard),
-      addedDate: new Date().toISOString(),
-      addedPriceGBP: usdToGbp(getCurrentPrice(selectedCard)),
-      copies: 1,
-    });
-  }
-  try { savePortfolio(); } catch (e) { console.warn('[portfolio] save failed', e); }
-  updatePortfolioButton(); // immediate visual feedback — runs before the slow render
-  requestAnimationFrame(() => {
-    try { renderPortfolio(); } catch (e) { console.warn('[portfolio] render failed', e); }
-  });
-}
-
-function updatePortfolioButton() {
-  const btn = $('addPortfolioBtn');
-  if (!selectedCard) return;
-  const inPortfolio = portfolio.some(p => p.id === selectedCard.i);
-  btn.classList.toggle('in-portfolio', inPortfolio);
-  btn.title = inPortfolio ? 'Remove from collection' : 'Add to collection';
-}
-
-function savePortfolio() {
-  try { localStorage.setItem('pkm-portfolio', JSON.stringify(portfolio)); } catch (e) { console.warn('[portfolio] localStorage write failed', e); }
-  _recoCached = null;
-}
 
 // ---- Layout drag-resize ----
 // Touch screens have no hover and no precise drag, so affordances built on
@@ -7110,575 +6982,12 @@ function initLayoutResizer() {
   window._layoutResizer = { reposition: positionColResizer };
 }
 
-// ---- Collection ROI chart ----
-function renderRoiChart() {
-  const section = document.getElementById('portfolioRoiSection');
-  const summaryRow = document.getElementById('roiSummaryRow');
-  const canvas = document.getElementById('roiCanvas');
-  const legendEl = document.getElementById('roiLegend');
-  if (!section || !summaryRow || !canvas) return;
-
-  // Build per-card data
-  const rows = [];
-  for (const p of portfolio) {
-    const cost = getAcqCostBasisGBP(p.id);
-    if (!cost) continue;
-    const acq = getAcq(p.id);
-    const card = getCardById(p.id);
-    if (!card) continue;
-
-    // Model value: derive pull cost from card rarity, use autoFill desirability
-    const pull = (function () {
-      try {
-        if (setsData && setsData[card.sc]) {
-          const set = setsData[card.sc];
-          const rarity = set.rarities?.[card.rc];
-          if (rarity && rarity.pullRate > 0) return (Math.round(1 / rarity.pullRate) * rarity.count) / 100;
-        }
-      } catch {}
-      return 7.65;
-    })();
-    const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pull).total : 50;
-    const { priceUSD } = predictPrice(pull, des);
-    const modelGBP = usdToGbp(priceUSD);
-    const roi = ((modelGBP - cost) / cost) * 100;
-
-    rows.push({
-      name: card.n,
-      source: acq?.source || 'single',
-      ts: acq?.ts || (p.addedDate ? new Date(p.addedDate).getTime() : 0),
-      cost,
-      modelGBP,
-      roi,
-    });
-  }
-
-  if (rows.length === 0) {
-    summaryRow.innerHTML = '<p class="roi-empty">No acquisition data yet — log how you obtained cards via the Acquisition section.</p>';
-    canvas.style.display = 'none';
-    if (legendEl) legendEl.innerHTML = '';
-    return;
-  }
-
-  rows.sort((a, b) => a.ts - b.ts);
-
-  const singles = rows.filter(r => r.source === 'single');
-  const packs   = rows.filter(r => r.source === 'pack');
-
-  function groupStats(arr) {
-    const invested = arr.reduce((s, r) => s + r.cost, 0);
-    const value    = arr.reduce((s, r) => s + r.modelGBP, 0);
-    const roi      = invested > 0 ? ((value - invested) / invested) * 100 : null;
-    return { count: arr.length, invested, value, roi };
-  }
-  const ss = groupStats(singles);
-  const ps = groupStats(packs);
-  const all = groupStats(rows);
-
-  function statCard(label, s, dotColor) {
-    const roiStr = s.roi !== null
-      ? `<span class="roi-stat-roi ${s.roi >= 0 ? 'pos' : 'neg'}">${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(1)}% ROI</span>`
-      : '';
-    return `<div class="roi-stat-card">
-      <div class="roi-stat-label">${dotColor ? `<span class="roi-legend-dot" style="background:${dotColor}"></span>` : ''}${label}</div>
-      <div class="roi-stat-value">${fmtGBP(s.value)}</div>
-      <div class="roi-stat-sub">from ${fmtGBP(s.invested)} · ${s.count} card${s.count !== 1 ? 's' : ''}</div>
-      ${roiStr}
-    </div>`;
-  }
-  summaryRow.innerHTML =
-    (singles.length ? statCard('Singles', ss, '#e8b634') : '') +
-    (packs.length   ? statCard('Pack rips', ps, '#34d399') : '') +
-    statCard('Total', all, '');
-
-  // Draw bar chart
-  canvas.style.display = 'block';
-  const DPR = window.devicePixelRatio || 1;
-  const W = canvas.offsetWidth || 500;
-  const H = 220;
-  canvas.width  = W * DPR;
-  canvas.height = H * DPR;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(DPR, DPR);
-
-  const PAD = { top: 24, right: 16, bottom: 32, left: 48 };
-  const chartW = W - PAD.left - PAD.right;
-  const chartH = H - PAD.top - PAD.bottom;
-
-  // Y-axis: ROI% range
-  const allRoi = rows.map(r => r.roi);
-  const minRoi = Math.min(0, ...allRoi);
-  const maxRoi = Math.max(0, ...allRoi);
-  const roiSpan = maxRoi - minRoi || 1;
-
-  function toY(roi) {
-    return PAD.top + chartH - ((roi - minRoi) / roiSpan) * chartH;
-  }
-  const zeroY = toY(0);
-
-  // Grid lines
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.lineWidth = 1;
-  for (let pct = Math.ceil(minRoi / 25) * 25; pct <= maxRoi + 1; pct += 25) {
-    const y = toY(pct);
-    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + chartW, y); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.font = '9px JetBrains Mono, monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText((pct >= 0 ? '+' : '') + pct + '%', PAD.left - 4, y + 3);
-  }
-
-  // Zero line
-  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(PAD.left, zeroY); ctx.lineTo(PAD.left + chartW, zeroY); ctx.stroke();
-
-  // Bars
-  const barW = Math.max(4, Math.min(28, (chartW / rows.length) - 3));
-  rows.forEach((r, i) => {
-    const x = PAD.left + (i / rows.length) * chartW + (chartW / rows.length - barW) / 2;
-    const barTop = toY(Math.max(0, r.roi));
-    const barBot = toY(Math.min(0, r.roi));
-    const barH = Math.max(2, Math.abs(barBot - barTop));
-    ctx.fillStyle = r.source === 'pack' ? 'rgba(52,211,153,0.8)' : 'rgba(232,182,52,0.85)';
-    ctx.beginPath();
-    ctx.roundRect(x, barTop, barW, barH, 3);
-    ctx.fill();
-  });
-
-  // Legend
-  if (legendEl) {
-    const parts = [];
-    if (singles.length) parts.push(`<span><span class="roi-legend-dot" style="background:#e8b634"></span>Singles (${singles.length})</span>`);
-    if (packs.length)   parts.push(`<span><span class="roi-legend-dot" style="background:#34d399"></span>Pack rips (${packs.length})</span>`);
-    parts.push(`<span style="color:var(--text-faint);margin-left:auto">Each bar = one card · model estimate</span>`);
-    legendEl.innerHTML = parts.join('');
-  }
-}
-
-// Collection view mode. Device-local: how you like to look at a list is not
-// something to push to your other devices, so no pkm- prefix.
-const PF_VIEW_KEY = 'portfolio-view-v1';
-// Raw / graded filter, driven by the home holdings breakdown. Session-only: it
-// is a lens you clicked through with, not a setting — surviving a reload would
-// leave you looking at a partial collection with no memory of why.
-let _pfFilter = 'all';
-function _pfMatchesFilter(id) {
-  if (_pfFilter === 'all') return true;
-  const acq = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(id) : null;
-  const isSlab = !!(acq && acq.grade);
-  return _pfFilter === 'graded' ? isSlab : !isSlab;
-}
-function _pfView() {
-  try { return localStorage.getItem(PF_VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch { return 'grid'; }
-}
-function _pfSetView(v) {
-  try { localStorage.setItem(PF_VIEW_KEY, v === 'list' ? 'list' : 'grid'); } catch {}
-  try { renderPortfolio(); } catch {}
-}
-
-// Used where the panel genuinely should go away (navigating elsewhere), as
-// distinct from the header control, which only folds it.
-function _pfHidePanel() {
-  const p = document.getElementById('portfolioPanel');
-  if (p) p.style.display = 'none';
-}
-
-function renderPortfolio() {
-  const list = $('portfolioList');
-  const countEl = $('portfolioCount');
-  const totalEl = $('portfolioTotal');
-
-  if (portfolio.length === 0) {
-    list.innerHTML = '<div class="portfolio-empty">No cards yet. Search and add cards to track your collection.</div>';
-    countEl.style.display = 'none';
-    totalEl.textContent = 'Total: £0';
-    return;
-  }
-
-  countEl.textContent = portfolio.length;
-  countEl.style.display = 'flex';
-
-  let totalGBP = 0;
-  let totalCostGBP = 0;
-  let hasAnyAcq = false;
-  // The raw/graded lens from the home holdings breakdown. Totals are computed
-  // from the full collection below regardless, so filtering the view never
-  // changes what the collection is reported to be worth.
-  const items = portfolio.filter(p => _pfMatchesFilter(p.id)).map(p => {
-    const currentCard = getCardById(p.id);
-    const cached = getCachedPrice(p.id);           // valid since last 6AM GMT
-    const stale = !cached ? getLastKnownPrice(p.id) : null; // pre-6AM fallback
-    const priceData = cached || stale;
-    const currentPrice = priceData
-      ? (priceData.market || priceData.mid || (currentCard ? currentCard.p : p.price))
-      : (currentCard ? currentCard.p : p.price);
-    const currentGBP = usdToGbp(currentPrice);
-    const isLive = !!cached;
-    const isStale = !cached && !!stale;
-    const copies = Math.max(1, p.copies || 1);
-    totalGBP += currentGBP * copies;
-
-    let signal = null;
-    if (currentCard) {
-      let pullCost = 7.65;
-      if (setsData && setsData[currentCard.sc]) {
-        const set = setsData[currentCard.sc];
-        const rarity = set.rarities?.[currentCard.rc];
-        if (rarity && rarity.pullRate > 0) {
-          const totalPacks = Math.round(1 / rarity.pullRate) * rarity.count;
-          pullCost = totalPacks / 100;
-        }
-      }
-      const des = autoFillDesirability(currentCard, pullCost);
-      signal = _getCachedSignal(currentCard, pullCost, des.total);
-    }
-
-    const addedGBP = p.addedPriceGBP || 0;
-    const change = addedGBP > 0 ? ((currentGBP - addedGBP) / addedGBP * 100).toFixed(1) : null;
-
-    // Acquisition info — source badge + cost basis ROI
-    const acq = (typeof getAcq === 'function') ? getAcq(p.id) : null;
-    const acqCost = (typeof getAcqCostBasisGBP === 'function') ? getAcqCostBasisGBP(p.id) : null;
-    let acqBadge = '';
-    let acqLine = '';
-    if (acq && acq.source) {
-      hasAnyAcq = true;
-      const ico = acq.source === 'pack' ? '🎁' : '🛒';
-      const lbl = acq.source === 'pack' ? 'Pulled' : 'Bought';
-      acqBadge = `<span class="portfolio-acq-badge portfolio-acq-${acq.source}" title="${lbl}">${ico} ${lbl}</span>`;
-    }
-    if (Number.isFinite(acqCost) && acqCost > 0) {
-      totalCostGBP += acqCost * copies;
-      const pnlPct = ((currentGBP - acqCost) / acqCost) * 100;
-      const pnlGBP = currentGBP - acqCost;
-      const pos = pnlPct >= 0;
-      const perCopy = `Cost £${acqCost.toFixed(2)} · <span class="portfolio-acq-pnl ${pos ? 'pos' : 'neg'}">${pos ? '+' : ''}£${pnlGBP.toFixed(2)} (${pos ? '+' : ''}${pnlPct.toFixed(1)}%)</span>`;
-      acqLine = copies > 1
-        ? `<div class="portfolio-acq-line">${perCopy} · ×${copies} = £${(currentGBP * copies).toFixed(2)}</div>`
-        : `<div class="portfolio-acq-line">${perCopy}</div>`;
-    } else if (acq && acq.source) {
-      acqLine = `<div class="portfolio-acq-line portfolio-acq-line-empty">Add cost to track ROI</div>`;
-    }
-    const copiesBadge = copies > 1 ? `<span class="portfolio-copies-badge">×${copies}</span>` : '';
-
-    return `
-      <div class="portfolio-item-card" data-id="${p.id}">
-        <div class="portfolio-item" data-id="${p.id}">
-          ${(() => {
-            // Route through getCardImg so a linked card's Collectr art reaches
-            // the collection too — p.img is a snapshot taken when the card was
-            // added and is empty for anything the CDNs had no image for.
-            const _pc = (typeof getCardById === 'function' && getCardById(p.id)) || null;
-            const _src = _pc ? _hiresUrl(getCardImg(_pc)) : (p.img ? _hiresUrl(p.img) : '');
-            const _alt = _pc && typeof collectrImgFor === 'function' ? collectrImgFor(_pc.i) : '';
-            return _src
-              ? `<img class="portfolio-item-img" src="${_src}" alt="" loading="lazy" decoding="async"${_alt ? ` data-collectr-img="${_alt}"` : ''} onerror="_onImgError(this)">`
-              : '<div class="portfolio-item-img"></div>';
-          })()}
-          <div class="portfolio-item-info">
-            <div class="portfolio-item-name">${esc(p.name)} ${acqBadge}${copiesBadge}</div>
-            <div class="portfolio-item-meta">${esc(p.set)}${change !== null ? ` · <span style="color:${parseFloat(change) >= 0 ? 'var(--green)' : 'var(--red)'}"> ${parseFloat(change) >= 0 ? '+' : ''}${change}%</span>` : ''}${isLive ? ' · <span class="live-dot-inline" title="Live price"></span>' : ''}${isStale ? ' · <span class="stale-price-tag" title="Price from before today\'s 6AM — tap Refresh prices to update">cached</span>' : ''}</div>
-            ${acqLine}
-          </div>
-          <div class="portfolio-item-right">
-            <div class="portfolio-item-price">${copies > 1 ? `£${(currentGBP * copies).toFixed(2)}<span class="portfolio-price-each"> (£${currentGBP.toFixed(2)} ea)</span>` : `£${currentGBP.toFixed(2)}`}</div>
-            ${signal ? `<span class="portfolio-item-signal sig-${signal.signal.toLowerCase().replace('strong ', '')}"> ${signal.signal}</span>` : ''}
-            ${piRenderButton(p.id, currentPrice)}
-          </div>
-          <button class="portfolio-item-remove" data-id="${p.id}" title="Remove">✕</button>
-        </div>
-        ${piRenderPanel(p.id)}
-      </div>
-    `;
-  });
-
-  const exactDupes = _detectDupes().exact;
-  const dupeBanner = exactDupes.length > 0
-    ? `<div class="portfolio-dupe-banner" id="portDupeBanner">
-        <span class="portfolio-dupe-icon">⚠</span>
-        <span class="portfolio-dupe-text">${exactDupes.length} duplicate card entr${exactDupes.length === 1 ? 'y' : 'ies'} found</span>
-        <button class="portfolio-dupe-link" id="portDupeGoBtn">Review &amp; merge</button>
-      </div>`
-    : '';
-  const filterBar = _pfFilter === 'all' ? '' :
-    `<div class="pf-filterbar">Showing <strong>${_pfFilter}</strong> only` +
-    `<button type="button" class="pf-filterclear" data-hh-filter="all">Clear</button></div>`;
-  list.innerHTML = dupeBanner + filterBar + items.join('');
-  // Grid is the default now; the row list stays a click away for scanning a
-  // long collection, and the choice is remembered per device.
-  list.classList.toggle('is-grid', _pfView() === 'grid');
-  document.getElementById('portDupeGoBtn')?.addEventListener('click', () => {
-    _pfHidePanel();
-    go('tools');
-    setTimeout(() => document.querySelector('[data-toolstab="dupes"]')?.click(), 80);
-  });
-  const viewHost = document.getElementById('portfolioViewToggle');
-  if (viewHost) {
-    const v = _pfView();
-    viewHost.innerHTML =
-      `<button type="button" class="pf-viewbtn${v === 'grid' ? ' is-on' : ''}" data-pfview="grid">Grid</button>` +
-      `<button type="button" class="pf-viewbtn${v === 'list' ? ' is-on' : ''}" data-pfview="list">List</button>`;
-  }
-  const dupesHeaderBtn = document.getElementById('portfolioDupesBtn');
-  const dupesCountEl   = document.getElementById('portfolioDupeCount');
-  if (dupesHeaderBtn) {
-    dupesHeaderBtn.style.display = exactDupes.length > 0 ? '' : 'none';
-    if (dupesCountEl) dupesCountEl.textContent = exactDupes.length > 0 ? `(${exactDupes.length})` : '';
-  }
-  if (hasAnyAcq && totalCostGBP > 0) {
-    const pnl = totalGBP - totalCostGBP;
-    const pnlPct = (pnl / totalCostGBP) * 100;
-    const pos = pnl >= 0;
-    totalEl.innerHTML = `Value <strong>£${totalGBP.toFixed(2)}</strong> · Cost £${totalCostGBP.toFixed(2)} · <span class="${pos ? 'pos' : 'neg'}">${pos ? '+' : ''}£${pnl.toFixed(2)} (${pos ? '+' : ''}${pnlPct.toFixed(1)}%)</span>`;
-  } else {
-    totalEl.textContent = `Total: £${totalGBP.toFixed(2)}`;
-  }
-
-  piWireToggles(list);
-  requestAnimationFrame(() => drawPortfolioGrowthChart());
-}
-
-function drawPortfolioGrowthChart() {
-  const section = document.getElementById('portfolioGrowthSection');
-  const canvas  = document.getElementById('portfolioGrowthCanvas');
-  if (!section || !canvas) return;
-
-  if (portfolio.length === 0) { section.style.display = 'none'; return; }
-  section.style.display = '';
-
-  // Aggregate data across all cards
-  let costBasisGBP  = 0;
-  let hasCostBasis  = false;
-  let currentGBP    = 0;
-  const con = [0,0,0,0,0], exp = [0,0,0,0,0], opt = [0,0,0,0,0];
-
-  for (const p of portfolio) {
-    const card = getCardById(p.id);
-    if (!card) continue;
-
-    const priceData = getCachedPrice(p.id) || getLastKnownPrice(p.id);
-    const mid = (priceData && priceData.pcUngraded > 0 && priceData.tcgMarket > 0)
-      ? (priceData.pcUngraded + priceData.tcgMarket) / 2 : 0;
-    const priceUSD = mid || (priceData ? (priceData.pcUngraded || priceData.market || priceData.mid || card.p) : card.p);
-    currentGBP += usdToGbp(priceUSD);
-
-    // Pull cost for forecast model
-    let pullCost = 7.65;
-    try {
-      if (setsData && setsData[card.sc]) {
-        const set = setsData[card.sc];
-        const rar = set.rarities?.[card.rc];
-        if (rar && rar.pullRate > 0) pullCost = (Math.round(1 / rar.pullRate) * rar.count) / 100;
-      }
-    } catch {}
-
-    const des = (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pullCost).total : 50;
-    const fc  = forecast(card, pullCost, des);
-    for (let i = 0; i < 5; i++) {
-      con[i] += usdToGbp(fc.scenarios.conservative[i].priceUSD);
-      exp[i] += usdToGbp(fc.scenarios.expected[i].priceUSD);
-      opt[i] += usdToGbp(fc.scenarios.optimistic[i].priceUSD);
-    }
-
-    const acqCost = (typeof getAcqCostBasisGBP === 'function') ? getAcqCostBasisGBP(p.id) : null;
-    if (acqCost && acqCost > 0) { costBasisGBP += acqCost; hasCostBasis = true; }
-  }
-
-  // Canvas setup
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const W = Math.max(canvas.offsetWidth || 0, 280);
-  const H = 200;
-  canvas.width  = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.height = H + 'px';
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, W, H);
-
-  // Theme-aware colours
-  const isDark   = document.documentElement.dataset.theme !== 'light';
-  const gridCol  = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
-  const labelCol = isDark ? '#6b6e80' : '#8090a8';
-  const bgFill   = isDark ? 'rgba(232,182,52,0.08)' : 'rgba(232,182,52,0.12)';
-
-  const allVals = [currentGBP, ...opt, ...(hasCostBasis ? [costBasisGBP] : [])];
-  const maxP = Math.max(...allVals) * 1.20;
-  const rawMin = Math.min(hasCostBasis ? costBasisGBP : currentGBP, ...con);
-  const minP = rawMin * 0.85;
-
-  const pad = { l: 60, r: 24, t: 28, b: 36 };
-  const cw  = W - pad.l - pad.r;
-  const ch  = H - pad.t - pad.b;
-  const xAt = yr => pad.l + (yr / 5) * cw;
-  const yAt = v  => pad.t + ch - ((v - minP) / (maxP - minP)) * ch;
-
-  // Grid lines + Y labels
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const gv = minP + (maxP - minP) * (i / 4);
-    const gy = yAt(gv);
-    ctx.strokeStyle = gridCol;
-    ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
-    ctx.fillStyle = labelCol;
-    ctx.font = '10px JetBrains Mono, monospace';
-    ctx.textAlign = 'right';
-    const lbl = gv >= 1000 ? `£${(gv / 1000).toFixed(1)}k` : `£${Math.round(gv)}`;
-    ctx.fillText(lbl, pad.l - 6, gy + 4);
-  }
-
-  // X labels
-  ctx.font = '10px Space Grotesk, sans-serif';
-  ctx.fillStyle = labelCol;
-  ctx.textAlign = 'center';
-  for (let yr = 0; yr <= 5; yr++) {
-    ctx.fillText(yr === 0 ? 'Now' : `${yr}yr`, xAt(yr), H - 8);
-  }
-
-  // Cost-basis reference line
-  if (hasCostBasis && costBasisGBP > 0) {
-    const cy = yAt(costBasisGBP);
-    ctx.strokeStyle = 'rgba(90,200,90,0.45)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 4]);
-    ctx.beginPath(); ctx.moveTo(xAt(0), cy); ctx.lineTo(W - pad.r, cy); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(90,200,90,0.65)';
-    ctx.font = '10px JetBrains Mono, monospace';
-    ctx.textAlign = 'left';
-    const costLbl = costBasisGBP >= 1000 ? `cost £${(costBasisGBP/1000).toFixed(1)}k` : `cost £${Math.round(costBasisGBP)}`;
-    ctx.fillText(costLbl, xAt(0) + 6, cy - 4);
-  }
-
-  // Con–opt band fill
-  ctx.fillStyle = bgFill;
-  ctx.beginPath();
-  ctx.moveTo(xAt(0), yAt(currentGBP));
-  for (let i = 0; i < 5; i++) ctx.lineTo(xAt(i + 1), yAt(opt[i]));
-  for (let i = 4; i >= 0; i--) ctx.lineTo(xAt(i + 1), yAt(con[i]));
-  ctx.lineTo(xAt(0), yAt(currentGBP));
-  ctx.fill();
-
-  // Conservative dashed line
-  ctx.strokeStyle = 'rgba(138,138,138,0.35)';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath(); ctx.moveTo(xAt(0), yAt(currentGBP));
-  con.forEach((v, i) => ctx.lineTo(xAt(i + 1), yAt(v)));
-  ctx.stroke();
-
-  // Optimistic dashed line
-  ctx.strokeStyle = 'rgba(232,182,52,0.3)';
-  ctx.beginPath(); ctx.moveTo(xAt(0), yAt(currentGBP));
-  opt.forEach((v, i) => ctx.lineTo(xAt(i + 1), yAt(v)));
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Expected line
-  ctx.strokeStyle = '#e8b634';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.moveTo(xAt(0), yAt(currentGBP));
-  exp.forEach((v, i) => ctx.lineTo(xAt(i + 1), yAt(v)));
-  ctx.stroke();
-
-  // Current-value dot
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(xAt(0), yAt(currentGBP), 5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#e8b634';
-  ctx.beginPath(); ctx.arc(xAt(0), yAt(currentGBP), 3, 0, Math.PI * 2); ctx.fill();
-
-  // Yr-5 expected dot + label
-  const yr5 = exp[4];
-  ctx.fillStyle = '#e8b634';
-  ctx.beginPath(); ctx.arc(xAt(5), yAt(yr5), 5, 0, Math.PI * 2); ctx.fill();
-  ctx.font = 'bold 12px JetBrains Mono, monospace';
-  ctx.textAlign = 'right';
-  const yr5lbl = yr5 >= 1000 ? `£${(yr5/1000).toFixed(1)}k` : `£${Math.round(yr5)}`;
-  ctx.fillText(yr5lbl, xAt(5) - 8, yAt(yr5) - 10);
-
-  // ROI annotation (top-left)
-  const roiPct = ((yr5 - currentGBP) / currentGBP * 100).toFixed(0);
-  ctx.fillStyle = 'rgba(232,182,52,0.75)';
-  ctx.font = '11px Space Grotesk, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(`+${roiPct}% expected over 5 yrs`, pad.l + 4, pad.t + 13);
-
-  // Current value label near the Now dot
-  ctx.fillStyle = '#aaa';
-  ctx.font = '10px JetBrains Mono, monospace';
-  ctx.textAlign = 'left';
-  const nowLbl = currentGBP >= 1000 ? `£${(currentGBP/1000).toFixed(1)}k` : `£${Math.round(currentGBP)}`;
-  ctx.fillText(nowLbl, xAt(0) + 8, yAt(currentGBP) + 4);
-}
 
 // =============================================================
 // Wishlist (cards you want to buy at a target price)
 // =============================================================
 let wishlist = JSON.parse(localStorage.getItem('pkm-wishlist') || '[]');
 
-// ── Upgrades list ──────────────────────────────────────────────────────────
-const UPGRADES_KEY = 'pkm-upgrades-v1';
-let upgradesList = JSON.parse(localStorage.getItem(UPGRADES_KEY) || '[]');
-
-function saveUpgradesList() {
-  try { localStorage.setItem(UPGRADES_KEY, JSON.stringify(upgradesList)); } catch {}
-}
-
-function renderUpgradesPanel() {
-  const listEl  = document.getElementById('upgradesList');
-  const totalEl = document.getElementById('upgradesTotal');
-  const badge   = document.getElementById('hmpUpgradesBadge');
-  if (!listEl) return;
-  if (badge) { badge.textContent = upgradesList.length; badge.style.display = upgradesList.length > 0 ? 'inline-flex' : 'none'; }
-  if (totalEl) totalEl.textContent = upgradesList.length + ' card' + (upgradesList.length !== 1 ? 's' : '');
-  if (upgradesList.length === 0) {
-    listEl.innerHTML = '<div class="portfolio-empty">No upgrade targets yet. Go to Standouts → Upgrade tab and tap “+ Upgrades” to add cards.</div>';
-    return;
-  }
-  listEl.innerHTML = upgradesList.map(u => {
-    const img = u.img || '';
-    const psa10Str = u.psa10GBP ? fmtGBPDirect(u.psa10GBP) : '—';
-    const netStr   = u.netUpgradeCostGBP ? fmtGBPDirect(u.netUpgradeCostGBP) : null;
-    const roiStr   = u.roi ? '+' + Math.round(u.roi) + '%' : null;
-    return `<div class="upgrades-item" data-id="${esc(u.id)}">
-      ${img ? `<img class="wishlist-item-img" src="${esc(_hiresUrl(img))}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="wishlist-item-img"></div>'}
-      <div class="wishlist-item-info">
-        <div class="wishlist-item-name">${esc(u.name)}</div>
-        <div class="wishlist-item-meta">${esc(u.set || '')}${u.cn ? ' \xb7 #' + esc(u.cn) : ''}</div>
-        <div class="upgrades-item-prices">
-          <span class="upgrades-psa10">PSA 10 ${psa10Str}</span>
-          ${netStr ? `<span class="upgrades-net">Net ${netStr}</span>` : ''}
-          ${roiStr ? `<span class="upgrades-roi">${roiStr} 5yr</span>` : ''}
-        </div>
-      </div>
-      <div class="upgrades-item-actions">
-        <button class="wi-view-btn" onclick="selectCard('${esc(u.id)}');go('predict')">View</button>
-        <button class="upgrades-remove-btn" data-id="${esc(u.id)}" title="Remove">✕</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function setupUpgradesList() {
-  document.getElementById('hmpUpgrades')?.addEventListener('click', () => {
-    toggleSidePanel('upgradesPanel');
-    document.getElementById('hdrPopup')?.classList.remove('hmp-open');
-  });
-  document.getElementById('upgradesClose')?.addEventListener('click', () => {
-    document.getElementById('upgradesPanel').style.display = 'none';
-  });
-  document.getElementById('upgradesList')?.addEventListener('click', e => {
-    const btn = e.target.closest('.upgrades-remove-btn');
-    if (!btn) return;
-    upgradesList = upgradesList.filter(u => u.id !== btn.dataset.id);
-    saveUpgradesList();
-    renderUpgradesPanel();
-    renderStandouts();
-  });
-  renderUpgradesPanel();
-}
-
-let _soUpgradeItems = []; // cache so onclick can reference by index
 
 function _soGemBadge(card) {
   const _gm = cardGemRate(card);
@@ -7709,16 +7018,6 @@ function _buildVintageInsight(item) {
   return `${gradeStr} offers best entry — model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
 }
 
-function _buildUpgradeInsight(item, maxBudgetGBP, hasLimit) {
-  const { rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, onlyFitsIfSellRaw } = item;
-  const yr   = new Date().getFullYear() + 5;
-  const mult = rawGBP > 0 ? (psa10GBP / rawGBP).toFixed(1) : '?';
-  let line = `PSA 10 at ${mult}× raw — model projects +${Math.round(roi)}% to ${fmtGBPDirect(yr5GBP)} by ${yr}.`;
-  if (onlyFitsIfSellRaw && hasLimit) {
-    line += ` Only fits budget if raw is sold first (net ${fmtGBPDirect(netUpgradeCostGBP)}).`;
-  }
-  return line;
-}
 
 function _buildMassGradeInsight(item) {
   const { rawGBP, psa10GBP, multiplier, copiesNeeded, evProfitGBP, effectiveGemRate } = item;
@@ -7752,138 +7051,8 @@ function _buildSpikeWatchInsight(item) {
   return `Vintage WOTC holo with dedicated collector demand at ${fmtGBPDirect(rawGBP)} raw. Limited original print run and strong character recognition make this a spike candidate. Refresh prices to see graded premium.`;
 }
 
-function _toggleUpgradeFromSO(idx) {
-  const item = _soUpgradeItems[idx];
-  if (!item) return;
-  const { card, rawGBP, psa10GBP, netUpgradeCostGBP, roi } = item;
-  const inList = upgradesList.some(u => u.id === card.i);
-  if (inList) {
-    upgradesList = upgradesList.filter(u => u.id !== card.i);
-  } else {
-    upgradesList.push({
-      id: card.i, name: card.n, set: card.s, cn: card.cn || '',
-      img: getCardImg(card), lang: card.lang || 'EN',
-      psa10GBP, rawGBP, netUpgradeCostGBP, roi,
-      addedDate: new Date().toISOString(),
-    });
-  }
-  saveUpgradesList();
-  renderUpgradesPanel();
-  renderStandouts();
-}
 // ── end Upgrades list ──────────────────────────────────────────────────────
 
-let fullArtBinder = JSON.parse(localStorage.getItem('pkm-fullart-binder-v1') || '[]');
-// Per-card species overrides — keyed by card ID, value is the override species string.
-// Synced (pkm- prefix), so corrections carry across devices.
-let binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species-overrides-v1') || '{}');
-
-// Pokédex grid detail panel state
-let _binderBodyCache = {};       // species → { bodyHtml, inlineActions, dexNum, tier, haveInGroup, total, hasEN, hasJP }
-let _binderDetailSpecies = null; // currently-open species in the detail panel
-
-// Generation filter (0 = All, 1–9 = specific gen)
-let _binderGenFilter = 0;
-const BINDER_GEN_RANGES = [
-  [0, Infinity],  // 0 = All
-  [1,   151],     // Gen 1
-  [152, 251],     // Gen 2
-  [252, 386],     // Gen 3
-  [387, 493],     // Gen 4
-  [494, 649],     // Gen 5
-  [650, 721],     // Gen 6
-  [722, 809],     // Gen 7
-  [810, 905],     // Gen 8
-  [906, 1025],    // Gen 9
-];
-
-function saveBinderSpeciesOverrides() {
-  localStorage.setItem('pkm-binder-species-overrides-v1', JSON.stringify(binderSpeciesOverrides));
-}
-
-function _showBinderRenameModal(currentSpecies, ids) {
-  const modal = $('binderRenameModal');
-  const input = $('binderRenameInput');
-  if (!modal || !input) return;
-
-  input.value = currentSpecies;
-  modal.style.display = '';
-  input.focus();
-  input.select();
-
-  function _apply() {
-    const trimmed = input.value.trim();
-    _closeBinderRenameModal();
-    if (trimmed === '') {
-      ids.forEach(id => delete binderSpeciesOverrides[id]);
-    } else if (trimmed !== currentSpecies) {
-      ids.forEach(id => { binderSpeciesOverrides[id] = trimmed; });
-    }
-    saveBinderSpeciesOverrides();
-    renderBinderPage();
-    // If detail panel is open, refresh it with the new species name
-    if (_binderDetailSpecies === currentSpecies && trimmed && trimmed !== currentSpecies) {
-      _binderDetailSpecies = trimmed;
-    }
-    if (_binderDetailSpecies && $('binderDetailPanel')?.classList.contains('open')) {
-      _openBinderDetailRender(_binderDetailSpecies);
-    }
-  }
-
-  function _onKey(e) {
-    if (e.key === 'Enter') { e.preventDefault(); _apply(); }
-    if (e.key === 'Escape') { e.preventDefault(); _closeBinderRenameModal(); }
-  }
-
-  $('binderRenameConfirm').onclick = _apply;
-  $('binderRenameCancel').onclick  = _closeBinderRenameModal;
-  modal.addEventListener('keydown', _onKey, { once: true });
-  modal.addEventListener('click', e => { if (e.target === modal) _closeBinderRenameModal(); }, { once: true });
-}
-
-function _closeBinderRenameModal() {
-  const modal = $('binderRenameModal');
-  if (modal) modal.style.display = 'none';
-}
-
-// Manual EN/JP pairings within a binder group — keyed by card ID, value is its paired card ID.
-// Both directions are stored: { idA: idB, idB: idA }.
-let binderPairings = JSON.parse(localStorage.getItem('pkm-binder-pairings-v1') || '{}');
-
-function saveBinderPairings() {
-  localStorage.setItem('pkm-binder-pairings-v1', JSON.stringify(binderPairings));
-}
-function setBinderPairing(idA, idB) {
-  // Dissolve any existing pairings for either card before creating the new one
-  const oldA = binderPairings[idA], oldB = binderPairings[idB];
-  if (oldA) delete binderPairings[oldA];
-  if (oldB) delete binderPairings[oldB];
-  binderPairings[idA] = idB;
-  binderPairings[idB] = idA;
-  saveBinderPairings();
-}
-function clearBinderPairing(id) {
-  const partner = binderPairings[id];
-  if (partner) delete binderPairings[partner];
-  delete binderPairings[id];
-  saveBinderPairings();
-}
-
-// Reorganise mode — multi-select cards to move them into a different species group.
-let _binderReorgMode = false;
-const _binderReorgSelected = new Set();
-
-function _binderReorgGroups() {
-  const groups = {};
-  for (const b of fullArtBinder) {
-    const sp = binderSpeciesOverrides[b.id] || speciesOf(b.name);
-    if (!groups[sp]) groups[sp] = true;
-  }
-  return Object.keys(groups).sort((a, b) => a.localeCompare(b));
-}
-
-
-function _renderReorgBar() { /* no-op — actions now inline in group headers */ }
 
 function setupWishlist() {
   $('wishlistToggle').addEventListener('click', () => toggleSidePanel('wishlistPanel'));
@@ -7931,659 +7100,13 @@ function setupWishlist() {
 
 function toggleSidePanel(id) {
   if (id === 'comparePanel') { openComparePanel(); return; }
-  ['portfolioPanel', 'wishlistPanel', 'upgradesPanel', 'alertsPanel', 'binderPanel'].forEach(p => {
+  ['wishlistPanel', 'alertsPanel'].forEach(p => {
     const el = document.getElementById(p);
     if (!el) return;
     el.style.display = p === id ? (el.style.display === 'none' ? 'block' : 'none') : 'none';
   });
 }
 
-function setupFullArtBinder() {
-  // The Full Art Gen 1 & 2 project is retired — its header icon, slide-in
-  // panel and add button are gone from the page. The species, pairing and
-  // priority plumbing below stays: the themed page builder is built on it.
-  $('binderToggle')?.addEventListener('click', () => go('binder'));
-  $('binderClose')?.addEventListener('click', () => { const p = $('binderPanel'); if (p) p.style.display = 'none'; });
-  $('addBinderBtn')?.addEventListener('click', () => toggleCardInFullArtBinder());
-
-  // "Find a card" button on binder page → jump to Predict search
-  $('binderPageAddBtn')?.addEventListener('click', () => go('predict'));
-
-  // Background price refresh for all binder cards
-  $('binderRefreshPricesBtn')?.addEventListener('click', function() { binderFetchAllPrices(this); });
-
-  // Sort order selector (Pokédex number vs A–Z), synced across devices
-  $('binderSortSel')?.addEventListener('change', function() {
-    localStorage.setItem(BINDER_SORT_KEY, this.value);
-    renderBinderPage();
-  });
-
-  // Generation filter buttons
-  $('binderGenFilter')?.addEventListener('click', e => {
-    const btn = e.target.closest('.bgf-btn[data-gen]');
-    if (!btn) return;
-    _binderGenFilter = parseInt(btn.dataset.gen, 10);
-    document.querySelectorAll('#binderGenFilter .bgf-btn').forEach(b =>
-      b.classList.toggle('active', b === btn)
-    );
-    renderBinderPage();
-  });
-
-  // Side panel list interactions
-  const list = $('binderList');
-  if (list) {
-    list.addEventListener('click', e => {
-      if (e.target.closest('.binder-remove')) {
-        e.stopPropagation();
-        const id = e.target.closest('.binder-remove').dataset.id;
-        fullArtBinder = fullArtBinder.filter(b => b.id !== id);
-        saveFullArtBinder(); renderFullArtBinder(); renderBinderPage(); updateFullArtBinderButton();
-        return;
-      }
-      if (e.target.closest('.binder-owned-toggle')) {
-        e.stopPropagation();
-        const id = e.target.closest('.binder-owned-toggle').dataset.id;
-        const item = fullArtBinder.find(b => b.id === id);
-        if (item) { binderCycleStatus(item); saveFullArtBinder(); renderFullArtBinder(); renderBinderPage(); }
-        return;
-      }
-      const item = e.target.closest('.binder-item');
-      if (item) selectCard(item.dataset.id);
-    });
-  }
-
-  // Binder page event delegation (set up once)
-  // Shared handler used by both the page grid and the detail panel.
-  function _handleBinderClick(e) {
-    // Dex cell or flat-list row — open the detail panel
-    const dexCell = e.target.closest('.binder-dex-cell[data-species], .binder-flat-row[data-species]');
-    if (dexCell) {
-      openBinderDetail(dexCell.dataset.species);
-      return;
-    }
-
-    const viewBtn = e.target.closest('.bdl-view-btn[data-id]');
-    if (viewBtn) {
-      const id = viewBtn.dataset.id;
-      closeBinderDetail();
-      go('predict');
-      setTimeout(() => { try { selectCard(id); } catch(err) {} }, 80);
-      return;
-    }
-
-    const completeBtn = e.target.closest('.binder-pg-complete');
-    if (completeBtn) {
-      e.stopPropagation();
-      const id = completeBtn.dataset.id;
-      fullArtBinder = fullArtBinder.filter(b => b.id !== id);
-      saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
-      return;
-    }
-    const ownedBtn = e.target.closest('.binder-pg-owned');
-    if (ownedBtn) {
-      e.stopPropagation();
-      const id = ownedBtn.dataset.id;
-      const it = fullArtBinder.find(b => b.id === id);
-      if (it) { binderCycleStatus(it); saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); }
-      return;
-    }
-    const removeBtn = e.target.closest('.binder-pg-remove');
-    if (removeBtn) {
-      e.stopPropagation();
-      const id = removeBtn.dataset.id;
-      fullArtBinder = fullArtBinder.filter(b => b.id !== id);
-      saveFullArtBinder(); renderBinderPage(); renderFullArtBinder(); updateFullArtBinderButton();
-      return;
-    }
-
-    const moveBtn = e.target.closest('.bdl-move-btn');
-    if (moveBtn) {
-      e.stopPropagation();
-      const id = moveBtn.dataset.id;
-      const row = moveBtn.closest('.bdl-row');
-      if (!row) return;
-      row.querySelector('.bdl-acts').style.display = 'none';
-      const editor = row.querySelector('.bdl-move-editor');
-      if (editor) {
-        editor.style.display = 'flex';
-        editor.querySelector('.bdl-move-input')?.focus();
-      }
-      return;
-    }
-
-    const moveCancel = e.target.closest('.bdl-move-cancel');
-    if (moveCancel) {
-      e.stopPropagation();
-      const row = moveCancel.closest('.bdl-row');
-      if (!row) return;
-      row.querySelector('.bdl-acts').style.display = '';
-      row.querySelector('.bdl-move-editor').style.display = 'none';
-      return;
-    }
-
-    const moveConfirm = e.target.closest('.bdl-move-confirm');
-    if (moveConfirm) {
-      e.stopPropagation();
-      const id = moveConfirm.dataset.id;
-      const row = moveConfirm.closest('.bdl-row');
-      const input = row?.querySelector('.bdl-move-input');
-      const target = (input?.value || '').trim();
-      if (!target) { input?.focus(); return; }
-      binderSpeciesOverrides[id] = target;
-      saveBinderSpeciesOverrides();
-      renderBinderPage();
-      openBinderDetail(target);
-      return;
-    }
-    const statusBtn = e.target.closest('.binder-group-status-btn');
-    if (statusBtn) {
-      e.stopPropagation();
-      const sp = statusBtn.dataset.species;
-      const groupCards = fullArtBinder.filter(b =>
-        (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === sp
-      );
-      const allHave = groupCards.every(b => b.owned || b.upgrade);
-      groupCards.forEach(b => { b.owned = !allHave; b.upgrade = false; });
-      saveFullArtBinder();
-      renderBinderPage();
-      renderFullArtBinder();
-      return;
-    }
-
-    const editBtn = e.target.closest('.binder-species-edit');
-    if (editBtn) {
-      e.stopPropagation();
-      const currentSpecies = editBtn.dataset.species;
-      const ids = fullArtBinder
-        .filter(b => (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === currentSpecies)
-        .map(b => b.id);
-      _showBinderRenameModal(currentSpecies, ids);
-      return;
-    }
-
-    // Checkbox — select card for move/link actions
-    const reorgCb = e.target.closest('.breorg-cb');
-    if (reorgCb) {
-      e.stopPropagation();
-      const id = reorgCb.dataset.id;
-      if (_binderReorgSelected.has(id)) _binderReorgSelected.delete(id);
-      else _binderReorgSelected.add(id);
-      renderBinderPage();
-      return;
-    }
-
-    // Inline Move button — move selected cards from this group to chosen group
-    const inlineMoveBtn = e.target.closest('.breorg-inline-move');
-    if (inlineMoveBtn) {
-      e.stopPropagation();
-      const species = inlineMoveBtn.dataset.species;
-      // Works both in the old details element (now removed) and in the detail panel
-      const detailsEl = inlineMoveBtn.closest('.binder-species-group')
-        || document.getElementById('binderDetailActions');
-      const sel = detailsEl?.querySelector('.breorg-inline-select');
-      let target = sel?.value;
-      if (!target) return;
-      if (target === '__new__') {
-        target = prompt('New group name:')?.trim();
-        if (!target) return;
-      }
-      for (const id of [..._binderReorgSelected]) {
-        const b = fullArtBinder.find(x => x.id === id);
-        if (!b) continue;
-        const bSp = binderSpeciesOverrides[b.id] || speciesOf(b.name);
-        if (bSp === species) { binderSpeciesOverrides[id] = target; _binderReorgSelected.delete(id); }
-      }
-      saveBinderSpeciesOverrides();
-      renderBinderPage();
-      return;
-    }
-
-    // Inline Link button — force-pair exactly 2 selected cards
-    const inlineLinkBtn = e.target.closest('.breorg-inline-link');
-    if (inlineLinkBtn) {
-      e.stopPropagation();
-      const ids = [..._binderReorgSelected];
-      if (ids.length !== 2) return;
-      _binderReorgSelected.clear();
-      _triggerBinderPair(ids[0], ids[1]);
-      return;
-    }
-
-    // Inline Clear button — deselect all
-    const inlineClearBtn = e.target.closest('.breorg-inline-clear');
-    if (inlineClearBtn) {
-      e.stopPropagation();
-      _binderReorgSelected.clear();
-      renderBinderPage();
-      return;
-    }
-
-    const unpairBtn = e.target.closest('.binder-pg-unpair');
-    if (unpairBtn) {
-      e.stopPropagation();
-      clearBinderPairing(unpairBtn.dataset.idA);
-      renderBinderPage();
-      return;
-    }
-
-    const card = e.target.closest('.binder-pg-card[data-id]');
-    if (card && !e.target.closest('button')) {
-      const id = card.dataset.id;
-      go('predict');
-      setTimeout(() => { try { selectCard(id); } catch(err) {} }, 80);
-    }
-  }
-
-  const pageContent = $('binderPageContent');
-  if (pageContent && !pageContent._listenerAdded) {
-    pageContent._listenerAdded = true;
-    pageContent.addEventListener('click', _handleBinderClick);
-
-    // ── Desktop drag-to-compare (HTML5 drag API) ────────────────────────
-    // Works on Mac. iOS/iPadOS does not fire these events — see touch section below.
-    let _binderDragId = null;
-    pageContent.addEventListener('dragstart', e => {
-      const card = e.target.closest('.binder-pg-card[data-id]');
-      if (!card) return;
-      _binderDragId = card.dataset.id;
-      e.dataTransfer.effectAllowed = 'link';
-      card.classList.add('binder-pg-dragging');
-    });
-    pageContent.addEventListener('dragend', () => {
-      _binderDragId = null;
-      pageContent.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
-        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
-    });
-    pageContent.addEventListener('dragover', e => {
-      const card = e.target.closest('.binder-pg-card[data-id]');
-      if (!card || !_binderDragId || card.dataset.id === _binderDragId) return;
-      if (card.dataset.id === _binderDragId) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'link';
-      pageContent.querySelectorAll('.binder-pg-drop-target')
-        .forEach(el => el.classList.remove('binder-pg-drop-target'));
-      card.classList.add('binder-pg-drop-target');
-    });
-    pageContent.addEventListener('dragleave', e => {
-      const card = e.target.closest('.binder-pg-card[data-id]');
-      if (card) card.classList.remove('binder-pg-drop-target');
-    });
-    pageContent.addEventListener('drop', e => {
-      const dropCard = e.target.closest('.binder-pg-card[data-id]');
-      if (!dropCard || !_binderDragId || dropCard.dataset.id === _binderDragId) return;
-      e.preventDefault();
-      const dragId = _binderDragId;
-      _binderDragId = null;
-      pageContent.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
-        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
-      _triggerBinderPair(dragId, dropCard.dataset.id);
-    });
-
-    // ── Touch drag-to-pair (iOS/iPadOS) ──────────────────────────────
-    // HTML5 drag events don't fire on iOS — this reimplements the same
-    // behaviour using touchstart/touchmove/touchend + elementFromPoint.
-    let _tDragId = null, _tGhost = null, _tStarted = false;
-    let _tStartX = 0, _tStartY = 0;
-    const DRAG_THRESHOLD = 10; // px movement before drag is confirmed
-
-    function _binderLang(id) {
-      return (fullArtBinder.find(b => b.id === id)?.lang || 'EN');
-    }
-    function _sameGroup(idA, idB) {
-      const bA = fullArtBinder.find(b => b.id === idA);
-      const bB = fullArtBinder.find(b => b.id === idB);
-      if (!bA || !bB) return false;
-      return (binderSpeciesOverrides[idA] || speciesOf(bA.name)) ===
-             (binderSpeciesOverrides[idB] || speciesOf(bB.name));
-    }
-    function _triggerBinderPair(idA, idB) {
-      setBinderPairing(idA, idB);
-      renderBinderPage();
-    }
-    function _cleanupTouchDrag() {
-      if (_tGhost) { _tGhost.remove(); _tGhost = null; }
-      pageContent.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
-        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
-      _tDragId = null; _tStarted = false;
-    }
-
-    pageContent.addEventListener('touchstart', e => {
-      const card = e.target.closest('.binder-pg-card[data-id]');
-      if (!card || e.target.closest('button')) return;
-      _tDragId = card.dataset.id;
-      _tStarted = false;
-      _tStartX = e.touches[0].clientX;
-      _tStartY = e.touches[0].clientY;
-    }, { passive: true });
-
-    pageContent.addEventListener('touchmove', e => {
-      if (!_tDragId) return;
-      const t = e.touches[0];
-      const dx = t.clientX - _tStartX, dy = t.clientY - _tStartY;
-
-      if (!_tStarted) {
-        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
-        _tStarted = true;
-        const src = pageContent.querySelector(`.binder-pg-card[data-id="${CSS.escape(_tDragId)}"]`);
-        if (src) {
-          src.classList.add('binder-pg-dragging');
-          // Build a scaled-down ghost that follows the finger
-          _tGhost = src.cloneNode(true);
-          const rect = src.getBoundingClientRect();
-          _tGhost.style.cssText = `position:fixed;z-index:9999;pointer-events:none;`
-            + `width:${rect.width}px;border-radius:8px;`
-            + `box-shadow:0 8px 24px rgba(0,0,0,0.5);opacity:0.88;`
-            + `transform:scale(1.04) rotate(-1.5deg);transition:none;`;
-          document.body.appendChild(_tGhost);
-        }
-      }
-
-      e.preventDefault(); // suppress scroll only once drag confirmed
-
-      if (_tGhost) {
-        _tGhost.style.left = (t.clientX - (_tGhost.offsetWidth / 2)) + 'px';
-        _tGhost.style.top  = (t.clientY - 40) + 'px';
-      }
-
-      // Find the card under the finger (hide ghost first so it doesn't intercept)
-      if (_tGhost) _tGhost.style.visibility = 'hidden';
-      const el = document.elementFromPoint(t.clientX, t.clientY);
-      if (_tGhost) _tGhost.style.visibility = '';
-
-      const dropCard = el?.closest('.binder-pg-card[data-id]');
-      pageContent.querySelectorAll('.binder-pg-drop-target')
-        .forEach(x => x.classList.remove('binder-pg-drop-target'));
-      if (dropCard && dropCard.dataset.id !== _tDragId) {
-        dropCard.classList.add('binder-pg-drop-target');
-      }
-    }, { passive: false });
-
-    const _onTouchEnd = e => {
-      if (!_tDragId || !_tStarted) { _tDragId = null; return; }
-      const dragId = _tDragId; // capture before _cleanupTouchDrag nulls it
-      const t = e.changedTouches[0];
-      if (_tGhost) _tGhost.style.visibility = 'hidden';
-      const el = document.elementFromPoint(t.clientX, t.clientY);
-      const dropId = el?.closest('.binder-pg-card[data-id]')?.dataset.id;
-      _cleanupTouchDrag();
-      if (dropId && dropId !== dragId) _triggerBinderPair(dragId, dropId);
-    };
-    pageContent.addEventListener('touchend',    _onTouchEnd);
-    pageContent.addEventListener('touchcancel', _cleanupTouchDrag);
-  }
-
-  // ── Detail panel listeners (set up once) ─────────────────────────────
-  const detailPanel = $('binderDetailPanel');
-  if (detailPanel && !detailPanel._listenerAdded) {
-    detailPanel._listenerAdded = true;
-
-    // All card action buttons inside the detail panel use the same handler
-    detailPanel.addEventListener('click', _handleBinderClick);
-
-    // Swipe down on the header to dismiss (mobile bottom sheet)
-    {
-      const hdr = detailPanel.querySelector('.binder-detail-header');
-      let sy = 0, dy = 0, dragging = false;
-      if (hdr) {
-        hdr.addEventListener('touchstart', e => {
-          sy = e.touches[0].clientY; dy = 0; dragging = true;
-          detailPanel.style.transition = 'none';
-        }, { passive: true });
-        hdr.addEventListener('touchmove', e => {
-          if (!dragging) return;
-          dy = Math.max(0, e.touches[0].clientY - sy);
-          detailPanel.style.transform = dy > 0 ? `translateY(${dy}px)` : '';
-        }, { passive: true });
-        const end = () => {
-          if (!dragging) return;
-          dragging = false;
-          detailPanel.style.transition = '';
-          detailPanel.style.transform = '';
-          if (dy > 90) closeBinderDetail();
-        };
-        hdr.addEventListener('touchend', end);
-        hdr.addEventListener('touchcancel', end);
-      }
-    }
-
-    // Desktop drag-to-pair inside the detail panel
-    let _detailDragId = null;
-    detailPanel.addEventListener('dragstart', e => {
-      const card = e.target.closest('.binder-pg-card[data-id]');
-      if (!card) return;
-      _detailDragId = card.dataset.id;
-      e.dataTransfer.effectAllowed = 'link';
-      card.classList.add('binder-pg-dragging');
-    });
-    detailPanel.addEventListener('dragend', () => {
-      _detailDragId = null;
-      detailPanel.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
-        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
-    });
-    detailPanel.addEventListener('dragover', e => {
-      const card = e.target.closest('.binder-pg-card[data-id]');
-      if (!card || !_detailDragId || card.dataset.id === _detailDragId) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'link';
-      detailPanel.querySelectorAll('.binder-pg-drop-target')
-        .forEach(el => el.classList.remove('binder-pg-drop-target'));
-      card.classList.add('binder-pg-drop-target');
-    });
-    detailPanel.addEventListener('dragleave', e => {
-      const card = e.target.closest('.binder-pg-card[data-id]');
-      if (card) card.classList.remove('binder-pg-drop-target');
-    });
-    detailPanel.addEventListener('drop', e => {
-      const dropCard = e.target.closest('.binder-pg-card[data-id]');
-      if (!dropCard || !_detailDragId || dropCard.dataset.id === _detailDragId) return;
-      e.preventDefault();
-      const dragId = _detailDragId;
-      _detailDragId = null;
-      detailPanel.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
-        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
-      _triggerBinderPair(dragId, dropCard.dataset.id);
-    });
-
-    // Touch drag-to-pair inside the detail panel (iOS/iPadOS)
-    let _dtDragId = null, _dtGhost = null, _dtStarted = false;
-    let _dtStartX = 0, _dtStartY = 0;
-    const DETAIL_DRAG_THRESHOLD = 10;
-    const detailBody = $('binderDetailBody');
-
-    function _cleanupDetailTouchDrag() {
-      if (_dtGhost) { _dtGhost.remove(); _dtGhost = null; }
-      detailPanel.querySelectorAll('.binder-pg-dragging, .binder-pg-drop-target')
-        .forEach(el => el.classList.remove('binder-pg-dragging', 'binder-pg-drop-target'));
-      _dtDragId = null; _dtStarted = false;
-    }
-
-    detailPanel.addEventListener('touchstart', e => {
-      const card = e.target.closest('.binder-pg-card[data-id]');
-      if (!card || e.target.closest('button')) return;
-      _dtDragId = card.dataset.id;
-      _dtStarted = false;
-      _dtStartX = e.touches[0].clientX;
-      _dtStartY = e.touches[0].clientY;
-    }, { passive: true });
-
-    detailPanel.addEventListener('touchmove', e => {
-      if (!_dtDragId) return;
-      const t = e.touches[0];
-      const dx = t.clientX - _dtStartX, dy = t.clientY - _dtStartY;
-      if (!_dtStarted) {
-        if (Math.abs(dx) < DETAIL_DRAG_THRESHOLD && Math.abs(dy) < DETAIL_DRAG_THRESHOLD) return;
-        _dtStarted = true;
-        const src = detailPanel.querySelector(`.binder-pg-card[data-id="${CSS.escape(_dtDragId)}"]`);
-        if (src) {
-          src.classList.add('binder-pg-dragging');
-          _dtGhost = src.cloneNode(true);
-          const rect = src.getBoundingClientRect();
-          _dtGhost.style.cssText = `position:fixed;z-index:9999;pointer-events:none;`
-            + `width:${rect.width}px;border-radius:8px;`
-            + `box-shadow:0 8px 24px rgba(0,0,0,0.5);opacity:0.88;`
-            + `transform:scale(1.04) rotate(-1.5deg);transition:none;`;
-          document.body.appendChild(_dtGhost);
-        }
-      }
-      e.preventDefault();
-      if (_dtGhost) {
-        _dtGhost.style.left = (t.clientX - (_dtGhost.offsetWidth / 2)) + 'px';
-        _dtGhost.style.top  = (t.clientY - 40) + 'px';
-      }
-      if (_dtGhost) _dtGhost.style.visibility = 'hidden';
-      const el = document.elementFromPoint(t.clientX, t.clientY);
-      if (_dtGhost) _dtGhost.style.visibility = '';
-      const dropCard = el?.closest('.binder-pg-card[data-id]');
-      detailPanel.querySelectorAll('.binder-pg-drop-target')
-        .forEach(x => x.classList.remove('binder-pg-drop-target'));
-      if (dropCard && dropCard.dataset.id !== _dtDragId) {
-        dropCard.classList.add('binder-pg-drop-target');
-      }
-    }, { passive: false });
-
-    const _onDetailTouchEnd = e => {
-      if (!_dtDragId || !_dtStarted) { _dtDragId = null; return; }
-      const dragId = _dtDragId;
-      const t = e.changedTouches[0];
-      if (_dtGhost) _dtGhost.style.visibility = 'hidden';
-      const el = document.elementFromPoint(t.clientX, t.clientY);
-      const dropId = el?.closest('.binder-pg-card[data-id]')?.dataset.id;
-      _cleanupDetailTouchDrag();
-      if (dropId && dropId !== dragId) _triggerBinderPair(dragId, dropId);
-    };
-    detailPanel.addEventListener('touchend',    _onDetailTouchEnd);
-    detailPanel.addEventListener('touchcancel', _cleanupDetailTouchDrag);
-  }
-
-  // Close button and overlay
-  $('binderDetailBack')?.addEventListener('click', closeBinderDetail);
-  $('binderDetailClose')?.addEventListener('click', closeBinderDetail);
-  $('binderDetailOverlay')?.addEventListener('click', closeBinderDetail);
-
-  $('binderDetailSplit')?.addEventListener('click', () => {
-    const species = $('binderDetailSplit')?.dataset.species;
-    if (!species) return;
-    _splitBinderGroup(species);
-  });
-
-  $('binderDetailPriority')?.addEventListener('click', () => {
-    const species = $('binderDetailPriority')?.dataset.species;
-    if (!species) return;
-    toggleBinderPriority(species);
-    const btn = $('binderDetailPriority');
-    if (btn) {
-      btn.classList.toggle('active', isBinderPriority(species));
-      btn.setAttribute('title', isBinderPriority(species)
-        ? 'Remove priority — click to deprioritise'
-        : 'Mark as priority — boosts in standouts and recommendations');
-    }
-    renderBinderPage();
-  });
-
-  // Escape key closes the panel
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && $('binderDetailPanel')?.classList.contains('open')) {
-      closeBinderDetail();
-    }
-  });
-
-  renderFullArtBinder();
-}
-
-function toggleCardInFullArtBinder(id) {
-  const card = id ? getCardById(id) : selectedCard;
-  if (!card) return;
-  const idx = fullArtBinder.findIndex(b => b.id === card.i);
-  if (idx >= 0) {
-    fullArtBinder.splice(idx, 1);
-  } else {
-    const currentUSD = getCurrentPrice(card);
-    const currentGBP = usdToGbp(currentUSD);
-    fullArtBinder.push({
-      id: card.i,
-      name: card.n,
-      set: card.s,
-      lang: card.lang || 'EN',
-      img: getCardImg(card),
-      addedDate: new Date().toISOString(),
-      addedPriceGBP: currentGBP,
-      owned: false,
-    });
-  }
-  saveFullArtBinder();
-  renderFullArtBinder();
-  renderBinderPage();
-  updateFullArtBinderButton();
-}
-
-function updateFullArtBinderButton() {
-  const btn = $('addBinderBtn');
-  if (!btn || !selectedCard) return;
-  const inList = fullArtBinder.some(b => b.id === selectedCard.i);
-  btn.classList.toggle('in-binder', inList);
-  btn.title = inList ? 'Remove from Full Art Binder Project' : 'Add to Full Art Binder Project Wishlist';
-}
-
-function saveFullArtBinder() {
-  localStorage.setItem('pkm-fullart-binder-v1', JSON.stringify(fullArtBinder));
-}
-
-// ── ETB Sets / Hit Binder ────────────────────────────────────────────────
-const ETB_SETS_KEY = 'pkm-etb-sets-v1';
-function loadEtbSets() { try { return JSON.parse(localStorage.getItem(ETB_SETS_KEY) || '{}'); } catch { return {}; } }
-function saveEtbSets(obj) { localStorage.setItem(ETB_SETS_KEY, JSON.stringify(obj)); }
-let _etbSets = loadEtbSets();
-
-// ── Binder priority ─────────────────────────────────────────────────────
-const BINDER_PRIORITY_KEY = 'pkm-binder-priority-v1';
-function loadBinderPriority() {
-  try { return new Set(JSON.parse(localStorage.getItem(BINDER_PRIORITY_KEY) || '[]')); }
-  catch { return new Set(); }
-}
-function saveBinderPriority(set) {
-  localStorage.setItem(BINDER_PRIORITY_KEY, JSON.stringify([...set]));
-}
-let _binderPriority = loadBinderPriority();
-function isBinderPriority(species) { return _binderPriority.has(species); }
-function toggleBinderPriority(species) {
-  if (_binderPriority.has(species)) _binderPriority.delete(species);
-  else _binderPriority.add(species);
-  saveBinderPriority(_binderPriority);
-}
-
-// ── Binder slot status ─────────────────────────────────────────────────
-// Each slot is one of three states, cycled by the Got it / Need it button:
-//   'need'    — empty slot, no copy at all (highest priority)
-//   'upgrade' — holds a placeholder copy, hunting a better one (lower priority)
-//   'owned'   — final copy in the slot, done
-// Stored as two booleans so older clients that only read `owned` degrade
-// gracefully (an upgrade slot just shows as Need it there).
-function binderStatusOf(b) {
-  // Merge the old 'owned' and 'upgrade' states — both mean "have an existing
-  // copy, targeting this listed card as the upgrade." 'need' means no copy yet.
-  return (b.owned || b.upgrade) ? 'have' : 'need';
-}
-function binderCycleStatus(b) {
-  const has = b.owned || b.upgrade;
-  b.owned = !has;
-  b.upgrade = false;
-}
-function binderStatusBtn(b, extraCls) {
-  const has = binderStatusOf(b) === 'have';
-  const label = has ? 'Have one' : 'Need it';
-  return `<button class="${extraCls} binder-owned-toggle binder-st-${has ? 'have' : 'need'}" data-id="${b.id}"
-    title="${has ? 'I have an existing copy — targeting this for upgrade' : 'Not yet acquired — tap to mark as owned'}">${label}</button>`;
-}
-
-// ── Binder sort order (Pokédex number / priority / A–Z) ────────────────
-const BINDER_SORT_KEY = 'pkm-binder-sort-v1';
-function binderGetSort() {
-  try {
-    const v = localStorage.getItem(BINDER_SORT_KEY);
-    if (v === 'az' || v === 'prio' || v === 'price' || v === 'all-asc' || v === 'all-desc') return v;
-  } catch (e) {}
-  return 'dex';
-}
 
 // Normalise a species name for POKEDEX_NUM lookup. Must stay identical to
 // the normaliser used to generate data/pokedex-db.js.
@@ -8618,47 +7141,6 @@ function dexNumOf(cardName) {
   return num;
 }
 
-function renderFullArtBinder() {
-  const list = $('binderList');
-  const countEl = $('binderCount');
-  const totalEl = $('binderTotal');
-  if (!list) return;
-
-  if (fullArtBinder.length === 0) {
-    list.innerHTML = '<div class="portfolio-empty">No cards yet. Open a card and tap the binder icon to add it.</div>';
-    if (countEl) countEl.style.display = 'none';
-    if (totalEl) totalEl.textContent = '0 cards';
-    return;
-  }
-
-  const haveOneCount = fullArtBinder.filter(b => b.owned || b.upgrade).length;
-  if (countEl) { countEl.textContent = fullArtBinder.length; countEl.style.display = 'flex'; }
-  if (totalEl) totalEl.textContent = `${haveOneCount}/${fullArtBinder.length} have one`;
-
-  const items = fullArtBinder.map(b => {
-    const currentCard = getCardById(b.id);
-    const cached = getCachedPrice(b.id);
-    const currentUSD = cached
-      ? (cached.pcUngraded || cached.market || cached.mid || (currentCard ? currentCard.p : 0))
-      : (currentCard ? currentCard.p : 0);
-    const currentGBP = usdToGbp(currentUSD);
-    return `
-      <div class="binder-item ${b.owned ? 'binder-owned' : ''}" data-id="${b.id}">
-        ${b.img ? `<img class="wishlist-item-img" src="${_hiresUrl(b.img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="wishlist-item-img"></div>'}
-        <div class="wishlist-item-info">
-          <div class="wishlist-item-name">${esc(b.name)}</div>
-          <div class="wishlist-item-meta"><span>${esc(b.set)}</span> <span class="lang-pill">${b.lang === 'JP' ? '\u{1F1EF}\u{1F1F5} JP' : '\u{1F1EC}\u{1F1E7} EN'}</span></div>
-        </div>
-        <div class="binder-right">
-          <div class="wishlist-current">£${currentGBP.toFixed(2)}</div>
-          ${binderStatusBtn(b, '')}
-        </div>
-        <button class="wishlist-remove binder-remove" data-id="${b.id}" title="Remove">✕</button>
-      </div>
-    `;
-  });
-  list.innerHTML = items.join('');
-}
 
 // Extract the species name from a card name (Gen 1/2 edge cases handled).
 // Lives at module level so it can be called from event handlers as well as renderBinderPage.
@@ -8673,162 +7155,6 @@ function speciesOf(name) {
 }
 
 // ── Module-level binder helpers (used by both renderBinderPage and detail panel) ──
-
-function _binderItemGBP(b) {
-  const card = getCardById(b.id);
-  // Prefer a live price fetched today (since last 6AM GMT); fall back to the
-  // static database price (card.p) which is always present and requires no fetch.
-  const cached = getCachedPrice(b.id);
-  const liveUSD = cached && (cached.pcUngraded || cached.market || cached.mid);
-  const usd = liveUSD || (card ? card.p : 0);
-  return usdToGbp(usd || 0);
-}
-
-function _binderPairItems(items) {
-  const pairs = [];
-  const used = new Set();
-  for (const a of items) {
-    if (used.has(a.id)) continue;
-    const manualId = binderPairings[a.id];
-    if (!manualId) continue;
-    const b = items.find(x => x.id === manualId && !used.has(x.id));
-    if (!b) continue;
-    const aIsEN = (a.lang || 'EN') !== 'JP';
-    pairs.push({ en: aIsEN ? a : b, jp: aIsEN ? b : a, manual: true });
-    used.add(a.id); used.add(b.id);
-  }
-  const enItems = items.filter(b => !used.has(b.id) && (b.lang || 'EN') !== 'JP');
-  const jpItems = items.filter(b => !used.has(b.id) && b.lang === 'JP');
-  const usedEN = new Set(), usedJP = new Set();
-  for (const en of enItems) {
-    const enKey = counterpartByCard.get(en.id);
-    let jp = null;
-    if (enKey) {
-      for (const j of jpItems) {
-        if (usedJP.has(j.id)) continue;
-        if (counterpartByCard.get(j.id) === enKey) { jp = j; usedJP.add(j.id); break; }
-      }
-    }
-    if (!jp && jpItems.length === 1 && !usedJP.has(jpItems[0].id) && enItems.length === 1) {
-      jp = jpItems[0]; usedJP.add(jpItems[0].id);
-    }
-    pairs.push({ en, jp });
-    usedEN.add(en.id);
-  }
-  for (const j of jpItems) {
-    if (!usedJP.has(j.id)) pairs.push({ en: null, jp: j });
-  }
-  return pairs;
-}
-
-// Build the simple list-view body HTML shown inside the detail panel.
-// One <details> per pair/solo, with EN and JP as labeled rows.
-function _buildBinderPanelBody(items, setBuckets) {
-  const pairs = _binderPairItems(items);
-  let html = '';
-
-  for (const pair of pairs) {
-    const enB = pair.en, jpB = pair.jp;
-    const enGBP = enB ? _binderItemGBP(enB) : 0;
-    const jpGBP = jpB ? _binderItemGBP(jpB) : 0;
-
-    // Summary label: card name + set (from first card)
-    const first = enB || jpB;
-    const setLabel = esc(first.set);
-    const cardLabel = esc(first.name.split(' ').slice(0, 3).join(' '));
-
-    // EN/JP price labels in the summary
-    const enPriceStr = enGBP > 0 ? `£${enGBP.toFixed(2)}` : '—';
-    const jpPriceStr = jpGBP > 0 ? `£${jpGBP.toFixed(2)}` : '—';
-    const sumPrices = (enB ? `<span class="bdl-sp en">EN ${enPriceStr}</span>` : '') +
-                      (jpB ? `<span class="bdl-sp jp">JP ${jpPriceStr}</span>` : '');
-
-    // Verdict
-    let verdictHtml = '';
-    if (enB && jpB && enGBP > 0 && jpGBP > 0) {
-      const diff = ((jpGBP - enGBP) / enGBP) * 100;
-      const abs = Math.abs(diff).toFixed(0);
-      let msg, cls;
-      if (diff < -25)       { msg = `JP is ${abs}% cheaper — strong case for Japanese`; cls = 'verdict-jp-strong'; }
-      else if (diff < -10)  { msg = `JP is ${abs}% cheaper — worth considering`; cls = 'verdict-jp-mild'; }
-      else if (diff > 25)   { msg = `EN is ${abs}% cheaper — considerably better value`; cls = 'verdict-en-strong'; }
-      else if (diff > 10)   { msg = `EN is ${abs}% cheaper — slight advantage`; cls = 'verdict-en-mild'; }
-      else                  { msg = `Within ${abs}% of each other`; cls = 'verdict-neutral'; }
-      verdictHtml = `<div class="binder-verdict ${cls} bdl-verdict"><span class="binder-verdict-dot"></span>${msg}</div>`;
-    }
-
-    // Unlink button
-    const unpairBtn = (pair.manual && enB && jpB)
-      ? `<button class="binder-pg-unpair bdl-unpair" data-id-a="${esc(enB.id)}" data-id-b="${esc(jpB.id)}">⛓ Unlink</button>`
-      : '';
-
-    // Multi-buy hint
-    let multiBuyHtml = '';
-    const checkedSets = new Set();
-    for (const b of [enB, jpB].filter(Boolean)) {
-      if (checkedSets.has(b.set)) continue;
-      checkedSets.add(b.set);
-      const bucket = (setBuckets || {})[b.set] || [];
-      const others = bucket.filter(id => id !== b.id && id !== (b === enB ? jpB?.id : enB?.id));
-      if (others.length >= 1) {
-        multiBuyHtml = `<div class="binder-multibuy bdl-multibuy">📦 ${others.length + 1} cards from <strong>${esc(b.set)}</strong> — ask for multi-buy discount</div>`;
-        break;
-      }
-    }
-
-    // Card rows
-    function cardRow(b, gbp, lang) {
-      if (!b) return '';
-      const liveCard = cardData?.cards?.find(c => c.i === b.id);
-      const imgSrc = liveCard ? _hiresUrl(getCardImg(liveCard)) : (b.img ? _hiresUrl(b.img) : null);
-      const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
-      const st = binderStatusOf(b);
-      const completeBtn = st === 'have'
-        ? `<button class="binder-pg-complete bdl-complete-btn" data-id="${b.id}" title="Got the upgrade — remove from binder">✓ Got the upgrade</button>` : '';
-      return `
-        <div class="bdl-row bdl-row-${lang}" data-id="${b.id}">
-          <span class="bdl-lang ${lang}">${lang.toUpperCase()}</span>
-          ${imgSrc ? `<img class="bdl-thumb" src="${imgSrc}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="bdl-thumb bdl-thumb-ph"></div>'}
-          <div class="bdl-info">
-            <div class="bdl-name">${esc(b.name)}</div>
-            <div class="bdl-set">${esc(b.set)}</div>
-          </div>
-          <div class="bdl-price-col">
-            <div class="bdl-price">${priceStr}</div>
-          </div>
-          <div class="bdl-acts">
-            ${binderStatusBtn(b, 'binder-pg-owned bdl-status-btn')}
-            <button class="binder-pg-remove bdl-remove-btn" data-id="${b.id}" title="Remove from binder">✕</button>
-            <button class="bdl-view-btn" data-id="${b.id}" title="View card analysis">↗</button>
-            <button class="bdl-move-btn" data-id="${b.id}" title="Move to a different species group">↪</button>
-          </div>
-          <div class="bdl-move-editor" style="display:none" data-id="${b.id}">
-            <input class="bdl-move-input" list="bdl-move-list-${b.id}" placeholder="Type species name…" autocomplete="off" spellcheck="false">
-            <datalist id="bdl-move-list-${b.id}">${_binderReorgGroups().map(g => `<option value="${esc(g)}">`).join('')}</datalist>
-            <button class="bdl-move-confirm" data-id="${b.id}">Move</button>
-            <button class="bdl-move-cancel" data-id="${b.id}">Cancel</button>
-          </div>
-          ${completeBtn}
-        </div>`;
-    }
-
-    html += `
-      <details class="bdl-pair" open>
-        <summary class="bdl-sum">
-          <svg class="bdl-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          <span class="bdl-sum-label">${cardLabel} · ${setLabel}</span>
-          <div class="bdl-sum-prices">${sumPrices}</div>
-        </summary>
-        <div class="bdl-body">
-          ${cardRow(enB, enGBP, 'en')}
-          ${cardRow(jpB, jpGBP, 'jp')}
-          ${verdictHtml}${unpairBtn}${multiBuyHtml}
-        </div>
-      </details>`;
-  }
-
-  return html || '<p class="bdl-empty">No cards in this group.</p>';
-}
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -8848,1199 +7174,9 @@ function _buildBinderPanelBody(items, setBuckets) {
 // registry so those slot in without touching the rest.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const BINDER_PAGES_KEY = 'pkm-binder-pages-v1';   // synced: these are decisions
-
-// These are art pages. Illustration Rares and Special Illustration Rares only —
-// the theme picks the subject, the print style is not up for grabs. SIRs are
-// the more elaborate print, so they anchor the centre and corners and IRs fill
-// the edges: that is the whole balance rule, stated so it can be argued with.
-const BP_ART_TIERS = new Set(['IR', 'SIR']);
-let _binderPages = [];
-try { _binderPages = JSON.parse(localStorage.getItem(BINDER_PAGES_KEY) || '[]'); } catch { _binderPages = []; }
-function _binderPagesSave() { try { localStorage.setItem(BINDER_PAGES_KEY, JSON.stringify(_binderPages)); } catch {} }
-
-let _bpLast = null;   // the page currently on screen, before it is saved
-
-const BP_ERAS = {
-  wotc: { label: 'WOTC (1999–2003)',          test: y => y >= 1999 && y <= 2003 },
-  ex:   { label: 'EX era (2003–2007)',         test: y => y >= 2003 && y <= 2007 },
-  dppt: { label: 'Diamond & Pearl / Platinum', test: y => y >= 2007 && y <= 2010 },
-  bwxy: { label: 'Black & White / XY',         test: y => y >= 2011 && y <= 2016 },
-  sm:   { label: 'Sun & Moon',                 test: y => y >= 2017 && y <= 2019 },
-  swsh: { label: 'Sword & Shield',             test: y => y >= 2020 && y <= 2022 },
-  sv:   { label: 'Scarlet & Violet on',        test: y => y >= 2023 },
-};
-
-function _bpSetYear(sc) {
-  const y = parseInt((setsData?.[sc]?.releaseDate || '').slice(0, 4), 10);
-  return isFinite(y) ? y : 0;
-}
-
-// Theme registry: label, how to offer suggestions, and how to test a card.
-const BP_THEMES = {
-  species: {
-    label: 'A Pokémon',
-    placeholder: 'e.g. Gengar',
-    suggest: () => {
-      const seen = new Map();
-      for (const c of cardData.cards) {
-        const sp = extractPokemonName(c.n);
-        if (sp && !seen.has(sp)) seen.set(sp, sp.replace(/\b\w/g, m => m.toUpperCase()));
-      }
-      return [...seen.values()].sort().slice(0, 400);
-    },
-    resolve: v => {
-      const want = String(v || '').trim().toLowerCase();
-      if (!want) return null;
-      const dex = (typeof dexNumOf === 'function') ? dexNumOf(want) : null;
-      return { key: want, dex, label: want.replace(/\b\w/g, m => m.toUpperCase()) };
-    },
-    test: (c, t) => {
-      const sp = extractPokemonName(c.n);
-      if (!sp) return false;
-      if (t.dex && typeof dexNumOf === 'function') return dexNumOf(c.n) === t.dex;
-      return sp === t.key || sp.includes(t.key);
-    },
-    // A species page is allowed the same Pokémon nine times — that is the point.
-    allowRepeatSpecies: true,
-  },
-  set: {
-    label: 'A set',
-    placeholder: 'e.g. Team Rocket',
-    suggest: () => Object.values(setsData || {}).map(s => s.name).filter(Boolean).sort(),
-    resolve: v => {
-      const want = String(v || '').trim().toLowerCase();
-      const hit = Object.entries(setsData || {}).find(([, s]) => (s.name || '').toLowerCase() === want)
-        || Object.entries(setsData || {}).find(([, s]) => (s.name || '').toLowerCase().includes(want));
-      return hit ? { key: hit[0], label: hit[1].name } : null;
-    },
-    test: (c, t) => c.sc === t.key,
-    allowRepeatSpecies: false,
-  },
-  connected: {
-    label: 'Connected art',
-    placeholder: 'e.g. 151, Paldean Fates',
-    suggest: () => Object.values(setsData || {}).map(s => s.name).filter(Boolean).sort(),
-    resolve: v => BP_THEMES.set.resolve(v),
-    test: (c, t) => c.sc === t.key,
-    allowRepeatSpecies: false,
-  },
-  era: {
-    label: 'An era',
-    placeholder: 'e.g. WOTC',
-    suggest: () => Object.values(BP_ERAS).map(e => e.label),
-    resolve: v => {
-      const want = String(v || '').trim().toLowerCase();
-      const hit = Object.entries(BP_ERAS).find(([k, e]) => k === want || e.label.toLowerCase().includes(want));
-      return hit ? { key: hit[0], label: hit[1].label } : null;
-    },
-    test: (c, t) => BP_ERAS[t.key].test(_bpSetYear(c.sc)),
-    allowRepeatSpecies: false,
-  },
-};
-
-function _bpOwnedIds() {
-  return new Set((portfolio || []).map(x => x.id || x.i).filter(Boolean));
-}
-function _bpWishIds() {
-  return new Set((wishlist || []).map(x => x.id || x.i || x).filter(Boolean));
-}
-
-// Score a candidate for a page. Ownership dominates, because the page is
-// first a way to arrange what is already here; below that, the same signals
-// the rest of the app trusts.
-function _bpScore(card, ctx) {
-  let s = 0;
-  const owned = ctx.owned.has(card.i), wished = ctx.wish.has(card.i);
-  if (owned) s += 1000;
-  else if (wished) s += 300;
-  let stars = 0;
-  try { stars = getInvestmentStars(card, 5).stars || 0; } catch {}
-  s += stars * 40;
-  try { if (ctx.taste) s += (_tasteMatch(card, ctx.taste).taste || 0) * 60; } catch {}
-  try { const d = _chaseDip(card); if (d && d.steadying) s += 25; } catch {}
-  // Cheap filler is not a feature on a page meant to look like something.
-  const gbp = ctx.priceGBP(card);
-  if (!owned && gbp > 0 && gbp < 3) s -= 30;
-  if (!owned && ctx.budget > 0 && gbp > ctx.budget) s -= 500;   // still listed, never chosen for a gap
-  return s;
-}
-
-// Arrangement. Pockets are numbered left→right, top→bottom, 1-based.
-// 3×3: centre 5; corners 1,3,7,9; edges 2,4,6,8.
-// 4×3: centre 6,7; corners 1,4,9,12; the rest are edges.
-function _bpLayout(size) {
-  if (size === 12) return { cols: 4, centre: [6, 7], corners: [1, 4, 9, 12], edges: [2, 3, 5, 8, 10, 11],
-                            mirrors: [[1, 4], [9, 12], [2, 3], [10, 11], [5, 8], [6, 7]] };
-  return { cols: 3, centre: [5], corners: [1, 3, 7, 9], edges: [2, 4, 6, 8],
-           mirrors: [[1, 3], [7, 9], [4, 6], [2, 8]] };
-}
-
-// Print style for mirror matching. Coarse on purpose: the aim is that the two
-// pockets either side of the centre look like the same *kind* of card.
-function _bpStyle(card) {
-  return cardRarityCode(card) === 'SIR' ? 'sir' : 'ir';
-}
-
-// pins:  { [pocketNumber]: cardId } — that card, in that pocket, always.
-// keeps: [cardId]                    — on the page somewhere; the shuffle may
-//                                      move it but never drop it.
-// A replaced card is a pin: the owner chose it for that pocket.
-function buildBinderPage({ kind, value, size = 9, budgetGBP = 0, seed = 0, pins = {}, keeps = [] }) {
-  const theme = BP_THEMES[kind];
-  if (!theme) return { error: 'Unknown theme.' };
-  const t = theme.resolve(value);
-  if (!t) return { error: `Could not find "${value}" as ${theme.label.toLowerCase()}.` };
-
-  const owned = _bpOwnedIds(), wish = _bpWishIds();
-  let taste = null; try { taste = tasteGetProfile(); } catch {}
-  const fx = usdToGbp(1);
-  const priceGBP = c => (getCurrentPrice(c) || c.p || 0) * fx;
-  const ctx = { owned, wish, taste, budget: budgetGBP, priceGBP };
-
-  // Pool: everything in the theme with a usable price.
-  let pool = cardData.cards.filter(c => c.i && BP_ART_TIERS.has(cardRarityCode(c)) && theme.test(c, t) && priceGBP(c) > 0);
-  if (!pool.length) return { error: `No Illustration Rares or Special Illustration Rares for ${t.label} in the catalogue.` };
-
-  // Owning the Japanese print counts. The theme may be an English set, but a
-  // page is about the picture and the picture is the same card — so a slot
-  // the JP copy fills is not a gap, and the JP copy is what goes in it.
-  const ownedPrintOf = (c) => {
-    if (owned.has(c.i)) return c;
-    try {
-      const cp = findCounterparts(c);
-      const all = [cp?.primary, ...(cp?.counterparts || [])].filter(Boolean);
-      const hit = all.find(x => x && x.i && owned.has(x.i));
-      if (hit) return hit;
-    } catch {}
-    return null;
-  };
-  const itemFor = (c, extra) => {
-    const ownedCopy = ownedPrintOf(c);
-    const shown = ownedCopy || c;
-    return { card: shown, themeCard: c, score: 0, owned: !!ownedCopy, wished: wish.has(c.i) || wish.has(shown.i),
-             gbp: priceGBP(shown), style: _bpStyle(c), viaJP: !!ownedCopy && shown.i !== c.i, ...extra };
-  };
-  const pinItems = {};
-  for (const [n, id] of Object.entries(pins || {})) {
-    const c = getCardById(id);
-    if (c && n >= 1 && n <= size) pinItems[n] = itemFor(c, { pinned: true });
-  }
-  const pinnedIds = new Set(Object.values(pinItems).map(x => x.themeCard.i));
-  const keepIds = new Set((keeps || []).filter(id => !pinnedIds.has(id)));
-
-  pool = pool.map(c => {
-    const ownedCopy = ownedPrintOf(c);
-    const shown = ownedCopy || c;
-    const isOwned = !!ownedCopy;
-    // Score against the theme card, so the JP copy inherits the EN card's
-    // standing rather than being scored as a stranger to the theme.
-    const score = _bpScore(c, { ...ctx, owned: isOwned ? new Set([c.i]) : ctx.owned });
-    return { card: shown, themeCard: c, score, owned: isOwned, wished: wish.has(c.i) || wish.has(shown.i),
-             gbp: priceGBP(shown), style: _bpStyle(c), viaJP: isOwned && shown.i !== c.i };
-  }).sort((a, b) => b.score - a.score);
-
-  // One of each Pokémon unless the theme is that Pokémon.
-  const chosen = [];
-  const seenSpecies = new Set();
-  const seenIds = new Set();
-  const take = (it) => { chosen.push(it); seenIds.add(it.themeCard.i); seenIds.add(it.card.i); seenSpecies.add(extractPokemonName(it.themeCard.n)); };
-  for (const it of Object.values(pinItems)) { seenIds.add(it.themeCard.i); seenIds.add(it.card.i); seenSpecies.add(extractPokemonName(it.themeCard.n)); }
-  const freeSlots = size - Object.keys(pinItems).length;
-  for (const id of keepIds) {
-    if (chosen.length >= freeSlots) break;
-    const c = getCardById(id);
-    if (!c || seenIds.has(c.i)) continue;
-    take(itemFor(c, { kept: true }));
-  }
-  for (const it of pool) {
-    if (chosen.length >= freeSlots) break;
-    if (seenIds.has(it.themeCard.i) || seenIds.has(it.card.i)) continue;
-    const sp = extractPokemonName(it.themeCard.n);
-    if (!theme.allowRepeatSpecies && sp && seenSpecies.has(sp)) continue;
-    if (!it.owned && ctx.budget > 0 && it.gbp > ctx.budget) continue;
-    take(it);
-  }
-  // Shuffle within score bands so "Shuffle" gives a different but still sane spread.
-  if (seed) {
-    let r = seed;
-    const rnd = () => { r = (r * 9301 + 49297) % 233280; return r / 233280; };
-    chosen.sort((a, b) => (b.score - a.score) + (rnd() - 0.5) * 60);
-  }
-
-  // Place. Anchor pockets (centre, then corners) take SIRs first; edges take
-  // IRs first. Either tier fills in for the other when the pool runs short,
-  // so a page never sits empty for want of the "right" print.
-  const L = _bpLayout(size);
-  const slots = new Array(size + 1).fill(null);
-  for (const [n, it] of Object.entries(pinItems)) slots[+n] = it;
-  const sirs = chosen.filter(x => x.style === 'sir'), irs = chosen.filter(x => x.style === 'ir');
-  const next = (prefer) => (prefer === 'sir' ? (sirs.shift() || irs.shift()) : (irs.shift() || sirs.shift())) || null;
-  for (const n of L.centre)  if (!slots[n]) slots[n] = next('sir');
-  for (const n of L.corners) if (!slots[n]) slots[n] = next('sir');
-  for (const n of L.edges)   if (!slots[n]) slots[n] = next('ir');
-
-  // No empty pockets. When the theme runs short, top up — owned art cards
-  // first, since the page is meant to be built around what is here, then the
-  // strongest art cards from sets already on the page so it still reads as one
-  // thing, then whatever scores best. Fillers are marked so the page can say
-  // which pockets stepped outside the theme.
-  {
-    const onPage = new Set(slots.filter(Boolean).flatMap(x => [x.card.i, x.themeCard?.i]).filter(Boolean));
-    const pageSets = new Set(slots.filter(Boolean).map(x => x.themeCard?.sc || x.card.sc));
-    const speciesOnPage = new Set(slots.filter(Boolean).map(x => extractPokemonName(x.themeCard?.n || x.card.n)));
-    const need = () => { let n = 0; for (let i = 1; i <= size; i++) if (!slots[i]) n++; return n; };
-    if (need() > 0) {
-      let fillers = cardData.cards
-        .filter(c => c.i && !onPage.has(c.i) && BP_ART_TIERS.has(cardRarityCode(c)) && priceGBP(c) > 0)
-        .map(c => {
-          const ownedCopy = ownedPrintOf(c);
-          const shown = ownedCopy || c;
-          const sp = extractPokemonName(c.n);
-          let sc = _bpScore(c, { ...ctx, owned: ownedCopy ? new Set([c.i]) : ctx.owned });
-          if (pageSets.has(c.sc)) sc += 150;                       // same set as the page
-          if (!theme.allowRepeatSpecies && sp && speciesOnPage.has(sp)) sc -= 400;
-          return { card: shown, themeCard: c, score: sc, owned: !!ownedCopy, wished: wish.has(c.i),
-                   gbp: priceGBP(shown), style: _bpStyle(c), viaJP: !!ownedCopy && shown.i !== c.i, filler: true };
-        })
-        .filter(x => x.owned || ctx.budget <= 0 || x.gbp <= ctx.budget)
-        .sort((a, b) => b.score - a.score);
-      const fSir = fillers.filter(x => x.style === 'sir'), fIr = fillers.filter(x => x.style === 'ir');
-      const fnext = (prefer) => (prefer === 'sir' ? (fSir.shift() || fIr.shift()) : (fIr.shift() || fSir.shift())) || null;
-      for (const n of L.centre)  if (!slots[n]) slots[n] = fnext('sir');
-      for (const n of L.corners) if (!slots[n]) slots[n] = fnext('sir');
-      for (const n of L.edges)   if (!slots[n]) slots[n] = fnext('ir');
-    }
-  }
-
-  // 3: upgrade options. For each owned pocket, the better version of the same
-  //    Pokémon that is not owned — an IR's SIR, or a stronger SIR from another
-  //    set — so the page can say where a swap would lift it.
-  const _tierRank = st => (st === 'sir' ? 2 : 1);
-  for (let i = 1; i <= size; i++) {
-    const it = slots[i];
-    if (!it || !it.owned) continue;
-    const sp = extractPokemonName(it.themeCard?.n || it.card.n);
-    if (!sp) continue;
-    let curStars = 0; try { curStars = getInvestmentStars(it.themeCard || it.card, 5).stars || 0; } catch {}
-    const best = cardData.cards
-      .filter(c => c.i && c.i !== it.card.i && c.i !== it.themeCard?.i && BP_ART_TIERS.has(cardRarityCode(c))
-                && extractPokemonName(c.n) === sp && !owned.has(c.i) && !ownedPrintOf(c) && priceGBP(c) > 0)
-      .map(c => { let st = 0; try { st = getInvestmentStars(c, 5).stars || 0; } catch {}
-                  return { card: c, gbp: priceGBP(c), style: _bpStyle(c), stars: st }; })
-      .filter(u => _tierRank(u.style) > _tierRank(it.style) || (u.style === it.style && u.stars > curStars))
-      .sort((a, b) => (_tierRank(b.style) - _tierRank(a.style)) || (b.stars - a.stars) || (a.gbp - b.gbp))[0];
-    if (best) it.upgrade = { card: best.card, gbp: best.gbp, style: best.style, stars: best.stars,
-                             reason: _tierRank(best.style) > _tierRank(it.style) ? 'IR → SIR' : `${best.stars}★ over ${curStars}★` };
-  }
-
-  const placed = slots.slice(1).filter(Boolean);
-  const gaps = placed.filter(x => !x.owned);
-  const ownedCount = placed.length - gaps.length;
-  return {
-    kind, value, theme: t, size, cols: L.cols, slots: slots.slice(1),
-    pins: { ...(pins || {}) }, keeps: [...(keeps || [])],
-    fillerCount: placed.filter(x => x.filler).length,
-    upgrades: placed.filter(x => x.upgrade).map(x => ({ from: x, to: x.upgrade })),
-    ownedCount, gapCount: gaps.length, empty: size - placed.length,
-    gapCostGBP: gaps.reduce((a, x) => a + x.gbp, 0),
-    pageValueGBP: placed.reduce((a, x) => a + x.gbp, 0),
-  };
-}
 
 // ---- Binder Pages: rendering + wiring -------------------------------------
 
-
-// ---- Connected art -----------------------------------------------------------
-//
-// Nothing in the catalogue says which illustrations continue into each other,
-// and no external source we use carries it either. What the data can do is
-// narrow the field: a panorama is always consecutive numbers in one set, drawn
-// as one piece, so consecutive IR/SIR runs are the candidates. The art is then
-// shown side by side and a person decides — the one part of this the data
-// cannot do. Confirmed runs are kept and used to lay out pages.
-const CONNECTED_ART_KEY = 'pkm-connected-art-v1';   // synced: confirmed runs
-let _connectedArt = [];
-try { _connectedArt = JSON.parse(localStorage.getItem(CONNECTED_ART_KEY) || '[]'); } catch { _connectedArt = []; }
-function _connectedSave() { try { localStorage.setItem(CONNECTED_ART_KEY, JSON.stringify(_connectedArt)); } catch {} }
-
-// Candidate runs in a set. Consecutive card numbers alone narrow nothing —
-// every set numbers its whole IR block in a row, so 151 came back as one
-// sixteen-card "run". A panorama is one evolution line drawn as one piece, and
-// the catalogue can see that: the cards are consecutive in the set *and*
-// consecutive in the Pokédex. On 151 that splits the block into
-// Bulbasaur→Ivysaur, Charmander→Charmeleon, Squirtle→Wartortle, which are the
-// pairs that actually connect. Lines that skip dex numbers (Pichu→Pikachu, the
-// Eeveelutions) are missed by this rule and need confirming by hand.
-function connectedArtCandidates(setCode) {
-  const art = cardData.cards
-    .filter(c => c.sc === setCode && BP_ART_TIERS.has(cardRarityCode(c)) && Number.isFinite(parseInt(c.cn, 10)))
-    .map(c => ({ card: c, n: parseInt(c.cn, 10), dex: (typeof dexNumOf === 'function' ? dexNumOf(c.n) : null) || 0 }))
-    .sort((a, b) => a.n - b.n);
-  const runs = [];
-  let cur = [];
-  const continues = (prev, it) =>
-    it.n === prev.n + 1 && prev.dex > 0 && it.dex > 0 && it.dex === prev.dex + 1;
-  for (const it of art) {
-    if (cur.length && continues(cur[cur.length - 1], it)) cur.push(it);
-    else { if (cur.length >= 2) runs.push(cur); cur = [it]; }
-  }
-  if (cur.length >= 2) runs.push(cur);
-  const confirmedIds = new Set(_connectedArt.flatMap(r => r.ids));
-  return runs
-    .map(r => ({
-      ids: r.map(x => x.card.i), cards: r.map(x => x.card),
-      set: setCode, len: r.length,
-      confirmed: r.every(x => confirmedIds.has(x.card.i)),
-    }))
-    .sort((a, b) => (b.confirmed - a.confirmed) || (b.len - a.len));
-}
-
-function _connectedIsConfirmed(ids) {
-  const key = ids.join('|');
-  return _connectedArt.some(r => r.ids.join('|') === key);
-}
-function connectedArtConfirm(ids, setCode, name) {
-  if (_connectedIsConfirmed(ids)) return;
-  _connectedArt.push({ id: `ca_${Date.now().toString(36)}`, set: setCode, ids: [...ids], name: name || '', savedAt: Date.now() });
-  _connectedSave();
-}
-function connectedArtForget(ids) {
-  const key = ids.join('|');
-  _connectedArt = _connectedArt.filter(r => r.ids.join('|') !== key);
-  _connectedSave();
-}
-
-// Lay a run onto the page in reading order, then fill what is left from the
-// set's other art cards through the normal builder so the page is complete.
-function buildConnectedPage({ setCode, run, size = 9, budgetGBP = 0 }) {
-  const setLabel = setsData?.[setCode]?.name || setCode;
-  const base = buildBinderPage({ kind: 'set', value: setLabel, size, budgetGBP });
-  if (base.error) return base;
-  const owned = _bpOwnedIds(), wish = _bpWishIds();
-  const fx = usdToGbp(1);
-  const mk = c => ({ card: c, owned: owned.has(c.i), wished: wish.has(c.i),
-                     gbp: (getCurrentPrice(c) || c.p || 0) * fx, style: _bpStyle(c), score: 0, connected: true });
-  const slots = new Array(size).fill(null);
-  // The run goes across a row. A 3-wide run sits on the middle row of a 3×3
-  // page; a 2-wide run starts at the middle row's left pocket.
-  const cols = base.cols;
-  const rowStart = cols * Math.floor((size / cols) / 2);   // middle row
-  run.slice(0, cols).forEach((c, i) => { slots[rowStart + i] = mk(c); });
-  const used = new Set(run.map(c => c.i));
-  const rest = base.slots.filter(x => x && !used.has(x.card.i));
-  for (let i = 0; i < size && rest.length; i++) if (!slots[i]) slots[i] = rest.shift();
-  const placed = slots.filter(Boolean);
-  const gaps = placed.filter(x => !x.owned);
-  return {
-    ...base, kind: 'connected', theme: { key: setCode, label: `${setLabel} · connected art` },
-    slots, ownedCount: placed.length - gaps.length, gapCount: gaps.length,
-    empty: size - placed.length,
-    gapCostGBP: gaps.reduce((a, x) => a + x.gbp, 0),
-    pageValueGBP: placed.reduce((a, x) => a + x.gbp, 0),
-  };
-}
-
-function renderConnectedCandidates(setCode) {
-  const host = document.getElementById('bpConnected');
-  if (!host) return;
-  const runs = connectedArtCandidates(setCode);
-  const setLabel = setsData?.[setCode]?.name || setCode;
-  if (!runs.length) {
-    host.innerHTML = `<div class="bp-log">No consecutive Illustration Rare runs in ${esc(setLabel)} — nothing here can connect.</div>`;
-    return;
-  }
-  host.innerHTML = `<div class="bp-gaps-hd">Runs in ${esc(setLabel)} that could connect — look at the art, then confirm the ones that do</div>` +
-    runs.map((r, idx) => `
-      <div class="bp-run${r.confirmed ? ' bp-run-confirmed' : ''}" data-run="${idx}">
-        <div class="bp-run-strip">
-          ${r.cards.map(c => { const img = _hiresUrl(getCardImg(c)); return `
-            <div class="bp-run-card" title="${esc(c.n)} #${esc(c.cn)}">
-              ${img ? `<img src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : ''}
-              <span class="bp-run-n">#${esc(c.cn)}</span>
-            </div>`; }).join('')}
-        </div>
-        <div class="bp-run-meta">
-          <span class="bp-run-names">${r.cards.map(c => esc(c.n)).join(' → ')}</span>
-          <span class="bp-run-badge">${r.confirmed ? 'Confirmed' : 'Candidate'}</span>
-          <button type="button" class="bp-btn" data-run-use="${idx}">Use on page</button>
-          ${r.confirmed
-            ? `<button type="button" class="bp-btn bp-btn-ghost" data-run-forget="${idx}">Unconfirm</button>`
-            : `<button type="button" class="bp-btn bp-btn-ghost" data-run-confirm="${idx}">Confirm it connects</button>`}
-        </div>
-      </div>`).join('');
-  host._runs = runs;
-}
-
-function _bpPocketHtml(it, n, cols) {
-  if (!it) return `<div class="bp-pocket bp-pocket-empty" data-slot="${n}"><span class="bp-pocket-n">${n}</span><span class="bp-pocket-empty-lbl">empty</span>
-    <div class="bp-ctl"><button type="button" class="bp-ctl-btn" data-bp-replace="${n}">Choose</button></div></div>`;
-  const c = it.card;
-  const img = _hiresUrl(getCardImg(c));
-  const cls = (it.owned ? 'bp-owned' : it.wished ? 'bp-wished' : 'bp-gap') + (it.filler ? ' bp-filler' : '') + (it.upgrade ? ' bp-has-upgrade' : '')
-            + (it.pinned ? ' bp-pinned' : it.kept ? ' bp-kept' : '');
-  const tag = it.owned ? (it.viaJP ? 'Owned · JP' : 'Owned') : it.wished ? 'Wishlist' : `Buy · ${fmtGBPDirect(it.gbp)}`;
-  const lockLbl = it.pinned ? 'In slot' : it.kept ? 'On page' : '';
-  return `<div class="bp-pocket ${cls} bp-style-${it.style}" data-id="${esc(c.i)}" data-slot="${n}" title="${esc(c.n)} · ${esc(c.s || '')}">
-    ${img ? `<img class="bp-img" src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="bp-img"></div>'}
-    <span class="bp-pocket-n">${n}</span>
-    <span class="bp-tier">${it.style.toUpperCase()}</span>
-    ${lockLbl ? `<span class="bp-lock-lbl">${lockLbl}</span>` : ''}
-    <span class="bp-tag">${tag}</span>
-    <div class="bp-cap"><span class="bp-cap-name">${esc(c.n)}</span><span class="bp-cap-set">${esc(c.s || '')}</span></div>
-    <div class="bp-ctl">
-      <button type="button" class="bp-ctl-btn" data-bp-replace="${n}" title="Choose the card for this pocket yourself">Replace</button>
-      <button type="button" class="bp-ctl-btn${it.kept ? ' is-on' : ''}" data-bp-keep="${n}" title="Keep this card on the page — the shuffle may move it, never drop it">Lock</button>
-      <button type="button" class="bp-ctl-btn${it.pinned ? ' is-on' : ''}" data-bp-pin="${n}" title="Keep this card in this exact pocket">Lock in slot</button>
-    </div>
-  </div>`;
-}
-
-// ─── Ripping packs against buying the singles ──────────────────────────────
-//
-// The question this answers: I still need n of a set's major hits — how many
-// packs can I open before the next pack is worth less than it costs?
-//
-// §8's net-of-fees rate is the hinge. A hit you still need is worth what you
-// would otherwise have paid for it; a dupe is worth only what you can sell it
-// for. So every pack's value falls as the holes fill, and the pack price is a
-// fixed line it eventually drops under. Where it starts under that line, the
-// answer is zero packs and the singles are simply cheaper — which is the usual
-// answer for sealed modern product and is reported as such, not massaged.
-const RIP_NET_RATE = 0.87;            // ~13% marketplace fees, per §8
-const RIP_ART_TIERS = ['IR', 'SIR'];  // the tiers a binder page is made of
-const RIP_WALK_CAP = 20000;           // only a backstop; the walk ends on the floor
-
-// setsData carries, per rarity: count, pullRate, pullOdds, avgRaw, avgPsa10.
-// avgRaw is USD and a tier-wide average — stated in the UI, because the
-// specific cards still missing are rarely the tier's average card.
-function _ripTiers(sc) {
-  const s = (setsData || {})[sc];
-  if (!s || !s.rarities) return [];
-  return Object.entries(s.rarities)
-    .filter(([, r]) => r && r.pullRate > 0 && r.avgRaw > 0)
-    .map(([code, r]) => ({
-      code,
-      count: r.count || 1,
-      pullRate: r.pullRate,
-      pullOdds: r.pullOdds || `1/${Math.round(1 / r.pullRate)}`,
-      usd: r.avgRaw,
-      gbp: usdToGbp(r.avgRaw),
-      art: RIP_ART_TIERS.includes(code),
-    }))
-    .sort((a, b) => b.gbp - a.gbp);
-}
-
-// Expected pack value in GBP given how many of each art tier are still wanted.
-// `need` is { IR: n, SIR: n }; everything else in the pack is resale.
-function _ripPackEV(tiers, need, netRate) {
-  let wanted = 0, resale = 0;
-  for (const t of tiers) {
-    const take = t.pullRate * t.gbp;
-    if (!t.art) { resale += take * netRate; continue; }
-    const p = Math.max(0, Math.min(1, (need[t.code] || 0) / t.count));
-    wanted += take * p;                    // fills a hole: full value
-    resale += take * (1 - p) * netRate;    // a dupe: sell it
-  }
-  return { ev: wanted + resale, wanted, resale };
-}
-
-// Chance a single pack yields one of the cards still wanted.
-function _ripHitChance(tiers, need) {
-  return tiers.reduce((a, t) => a + (t.art
-    ? t.pullRate * Math.max(0, Math.min(1, (need[t.code] || 0) / t.count)) : 0), 0);
-}
-
-function packRipPlan({ setCode, need = {}, packCostGBP = 0, netRate = RIP_NET_RATE }) {
-  const s = (setsData || {})[setCode];
-  if (!s) return { ok: false, why: 'Unknown set.' };
-  const tiers = _ripTiers(setCode);
-  const art = tiers.filter(t => t.art);
-  if (!art.length) {
-    return { ok: false, setName: s.name,
-             why: `No measured pull rates for ${s.name}. Pack odds are only recorded for the Scarlet & Violet sets onwards, so there is nothing here to compute an honest EV from.` };
-  }
-  const cost = packCostGBP > 0 ? packCostGBP
-    : (s.packCost > 0 ? usdToGbp(s.packCost) : getDefaultPackCostGBP(setCode, 'en'));
-
-  // Cap each tier's need at what the set actually prints.
-  const need0 = {};
-  for (const t of art) need0[t.code] = Math.max(0, Math.min(t.count, Math.round(need[t.code] || 0)));
-  const totalNeed = Object.values(need0).reduce((a, b) => a + b, 0);
-
-  const evNow = _ripPackEV(tiers, need0, netRate);
-  const evCeil = _ripPackEV(tiers, Object.fromEntries(art.map(t => [t.code, t.count])), netRate).ev;
-  const evFloor = _ripPackEV(tiers, {}, netRate).ev;
-
-  // Walk packs, retiring holes as they are expected to be filled, and stop the
-  // moment the next pack is worth less than it costs. Pack value decays from
-  // evNow towards evFloor as the holes fill, so the walk only terminates when
-  // the floor is genuinely under the pack price. When it is not, there is no
-  // maximum to report: the packs pay for themselves on resale alone and the
-  // honest answer is "no limit", not the iteration cap.
-  const unbounded = evFloor > cost;
-  const n = { ...need0 };
-  let packs = 0, gained = 0;
-  if (!unbounded) {
-    while (packs < RIP_WALK_CAP && _ripPackEV(tiers, n, netRate).ev > cost) {
-      packs++;
-      for (const t of art) {
-        const g = t.pullRate * ((n[t.code] || 0) / t.count);
-        n[t.code] = Math.max(0, (n[t.code] || 0) - g);
-        gained += g;
-      }
-    }
-  }
-
-  // Cost of a wanted hit by ripping, net of everything else the packs return.
-  const hitChance = _ripHitChance(tiers, need0);
-  const netPerPack = cost - evNow.resale;
-  const costPerHit = hitChance > 0 ? netPerPack / hitChance : Infinity;
-  // What the same hit costs over the counter: the wanted tiers, weighted by
-  // how many of each are missing.
-  const buyPerHit = totalNeed > 0
-    ? art.reduce((a, t) => a + t.gbp * (need0[t.code] || 0), 0) / totalNeed : 0;
-  const singlesCost = art.reduce((a, t) => a + t.gbp * (need0[t.code] || 0), 0);
-
-  return {
-    ok: true, setCode, setName: s.name, tiers, art, need: need0, totalNeed,
-    packCostGBP: cost, evNowGBP: evNow.ev, evWantedGBP: evNow.wanted,
-    evResaleGBP: evNow.resale, evCeilGBP: evCeil, evFloorGBP: evFloor,
-    unbounded, maxPacks: unbounded ? Infinity : packs,
-    spendGBP: unbounded ? 0 : packs * cost, hitsExpected: gained,
-    hitChance, costPerHitGBP: costPerHit, buyPerHitGBP: buyPerHit,
-    singlesCostGBP: singlesCost,
-    breakEvenPackGBP: evNow.ev,   // the pack price at which this stops being a loss
-    netRate,
-  };
-}
-
-// Pack price for the rip panel. Read from the synced per-set override when the
-// owner has set one on the Sets page, otherwise the set's own figure. Edits
-// here are remembered device-locally on purpose: the key is deliberately
-// unprefixed so changing a price while weighing up a page can never write into
-// the synced collection.
-const RIP_PACKCOST_KEY = 'binder-rip-packcost-v1';
-function _ripPackCostStore() {
-  try { return JSON.parse(localStorage.getItem(RIP_PACKCOST_KEY) || '{}') || {}; } catch { return {}; }
-}
-function ripPackCostFor(sc) {
-  const mine = _ripPackCostStore()[sc];
-  if (mine > 0) return mine;
-  const ov = (typeof getPackCostOverride === 'function') ? getPackCostOverride(sc) : null;
-  if (ov > 0) return ov;
-  const s = (setsData || {})[sc];
-  if (s && s.packCost > 0) return usdToGbp(s.packCost);
-  return getDefaultPackCostGBP(sc, 'en');
-}
-function setRipPackCost(sc, gbp) {
-  const all = _ripPackCostStore();
-  if (gbp > 0) all[sc] = gbp; else delete all[sc];
-  try { localStorage.setItem(RIP_PACKCOST_KEY, JSON.stringify(all)); } catch {}
-}
-
-// How many of a set's art cards are still missing, by tier. A Japanese copy
-// counts as owned, the same rule the pockets use.
-function ripNeedFromCollection(sc) {
-  const owned = _bpOwnedIds();
-  const need = {};
-  for (const code of RIP_ART_TIERS) need[code] = 0;
-  for (const c of (cardData.cards || [])) {
-    if (c.sc !== sc) continue;
-    const rc = cardRarityCode(c);
-    if (!RIP_ART_TIERS.includes(rc)) continue;
-    let have = owned.has(c.i);
-    if (!have) {
-      // findCounterparts returns { primary, counterparts }, not an array.
-      try {
-        const cp = findCounterparts(c);
-        have = [cp?.primary, ...(cp?.counterparts || [])]
-          .some(x => x && x.i && owned.has(x.i));
-      } catch {}
-    }
-    if (!have) need[rc]++;
-  }
-  return need;
-}
-
-// Typed needed-counts, per set, for the session. Not persisted: the collection
-// is the real answer and it moves.
-let _ripNeedEdit = {};
-let _ripSC = null;
-// What the owner typed, falling back to the gaps the collection actually has.
-function _ripNeedOf(sc) {
-  return { ...ripNeedFromCollection(sc), ...(_ripNeedEdit[sc] || {}) };
-}
-
-// The set behind the page, for the themes that have one.
-function _ripSetCodeOf(res) {
-  return (res && (res.kind === 'set' || res.kind === 'connected')) ? (res.theme && res.theme.key) : null;
-}
-
-function renderRipPanel(res) {
-  const host = document.getElementById('bpRip');
-  if (!host) return;
-  const sc = _ripSetCodeOf(res);
-  if (!sc) { host.style.display = 'none'; host.innerHTML = ''; _ripSC = null; return; }
-  host.style.display = '';
-  _ripSC = sc;
-
-  const plan0 = packRipPlan({ setCode: sc, need: _ripNeedOf(sc), packCostGBP: ripPackCostFor(sc) });
-  const head = `<div class="bp-gaps-hd">Rip or buy — how many packs before the EV turns</div>`;
-  if (!plan0.ok) { host.innerHTML = head + `<div class="rip-none">${esc(plan0.why)}</div>`; return; }
-
-  const need = _ripNeedOf(sc);
-  // The controls are painted once per set so typing never loses focus; only
-  // the output below them is repainted as the numbers change.
-  const fields = plan0.art.map(t => `
-    <label class="rip-need">
-      <span>${t.code} still needed</span>
-      <input type="number" class="bp-input bp-input-num rip-need-in" data-rip-need="${t.code}"
-             min="0" max="${t.count}" step="1" value="${need[t.code] || 0}">
-      <span class="rip-of">of ${t.count}</span>
-    </label>`).join('');
-
-  host.innerHTML = head + `
-    <div class="rip-wrap">
-      <div class="rip-controls">
-        ${fields}
-        <label class="rip-need">
-          <span>Pack price</span>
-          <input type="number" class="bp-input bp-input-num rip-cost-in" id="bpRipCost"
-                 min="0" step="0.25" value="${ripPackCostFor(sc).toFixed(2)}">
-          <span class="rip-of">each</span>
-        </label>
-      </div>
-      <div class="rip-out" id="bpRipOut"></div>
-    </div>`;
-  _ripPaint();
-}
-
-// Repaint just the verdict, the EV line and the tier table.
-function _ripPaint() {
-  const out = document.getElementById('bpRipOut');
-  const sc = _ripSC;
-  if (!out || !sc) return;
-  const need = _ripNeedOf(sc);
-  const plan = packRipPlan({ setCode: sc, need, packCostGBP: ripPackCostFor(sc) });
-  if (!plan.ok) { out.innerHTML = `<div class="rip-none">${esc(plan.why)}</div>`; return; }
-
-  const rows = plan.tiers.map(t => `
-    <tr${t.art ? '' : ' class="rip-row-dim"'}>
-      <td>${t.code}${t.art ? '' : ' <span class="rip-sell">resale</span>'}</td>
-      <td>${t.count}</td>
-      <td>${esc(t.pullOdds)}</td>
-      <td>${fmtGBPDirect(t.gbp)}</td>
-      <td>${t.art ? (need[t.code] || 0) : '—'}</td>
-    </tr>`).join('');
-
-  let verdict, tone;
-  if (plan.unbounded) {
-    tone = 'warn';
-    verdict = `At ${fmtGBPDirect(plan.packCostGBP)} a pack, resale alone comes to ${fmtGBPDirect(plan.evFloorGBP)}
-      — more than the pack costs even once every hole is filled, so there is no point where this turns negative.
-      That usually means the pack price is out of date rather than that the set is free money.`;
-  } else if (plan.maxPacks === 0) {
-    tone = 'bad';
-    verdict = `<strong>Open none.</strong> A pack is worth ${fmtGBPDirect(plan.evNowGBP)} to you right now against
-      ${fmtGBPDirect(plan.packCostGBP)} to buy one, so the singles are cheaper from the very first pack.
-      ${plan.totalNeed ? `Ripping works out at ${fmtGBPDirect(plan.costPerHitGBP)} per card you actually need,
-      against ${fmtGBPDirect(plan.buyPerHitGBP)} to buy one outright. All ${plan.totalNeed} of them:
-      <strong>${fmtGBPDirect(plan.singlesCostGBP)}</strong>.` : `Nothing is missing, so every hit would be a dupe.`}`;
-  } else {
-    tone = 'good';
-    verdict = `<strong>Open at most ${plan.maxPacks} ${plan.maxPacks === 1 ? 'pack' : 'packs'}</strong>
-      (${fmtGBPDirect(plan.spendGBP)}). That is expected to fill ${plan.hitsExpected.toFixed(1)} of your
-      ${plan.totalNeed} holes; past there a pack is worth less than it costs, because what is left to pull is
-      mostly dupes you would be selling at ${Math.round(plan.netRate * 100)}% rather than holes you are filling.
-      Ripping runs at ${fmtGBPDirect(plan.costPerHitGBP)} per needed card against
-      ${fmtGBPDirect(plan.buyPerHitGBP)} to buy one.`;
-  }
-
-  out.innerHTML = `
-    <div class="rip-verdict rip-${tone}">${verdict}</div>
-    <div class="rip-ev">
-      <span>Pack worth to you now <strong>${fmtGBPDirect(plan.evNowGBP)}</strong></span>
-      <span>Once complete <strong>${fmtGBPDirect(plan.evFloorGBP)}</strong></span>
-      <span>Breaks even at a pack price of <strong>${fmtGBPDirect(plan.breakEvenPackGBP)}</strong></span>
-    </div>
-    <table class="rip-table"><thead><tr>
-      <th>Tier</th><th>In set</th><th>Odds</th><th>Avg raw</th><th>Needed</th>
-    </tr></thead><tbody>${rows}</tbody></table>
-    <div class="rip-caveat">Odds and values are ${esc(plan.setName)}'s own recorded figures. Avg raw is the tier
-      average, so the specific cards you are missing may be worth well more or less than it — a set's headline
-      chase sits far above its tier mean. Raw prices only; grading is not assumed.</div>`;
-}
-
-function renderBinderPageResult(res) {
-  const out = document.getElementById('bpResult');
-  const grid = document.getElementById('bpGrid');
-  const gaps = document.getElementById('bpGaps');
-  const title = document.getElementById('bpResultTitle');
-  const stats = document.getElementById('bpResultStats');
-  if (!out || !grid) return;
-  if (!res || res.error) {
-    out.style.display = 'none';
-    renderRipPanel(null);   // or the previous set's numbers stay in the DOM
-    _bpSay(res ? res.error : 'Nothing to show.', 'err');
-    return;
-  }
-  _bpLast = res;
-  out.style.display = '';
-  const kindLbl = BP_THEMES[res.kind]?.label || res.kind;
-  if (title) title.textContent = `${res.theme.label} · ${kindLbl.toLowerCase()} · ${res.size} pockets`;
-  if (stats) {
-    const bits = [`${res.ownedCount} owned`];
-    if (res.gapCount) bits.push(`${res.gapCount} to buy · ${fmtGBPDirect(res.gapCostGBP)}`);
-    if (res.fillerCount) bits.push(`${res.fillerCount} from outside the theme to fill the page`);
-    if (res.empty) bits.push(`${res.empty} empty — no art cards left in the catalogue at all`);
-    bits.push(`page value ${fmtGBPDirect(res.pageValueGBP)}`);
-    stats.textContent = bits.join(' · ');
-  }
-  grid.style.setProperty('--bp-cols', res.cols);
-  grid.innerHTML = res.slots.map((it, i) => _bpPocketHtml(it, i + 1, res.cols)).join('');
-
-  const toBuy = res.slots.filter(x => x && !x.owned);
-  if (gaps) {
-    gaps.innerHTML = toBuy.length ? `<div class="bp-gaps-hd">To complete this page</div>` + toBuy.map(it => {
-      const c = it.card;
-      let why = [];
-      try { const st = getInvestmentStars(c, 5); if (st.stars >= 4) why.push(`${st.stars}★`); } catch {}
-      try { const d = _chaseDip(c); if (d) why.push(d.steadying ? `down ${Math.abs(d.pct90).toFixed(0)}% and steady` : `down ${Math.abs(d.pct90).toFixed(0)}%, still falling`); } catch {}
-      if (it.wished) why.push('on your wishlist');
-      return `<div class="bp-gap-row" data-id="${esc(c.i)}">
-        <span class="bp-gap-tier bp-style-${it.style}">${it.style.toUpperCase()}</span>
-        <span class="bp-gap-name">${esc(c.n)} <span class="bp-gap-set">${esc(c.s || '')}</span>${it.filler ? ' <span class="bp-gap-set">· outside theme</span>' : ''}</span>
-        <span class="bp-gap-why">${esc(why.join(' · '))}</span>
-        <span class="bp-gap-price">${fmtGBPDirect(it.gbp)}</span>
-      </div>`;
-    }).join('') : '';
-
-    // Upgrades: where a pocket you already own could be lifted.
-    const ups = res.upgrades || [];
-    if (ups.length) {
-      gaps.innerHTML += `<div class="bp-gaps-hd">Upgrade options</div>` + ups.map(({ from, to }) => `
-        <div class="bp-gap-row bp-up-row" data-id="${esc(to.card.i)}">
-          <span class="bp-gap-tier bp-style-${to.style}">${to.style.toUpperCase()}</span>
-          <span class="bp-gap-name">${esc(to.card.n)} <span class="bp-gap-set">${esc(to.card.s || '')}</span>
-            <span class="bp-up-from">replaces your ${esc(from.card.n)} · ${esc(from.card.s || '')}</span></span>
-          <span class="bp-gap-why">${esc(to.reason)}</span>
-          <span class="bp-gap-price">${fmtGBPDirect(to.gbp)}</span>
-        </div>`).join('');
-    }
-  }
-  renderRipPanel(res);
-}
-
-function _bpSay(msg, kind) {
-  const el = document.getElementById('bpLog');
-  if (!el) return;
-  el.textContent = msg || '';
-  el.className = 'bp-log' + (kind ? ' bp-log-' + kind : '');
-}
-
-function renderBinderSaved() {
-  const host = document.getElementById('bpSaved');
-  if (!host) return;
-  if (!_binderPages.length) { host.innerHTML = ''; return; }
-  host.innerHTML = `<div class="bp-saved-hd">Saved pages</div>` + _binderPages.map(p => {
-    const owned = _bpOwnedIds();
-    const n = (p.slots || []).filter(Boolean).length;
-    const have = (p.slots || []).filter(id => id && owned.has(id)).length;
-    return `<div class="bp-saved-row" data-bp="${esc(p.id)}">
-      <span class="bp-saved-name">${esc(p.name)}</span>
-      <span class="bp-saved-meta">${have}/${n} owned · ${p.size} pockets</span>
-      <button type="button" class="bp-btn bp-btn-ghost" data-bp-open="${esc(p.id)}">Open</button>
-      <button type="button" class="bp-btn bp-btn-ghost" data-bp-del="${esc(p.id)}" title="Delete">✕</button>
-    </div>`;
-  }).join('');
-}
-
-function renderBinderPage() {
-  renderBinderSaved();
-  const kindSel = document.getElementById('bpThemeKind');
-  if (kindSel && !kindSel._bpFilled) _bpFillSuggestions();
-}
-
-function _bpFillSuggestions() {
-  const kindSel = document.getElementById('bpThemeKind');
-  const list = document.getElementById('bpThemeList');
-  const input = document.getElementById('bpThemeValue');
-  if (!kindSel || !list) return;
-  const theme = BP_THEMES[kindSel.value];
-  if (!theme) return;
-  let opts = [];
-  try { opts = theme.suggest() || []; } catch {}
-  list.innerHTML = opts.slice(0, 400).map(v => `<option value="${esc(v)}">`).join('');
-  if (input) { input.placeholder = theme.placeholder || ''; input.setAttribute('list', 'bpThemeList'); }
-  kindSel._bpFilled = true;
-}
-
-// Constraints for the page on screen. Reset when a new theme is built, kept
-// across shuffles, saved with the page.
-let _bpPins = {};    // pocket → cardId
-let _bpKeeps = [];   // cardIds
-
-// The replace picker: a search over IR/SIR cards, name or set, that drops the
-// chosen card into one pocket as a pin.
-function _bpOpenPicker(slot) {
-  let host = document.getElementById('bpPicker');
-  if (!host) {
-    host = document.createElement('div');
-    host.id = 'bpPicker'; host.className = 'bp-picker';
-    document.getElementById('bpResult')?.appendChild(host);
-  }
-  host.style.display = '';
-  host.dataset.slot = slot;
-  host.innerHTML = `
-    <div class="bp-picker-hd">
-      <span>Choose the card for pocket ${slot}</span>
-      <button type="button" class="bp-btn bp-btn-ghost" id="bpPickerClose">Cancel</button>
-    </div>
-    <input id="bpPickerQ" class="bp-input" type="text" autocomplete="off" spellcheck="false" placeholder="Search Illustration Rares by name or set">
-    <div class="bp-picker-list" id="bpPickerList"><div class="bp-log">Type to search.</div></div>`;
-  const q = document.getElementById('bpPickerQ');
-  const list = document.getElementById('bpPickerList');
-  const owned = _bpOwnedIds();
-  const fx = usdToGbp(1);
-  const render = () => {
-    const term = (q.value || '').trim().toLowerCase();
-    if (term.length < 2) { list.innerHTML = '<div class="bp-log">Type to search.</div>'; return; }
-    const hits = cardData.cards
-      .filter(c => c.i && BP_ART_TIERS.has(cardRarityCode(c)) &&
-        ((c.n || '').toLowerCase().includes(term) || (c.s || '').toLowerCase().includes(term)))
-      .sort((a, b) => (owned.has(b.i) - owned.has(a.i)) || (b.p - a.p))
-      .slice(0, 40);
-    list.innerHTML = hits.length ? hits.map(c => {
-      const img = _hiresUrl(getCardImg(c));
-      const gbp = (getCurrentPrice(c) || c.p || 0) * fx;
-      return `<button type="button" class="bp-pick" data-pick="${esc(c.i)}">
-        ${img ? `<img src="${esc(img)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<span class="bp-pick-noimg"></span>'}
-        <span class="bp-pick-main"><span class="bp-pick-name">${esc(c.n)}</span><span class="bp-pick-set">${esc(c.s || '')} · ${cardRarityCode(c)}${c.lang === 'JP' ? ' · JP' : ''}</span></span>
-        <span class="bp-pick-right">${owned.has(c.i) ? '<span class="bp-pick-owned">Owned</span>' : fmtGBPDirect(gbp)}</span>
-      </button>`; }).join('') : '<div class="bp-log">Nothing matches.</div>';
-  };
-  q.addEventListener('input', render);
-  setTimeout(() => q.focus(), 30);
-  document.getElementById('bpPickerClose').onclick = () => { host.style.display = 'none'; };
-  list.onclick = e => {
-    const b = e.target.closest('[data-pick]');
-    if (!b) return;
-    _bpPins[slot] = b.dataset.pick;
-    // A card pinned to a pocket cannot also be a floating keep.
-    _bpKeeps = _bpKeeps.filter(id => id !== b.dataset.pick);
-    host.style.display = 'none';
-    _bpRebuildKeepingConstraints();
-  };
-}
-
-let _bpRunFn = null;   // set by setupBinderPages so the picker can rebuild
-function _bpRebuildKeepingConstraints() { if (_bpRunFn) _bpRunFn(_bpSeed ? _bpSeed + 1 : 0); }
-
-let _bpSeed = 0;
-function setupBinderPages() {
-  const kindSel = document.getElementById('bpThemeKind');
-  const input   = document.getElementById('bpThemeValue');
-  const sizeSel = document.getElementById('bpSize');
-  const budget  = document.getElementById('bpBudget');
-  const build   = document.getElementById('bpBuild');
-  const save    = document.getElementById('bpSave');
-  const shuffle = document.getElementById('bpRebuild');
-  const grid    = document.getElementById('bpGrid');
-  const gaps    = document.getElementById('bpGaps');
-  const saved   = document.getElementById('bpSaved');
-  if (!kindSel || !build) return;
-
-  kindSel.addEventListener('change', () => { kindSel._bpFilled = false; _bpFillSuggestions(); });
-  _bpFillSuggestions();
-
-  const conn = document.getElementById('bpConnected');
-  const run = (seed) => {
-    _bpSay('');
-    document.getElementById('bpPicker')?.style && (document.getElementById('bpPicker').style.display = 'none');
-    if (kindSel.value === 'connected') {
-      const t = BP_THEMES.set.resolve(input.value);
-      if (!t) { _bpSay(`Could not find a set called "${input.value}".`, 'err'); return; }
-      document.getElementById('bpResult').style.display = 'none';
-      if (conn) { conn.style.display = ''; renderConnectedCandidates(t.key); }
-      return;
-    }
-    if (conn) conn.style.display = 'none';
-    const res = buildBinderPage({
-      kind: kindSel.value, value: input.value,
-      size: parseInt(sizeSel.value, 10) || 9,
-      budgetGBP: parseFloat(budget.value) || 0,
-      seed, pins: _bpPins, keeps: _bpKeeps,
-    });
-    renderBinderPageResult(res);
-  };
-  _bpRunFn = run;
-  // A new build is a new page: constraints belong to the page they were set on.
-  const fresh = () => { _bpPins = {}; _bpKeeps = []; _bpSeed = 0; run(0); };
-  build.addEventListener('click', fresh);
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); fresh(); } });
-  shuffle?.addEventListener('click', () => { _bpSeed = (_bpSeed + 1) % 1000; run(_bpSeed + 1); });
-
-  save?.addEventListener('click', () => {
-    if (!_bpLast) return;
-    const name = `${_bpLast.theme.label} · ${BP_THEMES[_bpLast.kind]?.label || ''}`.trim();
-    _binderPages.push({
-      id: `bp_${Date.now().toString(36)}`, name,
-      kind: _bpLast.kind, value: _bpLast.value, size: _bpLast.size,
-      slots: _bpLast.slots.map(x => x ? x.card.i : null),
-      pins: { ..._bpPins }, keeps: [..._bpKeeps],
-      savedAt: Date.now(),
-    });
-    _binderPagesSave();
-    _bpSay('Saved. It will re-check what you own each time you open it.', 'ok');
-    renderBinderSaved();
-  });
-
-  // Connected art: use a run, confirm it, or forget it.
-  conn?.addEventListener('click', e => {
-    const runs = conn._runs || [];
-    const use = e.target.closest('[data-run-use]');
-    const ok  = e.target.closest('[data-run-confirm]');
-    const no  = e.target.closest('[data-run-forget]');
-    const t = BP_THEMES.set.resolve(input.value);
-    if (!t) return;
-    if (ok)  { const r = runs[+ok.dataset.runConfirm]; if (r) { connectedArtConfirm(r.ids, t.key, r.cards.map(c => c.n).join(' → ')); renderConnectedCandidates(t.key); _bpSay('Confirmed — kept for future pages.', 'ok'); } return; }
-    if (no)  { const r = runs[+no.dataset.runForget];  if (r) { connectedArtForget(r.ids); renderConnectedCandidates(t.key); } return; }
-    if (use) {
-      const r = runs[+use.dataset.runUse]; if (!r) return;
-      const res = buildConnectedPage({ setCode: t.key, run: r.cards, size: parseInt(sizeSel.value, 10) || 9, budgetGBP: parseFloat(budget.value) || 0 });
-      renderBinderPageResult(res);
-      document.getElementById('bpResult')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  });
-
-  // Pocket controls: replace, lock to page, lock in slot. These are handled
-  // before the open-card tap so a control press never navigates away.
-  grid?.addEventListener('click', e => {
-    const rep = e.target.closest('[data-bp-replace]');
-    const keep = e.target.closest('[data-bp-keep]');
-    const pin = e.target.closest('[data-bp-pin]');
-    if (!rep && !keep && !pin) return;
-    e.preventDefault(); e.stopPropagation();
-    const pocket = e.target.closest('.bp-pocket');
-    const id = pocket?.dataset.id;
-    if (rep) { _bpOpenPicker(+rep.dataset.bpReplace); return; }
-    if (!id) return;
-    if (pin) {
-      const n = +pin.dataset.bpPin;
-      if (_bpPins[n] === id) delete _bpPins[n];          // toggle off
-      else { for (const k of Object.keys(_bpPins)) if (_bpPins[k] === id) delete _bpPins[k]; _bpPins[n] = id; _bpKeeps = _bpKeeps.filter(x => x !== id); }
-    } else if (keep) {
-      if (_bpKeeps.includes(id)) _bpKeeps = _bpKeeps.filter(x => x !== id);   // toggle off
-      else { for (const k of Object.keys(_bpPins)) if (_bpPins[k] === id) delete _bpPins[k]; _bpKeeps.push(id); }
-    }
-    // Re-render in place with the same arrangement, so a lock does not shuffle.
-    if (_bpLast) { const res = buildBinderPage({ kind: _bpLast.kind, value: _bpLast.value, size: _bpLast.size,
-      budgetGBP: parseFloat(budget.value) || 0, seed: _bpSeed ? _bpSeed + 1 : 0, pins: _bpPins, keeps: _bpKeeps }); renderBinderPageResult(res); }
-  }, true);
-
-  // Tap a pocket or a gap row to open the card.
-  const openFrom = e => {
-    if (e.target.closest('.bp-ctl')) return;
-    const el = e.target.closest('[data-id]');
-    if (!el) return;
-    try { go('predict'); selectCard(el.dataset.id); } catch {}
-  };
-  grid?.addEventListener('click', openFrom);
-  gaps?.addEventListener('click', openFrom);
-
-  // Rip panel: typing a needed count or a pack price repaints the verdict only.
-  const rip = document.getElementById('bpRip');
-  rip?.addEventListener('input', e => {
-    const n = e.target.closest('[data-rip-need]');
-    const c = e.target.closest('#bpRipCost');
-    if (!n && !c && !_ripSC) return;
-    if (n) {
-      const tier = n.dataset.ripNeed;
-      const max = parseInt(n.max, 10) || 0;
-      const raw = parseInt(n.value, 10) || 0;
-      const v = Math.max(0, Math.min(max, raw));
-      // A set cannot owe more cards than it printed. Correct the box as well as
-      // the model, or it shows a number the verdict is not using.
-      if (raw > max) n.value = String(max);
-      _ripNeedEdit[_ripSC] = { ...(_ripNeedEdit[_ripSC] || {}), [tier]: v };
-    } else if (c) {
-      setRipPackCost(_ripSC, parseFloat(c.value) || 0);
-    }
-    _ripPaint();
-  });
-
-  saved?.addEventListener('click', e => {
-    const del = e.target.closest('[data-bp-del]');
-    if (del) {
-      _binderPages = _binderPages.filter(p => p.id !== del.dataset.bpDel);
-      _binderPagesSave(); renderBinderSaved(); return;
-    }
-    const open = e.target.closest('[data-bp-open]');
-    if (open) {
-      const p = _binderPages.find(x => x.id === open.dataset.bpOpen);
-      if (!p) return;
-      kindSel.value = p.kind; kindSel._bpFilled = false; _bpFillSuggestions();
-      input.value = p.value; sizeSel.value = String(p.size);
-      // Rebuild rather than replay the saved ids: ownership and prices move,
-      // and the page should say what is true now. The locks come back with it.
-      _bpPins = { ...(p.pins || {}) }; _bpKeeps = [...(p.keeps || [])];
-      _bpSeed = 0; run(0);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  });
-}
-
-function openBinderDetail(species) {
-  _binderDetailSpecies = species;
-  if (!_binderBodyCache[species]) renderBinderPage();
-  _openBinderDetailRender(species);
-  const panel = $('binderDetailPanel');
-  const overlay = $('binderDetailOverlay');
-  if (panel) panel.classList.add('open');
-  if (overlay) overlay.classList.add('open');
-  if (panel) {
-    panel.scrollTop = 0;
-    const body = panel.querySelector('.binder-detail-body');
-    if (body) body.scrollTop = 0;
-  }
-  document.body.style.overflow = 'hidden'; // lock background scroll (iOS)
-}
-
-function _openBinderDetailRender(species) {
-  const c = _binderBodyCache[species];
-  if (!c) return;
-  const { dexNum, tier, haveInGroup, total, bodyHtml, inlineActions, hasOverride } = c;
-  const numStr = isFinite(dexNum) ? '#' + String(dexNum).padStart(4, '0') : '';
-  const el = id => document.getElementById(id);
-  if (el('binderDetailNum'))    el('binderDetailNum').textContent    = numStr;
-  if (el('binderDetailName'))   el('binderDetailName').textContent   = species;
-  if (el('binderDetailSub'))    el('binderDetailSub').textContent    = `${total} card${total !== 1 ? 's' : ''} · ${haveInGroup}/${total} have one`;
-  const statusEl = el('binderDetailStatus');
-  if (statusEl) {
-    statusEl.className   = `binder-detail-status ${tier === 0 ? 'need' : 'have'}`;
-    statusEl.textContent = tier === 0 ? 'Need' : 'Have one';
-  }
-  const sprite = el('binderDetailSprite');
-  if (sprite) {
-    sprite.onerror = () => { sprite.style.display = 'none'; };
-    if (isFinite(dexNum)) {
-      sprite.style.display = '';
-      sprite.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dexNum}.png`;
-    } else {
-      sprite.style.display = 'none';
-    }
-  }
-  if (el('binderDetailActions')) el('binderDetailActions').innerHTML = inlineActions || '';
-  if (el('binderDetailBody'))    el('binderDetailBody').innerHTML    = _buildBinderPanelBody(c.items || [], c.setBuckets);
-  // Keep rename / priority buttons' data-species in sync
-  const renameBtn = el('binderDetailRename');
-  if (renameBtn) renameBtn.dataset.species = species;
-  const priorityBtn = el('binderDetailPriority');
-  if (priorityBtn) {
-    priorityBtn.dataset.species = species;
-    const isPrio = isBinderPriority(species);
-    priorityBtn.classList.toggle('active', isPrio);
-    priorityBtn.setAttribute('title', isPrio
-      ? 'Remove priority — click to deprioritise'
-      : 'Mark as priority — boosts in standouts and recommendations');
-  }
-  // Show Split button only when the group contains more than one distinct Pokémon name
-  const splitBtn = el('binderDetailSplit');
-  if (splitBtn) {
-    splitBtn.dataset.species = species;
-    const distinctNames = new Set((c.items || []).map(b => _binderSplitName(b.name)));
-    splitBtn.style.display = distinctNames.size > 1 ? '' : 'none';
-  }
-}
-
-// Normalise a binder card name to its Pokémon component — strips trainer prefixes
-// like "N's", "Team Rocket's", "(JP)" suffix, and similar so cards can be auto-split.
-function _binderSplitName(name) {
-  if (!name) return 'Unknown';
-  return name.replace(/\s*\(JP\)\s*$/i, '').trim();
-}
-
-// Split the current species group by distinct Pokémon name — each name becomes its own group.
-function _splitBinderGroup(species) {
-  const items = fullArtBinder.filter(b => (binderSpeciesOverrides[b.id] || speciesOf(b.name)) === species);
-  if (!items.length) return;
-  for (const b of items) {
-    binderSpeciesOverrides[b.id] = _binderSplitName(b.name);
-  }
-  saveBinderSpeciesOverrides();
-  closeBinderDetail();
-  renderBinderPage();
-}
-
-function closeBinderDetail() {
-  _binderDetailSpecies = null;
-  $('binderDetailPanel')?.classList.remove('open');
-  $('binderDetailOverlay')?.classList.remove('open');
-  document.body.style.overflow = '';
-}
-
-// ── Fetches fresh market prices for all binder cards using 3 concurrent workers.
-// Price cells update in-place as each card arrives; full re-render fires at the end.
-// Collectrics (grading data) is skipped — only PC + TCGPlayer needed for binder prices.
-async function binderFetchAllPrices(btn, { silent = false } = {}) {
-  if (btn.dataset.running === 'true') return;
-  const ids = [...new Set(fullArtBinder.map(b => b.id))];
-  const cards = ids.map(id => getCardById(id)).filter(Boolean);
-  if (!cards.length) return;
-
-  btn.dataset.running = 'true';
-  if (!silent) btn.disabled = true;
-  const total = cards.length;
-  let done = 0;
-  const queue = [...cards];
-  const binderEl = document.getElementById('pageBinder');
-
-  function applyPrice(card, data) {
-    if (!data) return;
-    setCachedPrice(card.i, data);
-    const usd = data.pcUngraded || data.market || data.mid || card.p || 0;
-    const gbp = usdToGbp(usd);
-    const priceStr = gbp > 0 ? `£${gbp.toFixed(2)}` : '—';
-    // Grid detail view
-    document.querySelectorAll(`.binder-pg-card[data-id="${CSS.escape(card.i)}"] .binder-pg-card-price`)
-      .forEach(el => { el.textContent = priceStr; });
-    // Flat paired view
-    document.querySelectorAll(`.bdl-row[data-id="${CSS.escape(card.i)}"] .bdl-price`)
-      .forEach(el => { el.textContent = priceStr; });
-  }
-
-  async function worker() {
-    while (queue.length > 0) {
-      await _priorityFetchDone; // pause while a card's live price is loading
-      // Silent pre-fetch continues regardless of which page is shown.
-      // Manual (non-silent) refresh stops if the user navigates away.
-      if (!silent && binderEl?.style.display === 'none') break;
-      const card = queue.shift();
-      if (!card) break;
-      if (!silent) btn.textContent = `${done}/${total} fetched…`;
-      try {
-        const data = await fetchFreshPriceData(card, { skipCollectrics: true });
-        applyPrice(card, data);
-      } catch (_) {}
-      done++;
-    }
-  }
-
-  // 6 concurrent workers — PC+TCGPlayer now fire in parallel per card so
-  // individual latency is lower; more workers keeps the pipeline full.
-  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
-
-  if (!silent) {
-    btn.textContent = 'Refresh prices';
-    btn.disabled = false;
-  }
-  delete btn.dataset.running;
-  localStorage.setItem(BINDER_REFRESH_KEY, String(Date.now()));
-  renderBinderPage();
-}
-
-const BINDER_REFRESH_KEY = 'pkm-binder-refresh-ts'; // device-local, not synced
 
 // Returns the timestamp (ms) for 6AM UTC today (= 6AM GMT).
 function _last6AMGMT() {
@@ -10078,7 +7214,6 @@ function _allRefreshIds() {
   try { (portfolio     || []).forEach(p => p?.id  && ids.add(p.id));  } catch {}
   try { (wishlist      || []).forEach(w => w?.id  && ids.add(w.id));  } catch {}
   try { (watchlist     || []).forEach(w => w?.id  && ids.add(w.id));  } catch {}
-  try { (fullArtBinder || []).forEach(b => b?.id  && ids.add(b.id));  } catch {}
   try { Object.keys(getPriceCache()).forEach(id => ids.add(id)); } catch {}
   return [...ids].filter(Boolean);
 }
@@ -10104,7 +7239,7 @@ async function _globalSilentRefresh() {
   _globalRefreshRunning = false;
   // Re-render home sections with fresh prices if the user is currently on that page.
   if (document.getElementById('pageHome')?.style.display !== 'none') {
-    try { _renderHomeCollection(); _renderHomeCombinedWishlist(); _renderHomeWatchlist(); } catch {}
+    try { _renderHomeCombinedWishlist(); _renderHomeWatchlist(); } catch {}
   }
 }
 
@@ -12020,277 +9155,9 @@ function collectrPricesFor(data, variant) {
 const PV_HORIZONS = { '1Y': 1, '3Y': 3, '5Y': 5, '10Y': 10 };
 let _pvHorizon = '5Y';
 
-// What a holding is worth today, in GBP, by the same rules the collection uses.
-function _pvHoldingTodayGBP(p, card) {
-  const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(p.id) : null;
-  const v = collectionEntryValue(p, card, cached);
-  let gbp = (v && v.gbp > 0) ? v.gbp : 0;
-  if (!(gbp > 0) && typeof getCurrentPrice === 'function') {
-    const usd = getCurrentPrice(card);
-    if (usd > 0) gbp = usdToGbp(usd);
-  }
-  return gbp;
-}
-
-// Projected collection value at a horizon. A slab grows on its grade's curve;
-// a raw card on the card's own. Anything the model cannot project is carried
-// forward flat rather than dropped — losing it would quietly shrink the
-// collection at longer horizons and read as a forecast of decline.
-function pvForecastGBP(years) {
-  if (typeof portfolio === 'undefined' || !Array.isArray(portfolio)) return 0;
-  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 1;
-  let total = 0;
-  for (const p of portfolio) {
-    const card = (typeof getCardById === 'function') ? getCardById(p.id) : null;
-    if (!card) continue;
-    const copies = p.copies || p.qty || 1;
-    const todayGBP = _pvHoldingTodayGBP(p, card);
-    if (!(todayGBP > 0)) continue;
-    if (years === 0) { total += todayGBP * copies; continue; }
-    const slab = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(p.id) : null;
-    const grade = slab && slab.grade ? slab.grade : null;
-    let projGBP = 0;
-    try {
-      const usdNow = todayGBP / (fx || 1);
-      const usdThen = (typeof projectGradePrice === 'function')
-        ? projectGradePrice(card, grade || 8, usdNow, years) : 0;
-      projGBP = usdThen > 0 ? usdThen * fx : 0;
-    } catch {}
-    total += (projGBP > 0 ? projGBP : todayGBP) * copies;
-  }
-  return total;
-}
-
-// now / 1 / 3 / 5 / 10, so the shape of the curve is visible rather than just
-// its endpoints.
-function pvForecastSeries(maxYears) {
-  const steps = [0, ...[1, 2, 3, 5, 7, 10].filter(y => y <= maxYears)];
-  if (!steps.includes(maxYears)) steps.push(maxYears);
-  const now = Date.now();
-  return [...new Set(steps)].sort((a, b) => a - b).map(y => ({
-    t: now + y * 365 * 86400000,
-    v: pvForecastGBP(y),
-    years: y,
-  })).filter(r => r.v > 0);
-}
 
 let _pvRange = '1M';
-// The home hero: what the collection is worth, how it has moved over the chosen
-// window, and the line behind it. Reuses the same SVG renderer the card charts
-// use so the two cannot diverge in style or in how they scale.
-function renderHomePortfolioValue() {
-  const host = document.getElementById('homePortfolioValue');
-  if (!host) return;
-  const owned = (typeof portfolio !== 'undefined' && Array.isArray(portfolio)) ? portfolio.length : 0;
-  if (!owned) { host.style.display = 'none'; return; }
-  host.style.display = '';
 
-  const years = PV_HORIZONS[_pvHorizon] ?? 5;
-  const today = pvForecastGBP(0);
-  const then  = pvForecastGBP(years);
-  const rows  = pvForecastSeries(years);
-
-  let projHtml;
-  if (today > 0 && then > 0) {
-    const d = then - today, pct = (d / today) * 100;
-    const cls = d > 0 ? 'is-up' : d < 0 ? 'is-down' : 'is-flat';
-    const cagr = years > 0 ? (Math.pow(then / today, 1 / years) - 1) * 100 : 0;
-    projHtml = `<span class="hpv-delta ${cls}">${d >= 0 ? '+' : '\u2212'}${fmtGBPDirect(Math.abs(d))} ` +
-               `(${d >= 0 ? '+' : ''}${pct.toFixed(1)}%)</span> ` +
-               `<span class="hpv-window">projected over ${_pvHorizon} \u00b7 ${cagr.toFixed(1)}%/yr</span>`;
-  } else {
-    projHtml = `<span class="hpv-window">Not enough priced cards to project yet.</span>`;
-  }
-
-  const tabs = Object.keys(PV_HORIZONS).map(r =>
-    `<button type="button" class="hpv-range${r === _pvHorizon ? ' is-on' : ''}" data-pv-horizon="${r}">${r}</button>`).join('');
-  const chart = rows.length >= 2
-    ? _phSvg({ forecast: rows }, { height: 210, fill: true, fx: 1 })
-    : `<div class="hpv-empty">Not enough priced cards to project yet.</div>`;
-
-  host.innerHTML = `
-    <div class="hpv-head">
-      <div>
-        <div class="hpv-label">Collection value \u00b7 projected</div>
-        <div class="hpv-total">${fmtGBPDirect(then > 0 ? then : today)}</div>
-        <div class="hpv-sub">${projHtml}</div>
-      </div>
-      <div class="hpv-count">${fmtGBPDirect(today)} today<br>${owned} card${owned === 1 ? '' : 's'}</div>
-    </div>
-    <div class="hpv-plot">${chart}</div>
-    <div class="hpv-ranges">${tabs}</div>
-    <div class="hpv-foot">Model projection, not a guarantee \u2014 the same per-card forecast the Hold Strategy uses, summed.</div>`;
-}
-
-// Right-rail companions: what the collection is made of, and what leads it.
-function renderHomeHoldings() {
-  const host = document.getElementById('homeHoldings');
-  if (!host) return;
-  const owned = (typeof portfolio !== 'undefined' && Array.isArray(portfolio)) ? portfolio : [];
-  if (!owned.length) { host.style.display = 'none'; return; }
-  host.style.display = '';
-  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 1;
-
-  let graded = 0, raw = 0;
-  const rows = [];
-  for (const p of owned) {
-    const card = (typeof getCardById === 'function') ? getCardById(p.id) : null;
-    if (!card) continue;
-    const acq = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(p.id) : null;
-    const isSlab = !!(acq && acq.grade);
-    isSlab ? graded++ : raw++;
-    const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(p.id) : null;
-    const v = collectionEntryValue(p, card, cached);
-    let gbp = (v && v.gbp > 0) ? v.gbp : 0;
-    if (!(gbp > 0) && typeof getCurrentPrice === 'function') {
-      const usd = getCurrentPrice(card);
-      if (usd > 0) gbp = usdToGbp(usd);
-    }
-    const print = isSlab && acq.variant && acq.variant !== 'unlimited'
-      ? (acq.variant === '1sted' ? ' 1st Ed' : ' Shadowless') : '';
-    rows.push({ id: card.i, n: card.n, set: card.s || card.sc || '', gbp,
-                grade: isSlab ? `PSA ${acq.grade}${print}` : 'Raw' });
-  }
-  const tot = graded + raw || 1;
-  rows.sort((a, b) => b.gbp - a.gbp);
-  const top = rows.slice(0, 4);
-
-  host.innerHTML = `
-    <div class="hh-panel">
-      <div class="hh-title">Holdings breakdown</div>
-      <div class="hh-bar"><i style="width:${(raw / tot * 100).toFixed(1)}%"></i></div>
-      <button type="button" class="hh-row" data-hh-filter="raw"${raw ? '' : ' disabled'}>
-        <span><b class="hh-dot hh-dot-raw"></b>Raw (${(raw / tot * 100).toFixed(0)}%)</span><span>${raw}</span></button>
-      <button type="button" class="hh-row" data-hh-filter="graded"${graded ? '' : ' disabled'}>
-        <span><b class="hh-dot hh-dot-graded"></b>Graded (${(graded / tot * 100).toFixed(0)}%)</span><span>${graded}</span></button>
-    </div>
-    <div class="hh-panel">
-      <div class="hh-title">Most valuable</div>
-      ${top.map(r => `<button type="button" class="hh-item" data-hh-card="${esc(r.id)}">
-        <div class="hh-item-main"><div class="hh-item-name">${esc(r.n)}</div>
-          <div class="hh-item-sub">${esc(r.set)} · ${esc(r.grade)}</div></div>
-        <div class="hh-item-val">${r.gbp > 0 ? fmtGBPDirect(r.gbp) : '—'}</div>
-      </button>`).join('') || '<div class="hh-empty">No priced cards yet.</div>'}
-      ${rows.length > top.length ? `<button type="button" class="hh-viewall" data-hh-filter="all">View all ${rows.length} →</button>` : ''}
-    </div>`;
-}
-
-// ---- Portfolio value history ---------------------------------------------
-// The app has never stored what the collection was worth on a given day — only
-// current prices and a refresh timestamp — so a value-over-time chart had
-// nothing to draw. This records one total per day going forward, and
-// reconstructs backwards from Collectr's per-card history for anything linked,
-// so the chart is not empty on the first day.
-//
-// Synced: it is a record of your holdings, and a chart that resets per device
-// would be worse than none. Capped at 400 days, one small number per day.
-const PV_HISTORY_KEY = 'pkm-portfolio-history-v1';
-const PV_MAX_DAYS = 400;
-const PV_RANGES = { '1D': 1, '7D': 7, '1M': 30, '3M': 90, '6M': 180, 'MAX': PV_MAX_DAYS };
-
-function _pvDay(ts) { return new Date(ts ?? Date.now()).toISOString().slice(0, 10); }
-function pvLoad() {
-  try { const o = JSON.parse(localStorage.getItem(PV_HISTORY_KEY) || '{}'); return (o && typeof o === 'object') ? o : {}; }
-  catch { return {}; }
-}
-function pvSave(map) {
-  // Keep the newest PV_MAX_DAYS entries; the map is keyed by date so this is a
-  // sort on strings, no parsing needed.
-  const keys = Object.keys(map).sort();
-  const trimmed = keys.length > PV_MAX_DAYS ? keys.slice(keys.length - PV_MAX_DAYS) : keys;
-  const out = {};
-  for (const k of trimmed) out[k] = map[k];
-  try { localStorage.setItem(PV_HISTORY_KEY, JSON.stringify(out)); } catch {}
-  return out;
-}
-
-// Today's total, from the same prices the collection panel shows.
-function pvCurrentTotalGBP() {
-  if (typeof portfolio === 'undefined' || !Array.isArray(portfolio)) return 0;
-  let total = 0;
-  for (const p of portfolio) {
-    const card = (typeof getCardById === 'function') ? getCardById(p.id) : null;
-    if (!card) continue;
-    // collectionEntryValue, not getCurrentPrice: a recorded PSA 10 is worth the
-    // PSA 10 price, and pricing it raw understated the collection by orders of
-    // magnitude. It is the same helper the collection list uses, so the chart
-    // and the list cannot disagree about what a holding is worth.
-    const cached = (typeof getCachedPrice === 'function') ? getCachedPrice(p.id) : null;
-    const v = collectionEntryValue(p, card, cached);
-    // collectionEntryValue reads the price cache and card.p only. When neither
-    // has landed it returns 0, which is a missing price, not a worthless card —
-    // fall back to getCurrentPrice, which also knows Collectr and the live
-    // panel. Reporting a collection as £0.00 is worse than reporting it raw.
-    let gbp = (v && v.gbp > 0) ? v.gbp : 0;
-    if (!(gbp > 0) && typeof getCurrentPrice === 'function') {
-      const usd = getCurrentPrice(card);
-      if (usd > 0) gbp = usdToGbp(usd);
-    }
-    if (gbp > 0) total += gbp * (p.copies || p.qty || 1);
-  }
-  return total;
-}
-
-function pvRecordToday() {
-  const total = pvCurrentTotalGBP();
-  if (!(total > 0)) return;                 // nothing priced yet — do not log a zero
-  const map = pvLoad();
-  map[_pvDay()] = +total.toFixed(2);        // last write of the day wins
-  pvSave(map);
-}
-
-// Reconstruct earlier totals by re-pricing today's holdings against Collectr's
-// dated history. It answers "what would this collection have been worth then",
-// which is the honest reading — it cannot know what you owned on a past date,
-// so a day is only emitted when every priced holding has a reading for it.
-function pvBackfillFromCollectr() {
-  if (typeof portfolio === 'undefined' || !Array.isArray(portfolio) || !portfolio.length) return 0;
-  const fx = (typeof usdToGbp === 'function') ? usdToGbp(1) : 1;
-  const perCard = [];
-  for (const p of portfolio) {
-    const card = (typeof getCardById === 'function') ? getCardById(p.id) : null;
-    if (!card) continue;
-    const d = (typeof getCollectrData === 'function') ? getCollectrData(card.i) : null;
-    const hist = d && Array.isArray(d.price_history) ? d.price_history : null;
-    if (!hist || !hist.length) return 0;    // one unlinked card and the total is wrong
-    const print = (typeof collectrPrintFor === 'function')
-      ? collectrPrintFor(d, 'unlimited') : null;
-    const byDay = {};
-    for (const h of hist) {
-      if (!h || h.grade !== 'raw' || !(h.price > 0)) continue;
-      if (print && h.print && h.print !== print) continue;
-      byDay[_pvDay(Date.parse(h.date))] = h.price;
-    }
-    if (!Object.keys(byDay).length) return 0;
-    perCard.push({ byDay, copies: p.copies || p.qty || 1 });
-  }
-  if (!perCard.length) return 0;
-
-  const days = Object.keys(perCard[0].byDay);
-  const map = pvLoad();
-  let added = 0;
-  for (const day of days) {
-    if (map[day] != null) continue;         // never overwrite a real recording
-    let total = 0, complete = true;
-    for (const c of perCard) {
-      const v = c.byDay[day];
-      if (!(v > 0)) { complete = false; break; }
-      total += v * fx * c.copies;
-    }
-    if (complete && total > 0) { map[day] = +total.toFixed(2); added++; }
-  }
-  if (added) pvSave(map);
-  return added;
-}
-
-function pvSeries(days) {
-  const map = pvLoad();
-  const cutoff = Date.now() - days * 86400000;
-  return Object.entries(map)
-    .map(([d, v]) => ({ t: Date.parse(d + 'T12:00:00Z'), v }))
-    .filter(r => isFinite(r.t) && r.t >= cutoff && r.v > 0)
-    .sort((a, b) => a.t - b.t);
-}
 
 // ---- Price history charts -------------------------------------------------
 // Inline SVG rather than a charting library: the site ships as static files
@@ -18337,8 +15204,7 @@ function initHoldStrategyServicePicker(card) {
 // For owned cards: deducts items already present per acquisition data.
 // For non-owned cards (cardId null/undefined): assumes both are needed.
 function getGradingMaterialsCostGBP(cardId) {
-  const acq = (cardId && typeof getAcq === 'function') ? (getAcq(cardId) || {}) : {};
-  return (acq.hasPennySleeve ? 0 : UK_PENNY_SLEEVE_GBP) + (acq.hasToploader ? 0 : UK_TOPLOADER_GBP);
+  return UK_PENNY_SLEEVE_GBP + UK_TOPLOADER_GBP;
 }
 // UK raw card shipping: mostly UK domestic sellers, £3–8 range, £5 midpoint.
 const UK_RAW_SHIPPING_GBP = 5;
@@ -19626,7 +16492,7 @@ function renderHoldStrategy(card) {
   // buying raw online (eBay/TCGplayer), not hand-picking from a binder.
   // If the user scanned their card and got an expected grade, remove the penalty
   // (they've inspected the card, so it's not sight-unseen).
-  const acqForCard = getAcq(card.i);
+  const acqForCard = null;
   const expectedGrade = acqForCard?.expectedGrade ?? null;
   const ownedCard = portfolio.some(p => p.id === card.i);
   const gemRate = expectedGrade
@@ -19634,10 +16500,10 @@ function renderHoldStrategy(card) {
     : baseGemRate * ONLINE_BUY_GEM_PENALTY;
 
   // Slab acquisition: cost basis applies to the specific PSA grade tile, not raw.
-  const slabAcq = getAcqSlabInfo(card.i);
+  const slabAcq = null;
   // If acquisition cost is recorded (pack/single), use it as raw cost basis.
   // Slab acquisitions are handled per-grade in gradedStrategies, not here.
-  const acqCostGBP = (!slabAcq) ? getAcqCostBasisGBP(card.i) : null;
+  const acqCostGBP = null;
   const acqCostUSD = (acqCostGBP && acqCostGBP > 0) ? acqCostGBP / fx : null;
   // rawCostUSD = what the user paid (or current market if no acquisition logged)
   const rawCostUSD = acqCostUSD ?? rawUSD;
@@ -20850,13 +17716,6 @@ function psFormatAgo(ts) {
   return `${d}d ago`;
 }
 
-function psCollectionIds() {
-  return (portfolio || []).filter(p => p && p.id).map(p => p.id);
-}
-
-function psBinderIds() {
-  return (fullArtBinder || []).filter(b => b && b.id).map(b => b.id);
-}
 
 function psTrackedIds() {
   const set = new Set();
@@ -20909,18 +17768,6 @@ function psUpdateStats() {
   }
 
   // Other hints
-  const collectionCount = psCollectionIds().length;
-  const cHint = document.getElementById('psCollectionHint');
-  if (cHint) cHint.textContent = collectionCount
-    ? `${collectionCount} card${collectionCount === 1 ? '' : 's'} in your portfolio`
-    : 'No cards in collection yet';
-
-  const binderCount = psBinderIds().length;
-  const bHint = document.getElementById('psBinderHint');
-  if (bHint) bHint.textContent = binderCount
-    ? `${binderCount} card${binderCount === 1 ? '' : 's'} in your Full Art Binder`
-    : 'No cards in Binder yet';
-
   const trackedCount = psTrackedIds().length;
   const tHint = document.getElementById('psTrackedHint');
   if (tHint) tHint.textContent = trackedCount
@@ -21019,7 +17866,7 @@ function psHideProgress() {
 }
 
 function psSetButtonsDisabled(disabled) {
-  ['psRefreshSelected', 'psRefreshCollection', 'psRefreshBinder', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psRefreshVintagePSA', 'psRefreshUnderFiver', 'psRefreshUntrackedUnviewed', 'psBucketGo', 'psClearCache', 'psManualGo', 'livePriceRefresh']
+  ['psRefreshSelected', 'psRefreshTracked', 'psRefreshStale', 'psRefreshAll', 'psRefreshVintagePSA', 'psRefreshUnderFiver', 'psRefreshUntrackedUnviewed', 'psBucketGo', 'psClearCache', 'psManualGo', 'livePriceRefresh']
     .forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -21378,7 +18225,6 @@ async function psBatchRefresh(ids, label) {
   psLog(finishMsg, errCount ? 'warn' : 'ok');
 
   // Re-render any panels that depend on prices
-  try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
   try { if (typeof renderWishlist === 'function') renderWishlist(); } catch {}
   try { if (typeof renderWatchlist === 'function') renderWatchlist(); } catch {}
   try { if (typeof rebuildAlerts === 'function') rebuildAlerts(); } catch {}
@@ -21473,12 +18319,6 @@ function setupPriceSync() {
   sel('psForceRefreshAll')?.addEventListener('click', () => {
     forceRefreshAllPrices();
     psLog('Force-refreshing all tracked + cached cards…', 'info');
-  });
-  sel('psRefreshCollection')?.addEventListener('click', () => {
-    psBatchRefresh(psCollectionIds(), 'Refresh my collection');
-  });
-  sel('psRefreshBinder')?.addEventListener('click', () => {
-    psBatchRefresh(psBinderIds(), 'Refresh Binder');
   });
   sel('psRefreshTracked')?.addEventListener('click', () => {
     psBatchRefresh(psTrackedIds(), 'Refresh tracked cards');
@@ -21611,96 +18451,6 @@ function setupPriceSync() {
 //     ts }
 // Stored in localStorage as a map keyed by cardId.
 
-const ACQ_KEY = 'pkm-acquisitions-v1';
-let acquisitions = {};
-try { acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}'); } catch { acquisitions = {}; }
-
-function saveAcquisitions() {
-  try { localStorage.setItem(ACQ_KEY, JSON.stringify(acquisitions)); } catch {}
-}
-
-function getAcq(cardId) {
-  return cardId && acquisitions[cardId] ? acquisitions[cardId] : null;
-}
-
-// Returns cost basis in GBP for a card, or null if not enough info
-function getAcqCostBasisGBP(cardId) {
-  const a = getAcq(cardId);
-  if (!a) return null;
-  if (a.source === 'pack') {
-    const cost = parseFloat(a.packCostGBP);
-    const hits = Math.max(1, parseInt(a.packHits || 1, 10));
-    if (!Number.isFinite(cost) || cost <= 0) return null;
-    return cost / hits;
-  }
-  if (a.source === 'single') {
-    const p = parseFloat(a.singlePriceGBP);
-    if (!Number.isFinite(p) || p <= 0) return null;
-    return p;
-  }
-  if (a.source === 'slab') {
-    const info = getAcqSlabInfo(cardId);
-    return info ? info.costGBP : null;
-  }
-  return null;
-}
-
-// Returns slab acquisition info or null when source isn't 'slab' / data is incomplete.
-function getAcqSlabInfo(cardId) {
-  const a = getAcq(cardId);
-  if (!a || a.source !== 'slab') return null;
-  const grade = parseInt(a.slabGrade, 10);
-  const costGBP = parseFloat(a.slabPriceGBP);
-  if (!grade || grade < 1 || grade > 10 || !Number.isFinite(costGBP) || costGBP <= 0) return null;
-  return {
-    grade, costGBP,
-    date: a.slabDate || null,
-    where: a.slabWhere || null,
-    variant: a.slabVariant || 'unlimited',
-  };
-}
-
-// What an owned slab is worth today — at its grade and its print, not the raw
-// ungraded price of the card. A PSA 8 1st Edition and a raw Unlimited copy are
-// the same card id and nothing else.
-function ownedSlabValueGBP(card, slab) {
-  if (!card || !slab || !slab.grade) return null;
-  const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
-
-  // Prefer the print's own PriceCharting ladder when it has been fetched.
-  if (slab.variant === '1sted' && typeof _hvg1edLadder === 'function') {
-    const row = (_hvg1edLadder(card).ladder || []).find(l => l.g === slab.grade);
-    if (row && row.gbp > 0) return { gbp: row.gbp, basis: '1st Edition' };
-  }
-  if (slab.variant === 'shadowless' && typeof _hvgShadowlessLadder === 'function') {
-    const row = (_hvgShadowlessLadder(card).ladder || []).find(l => l.g === slab.grade);
-    if (row && row.gbp > 0) return { gbp: row.gbp, basis: 'Shadowless' };
-  }
-
-  // Otherwise price the grade off the Unlimited anchor. For a 1st Edition or
-  // Shadowless slab that is an understatement, not a valuation — say so rather
-  // than passing it off as the print's price.
-  const anchor = (typeof getPsa10Anchor === 'function') ? getPsa10Anchor(card, { ignoreVariant: true }) : null;
-  if (!anchor || !(anchor.usd > 0)) return null;
-  const usd = slab.grade === 10 ? anchor.usd
-    : (typeof estimateGradePrice === 'function') ? estimateGradePrice(card, slab.grade, anchor.usd) : null;
-  if (!(usd > 0)) return null;
-  return { gbp: usd * fx, basis: slab.variant === 'unlimited' ? 'Unlimited' : 'Unlimited basis' };
-}
-
-// What a collection entry is worth: the slab's value when one is recorded,
-// otherwise the raw market price. Shared so the list and the home tiles (and
-// the collection total they feed) can never disagree.
-function collectionEntryValue(p, card, cached) {
-  const rawUSD = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
-  const out = { gbp: usdToGbp(rawUSD), note: null };
-  const slab = (typeof getAcqSlabInfo === 'function') ? getAcqSlabInfo(p.id) : null;
-  if (!card || !slab) return out;
-  const v = ownedSlabValueGBP(card, slab);
-  if (!v || !(v.gbp > 0)) return out;
-  const print = slab.variant === '1sted' ? ' 1st Ed' : slab.variant === 'shadowless' ? ' Shadowless' : '';
-  return { gbp: v.gbp, note: `PSA ${slab.grade}${print}`, approx: v.basis === 'Unlimited basis' };
-}
 
 function fmtPct(v, signed) {
   if (!Number.isFinite(v)) return '—';
@@ -21716,518 +18466,6 @@ function fmtGBPDirect(gbp) {
   return sym + val.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function renderAcquisition() {
-  const sec = document.getElementById('acqSection');
-  if (!sec) return;
-  if (!selectedCard) { sec.style.display = 'none'; return; }
-  const inPortfolio = portfolio.some(p => p.id === selectedCard.i);
-  if (!inPortfolio) { sec.style.display = 'none'; return; }
-  sec.style.display = 'block';
-
-  const card = selectedCard;
-  const acq = getAcq(card.i) || {};
-  const portfolioItem = portfolio.find(p => p.id === card.i);
-  const copies = Math.max(1, portfolioItem?.copies || 1);
-
-  // Copies stepper
-  const copiesCountEl = document.getElementById('acqCopiesCount');
-  const copiesDecEl   = document.getElementById('acqCopiesDec');
-  if (copiesCountEl) copiesCountEl.textContent = copies;
-  if (copiesDecEl)   copiesDecEl.disabled = copies <= 1;
-
-  // Per-card duplicate notice
-  const dupNoticeEl = document.getElementById('acqDupeNotice');
-  const cardDupes = portfolio.filter(p => p.id === card.i);
-  if (dupNoticeEl) {
-    if (cardDupes.length > 1) {
-      const totalCopies = cardDupes.reduce((s, p) => s + (p.copies || 1), 0);
-      dupNoticeEl.style.display = 'flex';
-      const txt = dupNoticeEl.querySelector('.acq-dupe-text');
-      if (txt) txt.textContent = `${cardDupes.length} separate entries for this card (${totalCopies} copies total). Merge into one?`;
-    } else {
-      dupNoticeEl.style.display = 'none';
-    }
-  }
-
-  // Toggle button state
-  document.querySelectorAll('.acq-src-btn').forEach(b => {
-    const src = b.dataset.src;
-    if (src === 'clear') return;
-    const on = acq.source === src;
-    b.classList.toggle('is-active', on);
-    b.setAttribute('aria-checked', on ? 'true' : 'false');
-  });
-  document.querySelector('.acq-src-clear').style.display = acq.source ? 'inline-flex' : 'none';
-  const saveBtnEl = document.getElementById('acqSaveBtn');
-  if (saveBtnEl && !saveBtnEl.classList.contains('is-saving') && !saveBtnEl.classList.contains('is-saved')) {
-    saveBtnEl.style.display = acq.source ? 'flex' : 'none';
-  }
-
-  // Show the right fields
-  const packFields = document.getElementById('acqFieldsPack');
-  const singleFields = document.getElementById('acqFieldsSingle');
-  const slabFields = document.getElementById('acqFieldsSlab');
-  const empty = document.getElementById('acqEmpty');
-  const roi = document.getElementById('acqRoi');
-  packFields.style.display = acq.source === 'pack' ? 'grid' : 'none';
-  singleFields.style.display = acq.source === 'single' ? 'grid' : 'none';
-  if (slabFields) slabFields.style.display = acq.source === 'slab' ? 'grid' : 'none';
-  empty.style.display = acq.source ? 'none' : 'block';
-
-  // Populate fields without clobbering user-active focus
-  const setIfNotFocused = (id, val) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (document.activeElement === el) return;
-    el.value = val == null ? '' : val;
-  };
-  setIfNotFocused('acqPackName', acq.packName);
-  setIfNotFocused('acqPackCost', acq.packCostGBP);
-  setIfNotFocused('acqPackHits', acq.packHits);
-  setIfNotFocused('acqSinglePrice', acq.singlePriceGBP);
-  setIfNotFocused('acqSingleDate', acq.singleDate);
-  setIfNotFocused('acqSingleSrc', acq.singleWhere);
-  setIfNotFocused('acqSlabGrade', acq.slabGrade);
-  setIfNotFocused('acqSlabPrice', acq.slabPriceGBP);
-  setIfNotFocused('acqSlabDate', acq.slabDate);
-  setIfNotFocused('acqSlabWhere', acq.slabWhere);
-
-  // ---- Slab version picker (Unlimited / 1st Ed / Shadowless) ----
-  const varRow = document.getElementById('acqSlabVariantRow');
-  if (varRow && acq.source === 'slab') {
-    const is1edEl = card && card.lang !== 'JP' && (typeof _SO_FIRST_ED_SETS !== 'undefined') && _SO_FIRST_ED_SETS.has(card.sc);
-    const isShadowEl = card && card.lang !== 'JP' && (typeof _HVG_SHADOWLESS_SETS !== 'undefined') && _HVG_SHADOWLESS_SETS.has(card.sc);
-    if (is1edEl || isShadowEl) {
-      const curVariant = acq.slabVariant || 'unlimited';
-      varRow.style.display = '';
-      varRow.innerHTML = `<label class="acq-var-label">Version</label><div class="acq-var-btns">` +
-        `<button class="acq-var-btn${curVariant==='unlimited'?' acq-var-btn--on':''}" data-acq-var="unlimited">Unlimited</button>` +
-        (isShadowEl ? `<button class="acq-var-btn${curVariant==='shadowless'?' acq-var-btn--on':''}" data-acq-var="shadowless">Shadowless</button>` : '') +
-        (is1edEl   ? `<button class="acq-var-btn${curVariant==='1sted'?' acq-var-btn--on':''}" data-acq-var="1sted">1st Edition</button>` : '') +
-        `</div>`;
-      varRow.querySelectorAll('[data-acq-var]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const v = btn.dataset.acqVar;
-          updateAcq({ slabVariant: v });
-          varRow.querySelectorAll('[data-acq-var]').forEach(b => b.classList.toggle('acq-var-btn--on', b === btn));
-          if (typeof switchMarketPCVariant === 'function') switchMarketPCVariant(v);
-        });
-      });
-      // Auto-apply the saved variant whenever this section renders
-      if (curVariant !== 'unlimited' && curVariant !== (_marketPCVariant || 'unlimited')) {
-        if (typeof switchMarketPCVariant === 'function') switchMarketPCVariant(curVariant);
-      }
-    } else {
-      varRow.style.display = 'none';
-    }
-  }
-
-  // Compute ROI readout
-  const costGBP = getAcqCostBasisGBP(card.i);
-  if (!acq.source || !Number.isFinite(costGBP) || costGBP <= 0) {
-    roi.style.display = 'none';
-    const flipEl = document.getElementById('acqSlabFlip');
-    if (flipEl) flipEl.style.display = 'none';
-    // Reset dynamic labels to defaults
-    const mLbl = document.getElementById('acqMarketLbl'); if (mLbl) mLbl.textContent = 'Market now (raw)';
-    const rLbl = document.getElementById('acqRoiNowLbl'); if (rLbl) rLbl.textContent = 'Realised ROI';
-    const xLbl = document.getElementById('acqRoiMaxLbl'); if (xLbl) xLbl.textContent = 'Max ROI · PSA 10 in 5 years';
-    const pLbl = document.getElementById('acqProfitLbl'); if (pLbl) pLbl.textContent = 'Profit if PSA 10';
-    return;
-  }
-  roi.style.display = 'block';
-
-  // ---- Slab acquisition ROI ----
-  if (acq.source === 'slab') {
-    const slabInfo = getAcqSlabInfo(card.i);
-    const flipEl = document.getElementById('acqSlabFlip');
-    const ladderEl = document.getElementById('acqLadder');
-    if (!slabInfo) { roi.style.display = 'none'; if (flipEl) flipEl.style.display = 'none'; return; }
-    const { grade, costGBP: slabCost } = slabInfo;
-    const gradeLbl = PSA_GRADE_LABELS?.[grade] || '';
-    const psa10USD_s = getPsa10Anchor(card)?.usd || (card.p10 || 0) || (livePrice?.pcPsa10 > 0 ? livePrice.pcPsa10 : 0);
-    const fx_s = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
-    const slabMarketUSD = psa10USD_s > 0 ? estimateGradePrice(card, grade, psa10USD_s) : 0;
-    const slabMarketGBP = usdToGbp(slabMarketUSD);
-    const FRICTION = 0.10;
-    const delta = slabMarketGBP - slabCost;
-    const realisedNet = slabMarketGBP * (1 - FRICTION);
-    const realisedROI = slabCost > 0 ? ((realisedNet - slabCost) / slabCost) * 100 : null;
-    const yr5USD_s = psa10USD_s > 0 ? projectGradePrice(card, grade, slabMarketUSD, 5) : 0;
-    const yr5GBP_s = usdToGbp(yr5USD_s);
-    const yr5Net_s = yr5GBP_s * (1 - FRICTION);
-    const yr5ROI_s = slabCost > 0 ? ((yr5Net_s - slabCost) / slabCost) * 100 : null;
-    const yr5Profit_s = yr5Net_s - slabCost;
-    // Update labels
-    const mLbl = document.getElementById('acqMarketLbl'); if (mLbl) mLbl.textContent = `Market now (PSA ${grade})`;
-    const rLbl = document.getElementById('acqRoiNowLbl'); if (rLbl) rLbl.textContent = 'ROI if sold today';
-    const xLbl = document.getElementById('acqRoiMaxLbl'); if (xLbl) xLbl.textContent = `5yr hold · PSA ${grade} — ${new Date().getFullYear() + 5}`;
-    const pLbl = document.getElementById('acqProfitLbl'); if (pLbl) pLbl.textContent = `5yr profit (PSA ${grade})`;
-    // Populate cells
-    document.getElementById('acqCost').textContent = fmtGBPDirect(slabCost);
-    const bits = [slabInfo.date, slabInfo.where].filter(Boolean);
-    document.getElementById('acqCostSub').textContent = bits.length ? bits.join(' · ') : `PSA ${grade} ${gradeLbl}`;
-    document.getElementById('acqMarket').textContent = slabMarketGBP > 0 ? fmtGBPDirect(slabMarketGBP) : '—';
-    const deltaEl = document.getElementById('acqMarketDelta');
-    if (slabMarketGBP > 0) {
-      deltaEl.textContent = (delta >= 0 ? '+' : '') + fmtGBPDirect(Math.abs(delta)) + ' vs cost';
-      deltaEl.className = 'acq-roi-sub acq-roi-delta ' + (delta >= 0 ? 'acq-pos' : 'acq-neg');
-    } else { deltaEl.textContent = ''; }
-    const roiEl = document.getElementById('acqRoiNow');
-    if (Number.isFinite(realisedROI)) {
-      roiEl.textContent = fmtPct(realisedROI, true);
-      roiEl.className = 'acq-roi-val acq-roi-roi ' + (realisedROI >= 0 ? 'acq-pos' : 'acq-neg');
-    } else { roiEl.textContent = '—'; roiEl.className = 'acq-roi-val acq-roi-roi'; }
-    document.getElementById('acqRoiNowSub').textContent = `net of ${(FRICTION*100).toFixed(0)}% sell fees`;
-    const maxEl = document.getElementById('acqRoiMax');
-    if (Number.isFinite(yr5ROI_s)) {
-      maxEl.textContent = fmtPct(yr5ROI_s, true);
-      maxEl.className = 'acq-roi-val acq-roi-val-max ' + (yr5ROI_s >= 0 ? 'acq-pos' : 'acq-neg');
-    } else { maxEl.textContent = '—'; maxEl.className = 'acq-roi-val acq-roi-val-max'; }
-    document.getElementById('acqRoiMaxSub').textContent = yr5GBP_s > 0 ? `projected ${fmtGBPDirect(yr5GBP_s)} by ${new Date().getFullYear() + 5}` : '';
-    const profEl = document.getElementById('acqProfitMax');
-    profEl.textContent = Number.isFinite(yr5Profit_s) ? (yr5Profit_s >= 0 ? '+' : '') + fmtGBPDirect(Math.abs(yr5Profit_s)) : '—';
-    profEl.className = 'acq-roi-val ' + (yr5Profit_s >= 0 ? 'acq-pos' : 'acq-neg');
-    document.getElementById('acqProfitMaxSub').textContent = `after ${(FRICTION*100).toFixed(0)}% sell fees`;
-    // Storage
-    const storageDiv = document.getElementById('acqStorage'); if (storageDiv) storageDiv.style.display = 'none';
-    // Ladder: hide (replaced by flip analysis)
-    if (ladderEl) ladderEl.style.display = 'none';
-    // Flip analysis
-    if (flipEl && psa10USD_s > 0) {
-      flipEl.style.display = 'block';
-      const sellProceeds = slabMarketGBP * (1 - FRICTION);
-      const flipOptions = [
-        { g: grade, label: `Keep PSA ${grade}`, isCurrent: true },
-        ...([10, 9, 8, 7].filter(g => g !== grade)).map(g => ({ g, label: `Sell → Buy PSA ${g}`, isCurrent: false })),
-        { g: 0, label: 'Sell → Go raw', isCurrent: false },
-      ];
-      const flipRows = flipOptions.map(opt => {
-        if (opt.isCurrent) {
-          return { label: opt.label, totalOut: slabCost, yr5: yr5GBP_s, roi: yr5ROI_s, profit: yr5Profit_s, netChg: null, isCurrent: true };
-        }
-        if (opt.g === 0) {
-          // Sell slab, buy raw
-          const rawUSD_f = getCurrentPrice(card);
-          const rawGBP_f = usdToGbp(rawUSD_f || 0) + UK_RAW_SHIPPING_GBP;
-          const netChg = rawGBP_f - sellProceeds; // how much extra you pay (or get back)
-          const totalOut = slabCost + netChg;
-          const rawYr5 = rawUSD_f > 0 ? usdToGbp(projectGradePrice(card, 9, rawUSD_f, 5) / GRADE_GROWTH_PREMIUM[9]) : 0;
-          const rawYr5Net = rawYr5 * (1 - FRICTION);
-          const roi_f = totalOut > 0 ? ((rawYr5Net - totalOut) / totalOut) * 100 : null;
-          return { label: opt.label, totalOut, yr5: rawYr5, roi: roi_f, profit: rawYr5Net - totalOut, netChg, isCurrent: false };
-        }
-        const buyUSD_f = estimateGradePrice(card, opt.g, psa10USD_s);
-        const buyGBP_f = usdToGbp(buyUSD_f) + estimateUkSlabShipping(buyUSD_f * fx_s);
-        const netChg = buyGBP_f - sellProceeds;
-        const totalOut = slabCost + netChg;
-        const yr5_f = usdToGbp(projectGradePrice(card, opt.g, buyUSD_f, 5));
-        const yr5Net_f = yr5_f * (1 - FRICTION);
-        const roi_f = totalOut > 0 ? ((yr5Net_f - totalOut) / totalOut) * 100 : null;
-        return { label: opt.label, totalOut, yr5: yr5_f, roi: roi_f, profit: yr5Net_f - totalOut, netChg, isCurrent: false };
-      });
-      const validRows = flipRows.filter(r => Number.isFinite(r.roi));
-      const bestROI = validRows.length ? Math.max(...validRows.map(r => r.roi)) : null;
-      flipEl.innerHTML = `
-        <div class="acq-flip-head">Hold or flip?</div>
-        <div class="acq-flip-table">
-          <div class="acq-flip-th"><span>Option</span><span>Total outlay</span><span>5yr target</span><span>5yr ROI</span></div>
-          ${flipRows.map(r => {
-            const isBest = Number.isFinite(r.roi) && r.roi === bestROI;
-            const chgTxt = r.netChg !== null ? `<span class="acq-flip-chg ${r.netChg >= 0 ? 'acq-neg' : 'acq-pos'}">${r.netChg >= 0 ? '+' : ''}${fmtGBPDirect(Math.abs(r.netChg))} ${r.netChg >= 0 ? 'extra' : 'back'}</span>` : '';
-            return `<div class="acq-flip-row ${r.isCurrent ? 'acq-flip-current' : ''} ${isBest ? 'acq-flip-best' : ''}">
-              <span class="acq-flip-label">${r.label}${isBest && !r.isCurrent ? ' <span class="acq-flip-best-tag">best</span>' : ''}</span>
-              <span class="acq-flip-num">${Number.isFinite(r.totalOut) ? fmtGBPDirect(r.totalOut) : '—'}${chgTxt}</span>
-              <span class="acq-flip-num">${Number.isFinite(r.yr5) && r.yr5 > 0 ? fmtGBPDirect(r.yr5) : '—'}</span>
-              <span class="acq-flip-num ${Number.isFinite(r.roi) ? (r.roi >= 0 ? 'acq-pos' : 'acq-neg') : ''}">${Number.isFinite(r.roi) ? fmtPct(r.roi, true) : '—'}</span>
-            </div>`;
-          }).join('')}
-        </div>
-      `;
-    } else if (flipEl) { flipEl.style.display = 'none'; }
-    // Meta
-    const meta = document.getElementById('acqMeta');
-    const acqDate = acq.ts ? new Date(acq.ts) : null;
-    meta.innerHTML = [
-      acqDate ? `Logged ${acqDate.toLocaleDateString('en-GB')}` : '',
-      portfolio.some(p => p.id === card.i) ? '<span class="acq-pill">In collection</span>' : '<span class="acq-pill acq-pill-muted">Not in collection</span>',
-    ].filter(Boolean).join(' · ');
-    return;
-  }
-
-  // ---- Non-slab ROI (pack / single) ----
-  // Reset dynamic labels
-  const mLbl_n = document.getElementById('acqMarketLbl'); if (mLbl_n) mLbl_n.textContent = 'Market now (raw)';
-  const rLbl_n = document.getElementById('acqRoiNowLbl'); if (rLbl_n) rLbl_n.textContent = 'Realised ROI';
-  const xLbl_n = document.getElementById('acqRoiMaxLbl'); if (xLbl_n) xLbl_n.textContent = 'Max ROI · PSA 10 in 5 years';
-  const pLbl_n = document.getElementById('acqProfitLbl'); if (pLbl_n) pLbl_n.textContent = 'Profit if PSA 10';
-  const flipEl_n = document.getElementById('acqSlabFlip'); if (flipEl_n) flipEl_n.style.display = 'none';
-
-  const rawUSD = getCurrentPrice(card);
-  const marketGBP = usdToGbp(rawUSD || 0);
-  const psa10USD = (card.p10 || 0) || (livePrice && livePrice.pcPsa10 > 0 ? livePrice.pcPsa10 : 0);
-
-  // Realised ROI: market value now (raw) vs cost basis, net of eBay sell fee
-  const FRICTION = BUY_SELL_FRICTION;
-  const realisedNetGBP = marketGBP * (1 - FRICTION);
-  const realisedROI = costGBP > 0 ? ((realisedNetGBP - costGBP) / costGBP) * 100 : null;
-
-  // Max ROI scenario: PSA 10 in 5 years
-  let maxROI = null, maxProfit = null, maxValueGBP = null, maxGradingFeeGBP = 0;
-  if (psa10USD > 0) {
-    const psa10NowUSD = estimateGradePrice(card, 10, psa10USD);
-    const psa10In5USD = projectGradePrice(card, 10, psa10NowUSD, 5);
-    const psa10In5GBP = usdToGbp(psa10In5USD);
-    const gradingFeeGBP = getUkGradingFeeGBP(psa10USD);
-    const materialsCostGBP = getGradingMaterialsCostGBP(card.i);
-    const netGBP = psa10In5GBP * (1 - FRICTION) - gradingFeeGBP - materialsCostGBP;
-    maxGradingFeeGBP = gradingFeeGBP + materialsCostGBP;
-    maxValueGBP = psa10In5GBP;
-    maxROI = costGBP > 0 ? ((netGBP - costGBP) / costGBP) * 100 : null;
-    maxProfit = netGBP - costGBP;
-  }
-
-  // Storage materials: show checkboxes and reflect current acquisition state
-  const storageDiv = document.getElementById('acqStorage');
-  if (storageDiv) {
-    storageDiv.style.display = 'flex';
-    const sleeveCheck = document.getElementById('acqHasSleeve');
-    const toploaderCheck = document.getElementById('acqHasToploader');
-    if (sleeveCheck) sleeveCheck.checked = !!acq.hasPennySleeve;
-    if (toploaderCheck) toploaderCheck.checked = !!acq.hasToploader;
-  }
-
-  // Cost basis card
-  const costEl = document.getElementById('acqCost');
-  const costSub = document.getElementById('acqCostSub');
-  costEl.textContent = fmtGBPDirect(costGBP);
-  if (acq.source === 'pack') {
-    const hits = Math.max(1, parseInt(acq.packHits || 1, 10));
-    const pack = parseFloat(acq.packCostGBP);
-    const packBase = `${fmtGBPDirect(pack)} pack ÷ ${hits} hit${hits === 1 ? '' : 's'}`;
-    costSub.textContent = copies > 1 ? `${packBase} · ×${copies} = ${fmtGBPDirect(costGBP * copies)} total` : packBase;
-  } else {
-    const bits = [];
-    if (acq.singleDate) bits.push(acq.singleDate);
-    if (acq.singleWhere) bits.push(acq.singleWhere);
-    if (copies > 1) bits.push(`×${copies} = ${fmtGBPDirect(costGBP * copies)} total`);
-    costSub.textContent = bits.join(' · ');
-  }
-
-  // Market now
-  document.getElementById('acqMarket').textContent = fmtGBPDirect(marketGBP);
-  const delta = marketGBP - costGBP;
-  const deltaEl = document.getElementById('acqMarketDelta');
-  if (Number.isFinite(delta)) {
-    const deltaBase = (delta >= 0 ? '+' : '') + fmtGBPDirect(delta) + ' vs cost';
-    deltaEl.textContent = copies > 1 ? `${deltaBase} · ×${copies} = ${fmtGBPDirect(marketGBP * copies)} total` : deltaBase;
-    deltaEl.classList.toggle('acq-pos', delta >= 0);
-    deltaEl.classList.toggle('acq-neg', delta < 0);
-  }
-
-  // Realised ROI now
-  const roiEl = document.getElementById('acqRoiNow');
-  if (Number.isFinite(realisedROI)) {
-    roiEl.textContent = fmtPct(realisedROI, true);
-    roiEl.classList.toggle('acq-pos', realisedROI >= 0);
-    roiEl.classList.toggle('acq-neg', realisedROI < 0);
-  } else { roiEl.textContent = '—'; }
-  document.getElementById('acqRoiNowSub').textContent = `flip raw today · ${(FRICTION * 100).toFixed(0)}% fees`;
-
-  // Max ROI
-  const maxEl = document.getElementById('acqRoiMax');
-  const maxSub = document.getElementById('acqRoiMaxSub');
-  const profEl = document.getElementById('acqProfitMax');
-  const profSub = document.getElementById('acqProfitMaxSub');
-  if (Number.isFinite(maxROI) && maxValueGBP) {
-    maxEl.textContent = fmtPct(maxROI, true);
-    maxEl.classList.toggle('acq-pos', maxROI >= 0);
-    maxEl.classList.toggle('acq-neg', maxROI < 0);
-    maxSub.textContent = copies > 1
-      ? `if each grades PSA 10 · ${fmtGBPDirect(maxValueGBP)}/copy · ×${copies} = ${fmtGBPDirect(maxValueGBP * copies)} in 5 years`
-      : `if it grades PSA 10 · projected ${fmtGBPDirect(maxValueGBP)} in 5 years`;
-    profEl.textContent = (maxProfit >= 0 ? '+' : '') + fmtGBPDirect(maxProfit) + (copies > 1 ? '/copy' : '');
-    profEl.classList.toggle('acq-pos', maxProfit >= 0);
-    profEl.classList.toggle('acq-neg', maxProfit < 0);
-    profSub.textContent = copies > 1
-      ? `×${copies} = ${(maxProfit >= 0 ? '+' : '') + fmtGBPDirect(maxProfit * copies)} total · after ${fmtGBPDirect(maxGradingFeeGBP)} grading + 10% fees per copy`
-      : `after ${fmtGBPDirect(maxGradingFeeGBP)} grading + materials + 10% sell fees`;
-  } else {
-    maxEl.textContent = '—';
-    maxSub.textContent = 'PSA 10 anchor unavailable for this card';
-    profEl.textContent = '—';
-    profSub.textContent = '';
-  }
-
-  // ROI ladder: PSA 7-10 ROIs for context
-  const ladder = document.getElementById('acqLadder');
-  if (psa10USD > 0) {
-    const grades = [10, 9, 8, 7];
-    const ladderMaterialsGBP = getGradingMaterialsCostGBP(card.i);
-    const rows = grades.map(g => {
-      const todayUSD = estimateGradePrice(card, g, psa10USD);
-      const yr5USD = projectGradePrice(card, g, todayUSD, 5);
-      const yr5GBP = usdToGbp(yr5USD);
-      const gradingFee = getUkGradingFeeGBP(psa10USD) + ladderMaterialsGBP;
-      const net = yr5GBP * (1 - FRICTION) - gradingFee;
-      const r = costGBP > 0 ? ((net - costGBP) / costGBP) * 100 : null;
-      const cls = r >= 200 ? 'acq-pos' : r < 0 ? 'acq-neg' : '';
-      return `<div class="acq-rung ${cls}">
-        <span class="acq-rung-g">PSA ${g}</span>
-        <span class="acq-rung-val">${fmtGBPDirect(yr5GBP)}</span>
-        <span class="acq-rung-roi">${fmtPct(r, true)}</span>
-      </div>`;
-    }).join('');
-    ladder.innerHTML = `<div class="acq-ladder-head">If you grade this card and it lands at…</div>${rows}`;
-    ladder.style.display = 'block';
-  } else {
-    ladder.style.display = 'none';
-  }
-
-  // Meta line
-  const meta = document.getElementById('acqMeta');
-  const acqDate = acq.ts ? new Date(acq.ts) : null;
-  const acqLabel = acqDate ? `Logged ${acqDate.toLocaleDateString('en-GB')}` : '';
-  const cardInPortfolio = (portfolio || []).some(p => p.id === card.i);
-  meta.innerHTML = [
-    acqLabel,
-    cardInPortfolio ? '<span class="acq-pill">In collection</span>' : '<span class="acq-pill acq-pill-muted">Not in collection</span>'
-  ].filter(Boolean).join(' · ');
-}
-
-function updateAcq(patch) {
-  if (!selectedCard) return;
-  const id = selectedCard.i;
-  const current = acquisitions[id] || {};
-  acquisitions[id] = { ...current, ...patch, ts: current.ts || Date.now() };
-  saveAcquisitions();
-  renderAcquisition();
-  // Refresh portfolio rendering if this card is in it
-  try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
-}
-
-function clearAcq() {
-  if (!selectedCard) return;
-  delete acquisitions[selectedCard.i];
-  saveAcquisitions();
-  renderAcquisition();
-  try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
-}
-
-function setupAcquisition() {
-  if (!document.getElementById('acqSection')) return;
-
-  document.querySelectorAll('.acq-src-btn').forEach(b => {
-    b.addEventListener('click', () => {
-      const src = b.dataset.src;
-      if (!selectedCard) return;
-      if (src === 'clear') { clearAcq(); return; }
-      updateAcq({ source: src });
-    });
-  });
-
-  // Save & Sync button — immediate push to cloud without waiting for debounce
-  const saveBtn = document.getElementById('acqSaveBtn');
-  const ACQ_SAVE_HTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Save &amp; Sync`;
-  if (saveBtn) {
-    saveBtn.addEventListener('click', async () => {
-      if (saveBtn.classList.contains('is-saving')) return;
-      saveBtn.classList.add('is-saving');
-      saveBtn.textContent = 'Syncing…';
-      if (typeof syncCloudPush === 'function' && syncGetPairCode && syncGetPairCode()) {
-        await syncCloudPush({});
-      } else {
-        await new Promise(r => setTimeout(r, 300));
-      }
-      saveBtn.classList.remove('is-saving');
-      saveBtn.classList.add('is-saved');
-      saveBtn.textContent = 'Saved ✓';
-      setTimeout(() => {
-        saveBtn.classList.remove('is-saved');
-        saveBtn.innerHTML = ACQ_SAVE_HTML;
-      }, 2500);
-    });
-  }
-
-  // Live-update on input changes
-  const wire = (id, key, parser) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const handler = () => {
-      const v = parser ? parser(el.value) : el.value;
-      updateAcq({ [key]: v });
-    };
-    el.addEventListener('input', handler);
-    el.addEventListener('change', handler);
-  };
-  wire('acqPackName', 'packName');
-  wire('acqPackCost', 'packCostGBP', v => v === '' ? '' : parseFloat(v));
-  wire('acqPackHits', 'packHits', v => v === '' ? '' : parseInt(v, 10));
-  wire('acqSinglePrice', 'singlePriceGBP', v => v === '' ? '' : parseFloat(v));
-  wire('acqSingleDate', 'singleDate');
-  wire('acqSingleSrc', 'singleWhere');
-  wire('acqSlabGrade', 'slabGrade', v => v === '' ? '' : parseInt(v, 10));
-  wire('acqSlabPrice', 'slabPriceGBP', v => v === '' ? '' : parseFloat(v));
-  wire('acqSlabDate', 'slabDate');
-  wire('acqSlabWhere', 'slabWhere');
-  // slabVariant is wired via button clicks in renderAcquisition, not a form element
-  // Slab grade/price changes affect the Hold Strategy tile labels & cost basis.
-  ['acqSlabGrade', 'acqSlabPrice'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('change', () => {
-      if (selectedCard && typeof renderHoldStrategy === 'function') {
-        try { renderHoldStrategy(selectedCard); } catch {}
-      }
-    });
-  });
-
-  // Copies stepper
-  const _setCopies = (n) => {
-    if (!selectedCard) return;
-    const item = portfolio.find(p => p.id === selectedCard.i);
-    if (!item) return;
-    item.copies = Math.max(1, n);
-    savePortfolio();
-    renderAcquisition();
-    _homeCollHash = ''; _renderHomeCollection();
-  };
-  document.getElementById('acqCopiesInc')?.addEventListener('click', () => {
-    const item = portfolio.find(p => p.id === selectedCard?.i);
-    _setCopies((item?.copies || 1) + 1);
-  });
-  document.getElementById('acqCopiesDec')?.addEventListener('click', () => {
-    const item = portfolio.find(p => p.id === selectedCard?.i);
-    _setCopies((item?.copies || 1) - 1);
-  });
-
-  // Per-card duplicate merge button
-  document.getElementById('acqDupeMergeBtn')?.addEventListener('click', () => {
-    if (!selectedCard) return;
-    const dupes = portfolio.filter(p => p.id === selectedCard.i);
-    if (dupes.length < 2) return;
-    // Keep the first entry; merge all others into it
-    const keep = dupes[0];
-    for (let i = 1; i < dupes.length; i++) {
-      _mergePortfolioEntries(keep.id, dupes[i].id);
-    }
-    renderAcquisition();
-  });
-
-  // Storage materials checkboxes
-  const wireCheck = (id, key) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('change', () => {
-      updateAcq({ [key]: el.checked });
-      if (selectedCard && typeof renderHoldStrategy === 'function') {
-        try { renderHoldStrategy(selectedCard); } catch {}
-      }
-    });
-  };
-  wireCheck('acqHasSleeve', 'hasPennySleeve');
-  wireCheck('acqHasToploader', 'hasToploader');
-}
 
 // =============================================================
 // Card Condition Scanner
@@ -22388,8 +18626,7 @@ function renderCardGrader() {
   sec.style.display = 'block';
 
   // Load saved scores
-  const acq = getAcq(selectedCard.i) || {};
-  _cgScores = acq.cgScores ? { ..._cgScores, ...acq.cgScores } : { centering: null, corners: null, edges: null, surface: null };
+  _cgScores = { centering: null, corners: null, edges: null, surface: null };
 
   // Restore criterion button states
   document.querySelectorAll('.cg-crit').forEach(critEl => {
@@ -22421,8 +18658,7 @@ function renderCardGrader() {
   const saveBtn = document.getElementById('cgSaveGrade');
   if (saveBtn) {
     saveBtn.classList.remove('is-saved');
-    if (acq.expectedGrade) saveBtn.textContent = `Saved: expected PSA ${acq.expectedGrade} — update`;
-    else saveBtn.textContent = 'Save expected grade · update Hold Strategy';
+    saveBtn.textContent = 'Save expected grade · update Hold Strategy';
   }
 }
 
@@ -22612,7 +18848,6 @@ function setupCardGrader() {
     const aceGrade = _cgCalcAceGrade();
     if (grade == null) return;
     const btn = document.getElementById('cgSaveGrade');
-    updateAcq({ cgScores: { ..._cgScores }, expectedGrade: grade, expectedAceGrade: aceGrade });
     btn.classList.add('is-saved');
     btn.textContent = `Saved: PSA ~${grade} · ACE ~${aceGrade ?? '?'} — update`;
     setTimeout(() => btn.classList.remove('is-saved'), 2000);
@@ -23036,17 +19271,7 @@ function setupPriceInsight() {
     if (!btn || !container) return;
     btn.addEventListener('click', () => piLoadAllInContainer(container, statusId ? document.getElementById(statusId) : null));
   };
-  wireLoadAll('portfolioLoadAllGraphs', 'portfolioList', 'portfolioLoadAllStatus');
   wireLoadAll('wishlistLoadAllGraphs',  'wishlistList',  'wishlistLoadAllStatus');
-
-  // ROI chart toggle
-  document.getElementById('portfolioRoiBtn')?.addEventListener('click', () => {
-    const sec = document.getElementById('portfolioRoiSection');
-    if (!sec) return;
-    const visible = sec.style.display !== 'none';
-    sec.style.display = visible ? 'none' : 'block';
-    if (!visible) renderRoiChart();
-  });
 
   // Signal badge tap (mobile — toggle tooltip)
   document.getElementById('signalBadge')?.addEventListener('click', () => {
@@ -23300,15 +19525,12 @@ function aiBuildContext() {
         const usd = cached ? (cached.market || cached.mid || (card ? card.p : p.price)) : (card ? card.p : p.price);
         const gbp = usdToGbp(usd);
         totalGBP += gbp;
-        const acqCost = (typeof getAcqCostBasisGBP === 'function') ? getAcqCostBasisGBP(p.id) : 0;
-        if (acqCost > 0) { totalCost += acqCost; hasCost++; }
         const pullForCard = (() => { try { if (setsData?.[card?.sc]) { const r = setsData[card.sc].rarities?.[card.rc]; if (r?.pullRate > 0) return Math.round(1 / r.pullRate) * r.count / 100; } } catch {} return 7.65; })();
         const desForCard = card && (typeof autoFillDesirability === 'function') ? autoFillDesirability(card, pullForCard) : { total: 5 };
         const starsForCard = card && (typeof getInvestmentStars === 'function') ? getInvestmentStars(card, desForCard.total) : null;
         return {
           id: p.id, name: p.name, set: p.set,
           price_gbp: +gbp.toFixed(2),
-          cost_gbp: acqCost > 0 ? +acqCost.toFixed(2) : null,
           psa10_gem_rate_pct: card?.g ? +(card.g * 100).toFixed(1) : null,
           investment_stars: starsForCard?.stars ?? null,
         };
@@ -23361,11 +19583,6 @@ function aiBuildContext() {
     }
   } catch (e) { console.warn('ctx watchlist', e); }
 
-  // Binder priority species — boosted in standouts and recommendations
-  try {
-    const prio = [..._binderPriority];
-    if (prio.length) ctx.binder_priority_species = prio;
-  } catch (e) { console.warn('ctx binder_priority', e); }
 
   // Selected card — full analysis snapshot so the AI can give card-specific advice
   try {
@@ -24500,7 +20717,6 @@ function tasteGetProfile() {
   };
   (typeof portfolio     !== 'undefined' ? portfolio     : []).forEach(p => feed(p.id, 3));
   (typeof wishlist      !== 'undefined' ? wishlist      : []).forEach(w => feed(w.id, 2));
-  (typeof fullArtBinder !== 'undefined' ? fullArtBinder : []).forEach(b => feed(b.id, 2));
   (typeof watchlist     !== 'undefined' ? watchlist     : []).forEach(w => feed(w.id, 1));
   try { Object.keys(_vgLoad().targets || {}).forEach(id => feed(id, 2)); } catch (e) {}
   try { _getRecoDismissed().forEach(id => feed(id, -1)); } catch (e) {}
@@ -25175,27 +21391,6 @@ function renderHvaGrid(query) {
     });
   });
 }
-function _buildCollectionItems() {
-  return portfolio.map(p => {
-    const card = getCardById(p.id);
-    const cached = getCachedPrice(p.id);
-    const val = collectionEntryValue(p, card, cached);
-    const priceGBP = val.gbp;
-    let signal = null, sigClass = null, score = 0;
-    if (card) {
-      let pull = 7.65;
-      if (setsData?.[card.sc]) {
-        const r = setsData[card.sc].rarities?.[card.rc];
-        if (r?.pullRate > 0) pull = Math.round(1 / r.pullRate) * r.count / 100;
-      }
-      const sig = computeSignal(card, pull, autoFillDesirability(card, pull).total);
-      if (sig) { signal = sig.signal; sigClass = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold'; score = sig.score; }
-    }
-    // Name the grade and print being priced, so the number is never ambiguous.
-    const sub = val.note ? `${p.set} · ${val.note}${val.approx ? ' (est.)' : ''}` : p.set;
-    return { id: p.id, name: p.name, img: p.img, price: fmtGBPDirect(priceGBP), priceRaw: priceGBP, sub, signal, sigClass, score };
-  });
-}
 function _buildWishlistItems() {
   const maxBudget = getMaxBudgetGBP();
   const fx = (typeof fxRate === 'number' && fxRate > 0) ? fxRate : 0.79;
@@ -25628,14 +21823,7 @@ function _renderHomeTopPicks(force) {
 }
 
 function renderHomeDashboard() {
-  // Record today's total and fill in what Collectr can tell us about the past,
-  // before anything reads the series.
-  try { pvRecordToday(); } catch {}
-  try { pvBackfillFromCollectr(); } catch {}
-  try { renderHomePortfolioValue(); } catch {}
   try { renderHomePullbacks(); } catch {}
-  try { renderHomeHoldings(); } catch {}
-  _renderHomeCollection();
   _renderHomeCombinedWishlist();
   _renderHomeConsiderGrading();
   _renderHomeAiGrades();
@@ -25950,7 +22138,6 @@ function openHomePip(id, imgUrl) {
         _pipUpdateMaxBuy();
         // Refresh home tiles immediately so any stale price/signal is corrected,
         // and rebuild buy recommendations so over-budget cards are removed at once.
-        try { _renderHomeCollection(); } catch {}
         try { _renderHomeReco(true); } catch {}
       }
       if (liveDot) liveDot.style.display = 'none';
@@ -26120,7 +22307,7 @@ let _homeRenderTimer = null;
 function _scheduleHomeRender() {
   clearTimeout(_homeRenderTimer);
   _homeRenderTimer = setTimeout(() => {
-    try { _renderHomeCollection(); _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
+    try { _renderHomeWishlist(); _renderHomeWatchlist(); } catch {}
     try { _renderHomeAiGrades(); _renderHomeGradeCandidates(); _renderHomeAcePicks(); } catch {}
     try { _renderHomeVintage(); } catch {}
   }, 350);
@@ -26379,50 +22566,6 @@ function _homeItemHash(items, prefix) {
   return (prefix != null ? String(prefix) : '') + '|' + s;
 }
 
-function _renderHomeCollection() {
-  const list = $('homeCollList'), countEl = $('homeCollCount'), totalEl = $('homeCollTotal');
-  if (!list) return;
-  if (countEl) countEl.textContent = portfolio.length;
-  if (portfolio.length === 0) {
-    list.innerHTML = '<div class="home-empty">No cards in collection yet.<br>Search a card and tap + to add it.</div>';
-    if (totalEl) totalEl.textContent = '';
-    _homeCollHash = '';
-    return;
-  }
-  const hash = _homeItemHash(portfolio, '');
-  if (hash === _homeCollHash && list.querySelector('.home-card-tile')) return;
-  _homeCollHash = hash;
-  let totalGBP = 0;
-  const tiles = portfolio.map(p => {
-    const card = getCardById(p.id);
-    const cached = getCachedPrice(p.id);
-    const priceGBP = collectionEntryValue(p, card, cached).gbp;
-    const copies = Math.max(1, p.copies || 1);
-    totalGBP += priceGBP * copies;
-    let signal = null;
-    if (card) {
-      let pull = 7.65;
-      if (setsData?.[card.sc]) {
-        const r = setsData[card.sc].rarities?.[card.rc];
-        if (r?.pullRate > 0) pull = Math.round(1 / r.pullRate) * r.count / 100;
-      }
-      const sig = _getCachedSignal(card, pull, autoFillDesirability(card, pull).total);
-      if (sig) signal = sig.signal;
-    }
-    const sc = signal === 'STRONG BUY' ? 'sig-strong-buy' : signal === 'BUY' ? 'sig-buy' : signal === 'SELL' ? 'sig-sell' : 'sig-hold';
-    const priceLabel = copies > 1 ? `${fmtGBPDirect(priceGBP * copies)} <span style="font-size:10px;opacity:.65">×${copies}</span>` : fmtGBPDirect(priceGBP);
-    return _homeTile(p.id, p.img, p.name, priceLabel, signal ? sc : null, signal, '', p.set,
-      { scoreBadgeHtml: card ? _cardScoreBadgeHtml(card) : '' });
-  });
-  list.innerHTML = tiles.join('');
-  const totalCards = portfolio.reduce((s, p) => s + Math.max(1, p.copies || 1), 0);
-  if (totalEl) totalEl.textContent = `${fmtGBPDirect(totalGBP)} · ${totalCards} card${totalCards !== 1 ? 's' : ''}`;
-  _setupTileEvents(list, id => {
-    portfolio = portfolio.filter(p => p.id !== id);
-    savePortfolio(); renderPortfolio(); updatePortfolioButton();
-    _renderHomeCollection();
-  });
-}
 
 // ─── Home Vintage section ─────────────────────────────────────────────────────
 // Shows cards from a chosen vintage set organised by PSA grade, filtered to the
@@ -27299,27 +23442,16 @@ function _renderGradeListInline(container, items, src, title, emptyMsg) {
 
 let _homeGradingHash = '';
 function _renderHomeConsiderGrading() {
-  const collList      = $('homeGradingListCollection');
-  const wishList      = $('homeGradingListWishlist');
-  const collCountEl   = $('homeCollGradingCount');
-  const wishCountEl   = $('homeGradingCount');
-  if (!collList || !wishList) return;
-
-  const collItems = _buildGradeItems(portfolio);
+  const wishList    = $('homeGradingListWishlist');
+  const wishCountEl = $('homeGradingCount');
+  if (!wishList) return;
   const wishItems = _buildGradeItems(wishlist);
-
-  const hash = portfolio.map(p => p.id).join('|') + '~' + wishlist.map(w => w.id).join('|');
-  if (hash === _homeGradingHash && collList.querySelector('.home-grading-item')) return;
+  const hash = wishlist.map(w => w.id).join('|');
+  if (hash === _homeGradingHash && wishList.querySelector('.home-grading-item')) return;
   _homeGradingHash = hash;
-
-  _renderGradeListInline(collList, collItems, 'collection', 'Collection — Consider Grading',
-    'No collection cards with PSA 10 data yet.<br>Add cards to your collection and sync prices.');
   _renderGradeListInline(wishList, wishItems, 'wishlist', 'Wishlist — Consider Grading',
     'No wishlist cards with PSA 10 data yet.<br>Add cards to your wishlist and sync prices.');
-
-  if (collCountEl) collCountEl.textContent = collItems.length;
   if (wishCountEl) wishCountEl.textContent = wishItems.length;
-
   _setupGradeModal();
 }
 
@@ -27371,10 +23503,8 @@ function setupPageNav() {
     predict: document.getElementById('pagePredict'),
     discover: document.getElementById('pageDiscover'),
     tools: document.getElementById('pageTools'),
-    binder: document.getElementById('pageBinder'),
     budget: document.getElementById('pageBudget'),
     vintage: document.getElementById('pageVintage'),
-    sets:    document.getElementById('pageSets'),
 
     know: document.getElementById('pageKnow'),
     standouts: document.getElementById('pageStandouts'),
@@ -27408,11 +23538,9 @@ function setupPageNav() {
       setTimeout(() => { try { urRunScan(); } catch (e) {} }, 100);
     }
     if (page === 'home') { renderHomeDashboard(); _syncOnHomeNav(); }
-    if (page === 'binder') { try { renderBinderPage(); } catch(e) {} }
-    if (page === 'tools') { try { updateToolsDupeBadge(); _loadMapQ(); _updateMapQBadge(); } catch(e) {} }
+    if (page === 'tools') { try { _loadMapQ(); _updateMapQBadge(); } catch(e) {} }
     if (page === 'budget') { try { renderBudgetPage(); } catch(e) {} }
     if (page === 'vintage') { try { renderVintagePage(); } catch(e) {} }
-    if (page === 'sets')   { try { renderSetsPage();   } catch(e) {} }
 
     if (page === 'know') { try { _pknOnNavigate(); } catch(e) {} }
     if (page === 'standouts') { try { renderStandouts(); } catch(e) {} }
@@ -27430,7 +23558,6 @@ function setupPageNav() {
   window.go = go;
 
   // Wire "View all" / "Refresh" buttons on the home page
-  document.getElementById('homeOpenCollection')?.addEventListener('click', () => openHomeViewAll('My Collection', _buildCollectionItems()));
   document.getElementById('homeOpenWishlist')?.addEventListener('click', () => openHomeViewAll('Wishlist', _buildWishlistItems()));
   document.getElementById('homeOpenWatchlist')?.addEventListener('click', () => openHomeViewAll('Watchlist', _buildWatchlistItems()));
   setupHomeViewAll();
@@ -27440,11 +23567,7 @@ function setupPageNav() {
   document.getElementById('homeRefreshAll')?.addEventListener('click', () => {
     const btn = document.getElementById('homeRefreshAll');
     if (btn) { btn.classList.add('spinning'); setTimeout(() => btn.classList.remove('spinning'), 600); }
-    try { renderHomePortfolioValue(); } catch {}
     try { renderHomePullbacks(); } catch {}
-  try { renderHomePullbacks(); } catch {}
-    try { renderHomeHoldings(); } catch {}
-    _renderHomeCollection();
     _renderHomeWishlist();
     _renderHomeWatchlist();
     _renderHomeReco(true);
@@ -27474,42 +23597,6 @@ function setupPageNav() {
       try { localStorage.setItem(KEY, open ? '1' : '0'); } catch {}
     });
   })();
-
-  // The home holdings panels are clickable: a figure in a list you cannot act on
-  // is decoration. A most-valuable row opens that card; a breakdown row opens
-  // the collection filtered to raw or graded.
-  document.addEventListener('click', e => {
-    const cardBtn = e.target.closest('[data-hh-card]');
-    if (cardBtn) { e.preventDefault(); try { selectCard(cardBtn.dataset.hhCard); } catch {} return; }
-    const filt = e.target.closest('[data-hh-filter]');
-    if (!filt) return;
-    e.preventDefault();
-    _pfFilter = filt.dataset.hhFilter || 'all';
-    try { renderPortfolio(); } catch {}
-    const panel = document.getElementById('portfolioPanel');
-    if (panel && getComputedStyle(panel).display === 'none') {
-      document.getElementById('portfolioToggle')?.click();
-    }
-  });
-
-  // Collection view toggle. Delegated — the header is re-rendered per paint.
-  // Collection value range toggles.
-  document.addEventListener('click', e => {
-    const r = e.target.closest('[data-pv-horizon]');
-    if (!r) return;
-    e.preventDefault();
-    _pvHorizon = r.dataset.pvHorizon;
-    try { renderHomePortfolioValue(); } catch {}
-    try { renderHomePullbacks(); } catch {}
-  try { renderHomePullbacks(); } catch {}
-  });
-
-  document.addEventListener('click', e => {
-    const b = e.target.closest('[data-pfview]');
-    if (!b) return;
-    e.preventDefault();
-    _pfSetView(b.dataset.pfview);
-  });
 
   // Breadcrumb navigation. Delegated — the head is re-rendered per card.
   document.addEventListener('click', e => {
@@ -27630,9 +23717,7 @@ function setupPageNav() {
         // Standouts filters on the same budget but was never told when it
         // changed, so it kept listing cards the new limit excludes.
         try { renderStandouts(); } catch {}
-        try { renderHomePortfolioValue(); } catch {}
-    try { renderHomePullbacks(); } catch {}
-  try { renderHomePullbacks(); } catch {}
+        try { renderHomePullbacks(); } catch {}
       }
     }
 
@@ -27674,7 +23759,6 @@ function setupPageNav() {
     sel.addEventListener('change', () => {
       _displayCurrency = sel.value;
       localStorage.setItem(DISP_CURRENCY_KEY, _displayCurrency);
-      _renderHomeCollection();
       _renderHomeWishlist();
       _renderHomeWatchlist();
       _renderHomeReco(true);
@@ -27698,7 +23782,7 @@ function setupPageNav() {
   //   #<cardId>   — set by selectCard() / pwaPushCard, works as a bookmark
   const _deepCard = new URLSearchParams(location.search).get('card');
   const initial = (location.hash || '#home').replace('#', '');
-  const isKnownPage = ['home', 'predict', 'discover', 'tools', 'binder', 'budget', 'vintage', 'sets', 'know', 'standouts', 'analysis', 'pokedex'].includes(initial);
+  const isKnownPage = ['home', 'predict', 'discover', 'tools', 'budget', 'vintage', 'know', 'standouts', 'analysis', 'pokedex'].includes(initial);
   const _hashCard = !isKnownPage && initial ? initial : null;
   const cardToOpen = _deepCard || _hashCard;
   if (cardToOpen) {
@@ -27986,16 +24070,13 @@ function setupToolsTabs() {
       b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
     });
     const syncPanel    = document.getElementById('toolsSyncPanel');
-    const dupesPanel   = document.getElementById('toolsDupesPanel');
     const accountPanel = document.getElementById('toolsAccountPanel');
     const qsPanel      = document.getElementById('toolsQsPanel');
     const mappingPanel = document.getElementById('toolsMappingPanel');
     if (syncPanel)    syncPanel.style.display    = tab === 'sync'      ? '' : 'none';
-    if (dupesPanel)   dupesPanel.style.display   = tab === 'dupes'     ? '' : 'none';
     if (accountPanel) accountPanel.style.display = tab === 'account'   ? '' : 'none';
     if (qsPanel)      qsPanel.style.display      = tab === 'quicksync' ? '' : 'none';
     if (mappingPanel) mappingPanel.style.display = tab === 'mapping'   ? '' : 'none';
-    if (tab === 'dupes')   renderToolsDuplicates();
     if (tab === 'mapping') _renderMappingPanel();
   });
 }
@@ -28010,248 +24091,6 @@ function _saveDupeDismissed(set) {
   try { localStorage.setItem(DUPE_DISMISS_KEY, JSON.stringify([...set])); } catch {}
 }
 
-function _mergePortfolioEntries(keepId, removeId) {
-  const keepEntry   = portfolio.find(p => p.id === keepId);
-  const removeEntry = portfolio.find(p => p.id === removeId && p !== keepEntry);
-  if (!keepEntry || !removeEntry) return;
-  keepEntry.copies = (keepEntry.copies || 1) + (removeEntry.copies || 1);
-  portfolio.splice(portfolio.indexOf(removeEntry), 1);
-  savePortfolio();
-  renderPortfolio?.();
-  updateToolsDupeBadge?.();
-  _homeCollHash = '';
-  _renderHomeCollection?.();
-}
-
-function _detectDupes() {
-  const dismissed = _getDupeDismissed();
-  const results = { exact: [], counterparts: [], nameDupes: [] };
-
-  // 1. Exact ID duplicates (same card added twice)
-  const idFirst = new Map();
-  portfolio.forEach((p, i) => {
-    if (idFirst.has(p.id)) {
-      const key = `exact:${p.id}`;
-      if (!dismissed.has(key)) results.exact.push({ a: portfolio[idFirst.get(p.id)], b: p, key });
-    } else {
-      idFirst.set(p.id, i);
-    }
-  });
-
-  // 2. EN/JP counterpart pairs both in collection
-  const portfolioIds = new Set(portfolio.map(p => p.id));
-  const seenCpKeys   = new Set();
-  for (const p of portfolio) {
-    const card = getCardById(p.id);
-    if (!card || card.lang !== 'EN') continue;
-    const cpKey = counterpartByCard.get(p.id);
-    if (!cpKey) continue;
-    const bucket = counterpartIndex.get(cpKey);
-    if (!bucket) continue;
-    for (const jpCard of bucket.jp) {
-      if (!portfolioIds.has(jpCard.i)) continue;
-      const pairKey = [p.id, jpCard.i].sort().join(':');
-      if (seenCpKeys.has(pairKey)) continue;
-      seenCpKeys.add(pairKey);
-      const key = `cp:${pairKey}`;
-      if (dismissed.has(key)) continue;
-      const jpItem = portfolio.find(x => x.id === jpCard.i);
-      const enRawGBP = usdToGbp(getCurrentPrice(card));
-      const jpRawGBP = usdToGbp(getCurrentPrice(jpCard));
-      results.counterparts.push({ enItem: p, enCard: card, jpItem, jpCard, enRawGBP, jpRawGBP, key });
-    }
-  }
-
-  // 3. Same card name in collection with different IDs (possible wrong duplicates)
-  const nameGroups = new Map();
-  for (const p of portfolio) {
-    const card = getCardById(p.id);
-    if (!card) continue;
-    const norm = card.n.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const arr = nameGroups.get(norm) || [];
-    arr.push({ p, card });
-    nameGroups.set(norm, arr);
-  }
-  for (const [, group] of nameGroups) {
-    if (group.length < 2) continue;
-    const ids = group.map(g => g.card.i).sort();
-    // Skip pairs already covered by exact, dismissed-exact, or EN/JP counterpart sections
-    const allSameId = ids.every(id => id === ids[0]);
-    const alreadyCovered = (allSameId && dismissed.has(`exact:${ids[0]}`))
-      || results.exact.some(e => ids.includes(e.a.id) && ids.includes(e.b.id))
-      || results.counterparts.some(cp => ids.includes(cp.enCard.i) && ids.includes(cp.jpCard.i));
-    if (alreadyCovered) continue;
-    const key = `name:${ids.join(':')}`;
-    if (dismissed.has(key)) continue;
-    results.nameDupes.push({ group, key });
-  }
-
-  return results;
-}
-
-function updateToolsDupeBadge() {
-  const badge = document.getElementById('toolsDupeBadge');
-  if (!badge) return;
-  const d = _detectDupes();
-  const count = d.exact.length + d.counterparts.length + d.nameDupes.length;
-  badge.textContent = count;
-  badge.style.display = count > 0 ? '' : 'none';
-}
-
-function renderToolsDuplicates() {
-  const el = document.getElementById('toolsDupesMount');
-  if (!el) return;
-  const dupes = _detectDupes();
-  const total = dupes.exact.length + dupes.counterparts.length + dupes.nameDupes.length;
-
-  // Render a pick column: card thumbnail + optional meta line + action button
-  function pickCol(item, card, actionHtml = '') {
-    const img   = (item?.img || '') ? `<img class="dupe-thumb" src="${esc(item.img)}" alt="" onerror="this.style.opacity='0'">` : '<div class="dupe-thumb"></div>';
-    const lang  = card?.lang === 'JP' ? '<span class="dupe-lang jp">JP</span>' : '<span class="dupe-lang en">EN</span>';
-    const name  = esc(card?.n || item?.name || '');
-    const set   = esc(card?.s || item?.set || '');
-    const price = card ? fmtGBPDirect(usdToGbp(getCurrentPrice(card))) : '';
-    const cost  = (() => { try { const c = getAcqCostBasisGBP(item?.id); return Number.isFinite(c) && c > 0 ? `Cost ${fmtGBPDirect(c)}` : ''; } catch { return ''; } })();
-    const date  = item?.addedDate ? `Added ${new Date(item.addedDate).toLocaleDateString('en-GB')}` : '';
-    const copies = (item?.copies || 1) > 1 ? `×${item.copies} copies` : '';
-    const meta  = [date, cost, copies].filter(Boolean).join(' · ');
-    return `<div class="dupe-pick-col">
-      <div class="dupe-card-thumb">${img}<div class="dupe-card-meta">${lang}<span class="dupe-card-name">${name}</span><span class="dupe-card-set">${set}</span>${price ? `<span class="dupe-card-price">${price}</span>` : ''}</div></div>
-      ${meta ? `<div class="dupe-pick-meta">${esc(meta)}</div>` : ''}
-      ${actionHtml}
-    </div>`;
-  }
-
-  function dismissBtn(key, label = 'Dismiss') {
-    return `<button class="dupe-btn dupe-dismiss" data-dupe-key="${esc(key)}">${label}</button>`;
-  }
-
-  function _afterAction(key, row) {
-    const dismissed = _getDupeDismissed();
-    dismissed.add(key);
-    _saveDupeDismissed(dismissed);
-    row?.remove();
-    updateToolsDupeBadge();
-    if (!el.querySelector('.dupe-row')) el.innerHTML = '<div class="dupe-empty"><p>All clear.</p></div>';
-  }
-
-  if (total === 0) {
-    el.innerHTML = '<div class="dupe-empty"><p>No duplicates or unconfirmed counterpart pairs found in your collection.</p></div>';
-    return;
-  }
-
-  let html = '';
-
-  // --- Exact duplicates: same card ID added multiple times ---
-  if (dupes.exact.length > 0) {
-    html += `<div class="dupe-section-hd">Exact duplicates · ${dupes.exact.length}</div>`;
-    for (const { a, b, key } of dupes.exact) {
-      const cardA = getCardById(a.id);
-      const keepABtn = `<button class="dupe-btn dupe-merge dupe-pick-keep" data-dupe-key="${esc(key)}" data-keep-date="${esc(a.addedDate||'')}" data-remove-date="${esc(b.addedDate||'')}" data-card-id="${esc(a.id)}">Keep this one</button>`;
-      const keepBBtn = `<button class="dupe-btn dupe-merge dupe-pick-keep" data-dupe-key="${esc(key)}" data-keep-date="${esc(b.addedDate||'')}" data-remove-date="${esc(a.addedDate||'')}" data-card-id="${esc(b.id)}">Keep this one</button>`;
-      html += `<div class="dupe-row" data-dupe-key="${esc(key)}">
-        <div class="dupe-detail">Same card added twice — pick which entry to keep. Copies will be combined.</div>
-        <div class="dupe-pick-grid">
-          ${pickCol(a, cardA, keepABtn)}
-          ${pickCol(b, cardA, keepBBtn)}
-        </div>
-        <div class="dupe-actions">${dismissBtn(key)}</div>
-      </div>`;
-    }
-  }
-
-  // --- EN/JP counterpart pairs: both language versions in collection ---
-  if (dupes.counterparts.length > 0) {
-    html += `<div class="dupe-section-hd">EN / JP pairs in collection · ${dupes.counterparts.length}</div>`;
-    for (const { enItem, enCard, jpItem, jpCard, enRawGBP, jpRawGBP, key } of dupes.counterparts) {
-      const diff = enRawGBP > 0 && jpRawGBP > 0
-        ? (jpRawGBP < enRawGBP
-            ? `JP is ${fmtGBPDirect(enRawGBP - jpRawGBP)} cheaper (${Math.round((enRawGBP - jpRawGBP) / enRawGBP * 100)}%)`
-            : `EN is ${fmtGBPDirect(jpRawGBP - enRawGBP)} cheaper`)
-        : '';
-      const keepEnBtn = `<button class="dupe-btn dupe-keep-only" data-dupe-key="${esc(key)}" data-keep-id="${esc(enCard.i)}" data-remove-ids="${esc(jpCard.i)}">Keep EN only</button>`;
-      const keepJpBtn = `<button class="dupe-btn dupe-keep-only" data-dupe-key="${esc(key)}" data-keep-id="${esc(jpCard.i)}" data-remove-ids="${esc(enCard.i)}">Keep JP only</button>`;
-      html += `<div class="dupe-row" data-dupe-key="${esc(key)}">
-        ${diff ? `<div class="dupe-detail">${diff}</div>` : ''}
-        <div class="dupe-pick-grid">
-          ${pickCol(enItem, enCard, keepEnBtn)}
-          ${pickCol(jpItem, jpCard, keepJpBtn)}
-        </div>
-        <div class="dupe-actions">
-          <button class="dupe-btn dupe-compare" data-en-id="${esc(enCard.i)}" data-jp-id="${esc(jpCard.i)}">Compare in Predict</button>
-          ${dismissBtn(key, 'Dismiss — keeping both')}
-        </div>
-      </div>`;
-    }
-  }
-
-  // --- Name-based near-duplicates: same Pokémon, different set/variant ---
-  if (dupes.nameDupes.length > 0) {
-    html += `<div class="dupe-section-hd">Same name, different cards · ${dupes.nameDupes.length}</div>`;
-    for (const { group, key } of dupes.nameDupes) {
-      const cols = group.map(({ p, card }) => {
-        const removeOtherIds = group.filter(g => g.card.i !== card.i).map(g => g.card.i).join(',');
-        const keepBtn = `<button class="dupe-btn dupe-keep-only" data-dupe-key="${esc(key)}" data-keep-id="${esc(card.i)}" data-remove-ids="${esc(removeOtherIds)}">Keep only this</button>`;
-        return pickCol(p, card, keepBtn);
-      }).join('');
-      html += `<div class="dupe-row" data-dupe-key="${esc(key)}">
-        <div class="dupe-detail">Multiple versions of the same Pokémon — pick one to keep, or dismiss if intentional.</div>
-        <div class="dupe-pick-grid">${cols}</div>
-        <div class="dupe-actions">${dismissBtn(key, 'Dismiss — keeping all')}</div>
-      </div>`;
-    }
-  }
-
-  el.innerHTML = html;
-
-  el.addEventListener('click', e => {
-    // Dismiss
-    const dis = e.target.closest('.dupe-dismiss');
-    if (dis) { _afterAction(dis.dataset.dupeKey, dis.closest('.dupe-row')); return; }
-
-    // Exact dupe: pick which entry to keep (merges copies)
-    const pickKeep = e.target.closest('.dupe-pick-keep');
-    if (pickKeep) {
-      const cardId     = pickKeep.dataset.cardId;
-      const keepDate   = pickKeep.dataset.keepDate;
-      const removeDate = pickKeep.dataset.removeDate;
-      const entries    = portfolio.filter(p => p.id === cardId);
-      const keepEntry   = entries.find(p => p.addedDate === keepDate) || entries[0];
-      const removeEntry = entries.find(p => p !== keepEntry && (!removeDate || p.addedDate === removeDate)) || entries.find(p => p !== keepEntry);
-      if (keepEntry && removeEntry) {
-        keepEntry.copies = (keepEntry.copies || 1) + (removeEntry.copies || 1);
-        portfolio.splice(portfolio.indexOf(removeEntry), 1);
-        savePortfolio();
-        renderPortfolio?.();
-        _homeCollHash = ''; _renderHomeCollection?.();
-      }
-      _afterAction(pickKeep.dataset.dupeKey, pickKeep.closest('.dupe-row'));
-      return;
-    }
-
-    // Keep-only: remove the other card(s) from portfolio entirely (different IDs)
-    const keepOnly = e.target.closest('.dupe-keep-only');
-    if (keepOnly) {
-      const removeIds = (keepOnly.dataset.removeIds || '').split(',').filter(Boolean);
-      for (const rid of removeIds) {
-        const idx = portfolio.findIndex(p => p.id === rid);
-        if (idx >= 0) portfolio.splice(idx, 1);
-      }
-      savePortfolio();
-      renderPortfolio?.();
-      _homeCollHash = ''; _renderHomeCollection?.();
-      _afterAction(keepOnly.dataset.dupeKey, keepOnly.closest('.dupe-row'));
-      return;
-    }
-
-    // Compare in Predict
-    const cmp = e.target.closest('.dupe-compare');
-    if (cmp) {
-      go('predict');
-      setTimeout(() => { try { selectCard(cmp.dataset.enId); } catch {} }, 80);
-    }
-  });
-}
 
 // =============================================================
 // Underrated Engine — agentic ranker across Raw + PSA 1-10
@@ -28729,7 +24568,7 @@ function applyHoldOverrides(card, strategies, fx, gradingFeeUSD, addOnUSD) {
   const fxRateLocal = (typeof fx === 'number' && fx > 0) ? fx : 0.79;
   // When the user has an acquisition cost, the raw-card override means "current market"
   // rather than "what I'm about to pay" — keep acquisition cost as the ROI denominator.
-  const acqCostGBP = getAcqCostBasisGBP(card.i);
+  const acqCostGBP = null;
   const hasAcqCost = acqCostGBP != null && acqCostGBP > 0;
   // The "gamble" (Buy Raw + Grade) row buys raw upfront, so it shares the raw override.
   // Every graded tier can be overridden, not just 7–10 — low-grade vintage is
@@ -29200,11 +25039,7 @@ function setupHeaderMenu() {
   });
 
   // Overlay action items
-  document.getElementById('hmpCollection')?.addEventListener('click', () => { close(); document.getElementById('portfolioToggle')?.click(); });
   document.getElementById('hmpWishlist')?.addEventListener('click',   () => { close(); document.getElementById('wishlistToggle')?.click(); });
-  document.getElementById('hmpBinder')?.addEventListener('click',     () => { close(); go('binder'); });
-  document.getElementById('hmpSets')?.addEventListener('click',       () => { close(); go('sets'); });
-  document.getElementById('hmpBinderPages')?.addEventListener('click', () => { close(); go('binder'); });
   document.getElementById('hmpAlerts')?.addEventListener('click',     () => { close(); document.getElementById('alertsToggle')?.click(); });
   document.getElementById('hmpCompare')?.addEventListener('click',    () => { close(); document.getElementById('compareToggle')?.click(); });
   document.getElementById('hmpLookup')?.addEventListener('click',     () => { close(); document.getElementById('quickLookupToggle')?.click(); });
@@ -29219,9 +25054,7 @@ function setupHeaderMenu() {
 // Called by a MutationObserver so it runs automatically whenever any count changes.
 function _syncHmpBadges() {
   const pairs = [
-    ['portfolioCount', 'hmpCollectionBadge'],
     ['wishlistCount',  'hmpWishlistBadge'],
-    ['binderCount',    'hmpBinderBadge'],
     ['alertsCount',    'hmpAlertsBadge'],
     ['compareCount',   'hmpCompareBadge'],
   ];
@@ -29365,7 +25198,6 @@ function setupCardEditToggle() {
 // -----------------------------------------------------------------------------
 
 const SYNC_KEYS = [
-  'pkm-portfolio',                  // My Collection
   'pkm-wishlist',                   // Wishlist
   'pkm-compare',                    // Compare slots
   'pkm-watchlist-v1',               // Watchlist (alerts)
@@ -29375,10 +25207,8 @@ const SYNC_KEYS = [
   'pkm-pc-overrides-v1',            // PriceCharting overrides
   'pkm-user-cards-v1',              // User-added cards
   'pkm-card-overrides-v1',          // Card metadata overrides
-  'pkm-acquisitions-v1',            // How each card was obtained (pack / single + cost)
   'pkm-hold-overrides',             // Per-card grade-specific market price overrides
   'pkm-gem-overrides-v1',           // Per-card (and per-print) gem rate, entered by hand
-  'pkm-portfolio-history-v1',       // Daily collection total, for the value chart
   'pkm-tcg-overrides-v1',          // TCGPlayer URL overrides (auto-enriched or manual)
   'pkm-tcg-price-overrides-v1',   // TCGPlayer market price overrides (manual USD entry)
   'pkm-jp-psa10-overrides-v1',     // Manually entered JP PSA 10 prices for EN↔JP comparison
@@ -29386,16 +25216,8 @@ const SYNC_KEYS = [
   'pkm-budget-max-gbp',           // Max per card budget slider
   'pkm-grading-service-v1',       // Grading service pref: PSA or ACE
   'pkm-ace-tier-v1',              // ACE grading tier pref
-  'pkm-binder-pages-v1',           // Saved themed binder pages (IR/SIR spreads)
-  'pkm-connected-art-v1',          // Confirmed connected-art runs (card ids in reading order)
-  'pkm-binder-species-overrides-v1', // Binder species name overrides (rename "Mega" → "Charizard" etc.)
-  'pkm-binder-pairings-v1',      // Manual EN/JP card pairings within binder groups
-  'pkm-binder-sort-v1',          // Binder page sort order preference
-  'pkm-binder-priority-v1',      // Priority species for standouts / recommendations
   'pkm-ace-prices-v1',           // ACE Grading sold prices by grade per card
-  'pkm-etb-sets-v1',             // Sets page: sets where user has an ETB
   'pkm-vintage-v1',              // Vintage page targets (WOTC-era PSA hunt list)
-  'pkm-dupe-dismissed-v1',        // Dismissed duplicate / counterpart pairs
   'pkm-price-seen-v1',           // Ever-fetched card IDs (persists across cache evictions)
   'pkm-collectr-ids-v1',         // Collectr product id per card (resolution is free; keep it)
   'pkm-ebay-watch-v1',           // eBay listings being watched, with their last priced state
@@ -29544,16 +25366,9 @@ function syncApplyPayload(payload, mode) {
   }
   // Refresh module-level state so the UI sees the new data without a full reload.
   try {
-    if (typeof portfolio !== 'undefined') portfolio = JSON.parse(localStorage.getItem('pkm-portfolio') || '[]');
     if (typeof wishlist !== 'undefined') wishlist = JSON.parse(localStorage.getItem('pkm-wishlist') || '[]');
-    if (typeof fullArtBinder !== 'undefined') fullArtBinder = JSON.parse(localStorage.getItem('pkm-fullart-binder-v1') || '[]');
     if (typeof compareSlots !== 'undefined') compareSlots = JSON.parse(localStorage.getItem('pkm-compare') || '[null, null]');
     if (typeof watchlist !== 'undefined') watchlist = JSON.parse(localStorage.getItem('pkm-watchlist-v1') || '[]');
-    if (typeof acquisitions !== 'undefined') acquisitions = JSON.parse(localStorage.getItem(ACQ_KEY) || '{}');
-    if (typeof binderSpeciesOverrides !== 'undefined') binderSpeciesOverrides = JSON.parse(localStorage.getItem('pkm-binder-species-overrides-v1') || '{}');
-    if (typeof binderPairings !== 'undefined') binderPairings = JSON.parse(localStorage.getItem('pkm-binder-pairings-v1') || '{}');
-    if (typeof _binderPriority !== 'undefined') _binderPriority = loadBinderPriority();
-    if (typeof _etbSets !== 'undefined') _etbSets = loadEtbSets();
     // Reset seen set and price cache so next read re-fetches from D1
     _priceSeen = null;
     _priceCache = {};
@@ -29568,10 +25383,7 @@ function syncApplyPayload(payload, mode) {
     }
   } catch {}
   // Trigger re-render of any visible panels.
-  try { typeof renderPortfolio    === 'function' && renderPortfolio();    } catch {}
   try { typeof renderWishlist        === 'function' && renderWishlist();        } catch {}
-  try { typeof renderFullArtBinder   === 'function' && renderFullArtBinder();   } catch {}
-  try { typeof renderBinderPage      === 'function' && renderBinderPage();      } catch {}
   try { typeof renderCompare         === 'function' && renderCompare();         } catch {}
   try { typeof renderWatchlist    === 'function' && renderWatchlist();    } catch {}
   try { typeof renderAlerts       === 'function' && renderAlerts();       } catch {}
@@ -30157,7 +25969,6 @@ function syncUpdateStatus() {
       return acc;
     }, {});
     row.innerHTML = `
-      <span class="sync-stat"><strong>${counts['pkm-portfolio'] || 0}</strong> collection</span>
       <span class="sync-stat"><strong>${counts['pkm-wishlist'] || 0}</strong> wishlist</span>
       <span class="sync-stat"><strong>${counts['pkm-watchlist-v1'] || 0}</strong> watchlist</span>
       <span class="sync-stat"><strong>${counts['pkm-mkt-reassignments'] || 0}</strong> reassignments</span>
@@ -30325,8 +26136,7 @@ function _wirePersonalSync(pfx) {
       });
       if (!putRes.ok) throw new Error(`Push failed: HTTP ${putRes.status}`);
       _log('Synced.', 'ok');
-      try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
-      try { if (typeof renderWishlist  === 'function') renderWishlist();  } catch {}
+          try { if (typeof renderWishlist  === 'function') renderWishlist();  } catch {}
       try { if (typeof psUpdateStats   === 'function') psUpdateStats();   } catch {}
     } catch (e) {
       _log(`Failed: ${e.message}`, 'err');
@@ -30445,8 +26255,7 @@ function _wireQsGroup(pfx) {
       _log(receiveLog, `Got ${result.applied} keys — collection updated.`, 'ok');
       codeInput.value = '';
       receiveBtn.disabled = true;
-      try { if (typeof renderPortfolio === 'function') renderPortfolio(); } catch {}
-      try { if (typeof renderWishlist  === 'function') renderWishlist();  } catch {}
+          try { if (typeof renderWishlist  === 'function') renderWishlist();  } catch {}
     } catch (e) {
       _log(receiveLog, `Failed: ${e.message}`, 'err');
     } finally {
@@ -31767,484 +27576,6 @@ async function _vgFetchPrices(cardId, el) {
   if (ladderEl) ladderEl.innerHTML = _vgLadderHTML(card);
 }
 
-// ── Sets / ETB Hit Binder page ────────────────────────────────────────────
-let _setsPageSeries  = 'sv';
-let _setsExpandedId  = null;
-let _setsPopOpenId   = null;   // set whose PSA pop-report import panel is open
-
-// Write a whole set's populations. Each card is a separate PUT, so run them in
-// small batches — a 60-card set otherwise opens 60 sockets at once and the
-// worker starts shedding them.
-async function savePsaPopBulk(matches, onProgress) {
-  let done = 0;
-  for (let i = 0; i < matches.length; i += 5) {
-    await Promise.all(matches.slice(i, i + 5).map(async m => {
-      await savePsaPop(m.card.i, m.row.pop);
-      if (onProgress) onProgress(++done, matches.length);
-    }));
-  }
-  return done;
-}
-
-// Whatever the report didn't cover has to be enterable by hand, or the gap
-// just sits there invisibly. List the cards still without a population and
-// give each one a grade and a number to type into.
-function _renderSetsPopMissing(setId, coveredIds) {
-  const el = document.getElementById('setsPopMissing');
-  if (!el) return;
-  const missing = searchIndex
-    .filter(c => c.sc === setId && !coveredIds.has(c.i))
-    .filter(c => {
-      const have = _popDataCache.get(c.i);
-      return !have || !have.pop || !Object.keys(have.pop).length;
-    })
-    .sort((a, b) => (parseInt(a.cn, 10) || 0) - (parseInt(b.cn, 10) || 0));
-
-  if (!missing.length) {
-    el.innerHTML = coveredIds.size
-      ? `<div class="sets-pop-missing-hd">Every card in this set now has a population.</div>` : '';
-    return;
-  }
-  const opts = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map(g => `<option value="${g}">PSA ${g}</option>`).join('');
-  el.innerHTML =
-    `<div class="sets-pop-missing-hd">${missing.length} card${missing.length === 1 ? '' : 's'} still without a population — add any grade by hand:</div>` +
-    `<div class="sets-pop-missing-list">` +
-    missing.map(c => `<div class="sets-pop-miss-row" data-miss="${esc(c.i)}">
-        <span class="sets-pop-miss-name">${esc(c.n)}${c.cn ? ' #' + esc(String(c.cn)) : ''}</span>
-        <select class="sets-pop-miss-grade" aria-label="PSA grade for ${esc(c.n)}">${opts}</select>
-        <input class="sets-pop-miss-count" type="text" inputmode="numeric" autocomplete="off"
-               placeholder="Pop" aria-label="Population for ${esc(c.n)}">
-        <button class="sets-pop-miss-add" type="button">Add</button>
-        <span class="sets-pop-miss-done"></span>
-      </div>`).join('') +
-    `</div>`;
-
-  el.querySelectorAll('[data-miss]').forEach(row => {
-    const id    = row.dataset.miss;
-    const grade = row.querySelector('.sets-pop-miss-grade');
-    const count = row.querySelector('.sets-pop-miss-count');
-    const add   = row.querySelector('.sets-pop-miss-add');
-    const done  = row.querySelector('.sets-pop-miss-done');
-    const commit = async () => {
-      const n = parseInt((count.value || '').replace(/[,\s]/g, ''), 10);
-      if (!(n >= 0)) { done.textContent = 'Whole number please'; done.className = 'sets-pop-miss-done sets-pop-miss-bad'; return; }
-      add.disabled = true;
-      const pop = await savePsaPopGrade(id, grade.value, n);
-      add.disabled = false;
-      count.value = '';
-      const saved = Object.keys(pop || {}).sort((a, b) => b - a).map(g => `${g}:${pop[g].toLocaleString('en-GB')}`).join(' ');
-      done.textContent = 'saved ' + saved;
-      done.className = 'sets-pop-miss-done sets-pop-miss-ok';
-    };
-    add.addEventListener('click', commit);
-    count.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
-  });
-}
-
-function _wireSetsPopPanel(setId) {
-  const ta      = document.getElementById('setsPopTa');
-  const preview = document.getElementById('setsPopPreview');
-  const importB = document.getElementById('setsPopImport');
-  const cancelB = document.getElementById('setsPopCancel');
-  if (!ta || !preview || !importB) return;
-
-  let result = null;
-
-  const refresh = () => {
-    const parsed = ta.value.trim() ? parsePsaPopReport(ta.value) : null;
-    result = null;
-    if (!ta.value.trim()) {
-      preview.textContent = '';
-      preview.className = 'sets-pop-preview';
-      importB.disabled = true;
-      return;
-    }
-    if (!parsed) {
-      preview.textContent = "Couldn't read a population table there. Include the header row that lists the grades (…9, 9.5, 10) along with the card rows.";
-      preview.className = 'sets-pop-preview sets-pop-bad';
-      importB.disabled = true;
-      return;
-    }
-    result = matchPopReportToSet(parsed.rows, setId);
-    const { matched, unmatched } = result;
-    if (!matched.length) {
-      preview.textContent = `Read ${parsed.rows.length} row${parsed.rows.length === 1 ? '' : 's'} but none matched a card in this set. Check the report is for this set.`;
-      preview.className = 'sets-pop-preview sets-pop-bad';
-      importB.disabled = true;
-      return;
-    }
-    // Card number wins over name when the two disagree, so surface any row
-    // where the report's own description doesn't look like the card it landed
-    // on — that is the signal the report belongs to a different set.
-    const looksOff = m => {
-      const a = (m.row.name || '').toLowerCase().replace(/[^a-z]/g, '');
-      const b = (m.card.n || '').toLowerCase().replace(/[^a-z]/g, '');
-      return a && b && !a.includes(b) && !b.includes(a);
-    };
-    const odd = matched.filter(looksOff);
-
-    // Show a couple of matches outright — a silent column shift is the failure
-    // that matters here, and seeing one row's numbers catches it immediately.
-    const sample = matched.slice(0, 3).map(m => {
-      const g = [10, 9, 8].filter(x => m.row.pop[x] != null)
-        .map(x => `${x}:${(m.row.pop[x] || 0).toLocaleString('en-GB')}`).join(' ');
-      const as = looksOff(m) ? ` (report says "${esc(m.row.name)}")` : '';
-      return `${esc(m.card.n)}${m.row.no ? ' #' + esc(m.row.no) : ''}${as} → ${g}`;
-    }).join('<br>');
-    preview.innerHTML =
-      `<strong>${matched.length} of ${parsed.rows.length} cards matched.</strong>` +
-      (unmatched.length ? ` ${unmatched.length} unmatched (skipped).` : '') +
-      (parsed.collapsed ? ` ${parsed.collapsed} extra print variant${parsed.collapsed === 1 ? '' : 's'} collapsed into the largest population.` : '') +
-      `<div class="sets-pop-sample">${sample}</div>` +
-      (odd.length
-        ? `<div class="sets-pop-check">${odd.length} row${odd.length === 1 ? "'s name doesn't" : "s' names don't"} match the card at that number — check this report is for this set.</div>`
-        : '') +
-      (parsed.mismatched
-        ? `<div class="sets-pop-check">${parsed.mismatched} row${parsed.mismatched === 1 ? "'s grades don't" : "s' grades don't"} add up to its own total — the columns may have been misread. Check before importing.</div>`
-        : parsed.checked ? `<div class="sets-pop-sample">Every row's grades add up to its printed total.</div>` : '') +
-      `<div class="sets-pop-check">Check those counts against the report before importing.</div>`;
-    preview.className = 'sets-pop-preview sets-pop-ok';
-    importB.disabled = false;
-    _renderSetsPopMissing(setId, new Set(matched.map(m => m.card.i)));
-  };
-
-  // Before anything is pasted, the list is still worth showing: it is the
-  // set's current coverage.
-  _renderSetsPopMissing(setId, new Set());
-
-  ta.addEventListener('input', refresh);
-  ta.addEventListener('paste', () => setTimeout(refresh, 0));
-
-  // File upload — PDF straight from PSA, or a CSV/text export. Whatever comes
-  // out lands in the textarea so the same preview (and the same chance to spot
-  // a bad read) applies before anything is saved.
-  const fileIn   = document.getElementById('setsPopFile');
-  const fileName = document.getElementById('setsPopFileName');
-  if (fileIn) fileIn.addEventListener('change', async () => {
-    const f = fileIn.files && fileIn.files[0];
-    if (!f) return;
-    if (fileName) fileName.textContent = `Reading ${f.name}…`;
-    let text = '';
-    try {
-      if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
-        text = await extractPdfText(await f.arrayBuffer());
-        if (!text.trim()) {
-          if (fileName) fileName.textContent = f.name;
-          preview.textContent = 'No text found in that PDF — it may be a scanned image. Open the report on psacard.com and paste the table instead.';
-          preview.className = 'sets-pop-preview sets-pop-bad';
-          importB.disabled = true;
-          return;
-        }
-      } else {
-        text = await f.text();
-        // A CSV's commas are column separators, but the counts use commas as
-        // thousands separators too, so only split on commas outside quotes.
-        if (/\.csv$/i.test(f.name) || f.type === 'text/csv') {
-          text = text.split(/\r?\n/).map(l => {
-            const cells = l.match(/("([^"]|"")*"|[^,]*)(,|$)/g) || [];
-            return cells.map(c => c.replace(/,$/, '').replace(/^"|"$/g, '').replace(/""/g, '"').trim()).join('\t');
-          }).join('\n');
-        }
-      }
-    } catch (e) {
-      if (fileName) fileName.textContent = f.name;
-      preview.textContent = `Could not read that file (${(e && e.message) || 'unknown error'}). Paste the table instead.`;
-      preview.className = 'sets-pop-preview sets-pop-bad';
-      importB.disabled = true;
-      return;
-    }
-    if (fileName) fileName.textContent = f.name;
-    ta.value = text;
-    refresh();
-  });
-
-  importB.addEventListener('click', async () => {
-    if (!result || !result.matched.length) return;
-    importB.disabled = true;
-    const n = result.matched.length;
-    importB.textContent = `Importing 0/${n}…`;
-    await savePsaPopBulk(result.matched, (done, tot) => { importB.textContent = `Importing ${done}/${tot}…`; });
-    preview.innerHTML = `<strong>Imported populations for ${n} cards.</strong> Anything the report missed is listed below — add those by hand.`;
-    preview.className = 'sets-pop-preview sets-pop-ok';
-    importB.textContent = 'Imported ✓';
-    // Stay open: the point of the missing list is to work through it now.
-    _renderSetsPopMissing(setId, new Set(result.matched.map(m => m.card.i)));
-  });
-
-  if (cancelB) cancelB.addEventListener('click', () => { _setsPopOpenId = null; renderSetsPage(); });
-}
-let _setsHitCache    = null; // Map<setId, card[]> — built once per page load
-
-// Rarity priority for hit card sorting (most desirable first)
-const _SETS_HIT_RARITIES = new Set(['SIR','SAR','MHR','SHR','SHUR','HR','UR','IR','AR']);
-const _SETS_HIT_PRIO     = { SIR:0, SAR:1, MHR:2, SHR:3, SHUR:4, HR:5, UR:6, IR:7, AR:8 };
-
-function _buildSetsHitCache() {
-  if (_setsHitCache || !cardData?.cards) return;
-  _setsHitCache = new Map();
-  for (const c of cardData.cards) {
-    if (c.lang && c.lang !== 'EN') continue;
-    const rc = c.rc || '';
-    if (!_SETS_HIT_RARITIES.has(rc)) continue;
-    const setId = c.i ? c.i.split('-')[0] : '';
-    if (!setId) continue;
-    let bucket = _setsHitCache.get(setId);
-    if (!bucket) { bucket = []; _setsHitCache.set(setId, bucket); }
-    bucket.push(c);
-  }
-}
-
-function renderSetsPage() {
-  const el = document.getElementById('pageSets');
-  if (!el || el.style.display === 'none') return;
-
-  if (!cardData?.cards || !setsData) {
-    el.innerHTML = '<div class="sets-page"><p class="sets-loading">Loading card database…</p></div>';
-    setTimeout(() => { if (el.style.display !== 'none') renderSetsPage(); }, 400);
-    return;
-  }
-
-  _buildSetsHitCache();
-
-  const portfolioIds = new Set(portfolio.map(p => p.id || p.i).filter(Boolean));
-  const binderIds    = new Set(fullArtBinder.map(b => b.id).filter(Boolean));
-  const wishlistIds  = new Set(wishlist.map(w => w.id || w.i).filter(Boolean));
-
-  // Filter & sort sets: newest first, skip promo/trainer-gallery subsets
-  const SKIP_SUFFIX = /tg$|gg$|sve$|_sv$/;
-  const SKIP_NAMES  = /trainer.gallery|galarian.gallery|promo/i;
-  const allSets = Object.entries(setsData)
-    .filter(([id, s]) => s.releaseDate && !SKIP_SUFFIX.test(id) && !SKIP_NAMES.test(s.name || ''))
-    .sort((a, b) => b[1].releaseDate.localeCompare(a[1].releaseDate));
-
-  const seriesFiltered =
-    _setsPageSeries === 'sv'      ? allSets.filter(([id]) => id.startsWith('sv') && !id.startsWith('svp')) :
-    _setsPageSeries === 'swsh'    ? allSets.filter(([id]) => id.startsWith('swsh')) :
-    _setsPageSeries === 'megaevo' ? allSets.filter(([, s]) => s.series === 'Mega Evolution') :
-    _setsPageSeries === 'older'   ? allSets.filter(([id]) => !id.startsWith('sv') && !id.startsWith('swsh')) :
-    allSets;
-
-  const etbCount = Object.keys(_etbSets).filter(n => _etbSets[n]).length;
-
-  let html = `<div class="sets-page">
-    <div class="sets-hdr">
-      <div class="sets-hdr-top">
-        <h2 class="sets-title">Sets</h2>
-        ${etbCount ? `<span class="sets-etb-total">${etbCount} ETB${etbCount > 1 ? 's' : ''} tracked</span>` : ''}
-      </div>
-      <p class="sets-subtitle">Mark sets where you have an ETB — see which Ex / IR / SIR cards to pick up for your Hit Binder.</p>
-      <div class="sets-series-row">
-        <button class="sets-sf${_setsPageSeries==='sv'      ?' sets-sf--active':''}" data-sf="sv">Scarlet &amp; Violet</button>
-        <button class="sets-sf${_setsPageSeries==='swsh'    ?' sets-sf--active':''}" data-sf="swsh">Sword &amp; Shield</button>
-        <button class="sets-sf${_setsPageSeries==='megaevo' ?' sets-sf--active':''}" data-sf="megaevo">Mega Evo</button>
-        <button class="sets-sf${_setsPageSeries==='older'   ?' sets-sf--active':''}" data-sf="older">Older</button>
-        <button class="sets-sf${_setsPageSeries==='all'     ?' sets-sf--active':''}" data-sf="all">All</button>
-      </div>
-    </div>
-    <div class="sets-grid">`;
-
-  for (const [setId, setMeta] of seriesFiltered) {
-    const hits    = _setsHitCache?.get(setId) || [];
-    const hasEtb  = !!_etbSets[setMeta.name];
-    const isOpen  = _setsExpandedId === setId;
-    const needed  = hasEtb ? hits.filter(c => !portfolioIds.has(c.i) && !binderIds.has(c.i)).length : 0;
-    const owned   = hasEtb ? hits.filter(c => portfolioIds.has(c.i)).length : 0;
-    const yr      = (setMeta.releaseDate || '').slice(0, 4);
-
-    html += `<div class="sets-card${hasEtb?' sets-card--etb':''}${isOpen?' sets-card--open':''}">
-      <div class="sets-card-header" data-sets-toggle="${esc(setId)}">
-        <div class="sets-logo-wrap">
-          <img class="sets-logo" src="${esc(setLogoUrl(setId))}"
-               alt="${esc(setMeta.name)}" loading="lazy"
-               onload="if(this.naturalWidth<=this.naturalHeight){this.style.display='none';this.nextElementSibling.style.display='flex'}"
-               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-          <div class="sets-logo-fallback">${esc((setMeta.name||'?').slice(0,14))}</div>
-        </div>
-        <div class="sets-card-info">
-          <div class="sets-card-name">${esc(setMeta.name)}</div>
-          <div class="sets-card-meta">${yr} · ${setMeta.printedTotal || '?'} cards · ${hits.length} hits</div>
-          ${hasEtb && needed > 0 ? `<div class="sets-need-badge">${needed} still needed</div>` : ''}
-          ${hasEtb && hits.length > 0 && needed === 0 ? `<div class="sets-all-done">All hits tracked ✓</div>` : ''}
-        </div>
-        <button class="sets-pop-btn${_setsPopOpenId===setId?' sets-pop-btn--on':''}" data-setpop="${esc(setId)}"
-                title="Paste the PSA population report for this set">Pop</button>
-        <button class="sets-etb-btn${hasEtb?' sets-etb-btn--on':''}" data-etb="${esc(setMeta.name)}"
-                title="${hasEtb?'Remove ETB mark':'I have an ETB for this set'}">
-          ${hasEtb ? '✓ ETB' : '+ ETB'}
-        </button>
-      </div>`;
-
-    if (_setsPopOpenId === setId) {
-      html += `<div class="sets-pop-panel">
-        <div class="sets-pop-hint">Upload the Certified Population Report you downloaded from psacard.com (PDF or CSV),
-          or paste the table straight from the page — include the header row of grades either way.
-          Card numbers are matched to the database.</div>
-        <div class="sets-pop-file">
-          <label class="sets-pop-filebtn">
-            Choose file
-            <input type="file" id="setsPopFile" accept=".pdf,.csv,.tsv,.txt,application/pdf,text/csv,text/plain" hidden>
-          </label>
-          <span class="sets-pop-filename" id="setsPopFileName">No file chosen — or paste below</span>
-        </div>
-        <textarea class="sets-pop-ta" id="setsPopTa" rows="6" spellcheck="false"
-                  placeholder="Card #&#9;Description&#9;AUTH&#9;1&#9;1.5&#9;…&#9;9.5&#9;10&#9;Total"></textarea>
-        <div class="sets-pop-preview" id="setsPopPreview"></div>
-        <div class="sets-pop-actions">
-          <button class="sets-pop-import" id="setsPopImport" disabled>Import</button>
-          <button class="sets-pop-cancel" id="setsPopCancel">Cancel</button>
-        </div>
-        <div class="sets-pop-missing" id="setsPopMissing"></div>
-      </div>`;
-    }
-
-    if (isOpen) {
-      if (hits.length === 0) {
-        html += `<div class="sets-hit-list sets-hit-empty">No hit cards in database for this set.</div>`;
-      } else {
-        const sorted = [...hits].sort((a, b) => {
-          const stA = portfolioIds.has(a.i) ? 2 : binderIds.has(a.i) ? 1 : 0;
-          const stB = portfolioIds.has(b.i) ? 2 : binderIds.has(b.i) ? 1 : 0;
-          if (stA !== stB) return stA - stB;
-          return ((_SETS_HIT_PRIO[a.rc] ?? 9) - (_SETS_HIT_PRIO[b.rc] ?? 9));
-        });
-        html += `<div class="sets-hit-list">
-          <div class="sets-hit-hdr">
-            <span>${hits.length} hit cards · ${needed} needed · ${owned} owned</span>
-          </div>`;
-        for (const c of sorted) {
-          const inColl   = portfolioIds.has(c.i);
-          const inBinder = !inColl && binderIds.has(c.i);
-          const inWish   = !inColl && !inBinder && wishlistIds.has(c.i);
-          const dotCls   = inColl ? 'owned' : inBinder ? 'targeted' : 'needed';
-          const priceGbp = c.p ? fmtGBP(usdToGbp(c.p)) : '';
-          const thumbUrl = !c.sc ? ''
-            : setUsesScrydex(c.sc) ? scrydexCardImg(c, 'small')
-            : `https://images.pokemontcg.io/${esc(c.sc)}/${esc(c.cn||c.ns||'')}.png`;
-          html += `<div class="sets-hit-row" data-card-id="${esc(c.i)}">
-            ${thumbUrl
-              ? `<img class="sets-hit-thumb" src="${thumbUrl}" alt="${esc(c.n)}" loading="lazy" onerror="this.outerHTML='<div class=\\'sets-hit-thumb sets-hit-thumb--ph\\'></div>'">`
-              : `<div class="sets-hit-thumb sets-hit-thumb--ph"></div>`}
-            <span class="sets-hit-dot sets-hit-dot--${dotCls}"></span>
-            <div class="sets-hit-main">
-              <span class="sets-hit-name">${esc(c.n)}</span>
-              <span class="sets-rc sets-rc--${(c.rc||'').toLowerCase()}">${esc(c.rc||'')}</span>
-            </div>
-            ${priceGbp ? `<span class="sets-hit-price">${esc(priceGbp)}</span>` : ''}
-            <div class="sets-hit-actions">
-              <button class="sets-hit-act" data-sv="${esc(c.i)}" title="View card">↗</button>
-              <button class="sets-hit-act${inColl?' sets-hit-act--coll-on':' sets-hit-act--coll'}" data-sc="${esc(c.i)}"
-                      title="${inColl?'Remove from My Collection':'Add to My Collection'}">${inColl?'✓ Coll':'+ Coll'}</button>
-              ${!inColl && !inBinder ? `<button class="sets-hit-act sets-hit-act--binder" data-sb="${esc(c.i)}" title="Add to Hit Binder">+ Binder</button>` : ''}
-              ${!inColl && !inWish   ? `<button class="sets-hit-act sets-hit-act--wish"   data-sw="${esc(c.i)}" title="Add to Wishlist">♥</button>` : ''}
-            </div>
-          </div>`;
-        }
-        html += `</div>`;
-      }
-    }
-
-    html += `</div>`;
-  }
-
-  html += `</div></div>`;
-  el.innerHTML = html;
-
-  // Wire filter buttons
-  el.querySelectorAll('[data-sf]').forEach(btn => {
-    btn.addEventListener('click', () => { _setsPageSeries = btn.dataset.sf; _setsExpandedId = null; renderSetsPage(); });
-  });
-
-  // Wire set expand/collapse
-  el.querySelectorAll('[data-sets-toggle]').forEach(hdr => {
-    hdr.addEventListener('click', e => {
-      if (e.target.closest('[data-etb]') || e.target.closest('[data-setpop]')) return;
-      const id = hdr.dataset.setsToggle;
-      _setsExpandedId = _setsExpandedId === id ? null : id;
-      renderSetsPage();
-    });
-  });
-
-  // Wire the PSA pop-report import panel
-  el.querySelectorAll('[data-setpop]').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const id = btn.dataset.setpop;
-      _setsPopOpenId = _setsPopOpenId === id ? null : id;
-      renderSetsPage();
-      if (_setsPopOpenId === id) setTimeout(() => { const t = document.getElementById('setsPopTa'); if (t) t.focus(); }, 30);
-    });
-  });
-  if (_setsPopOpenId) _wireSetsPopPanel(_setsPopOpenId);
-
-  // Wire ETB toggle
-  el.querySelectorAll('[data-etb]').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const name = btn.dataset.etb;
-      if (_etbSets[name]) delete _etbSets[name];
-      else _etbSets[name] = true;
-      saveEtbSets(_etbSets);
-      renderSetsPage();
-    });
-  });
-
-  // Wire hit card actions
-  el.querySelectorAll('[data-sv]').forEach(btn => {
-    btn.addEventListener('click', e => { e.stopPropagation(); selectCard(btn.dataset.sv); go('predict'); });
-  });
-
-  el.querySelectorAll('[data-sc]').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const card = cardData?.cards.find(c => c.i === btn.dataset.sc);
-      if (!card) return;
-      const idx = portfolio.findIndex(p => p.id === card.i);
-      if (idx >= 0) {
-        portfolio.splice(idx, 1);
-      } else {
-        portfolio.push({
-          id: card.i, name: card.n, set: card.s,
-          img: getCardImg(card),
-          price: getCurrentPrice(card),
-          addedDate: new Date().toISOString(),
-          addedPriceGBP: usdToGbp(getCurrentPrice(card)),
-          copies: 1,
-        });
-      }
-      savePortfolio();
-      updatePortfolioButton();
-      renderSetsPage();
-    });
-  });
-
-  el.querySelectorAll('[data-sb]').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const card = cardData?.cards.find(c => c.i === btn.dataset.sb);
-      if (!card) return;
-      if (!fullArtBinder.find(b => b.id === card.i)) {
-        fullArtBinder.push({ id: card.i, name: card.n, set: card.s, cn: card.cn, lang: card.lang || 'EN', added: Date.now() });
-        saveFullArtBinder();
-        updateFullArtBinderButton();
-      }
-      renderSetsPage();
-    });
-  });
-
-  el.querySelectorAll('[data-sw]').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const card = cardData?.cards.find(c => c.i === btn.dataset.sw);
-      if (!card) return;
-      if (!wishlist.find(w => (w.id || w.i) === card.i)) {
-        wishlist.push({ id: card.i, i: card.i, n: card.n, name: card.n, set: card.s, cn: card.cn, lang: card.lang || 'EN', added: Date.now() });
-        saveWishlist();
-        updateWishlistButton();
-      }
-      renderSetsPage();
-    });
-  });
-}
 
 function _vgWire(el) {
   if (el._vgWired) return;
@@ -32625,134 +27956,6 @@ function renderStandouts() {
   // Sub-filter (Raw | PSA 9 | PSA 10) only applies to Vintage and Spike Watch
   if (!['vintage','spike'].includes(_soGrade)) _soHideSubFilter();
 
-  // — Upgrade tab: buy a PSA 10 slab of a card you already own raw —
-  if (_soGrade === 'upgrade') {
-    const upSubEl = document.getElementById('soSubtitle');
-    if (upSubEl) upSubEl.textContent = 'Cards you own raw where buying the PSA 10 slab makes sense — ranked by 5yr projected ROI.';
-
-    if (!portfolio.length) {
-      carousel.innerHTML = '<div class="so-empty">Add cards to your collection to see upgrade opportunities.</div>';
-      dotsEl.innerHTML = '';
-    } else {
-      const upCandidates = [];
-      for (const entry of portfolio) {
-        const card = getCardById(entry.id);
-        if (!card) continue;
-        try {
-          const anchor = getPsa10Anchor(card);
-          const psa10USD = anchor.usd || 0;
-          if (psa10USD <= 0) continue;
-          const rawUSD = getCurrentPrice(card) || 0;
-          const rawGBP = usdToGbp(rawUSD);
-          const psa10GBP = psa10USD * fx;
-          if (psa10GBP <= rawGBP) continue;
-          const netUpgradeCostGBP = Math.max(0, psa10GBP - rawGBP);
-          // Budget: exclude only if even net cost (after selling raw) exceeds limit
-          if (hasLimit && netUpgradeCostGBP > maxBudgetGBP) continue;
-          const hc = _getHoldCoreCached(card);
-          const psa10Strat = hc?.ok ? hc.strategies?.find(s => s.key === 'psa10') : null;
-          if (!psa10Strat || psa10Strat.roi <= 0) continue;
-          upCandidates.push({
-            card, rawGBP, psa10GBP, netUpgradeCostGBP,
-            roi: psa10Strat.roi,
-            yr5GBP: psa10Strat.yr5 * fx,
-            profitGBP: psa10Strat.profit * fx,
-            risk: psa10Strat.risk || 'med',
-            gemRateFrac: card.g != null ? card.g : null,
-            // Flag when outright buy exceeds budget but sell-raw route doesn't
-            onlyFitsIfSellRaw: hasLimit && psa10GBP > maxBudgetGBP,
-          });
-        } catch (_) {}
-      }
-
-      upCandidates.sort((a, b) => b.roi - a.roi);
-      const upTop = upCandidates.slice(0, 12);
-      _soUpgradeItems = upTop;
-
-      if (upTop.length === 0) {
-        carousel.innerHTML = '<div class="so-empty">No upgrade opportunities found — cards need a PSA 10 price basis to compare.</div>';
-        dotsEl.innerHTML = '';
-      } else {
-        carousel.innerHTML = upTop.map((item, i) => {
-          const { card, rawGBP, psa10GBP, netUpgradeCostGBP, roi, yr5GBP, profitGBP, risk, gemRateFrac, onlyFitsIfSellRaw } = item;
-          const imgUrl    = _hiresUrl(getCardImg(card));
-          const roiColor  = roi >= 100 ? '#34d399' : roi >= 50 ? '#e8b634' : 'var(--text)';
-          const riskClass = risk === 'low' ? 'so-risk-low' : risk === 'high' ? 'so-risk-high' : 'so-risk-med';
-          const riskLabel = risk === 'low' ? 'Low risk' : risk === 'high' ? 'High risk' : 'Med risk';
-          const inUpgrades = upgradesList.some(u => u.id === card.i);
-          const insight   = _buildUpgradeInsight(item, maxBudgetGBP, hasLimit);
-          return `<div class="so-card" data-so-i="${i}">
-            <div class="so-img-wrap">
-              ${imgUrl ? `<img class="so-img" src="${esc(imgUrl)}" alt="" loading="lazy" decoding="async" onerror="_onImgError(this)">` : '<div class="so-img" style="background:var(--bg-raised)"></div>'}
-              <span class="so-tag" style="background:rgba(116,185,255,0.2);color:#74b9ff">Owned raw</span>
-            </div>
-            <div class="so-body">
-              <div class="so-name" title="${esc(card.n)}">${esc(card.n)}</div>
-              <div class="so-set">${esc(card.s || '')}${card.cn ? ' \xb7 #' + esc(card.cn) : ''}</div>
-              <div class="so-strat-row">
-                <div class="so-strat-allin">
-                  <span class="so-strat-lbl">Buy PSA 10</span>
-                  <span class="so-strat-price">${fmtGBPDirect(psa10GBP)}</span>
-                </div>
-                <div class="so-strat-roi" style="color:${roiColor}">+${Math.round(roi)}%</div>
-              </div>
-              <div class="so-upgrade-scenarios">
-                <div class="so-upgrade-scenario">
-                  <span class="so-upg-lbl">Keep raw</span>
-                  <span class="so-upg-val">${fmtGBPDirect(psa10GBP)} outright${onlyFitsIfSellRaw ? ' <span class="so-upg-over">over budget</span>' : ''}</span>
-                </div>
-                <div class="so-upgrade-scenario">
-                  <span class="so-upg-lbl">Sell raw</span>
-                  <span class="so-upg-val">${fmtGBPDirect(netUpgradeCostGBP)} net &nbsp;<span class="so-upg-dim">sell at ${fmtGBPDirect(rawGBP)}</span></span>
-                </div>
-              </div>
-              <div class="so-strat-meta">5yr target ${fmtGBPDirect(yr5GBP)} &nbsp;&middot;&nbsp; profit +${fmtGBPDirect(profitGBP)}</div>
-              <div class="so-key-insight">
-                <div class="so-key-insight-lbl"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>Key Insight</div>
-                <div class="so-key-insight-txt">${esc(insight)}</div>
-              </div>
-              <div class="so-strat-badges">
-                <span class="so-risk-badge ${riskClass}">${riskLabel}</span>
-                ${_soGemBadge(card)}
-              </div>
-              <div class="so-actions">
-                <button class="so-btn-main" onclick="selectCard('${esc(card.i)}');go('predict')">View card</button>
-                <button class="so-btn-sec${inUpgrades ? ' so-upgrade-saved' : ''}" onclick="_toggleUpgradeFromSO(${i})">${inUpgrades ? '✓ Saved' : '+ Upgrades'}</button>
-              </div>
-            </div>
-          </div>`;
-        }).join('');
-
-        dotsEl.innerHTML = upTop.map((_, i) =>
-          `<div class="so-dot${i === 0 ? ' active' : ''}" data-dot="${i}"></div>`
-        ).join('');
-
-        if (!carousel.dataset.scrollBound) {
-          carousel.dataset.scrollBound = '1';
-          carousel.addEventListener('scroll', () => {
-            const w = (carousel.querySelector('.so-card')?.offsetWidth || 1) + 16;
-            const idx = Math.round(carousel.scrollLeft / w);
-            dotsEl.querySelectorAll('.so-dot').forEach((d, i2) => d.classList.toggle('active', i2 === idx));
-          }, { passive: true });
-        }
-      }
-    }
-
-    // Wire grade toggle (idempotent — guard prevents double-binding)
-    const upToggle = document.getElementById('soGradeToggle');
-    if (upToggle && !upToggle.dataset.bound) {
-      upToggle.dataset.bound = '1';
-      upToggle.addEventListener('click', e => {
-        const btn = e.target.closest('[data-grade]');
-        if (!btn) return;
-        _soGrade = btn.dataset.grade;
-        upToggle.querySelectorAll('.sgt-btn').forEach(b => b.classList.toggle('active', b === btn));
-        renderStandouts();
-      });
-    }
-    return;
-  }
-  // — end Upgrade tab —
 
   // — Mass Grade tab —
   if (_soGrade === 'mass') {
@@ -33479,7 +28682,6 @@ function renderStandouts() {
 }
 
 
-
 // ── AI Analysis page ───────────────────────────────────────────────────────────
 
 // Returns the current (or nearest upcoming) Budget month's remaining allowance.
@@ -33584,7 +28786,7 @@ async function _aiaFetchRanking(cards, monthRemain) {
     ? `Total monthly budget remaining: ${fmtGBPDirect(monthRemain)} for ALL purchases combined this month — not per card. Mark buy_now:true only for a curated selection whose COMBINED cost stays within this total. If the best card alone costs more than the budget, leave all as false.`
     : '';
 
-  const prioritySpecies = [..._binderPriority];
+  const prioritySpecies = [];
   const priorityCtx = prioritySpecies.length
     ? `\n\nUser binder priority species (boost these): ${prioritySpecies.join(', ')}. Cards featuring these Pokémon should be ranked higher and given stars:3 where fundamentals support it.`
     : '';
@@ -33632,11 +28834,7 @@ function renderAiAnalysisPage() {
   const wCards = wishlist
     .map(w => ({ card: getCardById(w.id), pd: getCachedPrice(w.id), w }))
     .filter(x => x.card);
-  // Unowned Full Art Binder entries treated as an additional wishlist
-  const _bCardsRaw = (typeof fullArtBinder !== 'undefined' ? fullArtBinder : [])
-    .filter(b => !b.owned)
-    .map(b => ({ card: getCardById(b.id), pd: getCachedPrice(b.id), b, isBinder: true }))
-    .filter(x => x.card);
+  const _bCardsRaw = [];
 
   // Language filter: group EN/JP counterparts, keep the better-value one per generation rule.
   // Gen 1–2 (dex ≤251): prefer JP if price is lower. Gen 3+ (dex ≥252): prefer EN unless JP
