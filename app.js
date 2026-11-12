@@ -7285,6 +7285,33 @@ function _globalRefreshIfDue() {
   _globalSilentRefresh();
 }
 
+// Entry point for the iOS shell's Background App Refresh task (see
+// ios/PricePredictor/PricePredictorApp.swift). iOS hands the app a short
+// window — about 30 seconds — so this does the cheap, high-value part first:
+// pull the prices the worker's 06:00 UTC run already fetched, then start the
+// daily refresh if it is due and let it run until the budget is spent. The
+// refresh is marked done before it starts, as on the foreground path; if iOS
+// suspends it part-way the remaining cards finish when the app next opens.
+async function pkmBackgroundRefresh(budgetMs = 20000) {
+  const t0 = Date.now();
+  const out = { hydrated: false, refreshStarted: false, refreshFinished: false, ms: 0 };
+  try { await _hydrateFromPriceWarm(); out.hydrated = true; } catch {}
+  try {
+    if (cardData && !_globalRefreshRunning && _shouldGlobalRefresh()) {
+      _markGlobalRefreshed();
+      out.refreshStarted = true;
+      const left = Math.max(0, budgetMs - (Date.now() - t0));
+      out.refreshFinished = await Promise.race([
+        _globalSilentRefresh().then(() => true),
+        new Promise(res => setTimeout(() => res(false), left)),
+      ]);
+    }
+  } catch {}
+  out.ms = Date.now() - t0;
+  return out;
+}
+window.pkmBackgroundRefresh = pkmBackgroundRefresh;
+
 // Force a full price refresh right now, regardless of the 6AM schedule.
 // Exposed globally so it can be called from the Price Sync section or console.
 function forceRefreshAllPrices() {

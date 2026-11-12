@@ -19,6 +19,11 @@ final class WebViewModel: NSObject, ObservableObject {
     /// `--accent`
     static let accent = UIColor(red: 232/255, green: 182/255, blue: 52/255, alpha: 1)
 
+    /// The model whose page is in memory, for the Background App Refresh
+    /// task, which runs outside the view hierarchy. Weak: it never keeps a
+    /// closed scene's web view alive.
+    static weak var current: WebViewModel?
+
     let webView: WKWebView
 
     @Published var isLoading = true
@@ -70,6 +75,7 @@ final class WebViewModel: NSObject, ObservableObject {
         webView.scrollView.contentInsetAdjustmentBehavior = .never
 
         super.init()
+        Self.current = self
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -102,6 +108,22 @@ final class WebViewModel: NSObject, ObservableObject {
     @objc private func handleRefresh(_ sender: UIRefreshControl) {
         webView.reload()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { sender.endRefreshing() }
+    }
+
+    // MARK: Background App Refresh
+
+    /// Runs the site's own background price refresh and waits for it, within
+    /// the ~30 seconds iOS allows. Returns a short description for the log.
+    func backgroundRefresh() async -> String {
+        guard hasLoadedOnce else { return "page not loaded" }
+        let js = "if (typeof window.pkmBackgroundRefresh !== 'function') return 'site has no pkmBackgroundRefresh';"
+            + "return JSON.stringify(await window.pkmBackgroundRefresh(20000));"
+        do {
+            let value = try await webView.callAsyncJavaScript(js, contentWorld: .page)
+            return (value as? String) ?? "done"
+        } catch {
+            return "failed: \(error.localizedDescription)"
+        }
     }
 
     private func isAppPage(_ url: URL) -> Bool {

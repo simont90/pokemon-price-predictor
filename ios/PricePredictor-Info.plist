@@ -8,6 +8,17 @@
 	<array>
 		<string>simont90.github.io</string>
 	</array>
+	<!-- Background App Refresh: lets iOS wake the app briefly so prices are
+	     already current when it is opened. The identifier must match
+	     BackgroundRefresh.taskID in PricePredictorApp.swift. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.simontariq.pokepredictor.refresh</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

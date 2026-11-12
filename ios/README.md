@@ -30,6 +30,16 @@ What the shell supplies, because WKWebView does not do it on its own:
 - **Offline.** `WKAppBoundDomains` = `simont90.github.io` is what lets `sw.js`
   run inside WKWebView, so after one online launch the app opens offline with
   the full catalogue, same as the Home Screen web app.
+- **Background App Refresh.** The Info.plist declares the `fetch` background
+  mode and one task id; `BackgroundRefresh` in `PricePredictorApp.swift`
+  schedules it each time the app is backgrounded. When iOS runs it (its
+  choice of moment, roughly 30 seconds), the shell calls the site's
+  `pkmBackgroundRefresh()`, which pulls the prices the worker fetched
+  overnight and starts the daily refresh if due. It only reaches a page
+  still in memory; after iOS terminates the app, the same pull happens on
+  launch instead. Controlled by Settings → General → Background App Refresh.
+  Does not run in the Simulator — on a device, pause in Xcode and run
+  `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"com.simontariq.pokepredictor.refresh"]`.
 - **Background kills.** iOS reclaims the web process when the app is
   backgrounded; `webViewWebContentProcessDidTerminate` reloads instead of
   leaving a blank screen.

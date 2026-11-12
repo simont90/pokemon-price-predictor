@@ -19,6 +19,13 @@ GitHub into a container that is reclaimed after inactivity. Consequences:
   edited here but **not built or run** — the owner builds it in Xcode on the
   Mac mini from a fresh clone (see `ios/README.md`).
 
+- **Background App Refresh (added Nov 2026, not yet built or run on a
+  device).** The shell declares the `fetch` background mode and calls the
+  site's `window.pkmBackgroundRefresh()` from a `BGAppRefreshTask`. That
+  function is part of the contract with the app: keep its name, keep it
+  returning a promise, and keep it inside iOS's ~30 second window. Details
+  in `ios/README.md`.
+
 `origin/main` on GitHub is the single source of truth. Nothing exists until
 it is pushed there — a local checkout has been lost before, and everything
 survived precisely because it had been pushed.
