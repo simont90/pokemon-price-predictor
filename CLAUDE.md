@@ -415,13 +415,18 @@ on a 4 s debounce. New synced keys "just work" as long as they follow the prefix
   guidance: vertical bars go under the status bar, by the camera) and moves
   left only when the left inset is larger — style.css + `initNavSide()`.
   In the iOS app on a Duo the shell also sets `html[data-status-bar]` and
-  `--status-bar-bottom`; with a side status bar the nav becomes a rail inside
-  the status-bar column, under the status bar, on both displays (end of
-  style.css). The rail is anchored to the **bottom** of the column, with
-  `--rail-top` (244px) only as the highest it may climb: the column's
-  contents move — a Live Activity stacks above the clock and pushes clock,
-  battery ring and dots down to ~220pt — so a top-anchored rail at a fixed
-  offset overlapped them. Don't put fixed UI in that column other than the rail.
+  `--status-bar-bottom`; with a side status bar the content always clears
+  the column. **Navigation follows the screen's shape (owner's decision,
+  Nov 2026): portrait keeps the bottom bar, landscape becomes a rail in the
+  status-bar column** — `initNavSide()` sets `html[data-nav-rail]` only when
+  the viewport is wider than tall. This is the one deliberate exception to
+  "lay out by width". The rail is anchored to the **bottom** of the column,
+  with `--rail-top` only as the highest it may climb (160px in landscape;
+  244px was the portrait floor): the column's contents move — a Live
+  Activity stacks above the clock and pushes clock, battery ring and dots
+  down to ~220pt — so a top-anchored rail at a fixed offset overlapped them.
+  Under 560px tall the rail drops to icons so all six items fit. Don't put
+  fixed UI in that column other than the rail.
 
 ---
 

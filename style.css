@@ -19284,8 +19284,10 @@ button.hh-row:focus-visible, button.hh-item:focus-visible { outline: 2px solid v
    status bar and sets html[data-status-bar="right"|"left"] plus
    --status-bar-bottom; the column's width is the side safe-area inset.
    Every other device reports "top" (or nothing, in a browser) and is
-   untouched. The rail replaces both the bottom pill (folded) and the
-   sidebar (unfolded), so the content reaches right up to the column.
+   untouched. Content always clears the column. The navigation follows
+   the screen's shape, at the owner's request: in portrait it is the
+   bottom bar, in landscape a rail in the column (data-nav-rail, set by
+   initNavSide when the viewport is wider than tall).
    ================================================================= */
 html[data-status-bar="right"] { --rail-col: env(safe-area-inset-right, 0px); }
 html[data-status-bar="left"]  { --rail-col: env(safe-area-inset-left, 0px); }
@@ -19321,7 +19323,7 @@ html[data-status-bar="left"] .app {
 /* Anchored to the bottom of the column: whatever the status bar shows grows
    down from the top, so hugging the bottom keeps the most room between them.
    max-height keeps the top at or below --rail-top; past that it scrolls. */
-html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav {
+html:is([data-nav-rail="right"], [data-nav-rail="left"]) .page-nav {
   top: auto;
   bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   transform: none;
@@ -19333,25 +19335,25 @@ html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav {
   overflow-y: auto;
   scrollbar-width: none;
 }
-html[data-status-bar="right"] .page-nav {
+html[data-nav-rail="right"] .page-nav {
   left: auto;
   right: calc((var(--rail-col) - var(--rail-w)) / 2);
 }
-html[data-status-bar="left"] .page-nav {
+html[data-nav-rail="left"] .page-nav {
   right: auto;
   left: calc((var(--rail-col) - var(--rail-w)) / 2);
 }
-html:is([data-status-bar="right"], [data-status-bar="left"]) .nav-pill,
-html:is([data-status-bar="right"], [data-status-bar="left"]) .nav-hover-bubble {
+html:is([data-nav-rail="right"], [data-nav-rail="left"]) .nav-pill,
+html:is([data-nav-rail="right"], [data-nav-rail="left"]) .nav-hover-bubble {
   left: 4px;
   top: 4px;
   width: calc(100% - 8px);
   bottom: auto;
   height: 56px; /* JS sets the real top/height per button */
 }
-html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav-btn,
-html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav.shrunk .page-nav-btn,
-html:is([data-status-bar="right"], [data-status-bar="left"]) .nav-ctx-btn {
+html:is([data-nav-rail="right"], [data-nav-rail="left"]) .page-nav-btn,
+html:is([data-nav-rail="right"], [data-nav-rail="left"]) .page-nav.shrunk .page-nav-btn,
+html:is([data-nav-rail="right"], [data-nav-rail="left"]) .nav-ctx-btn {
   flex: none !important;
   flex-direction: column;
   align-items: center;
@@ -19363,23 +19365,39 @@ html:is([data-status-bar="right"], [data-status-bar="left"]) .nav-ctx-btn {
   gap: 4px;
   font-size: 10px;
 }
-html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav-btn > span:not(.page-nav-sub) {
+html:is([data-nav-rail="right"], [data-nav-rail="left"]) .page-nav-btn > span:not(.page-nav-sub) {
   display: block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav-sub { display: none !important; }
-html:is([data-status-bar="right"], [data-status-bar="left"]) .page-nav.shrunk { padding: 6px 4px; }
+html:is([data-nav-rail="right"], [data-nav-rail="left"]) .page-nav-sub { display: none !important; }
+html:is([data-nav-rail="right"], [data-nav-rail="left"]) .page-nav.shrunk { padding: 6px 4px; }
 /* My Stuff popup opens beside the rail */
-html[data-status-bar="right"] .hdr-popup.hmp-sidebar {
+html[data-nav-rail="right"] .hdr-popup.hmp-sidebar {
   left: auto;
   right: calc(var(--rail-col) + 8px);
 }
-html[data-status-bar="left"] .hdr-popup.hmp-sidebar {
+html[data-nav-rail="left"] .hdr-popup.hmp-sidebar {
   right: auto;
   left: calc(var(--rail-col) + 8px);
+}
+/* Landscape is short — 466pt on the outer display — and the 244px floor was
+   set for the portrait column, where a Live Activity stacks above the clock.
+   With the rail bottom-anchored that left room for three of its six items.
+   In landscape it may climb higher, and on short screens it drops to icons
+   at 44px, which fits all six with the top still below ~190px. */
+html:is([data-nav-rail="right"], [data-nav-rail="left"]) { --rail-top: 160px; }
+html:is([data-nav-rail="right"], [data-nav-rail="left"]):is([data-native-status-bar="right"], [data-native-status-bar="left"]) {
+  --rail-top: max(calc(var(--status-bar-bottom, 140px) + 16px), 160px);
+}
+@media (max-height: 560px) {
+  html:is([data-nav-rail="right"], [data-nav-rail="left"]) :is(.page-nav-btn, .page-nav.shrunk .page-nav-btn, .nav-ctx-btn) {
+    min-height: 44px;
+    padding: 6px 2px;
+  }
+  html:is([data-nav-rail="right"], [data-nav-rail="left"]) .page-nav-btn > span:not(.page-nav-sub) { display: none; }
 }
 /* Floating buttons sit just inside the content edge, clear of the rail */
 html[data-status-bar="right"] :is(.filter-fab, .ai-chat-btn, .deal-toast) {

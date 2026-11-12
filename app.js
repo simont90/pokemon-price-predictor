@@ -23898,7 +23898,7 @@ function setupPageNav() {
   // Vertical at ≥821px (sidebar), and on iPhone Duo whenever the app shell
   // reports the status bar in a side column (nav rail; see style.css).
   const _isVerticalNav = () => window.matchMedia('(min-width: 821px)').matches
-    || /^(left|right)$/.test(document.documentElement.dataset.statusBar || '');
+    || /^(left|right)$/.test(document.documentElement.dataset.navRail || '');
 
   function _positionPill(activeBtn) {
     if (!pill || !nav || !activeBtn) return;
@@ -30302,6 +30302,16 @@ function _paintPdxCards(sorted, owned) {
     } else if (root.hasAttribute('data-status-bar')) {
       delete root.dataset.statusBar;
     }
+    // Navigation follows the screen's shape (owner's call): portrait keeps
+    // the bottom bar, landscape puts a rail in the status-bar column.
+    // Decided by the viewport's own proportions, not the device orientation
+    // API, so Split View and the inner/outer displays all answer correctly.
+    const rail = side && window.innerWidth > window.innerHeight ? side : null;
+    if (rail) {
+      if (root.dataset.navRail !== rail) root.dataset.navRail = rail;
+    } else if (root.hasAttribute('data-nav-rail')) {
+      delete root.dataset.navRail;
+    }
   };
   sync();
   window.addEventListener('resize', sync, { passive: true });
@@ -30309,5 +30319,5 @@ function _paintPdxCards(sorted, owned) {
   // Folding, unfolding and rotating change data-status-bar; re-place the
   // nav highlight for the rail's new orientation.
   new MutationObserver(() => window.dispatchEvent(new Event('resize')))
-    .observe(root, { attributes: true, attributeFilter: ['data-status-bar'] });
+    .observe(root, { attributes: true, attributeFilter: ['data-status-bar', 'data-nav-rail'] });
 })();
