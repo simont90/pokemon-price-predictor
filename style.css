@@ -599,7 +599,12 @@ body.layout-resizing.tile-resizing { cursor: row-resize; }
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   z-index: 1000; gap: 16px; transition: opacity 0.3s;
 }
-.loading-overlay.hidden { opacity: 0; pointer-events: none; }
+/* Fully retired once faded: at opacity 0 alone the overlay stayed in the tree
+   with its spinner still animating, which kept the browser producing frames
+   (and re-running every IntersectionObserver) 60 times a second on every page
+   for as long as the app was open. */
+.loading-overlay.hidden { opacity: 0; pointer-events: none; visibility: hidden; transition: opacity 0.3s, visibility 0s 0.3s; }
+.loading-overlay.hidden .loading-spinner { animation: none; }
 .loading-spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-overlay p { font-size: 14px; color: var(--text-muted); }
@@ -9854,7 +9859,10 @@ section.card .card-collapse-btn { padding: 10px; }
 
 /* ─── Page transition fade ───────────────────────────────── */
 @keyframes pkm-page-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-.pkm-page-in { animation: pkm-page-in 0.14s ease-out both; will-change: opacity, transform; }
+/* No will-change here. The class stays on the page for as long as it is shown,
+   so the hint promoted every visible page — the whole scrolling document — to
+   its own compositor layer permanently, for a 0.14s fade. */
+.pkm-page-in { animation: pkm-page-in 0.14s ease-out backwards; }
 
 /* ─── AI Chat: card chips ─────────────────────────────────── */
 .ai-card-chip {
@@ -11075,8 +11083,13 @@ html { scroll-behavior: smooth; }
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+/* Entry animations fill backwards only. With `both`, the finished animation
+   kept applying its last keyframe for good — opacity:1 / translateY(0), i.e.
+   nothing visible — and that kept each element promoted to its own compositor
+   layer: the whole page (6,500px tall on a card), every home panel, every
+   section inside it. The resting styles already equal the last keyframe. */
 .page:not([style*="display: none"]) {
-  animation: page-fade-in 0.15s ease both;
+  animation: page-fade-in 0.15s ease backwards;
 }
 
 /* ── Home section entry — fades in when cards load ── */
@@ -11085,7 +11098,7 @@ html { scroll-behavior: smooth; }
   to   { opacity: 1; }
 }
 .home-section-wrap {
-  animation: section-in 0.18s ease both;
+  animation: section-in 0.18s ease backwards;
 }
 
 /* ── Safe areas: ensure nothing clips under iPhone notch or Dynamic Island ── */
@@ -11100,25 +11113,17 @@ html { scroll-behavior: smooth; }
     transform: scale(0.96);
     transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
-  .home-scroll-row .home-card {
-    will-change: transform;
-  }
 }
 
 /* ── Promoted compositor layers for panels that animate in ── */
 .home-pip-sheet { will-change: transform; }
 
-/* ── Card image: GPU compositing on HiDPI/iOS ── */
-.card-thumb {
-  transform: translateZ(0);
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
-.home-card-art {
-  transform: translateZ(0);
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
+/* Card images are deliberately NOT forced onto their own compositor layers.
+   translateZ(0) + backface-visibility on .card-thumb / .home-card-art (and
+   will-change on every card in a scroll row) gave each image a separate
+   backing store — one layer per card on Home, the opposite of what iOS wants:
+   memory per layer, and compositing cost that grows with the count. They
+   paint into their scroller's layer like any other content. */
 
 /* On 2× Retina screens (iPad, iPhone, Mac Retina), the pokemontcg.io
    _hires.png source is 1024 px tall. Cap the display at 512 CSS px
@@ -12387,7 +12392,7 @@ html { scroll-behavior: smooth; }
 }
 .home-section-wrap,
 .home-tab-group {
-  animation: section-in 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  animation: section-in 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -14236,6 +14241,19 @@ details.bdl-pair[open] .bdl-chevron { transform: rotate(180deg); }
 .pkn-logo {
   flex-shrink: 0;
   color: var(--accent, #e8b634);
+}
+/* The dot used to pulse through SVG <animate>. SMIL keeps its clock running
+   for the whole document whether or not the SVG is on screen, so this one
+   logo on a hidden page woke the main thread 60 times a second everywhere.
+   A CSS animation only runs while the element is rendered. */
+.pkn-logo-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pkn-logo-pulse 2.8s ease-in-out infinite;
+}
+@keyframes pkn-logo-pulse {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%      { transform: scale(1.33); opacity: 0.35; }
 }
 .pkn-title-wrap { flex: 1; min-width: 0; }
 .pkn-title {
@@ -17329,6 +17347,11 @@ h1, h2, h3 {
   gap: 8px;
   padding: 0 16px 16px;
 }
+/* 1,025 cells, of which a dozen or two are on screen. Off-screen ones keep
+   their box but skip style, layout and paint until scrolled near. Every cell
+   is 153px tall at every width (measured), so the placeholder is exact and
+   the scroll length does not shift as cells come in. */
+.pdx-grid .pdx-cell { content-visibility: auto; contain-intrinsic-size: auto 110px auto 153px; }
 .pdx-cell.pdx-no-cards { opacity: 0.35; }
 .pdx-count {
   font-size: 9px;
@@ -19401,3 +19424,28 @@ html[data-status-bar="right"] :is(.filter-fab, .ai-chat-btn, .deal-toast) {
   height: 1px;
   background: var(--border);
 }
+
+/* =================================================================
+   Glass inside glass.
+   A backdrop-filter nested inside another backdrop-filtered element can
+   only sample its ancestor — the outer panel is the backdrop root — so
+   on these it blurred the panel's own flat fill: nothing to see, but a
+   separate offscreen blur pass per element on every scroll frame. Home
+   carried ten of them in dark (tab bars, scroll arrows) and ten in light
+   (one per recommendation tile). None of these float over moving
+   content: the tab bar is position:static here, the arrows sit in the
+   section header. The outer panels keep their glass.
+   ================================================================= */
+html .home-tab-group .home-tab-bar,
+html .home-tab-group .home-scroll-btn,
+html .home-tab-group .home-card-tile {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Closed overlays drop out of painting and compositing altogether. At
+   opacity:0 / translated off-canvas they were still full-viewport layers
+   blended into every frame (and the closed panel's 138 nodes stayed in the
+   tab order). visibility flips after the closing transition has run. */
+.screener-overlay:not(.open) { visibility: hidden; transition: opacity 0.25s, visibility 0s 0.25s; }
+.screener-panel:not(.open)   { visibility: hidden; transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s 0.22s; }

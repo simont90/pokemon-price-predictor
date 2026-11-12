@@ -250,6 +250,34 @@ const _salesDataCache = new Map(); // cardId → same shape; separate so pop/sal
 let _marketPCVariant = 'unlimited'; // active variant in the PC panel: 'unlimited' | '1sted' | 'shadowless'
 let _livePriceVariant = null;       // 1st Ed / Shadowless price data when variant is active — fed into Hold Strategy
 let searchIndex = [];
+
+// Parse-once reader for small JSON blobs in localStorage that hot paths ask
+// for per card. localStorage.getItem is a synchronous call out of the JS
+// engine and JSON.parse follows it, so a per-card getter cost both, thousands
+// of times a render. The parsed value is held until the key is written:
+// every write path goes through Storage.prototype (patched here, before the
+// sync hook binds its own copy), and other tabs arrive as a storage event.
+const _lsJSONMemo = new Map();
+(() => {
+  try {
+    const proto = Storage.prototype;
+    for (const fn of ['setItem', 'removeItem']) {
+      const orig = proto[fn];
+      proto[fn] = function(k) { _lsJSONMemo.delete(String(k)); return orig.apply(this, arguments); };
+    }
+    const origClear = proto.clear;
+    proto.clear = function() { _lsJSONMemo.clear(); return origClear.apply(this, arguments); };
+    window.addEventListener('storage', e => { if (e.key == null) _lsJSONMemo.clear(); else _lsJSONMemo.delete(e.key); });
+  } catch {}
+})();
+function _lsJSON(key) {
+  if (_lsJSONMemo.has(key)) return _lsJSONMemo.get(key);
+  let val = {};
+  try { val = JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch { val = {}; }
+  _lsJSONMemo.set(key, val);
+  return val;
+}
+
 const $ = id => document.getElementById(id);
 
 // Inline transparent placeholder used while a TCGC page-URL is being resolved
@@ -557,7 +585,7 @@ function setTcgPriceOverride(cardId, usd) {
 // ---- Manual JP PSA 10 price overrides (for EN↔JP scenario comparison) ----
 const JP_PSA10_OVERRIDE_KEY = 'pkm-jp-psa10-overrides-v1';
 function getJpPsa10Override(cardId) {
-  try { return JSON.parse(localStorage.getItem(JP_PSA10_OVERRIDE_KEY) || '{}')[cardId] || null; } catch { return null; }
+  return _lsJSON(JP_PSA10_OVERRIDE_KEY)[cardId] || null;
 }
 function setJpPsa10Override(cardId, gbp, dateStr) {
   try {
@@ -800,7 +828,26 @@ function fmtGBP(usd) { return fmtGBPDirect(usdToGbp(usd)); }
 function fmtUSD(usd) { return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 
 // ---- Character Analysis ----
+// Memoised by card name. These sit under the pricing model, which asks them
+// several times per card per render: seven regex passes for the name, then a
+// substring scan of every tier list. The answers depend on the name alone.
+const _nameMemo = new Map();
+const _charTierMemo = new Map();   // extracted name -> { tier, score, hit } | null
+const _appealMemo = new Map();
+function _charTierFor(name) {
+  let r = _charTierMemo.get(name);
+  if (r !== undefined) return r;
+  r = null;
+  for (const [tier, data] of Object.entries(CHAR_TIERS)) {
+    const hit = data.names.find(n => name.includes(n));
+    if (hit) { r = { tier, score: data.score, hit }; break; }
+  }
+  _charTierMemo.set(name, r);
+  return r;
+}
 function extractPokemonName(cardName) {
+  const memo = _nameMemo.get(cardName);
+  if (memo !== undefined) return memo;
   let name = cardName.toLowerCase()
     .replace(/\s*\[.*?\]/g, '')
     .replace(/\s*#\d+/g, '')
@@ -811,15 +858,13 @@ function extractPokemonName(cardName) {
     .replace(/\s+vstar\b/g, '')
     .replace(/\bmega\s+/g, '')
     .trim();
+  _nameMemo.set(cardName, name);
   return name;
 }
 
 function getCharacterScore(cardName) {
-  const name = extractPokemonName(cardName);
-  for (const [tier, data] of Object.entries(CHAR_TIERS)) {
-    if (data.names.some(n => name.includes(n))) return data.score;
-  }
-  return 3.5;
+  const t = _charTierFor(extractPokemonName(cardName));
+  return t ? t.score : 3.5;
 }
 
 function _getSpikeCharInfo(cardName) {
@@ -836,10 +881,14 @@ function _getSpikeCharInfo(cardName) {
 
 function getAppealScore(cardName) {
   const name = extractPokemonName(cardName);
-  for (const [tier, data] of Object.entries(APPEAL_TIERS)) {
-    if (data.names.some(n => name.includes(n))) return data.score;
+  let score = _appealMemo.get(name);
+  if (score !== undefined) return score;
+  score = 4.0;
+  for (const data of Object.values(APPEAL_TIERS)) {
+    if (data.names.some(n => name.includes(n))) { score = data.score; break; }
   }
-  return 4.0;
+  _appealMemo.set(name, score);
+  return score;
 }
 
 // How heavily a species has been printed lately, 0..1, read from the catalogue
@@ -865,11 +914,8 @@ const REPRINT_WINDOW_YEARS = 5;
 function _canonSpecies(rawName) {
   const name = extractPokemonName(rawName);
   if (!name) return '';
-  for (const data of Object.values(CHAR_TIERS)) {
-    const hit = data.names.find(n => name.includes(n));
-    if (hit) return hit;
-  }
-  return name;
+  const t = _charTierFor(name);
+  return t ? t.hit : name;
 }
 
 let _reprintMemo = null;
@@ -904,13 +950,9 @@ const REPRINT_MAX_DRAG        = 0.70;  // at most 70% of the premium, never the 
 
 function getCharacterMultiplier(cardName, card) {
   const name = extractPokemonName(cardName);
-  let base = 1.0;
-  for (const [tier, data] of Object.entries(CHAR_TIERS)) {
-    if (data.names.some(n => name.includes(n))) {
-      base = tier === 'S' ? 1.6 : tier === 'A' ? 1.3 : tier === 'B' ? 1.1 : 1.0;
-      break;
-    }
-  }
+  const t = _charTierFor(name);
+  const tier = t ? t.tier : '';
+  const base = tier === 'S' ? 1.6 : tier === 'A' ? 1.3 : tier === 'B' ? 1.1 : 1.0;
   if (base <= 1.0 || !card) return base;
   const ageMonths = (typeof cardAgeMonths === 'function') ? cardAgeMonths(card) : REPRINT_SAFE_AGE_MONTHS;
   if (ageMonths >= REPRINT_SAFE_AGE_MONTHS) return base;   // vintage: supply is fixed
@@ -1517,10 +1559,7 @@ function scoreCounterpartMatch(source, candidate) {
 // Manual counterpart overrides — user picks the correct EN/JP counterpart
 // when our auto-match is wrong. Stored per-card in localStorage.
 const CP_OVERRIDE_KEY = 'pkm-counterpart-overrides-v1';
-function getCPOverrides() {
-  try { return JSON.parse(localStorage.getItem(CP_OVERRIDE_KEY) || '{}'); }
-  catch { return {}; }
-}
+function getCPOverrides() { return _lsJSON(CP_OVERRIDE_KEY); }
 function setCPOverride(cardId, otherId) {
   const all = getCPOverrides();
   // If cardId was previously mapped to a different card, clear that card's
@@ -2512,10 +2551,7 @@ function psaLinkKind(url) {
 }
 
 const PC_OVERRIDE_KEY = 'pkm-pc-overrides-v1';
-function getPCOverrides() {
-  try { return JSON.parse(localStorage.getItem(PC_OVERRIDE_KEY) || '{}'); }
-  catch { return {}; }
-}
+function getPCOverrides() { return _lsJSON(PC_OVERRIDE_KEY); }
 function setPCOverride(cardId, product) {
   const all = getPCOverrides();
   if (product) all[cardId] = product; else delete all[cardId];
@@ -5102,9 +5138,7 @@ function _paintGemTile(card) {
 }
 
 const GEM_OVERRIDE_KEY = 'pkm-gem-overrides-v1';
-function getGemOverrides() {
-  try { return JSON.parse(localStorage.getItem(GEM_OVERRIDE_KEY) || '{}'); } catch { return {}; }
-}
+function getGemOverrides() { return _lsJSON(GEM_OVERRIDE_KEY); }
 // Stored as a percentage because that is how it is read off a pop report or
 // Collectr; everything downstream works in the 0–1 fraction.
 function getGemOverride(cardId, variant) {
@@ -15630,16 +15664,19 @@ function _ladderValueRung(gradeStrategies, accept, opts) {
 // copy to reach a grade you could have bought outright is effort spent to
 // arrive where you started. A raw copy already held is different: its condition
 // is known, so "Keep Raw" stays a legitimate answer.
+let _prefersSlabSet = new Set(), _prefersSlabEn = null, _prefersSlabJp = null;
 function _prefersSlab(card) {
   if (!card) return false;
   try {
     const sc = _cardBasis(card).sc;
     if (!sc) return false;
-    const vin = new Set([
-      ...((typeof _vintageSets   === 'function' ? _vintageSets()   : []).map(x => x.code)),
-      ...((typeof _vintageJPSets === 'function' ? _vintageJPSets() : []).map(x => x.code)),
-    ]);
-    return vin.has(sc);
+    const en = typeof _vintageSets   === 'function' ? _vintageSets()   : [];
+    const jp = typeof _vintageJPSets === 'function' ? _vintageJPSets() : [];
+    if (_prefersSlabEn !== en || _prefersSlabJp !== jp) {
+      _prefersSlabEn = en; _prefersSlabJp = jp;
+      _prefersSlabSet = new Set([...en.map(x => x.code), ...jp.map(x => x.code)]);
+    }
+    return _prefersSlabSet.has(sc);
   } catch { return false; }
 }
 
@@ -19428,9 +19465,11 @@ async function refreshMarketIntelNow(silent = false) {
     const _curPage = (location.hash || '').replace('#', '');
     try {
       if (_curPage === 'home') {
+        // The caches were cleared just above, so this alone queues one
+        // idle-time catalogue scan that repaints both the recommendations
+        // and Top Picks. Forcing each as well ran the scan twice more, one
+        // of them synchronously the moment the response arrived.
         renderHomeDashboard();
-        _renderHomeTopPicks(true);
-        _renderHomeReco(true);
       } else if (_curPage === 'analysis') {
         renderAiAnalysisPage();
         setTimeout(() => { try { document.getElementById('aiaRankBtn')?.click(); } catch {} }, 150);
@@ -20569,8 +20608,17 @@ function _homePullbacks(limit = 8) {
   const out = [];
   const seen = new Set();
   const portfolioIds = new Set((portfolio || []).map(x => x.id || x.i).filter(Boolean));
+  // Only a card with Collectr data can qualify, and that is a few hundred of
+  // the 26k. Work out which up front instead of asking for each card in turn —
+  // this runs on every visit to Home.
+  const cache = _collectrCache();
+  const ids = getCollectrIds();
+  const hasData = new Set();
+  for (const id in ids) { const hit = cache[ids[id]]; if (hit && hit.data) hasData.add(id); }
+  for (const k in cache) { if (k.startsWith('card:') && cache[k] && cache[k].data) hasData.add(k.slice(5)); }
+  if (!hasData.size) return out;
   for (const c of (cardData?.cards || [])) {
-    if (!c.i || seen.has(c.i)) continue;
+    if (!c.i || !hasData.has(c.i) || seen.has(c.i)) continue;
     let t = null;
     try {
       const d = getCollectrData(c.i);
@@ -21172,6 +21220,8 @@ function _bindRecoHandler(el) {
   }
 }
 
+let _recoBuildPending = false;   // an idle-time scan is already queued
+let _topPicksPending = false;    // Top Picks is waiting on that scan
 function _renderHomeReco(forceRebuild) {
   const list = $('homeRecoList');
   if (!list) return;
@@ -21181,6 +21231,10 @@ function _renderHomeReco(forceRebuild) {
   if (forceRebuild) _recoCached = null;
 
   if (!_recoCached) {
+    // One scan at a time. Home renders from several startup paths in quick
+    // succession, and each used to queue its own full pass over the catalogue.
+    if (_recoBuildPending) return;
+    _recoBuildPending = true;
     list.innerHTML = '<div class="home-empty">Scanning…</div>';
     _STRAT_SECTIONS.forEach(s => { const el = $(s.listId); if (el) el.innerHTML = '<div class="home-empty">Scanning…</div>'; });
     // Run scan during browser idle time so the page appears immediately.
@@ -21190,8 +21244,11 @@ function _renderHomeReco(forceRebuild) {
       ? f => requestIdleCallback(f, { timeout: 3000 })
       : f => setTimeout(f, 1);
     _ric(() => {
-      const all = buildAllHomeRecos();
-      _recoCached = { ...all, ts: Date.now() };
+      _recoBuildPending = false;
+      // Top Picks may have built the same scan in the meantime — share it.
+      const all = _recoCached || buildAllHomeRecos();
+      if (!_recoCached) _recoCached = { ...all, ts: Date.now() };
+      if (_topPicksPending) { try { _renderHomeTopPicks(); } catch {} }
       _renderHomeRecoResults(all.general, list, $('homeRecoCount'));
       _STRAT_SECTIONS.forEach(s => _renderHomeRecoStratResults(all[s.key], $(s.listId), $(s.countId), s.key));
       _renderRecoConsiderGrading(all.general);
@@ -21465,6 +21522,20 @@ function setupHomeViewAll() {
   });
 }
 
+const _scrollRowJobs = new Set();
+let _scrollRowRaf = 0;
+function _scrollRowSchedule(job) {
+  _scrollRowJobs.add(job);
+  if (_scrollRowRaf) return;
+  _scrollRowRaf = requestAnimationFrame(() => {
+    _scrollRowRaf = 0;
+    const jobs = [..._scrollRowJobs];
+    _scrollRowJobs.clear();
+    const sizes = jobs.map(j => j.measure());       // all reads first
+    jobs.forEach((j, i) => j.apply(sizes[i]));      // then all writes
+  });
+}
+
 function setupHomeScrollControls() {
   document.querySelectorAll('.home-section-wrap').forEach(wrap => {
     const row = wrap.querySelector('.home-scroll-row');
@@ -21495,20 +21566,27 @@ function setupHomeScrollControls() {
     const bar   = wrap.querySelector('.home-scroll-bar');
     const thumb = wrap.querySelector('.home-scroll-thumb');
 
-    function update() {
-      const { scrollLeft: sl, scrollWidth: sw, clientWidth: cw } = row;
+    // Measure, then write, once per frame for all rows together. Each row used
+    // to read its size, write styles, then read the bar's width — forcing a
+    // fresh layout per row, on every scroll event and every list re-render.
+    const measure = () => ({
+      sl: row.scrollLeft, sw: row.scrollWidth, cw: row.clientWidth,
+      barW: bar ? bar.offsetWidth : 0,
+    });
+    const apply = ({ sl, sw, cw, barW }) => {
       if (prev) prev.disabled = sl <= 2;
       if (next) next.disabled = sl >= sw - cw - 2;
       if (!thumb || !bar) return;
       const ratio = cw / sw;
       bar.style.opacity = ratio >= 1 ? '0' : '1';
       bar.style.pointerEvents = ratio >= 1 ? 'none' : 'auto';
-      const barW = bar.offsetWidth;
       const thumbW = Math.max(36, ratio * barW);
       const thumbX = sw > cw ? (sl / (sw - cw)) * (barW - thumbW) : 0;
       thumb.style.width = thumbW + 'px';
       thumb.style.transform = 'translateX(' + thumbX + 'px)';
-    }
+    };
+    const job = { measure, apply };
+    const update = () => _scrollRowSchedule(job);
 
     const step = () => Math.round(row.clientWidth * 0.75);
     if (prev) prev.addEventListener('click', () => row.scrollBy({ left: -step(), behavior: 'smooth' }));
@@ -21807,8 +21885,22 @@ function _renderHomeTopPicks(force) {
 
   if (force || !_topPicksCache) {
     _topPicksCache = null;
+    // Top Picks reads the same catalogue scan as the recommendations below it.
+    // It used to run its own, synchronously, before first paint — the single
+    // longest freeze on load. Now it shares the idle-time scan, and only a
+    // deliberate Refresh builds on the spot.
+    if (!force && !_recoCached) {
+      _topPicksPending = true;
+      const scanning = '<div class="home-empty">Scanning…</div>';
+      if (buyEl && !buyEl.children.length)     buyEl.innerHTML = scanning;
+      if (avoidEl && !avoidEl.children.length) avoidEl.innerHTML = scanning;
+      try { _renderHomeReco(); } catch {}
+      return;
+    }
+    _topPicksPending = false;
     try {
-      const all = buildAllHomeRecos();
+      const all = (!force && _recoCached) ? _recoCached : buildAllHomeRecos();
+      if (force || !_recoCached) _recoCached = { ...all, ts: Date.now() };
       // Filter to cards with meaningful prices (≥ £15) and sort strong buys first
       const buyPicks = (all.general || [])
         .filter(r => r.marketGBP >= 15 && r.card.rc && r.card.sc)
@@ -23524,18 +23616,18 @@ function setupPageNav() {
     if (page === 'predict' && _currentPage !== 'predict') _prevPage = _currentPage;
     _currentPage = page;
     closeHomePip();
+    // Hide first, then show. The old loop forced a synchronous layout
+    // (offsetWidth) to restart the entry animation while the outgoing page
+    // could still be displayed — laying out both pages, and then the new one
+    // again once it had rendered. The restart was never needed: an element
+    // coming back from display:none starts its animation afresh on its own.
     Object.entries(pages).forEach(([k, el]) => {
-      if (!el) return;
-      if (k === page) {
-        el.style.display = '';
-        el.classList.remove('pkm-page-in');
-        void el.offsetWidth; // force reflow so animation restarts
-        el.classList.add('pkm-page-in');
-      } else {
-        el.style.display = 'none';
-        el.classList.remove('pkm-page-in');
-      }
+      if (!el || k === page) return;
+      el.style.display = 'none';
+      el.classList.remove('pkm-page-in');
     });
+    const target = pages[page];
+    if (target) { target.style.display = ''; target.classList.add('pkm-page-in'); }
     buttons.forEach(b => b.classList.toggle('active', b.dataset.page === page));
     const fab = document.getElementById('filterFab');
     if (fab) fab.style.display = (page === 'predict') ? '' : 'none';
@@ -24509,10 +24601,7 @@ function urRender(results) {
 // is worth it.
 // ============================================================================
 const HOLD_OVERRIDE_KEY = 'pkm-hold-overrides';
-function _holdOverridesAll() {
-  try { return JSON.parse(localStorage.getItem(HOLD_OVERRIDE_KEY) || '{}') || {}; }
-  catch { return {}; }
-}
+function _holdOverridesAll() { return _lsJSON(HOLD_OVERRIDE_KEY); }
 function getHoldOverridesForCard(cardId) {
   if (!cardId) return {};
   return _holdOverridesAll()[cardId] || {};
@@ -27044,12 +27133,19 @@ let _vgSort = 'num';
 let _vgVariant = 'unlimited'; // 'unlimited' | '1sted'
 let _vgPre2003 = false; // true = only sets released before 2003 (pre e-Reader/EX era)
 
+// Memoised: these are asked per card by the hold model (_prefersSlab), so a
+// home-page build called them thousands of times, each one re-sorting the set
+// table or walking the whole 26k-card index. The answer only changes when the
+// set table or the search index does.
+let _vgSetsMemo = null, _vgSetsMemoKey = null;
 function _vintageSets() {
   if (typeof setsData === 'undefined' || !setsData) return [];
-  return Object.entries(setsData)
+  if (_vgSetsMemo && _vgSetsMemoKey === setsData) return _vgSetsMemo;
+  _vgSetsMemoKey = setsData;
+  return (_vgSetsMemo = Object.entries(setsData)
     .filter(([, s]) => (s.releaseDate || '9999') < VINTAGE_CUTOFF)
     .sort((a, b) => (a[1].releaseDate || '').localeCompare(b[1].releaseDate || ''))
-    .map(([code, s]) => ({ code, name: s.name, releaseDate: s.releaseDate || '', total: s.total || 0 }));
+    .map(([code, s]) => ({ code, name: s.name, releaseDate: s.releaseDate || '', total: s.total || 0 })));
 }
 
 // JP vintage sets listed in release order with approximate JP release dates.
@@ -27072,15 +27168,18 @@ const VINTAGE_JP_SET_ORDER = [
   { code: 'PCG2',  date: '2003/11' },
 ];
 
+let _vgJPSetsMemo = null, _vgJPSetsMemoIdx = null, _vgJPSetsMemoLen = -1;
 function _vintageJPSets() {
   if (!searchIndex || !searchIndex.length) return [];
+  if (_vgJPSetsMemo && _vgJPSetsMemoIdx === searchIndex && _vgJPSetsMemoLen === searchIndex.length) return _vgJPSetsMemo;
+  _vgJPSetsMemoIdx = searchIndex; _vgJPSetsMemoLen = searchIndex.length;
   const firstCard = new Map();
   for (const c of searchIndex) {
     if (c.lang === 'JP' && !firstCard.has(c.sc)) firstCard.set(c.sc, c);
   }
-  return VINTAGE_JP_SET_ORDER
+  return (_vgJPSetsMemo = VINTAGE_JP_SET_ORDER
     .filter(({ code }) => firstCard.has(code))
-    .map(({ code, date }) => ({ code, name: firstCard.get(code).s || code, releaseDate: date, total: 0 }));
+    .map(({ code, date }) => ({ code, name: firstCard.get(code).s || code, releaseDate: date, total: 0 })));
 }
 
 function _vgLoad() {
@@ -29853,8 +29952,19 @@ function renderPokedexPage() {
     _renderPdxDetail(body);
   } else {
     _pdxView = 'grid';
+    // Coming back to the page with nothing changed: the grid is 1,025 cells,
+    // and rebuilding it on every visit cost a full layout of all of them.
+    const grid = document.getElementById('pdxGrid');
+    const idx = _buildPokedexIndex();
+    if (grid && idx && grid.childElementCount && grid.dataset.sig === _pdxGridSig(idx)) return;
     _renderPdxGridView(body);
   }
+}
+
+// What the painted grid depends on. Card counts per cell come from the index,
+// which follows the catalogue (user-added cards included).
+function _pdxGridSig(idx) {
+  return [idx.cardsByDex.size, cardData?.cards?.length || 0, _pdxLangFilter, _pdxSearchQ].join('|');
 }
 
 function _renderPdxGridView(body) {
@@ -29918,6 +30028,7 @@ function _paintPdxGrid(idx) {
   }
 
   grid.innerHTML = parts.join('');
+  grid.dataset.sig = _pdxGridSig(idx);
 
   grid.onclick = (e) => {
     const cell = e.target.closest('.pdx-cell[data-dex]');

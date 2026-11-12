@@ -673,6 +673,38 @@ Max bid is not the max buy. The ceiling is all-in; a bid has postage and the
 buyer fee stacked on top of it, so the bid ceiling is the all-in ceiling with
 those taken back off.
 
+## Speed: what made it slow, so it does not come back
+
+Measured in headless Chromium at 390 × 844 with 4× CPU throttling: main-thread
+blocking in the first 12 seconds went from 11.2s to 2.6s, and an idle page
+went from rendering 60 frames a second to none. The causes were few and each
+was invisible in normal use:
+
+- **Per-card helpers that redo global work.** `_prefersSlab()` rebuilt the
+  vintage set lists — one of which walks the whole 26k index — for every card.
+  `_vintageSets()` / `_vintageJPSets()` are memoised now; so are name parsing
+  (`extractPokemonName`, `_charTierFor`) and the small override stores
+  (`_lsJSON()`, invalidated by a `Storage.prototype` patch). Anything called
+  from `computeHoldCore` or `computeSignal` runs thousands of times per Home
+  build: it must not sort, scan the catalogue, or `JSON.parse` localStorage.
+- **One catalogue scan, at idle.** `buildAllHomeRecos()` feeds both Top Picks
+  and the recommendations. Top Picks used to run its own, synchronously,
+  before first paint. They share `_recoCached`; `_recoBuildPending` stops
+  startup paths queueing several. Only the Refresh button builds on the spot.
+- **Nothing may animate while invisible.** The faded-out loading overlay kept
+  its spinner running, and an SVG `<animate>` on the hidden PokeKnow page kept
+  SMIL's clock running — each forced a frame 60 times a second on every page.
+  Hide with `visibility`/`display`, not opacity alone, and never use SMIL.
+- **Do not pin compositor layers.** `animation-fill-mode: both` on entry
+  animations, `will-change` on `.pkm-page-in`, and `translateZ(0)` on every
+  card image each kept a layer alive permanently — the whole page, every home
+  panel, one per card. Entry animations fill `backwards`; no layer hacks.
+- **No backdrop-filter inside a backdrop-filtered panel.** It can only blur
+  the panel's own fill. See the end of style.css.
+- **Don't rebuild what has not changed.** The Pokédex grid (1,025 cells) is
+  skipped on revisit via `_pdxGridSig()`, and its cells use
+  `content-visibility: auto`. `go()` must not force a layout (`offsetWidth`).
+
 ## Common pitfalls (do not repeat)
 
 - **Worker secrets** (`EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`) are set in the
